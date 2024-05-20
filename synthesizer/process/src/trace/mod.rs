@@ -33,6 +33,9 @@ use std::{collections::HashMap, sync::OnceLock};
 
 use crate::Authorization;
 
+// mod serialize;
+// mod string;
+
 #[derive(Clone, Debug, Default)]
 pub struct Trace<N: Network> {
     /// The list of transitions.
@@ -190,6 +193,34 @@ impl<N: Network> Trace<N> {
         Execution::from(self.transitions.iter().cloned(), global_state_root, Some(proof))
     }
 
+    pub fn prove_execution_web<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
+        &self,
+        locator: &str,
+        proving_key: ProvingKey<N>,
+        rng: &mut R,
+    ) -> Result<Execution<N>> {
+        // Ensure this is not a fee.
+        ensure!(!self.is_fee(), "The trace cannot call 'prove_execution' for a fee type");
+        // Ensure there are no fee transitions.
+        ensure!(
+            self.transitions.iter().all(|transition| !(transition.is_fee_private() || transition.is_fee_public())),
+            "The trace cannot prove execution for a fee, call 'prove_fee' instead"
+        );
+        // Retrieve the inclusion assignments.
+        let inclusion_assignments =
+            self.inclusion_assignments.get().ok_or_else(|| anyhow!("Inclusion assignments have not been set"))?;
+        // Retrieve the global state root.
+        let global_state_root =
+            self.global_state_root.get().ok_or_else(|| anyhow!("Global state root has not been set"))?;
+        // Construct the proving tasks.
+        let proving_tasks = self.transition_tasks.values().cloned().collect();
+        // Compute the proof.
+        let (global_state_root, proof) =
+            Self::prove_batch_web::<A, R>(locator, proving_tasks, inclusion_assignments, *global_state_root, &proving_key, rng)?;
+        // Return the execution.
+        Execution::from(self.transitions.iter().cloned(), global_state_root, Some(proof))
+    }
+
     /// Returns a new fee with a proof, for the current inclusion assignment and global state root.
     pub fn prove_fee<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
         &self,
@@ -222,6 +253,40 @@ impl<N: Network> Trace<N> {
             proving_tasks,
             inclusion_assignments,
             *global_state_root,
+            rng,
+        )?;
+        // Return the fee.
+        Ok(Fee::from_unchecked(fee_transition.clone(), global_state_root, Some(proof)))
+    }
+
+    /// Returns a new fee with a proof, for the current inclusion assignment and global state root.
+    pub fn prove_fee_web<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(&self, proving_key: ProvingKey<N>, rng: &mut R) -> Result<Fee<N>> {
+        // Ensure this is a fee.
+        let is_fee_public = self.is_fee_public();
+        let is_fee_private = self.is_fee_private();
+        ensure!(is_fee_public || is_fee_private, "The trace cannot call 'prove_fee' for an execution type");
+        // Retrieve the inclusion assignments.
+        let inclusion_assignments =
+            self.inclusion_assignments.get().ok_or_else(|| anyhow!("Inclusion assignments have not been set"))?;
+        // Ensure the correct number of inclusion assignments are provided.
+        match is_fee_public {
+            true => ensure!(inclusion_assignments.is_empty(), "Expected 0 inclusion assignments for proving the fee"),
+            false => ensure!(inclusion_assignments.len() == 1, "Expected 1 inclusion assignment for proving the fee"),
+        }
+        // Retrieve the global state root.
+        let global_state_root =
+            self.global_state_root.get().ok_or_else(|| anyhow!("Global state root has not been set"))?;
+        // Retrieve the fee transition.
+        let fee_transition = &self.transitions[0];
+        // Construct the proving tasks.
+        let proving_tasks = self.transition_tasks.values().cloned().collect();
+        // Compute the proof.
+        let (global_state_root, proof) = Self::prove_batch_web::<A, R>(
+            "credits.aleo/fee (private or public)",
+            proving_tasks,
+            inclusion_assignments,
+            *global_state_root,
+            &proving_key,
             rng,
         )?;
         // Return the fee.
@@ -370,6 +435,44 @@ impl<N: Network> Trace<N> {
 
         // Compute the proof.
         let proof = ProvingKey::prove_batch(locator, varuna_version, &proving_tasks, rng)?;
+        // Return the global state root and proof.
+        Ok((global_state_root, proof))
+    }
+
+    fn prove_batch_web<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
+        locator: &str,
+        mut proving_tasks: Vec<(ProvingKey<N>, Vec<Assignment<N::Field>>)>,
+        inclusion_assignments: &[InclusionAssignment<N>],
+        global_state_root: N::StateRoot,
+        proving_key: &ProvingKey<N>,
+        rng: &mut R,
+    ) -> Result<(N::StateRoot, Proof<N>)> {
+        // Ensure the global state root is not zero.
+        // Note: To protect user privacy, even when there are *no* inclusion assignments,
+        // the user must provide a real global state root (which is checked in consensus).
+        if global_state_root == N::StateRoot::default() {
+            bail!("Inclusion expected the global state root in the execution to *not* be zero")
+        }
+
+        // Initialize a vector for the batch inclusion assignments.
+        let mut batch_inclusions = Vec::with_capacity(inclusion_assignments.len());
+
+        for assignment in inclusion_assignments.iter() {
+            // Ensure the global state root is the same across iterations.
+            if global_state_root != assignment.state_path.global_state_root() {
+                bail!("Inclusion expected the global state root to be the same across iterations")
+            }
+            // Add the assignment to the assignments.
+            batch_inclusions.push(assignment.to_circuit_assignment::<A>()?);
+        }
+
+        if !batch_inclusions.is_empty() {
+            // Insert the inclusion proving key and assignments.
+            proving_tasks.push((proving_key.clone(), batch_inclusions));
+        }
+
+        // Compute the proof.
+        let proof = ProvingKey::prove_batch(locator, &proving_tasks, rng)?;
         // Return the global state root and proof.
         Ok((global_state_root, proof))
     }

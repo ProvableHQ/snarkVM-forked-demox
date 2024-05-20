@@ -86,6 +86,7 @@ impl<N: Network> TryFrom<(Vec<Request<N>>, Vec<Transition<N>>)> for Authorizatio
 
             ensure_request_and_transition_matches(index, &requests[request_idx], transition)?;
         }
+
         // Return the new `Authorization` instance.
         Ok(Self {
             requests: Arc::new(RwLock::new(VecDeque::from(requests))),
