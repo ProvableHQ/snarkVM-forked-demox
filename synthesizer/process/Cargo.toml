@@ -24,7 +24,7 @@ license = "Apache-2.0"
 edition = "2021"
 
 [features]
-default = [ "indexmap/rayon", "rayon" ]
+default = [ "indexmap/rayon", "rayon", "rocks" ]
 aleo-cli = [ ]
 async = [ "ledger-query/async" ]
 rocks = [ "ledger-store/rocks" ]
@@ -46,8 +46,8 @@ wasm = [
 timer = [ "aleo-std/timer" ]
 
 [[bench]]
-name = "stack_operations"
-path = "benches/stack_operations.rs"
+name = "update_key_value"
+path = "benches/update_key_value.rs"
 harness = false
 
 [dependencies.console]

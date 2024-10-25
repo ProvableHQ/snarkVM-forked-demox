@@ -41,7 +41,7 @@ use synthesizer_snark::UniversalSRS;
 
 use indexmap::IndexMap;
 use parking_lot::RwLock;
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 type CurrentNetwork = MainnetV0;
 type CurrentAleo = AleoV0;
@@ -1191,6 +1191,56 @@ function transfer:
     // assert_eq!(58791, CurrentAleo::num_private());
     // assert_eq!(58855, CurrentAleo::num_constraints());
     // assert_eq!(215810, CurrentAleo::num_gates());
+}
+
+#[test]
+fn test_bench_set() {
+    // Initialize the RNG.
+    let rng = &mut TestRng::default();
+
+    // Reset the process.
+    let mut process = Process::<CurrentNetwork>::load().unwrap();
+
+    // Initialize a new block store.
+    let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(None).unwrap();
+    // Initialize a new finalize store.
+    let finalize_store = FinalizeStore::<CurrentNetwork, FinalizeMemory<_>>::open(None).unwrap();
+
+    let program_id = ProgramID::from_str("credits.aleo").unwrap();
+    let account_mapping = Identifier::from_str("account").unwrap();
+
+    // Initialize the account mapping, even if it already has been (we silence the result for testing).
+    let _ = finalize_store.initialize_mapping(program_id, account_mapping);
+
+    // Sample a random private key.
+    let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+    let address = Address::try_from(private_key).unwrap();
+
+    // Construct the key.
+    let key = Plaintext::from(Literal::Address(address));
+    // Construct the public balance.
+    let value = Value::from(Literal::U64(U64::new(100)));
+
+    finalize_store
+      .update_key_value(program_id, account_mapping, key.clone(), value.clone())
+      .unwrap();
+    
+    // Define the number of iterations.
+    let iterations = 1_000_000;
+
+    // Benchmark the update_key_value operation over the specified number of iterations.
+    let start = Instant::now(); // Start the timer.
+
+    for _ in 0..iterations {
+        finalize_store.get_value_speculative(program_id, account_mapping, &key).unwrap();
+    }
+
+    let duration = start.elapsed(); // Measure the elapsed time.
+    let total_nanos = duration.as_nanos();
+    let nanos_per_op = total_nanos / iterations as u128;
+
+    println!("Total time for {} iterations: {:?} ({} ns)", iterations, duration, total_nanos);
+    println!("Average time per operation: {} ns", nanos_per_op);
 }
 
 #[test]
