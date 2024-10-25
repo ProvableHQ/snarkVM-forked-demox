@@ -101,7 +101,7 @@ const HASH_BHP_PER_BYTE_COST: u64 = 300;
 const HASH_PSD_BASE_COST: u64 = 40_000;
 const HASH_PSD_PER_BYTE_COST: u64 = 75;
 
-const MAPPING_BASE_COST: u64 = 10_000;
+const MAPPING_BASE_COST: u64 = 500;
 const MAPPING_PER_BYTE_COST: u64 = 10;
 
 const SET_BASE_COST: u64 = 10_000;
@@ -357,7 +357,7 @@ pub fn cost_per_command<N: Network>(stack: &Stack<N>, finalize: &Finalize<N>, co
             cost_in_size(stack, finalize, [command.key()], MAPPING_PER_BYTE_COST, MAPPING_BASE_COST)
         }
         Command::RandChaCha(_) => Ok(25_000),
-        Command::Remove(_) => Ok(MAPPING_BASE_COST),
+        Command::Remove(_) => Ok(SET_BASE_COST),
         Command::Set(command) => {
             cost_in_size(stack, finalize, [command.key(), command.value()], SET_PER_BYTE_COST, SET_BASE_COST)
         }
