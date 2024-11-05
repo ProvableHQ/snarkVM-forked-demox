@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -32,6 +33,10 @@ impl<N: Network> Process<N> {
         #[cfg(feature = "aleo-cli")]
         println!("{}", format!(" • Executing '{locator}'...",).dimmed());
 
+        // This is the root request and does not have a caller.
+        let caller = None;
+        // This is the root request and we do not have a root_tvk to pass on.
+        let root_tvk = None;
         // Initialize the trace.
         let trace = Arc::new(RwLock::new(Trace::new()));
         // Initialize the call stack.
@@ -41,7 +46,7 @@ impl<N: Network> Process<N> {
         // Retrieve the stack.
         let stack = self.get_stack(request.program_id())?;
         // Execute the circuit.
-        let response = stack.execute_function::<A, R>(call_stack, None, rng)?;
+        let response = stack.execute_function::<A, R>(call_stack, caller, root_tvk, rng)?;
         lap!(timer, "Execute the function");
 
         // Extract the trace.
@@ -59,7 +64,7 @@ mod tests {
     use super::*;
     use console::types::Address;
 
-    type CurrentNetwork = console::network::Testnet3;
+    type CurrentNetwork = console::network::MainnetV0;
     type CurrentAleo = circuit::AleoV0;
 
     #[test]

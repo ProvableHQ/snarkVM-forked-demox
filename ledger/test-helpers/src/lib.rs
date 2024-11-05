@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -15,7 +16,7 @@
 use console::{
     account::{Address, PrivateKey},
     prelude::*,
-    program::{Ciphertext, Literal, Plaintext, ProgramOwner, Record},
+    program::{Ciphertext, Literal, Plaintext, ProgramOwner, Record, Value},
     types::Field,
 };
 use ledger_block::{
@@ -28,18 +29,19 @@ use ledger_block::{
     Input,
     Output,
     Ratifications,
+    Rejected,
     Transaction,
     Transactions,
     Transition,
 };
 use ledger_query::Query;
-use ledger_store::{helpers::memory::BlockMemory, BlockStore};
+use ledger_store::{BlockStore, helpers::memory::BlockMemory};
 use synthesizer_process::Process;
 use synthesizer_program::Program;
 
 use once_cell::sync::OnceCell;
 
-type CurrentNetwork = console::network::Testnet3;
+type CurrentNetwork = console::network::MainnetV0;
 type CurrentAleo = circuit::network::AleoV0;
 
 /****************************************** Transition ********************************************/
@@ -158,6 +160,23 @@ function compute:
         .clone()
 }
 
+/// Samples a rejected deployment.
+pub fn sample_rejected_deployment(is_fee_private: bool, rng: &mut TestRng) -> Rejected<CurrentNetwork> {
+    // Sample a deploy transaction.
+    let deployment = match crate::sample_deployment_transaction(is_fee_private, rng) {
+        Transaction::Deploy(_, _, deployment, _) => (*deployment).clone(),
+        _ => unreachable!(),
+    };
+
+    // Sample a new program owner.
+    let private_key = PrivateKey::new(rng).unwrap();
+    let deployment_id = deployment.to_deployment_id().unwrap();
+    let program_owner = ProgramOwner::new(&private_key, deployment_id, rng).unwrap();
+
+    // Return the rejected deployment.
+    Rejected::new_deployment(program_owner, deployment)
+}
+
 /******************************************* Execution ********************************************/
 
 /// Samples a random execution.
@@ -168,6 +187,18 @@ pub fn sample_execution(rng: &mut TestRng) -> Execution<CurrentNetwork> {
     let transaction = block.transactions().iter().next().unwrap().deref().clone();
     // Retrieve the execution.
     if let Transaction::Execute(_, execution, _) = transaction { execution } else { unreachable!() }
+}
+
+/// Samples a rejected execution.
+pub fn sample_rejected_execution(is_fee_private: bool, rng: &mut TestRng) -> Rejected<CurrentNetwork> {
+    // Sample an execute transaction.
+    let execution = match crate::sample_execution_transaction_with_fee(is_fee_private, rng) {
+        Transaction::Execute(_, execution, _) => execution,
+        _ => unreachable!(),
+    };
+
+    // Return the rejected execution.
+    Rejected::new_execution(execution)
 }
 
 /********************************************** Fee ***********************************************/
@@ -283,6 +314,40 @@ pub fn sample_fee_public(deployment_or_execution_id: Field<CurrentNetwork>, rng:
     Fee::from_str(&fee.to_string()).unwrap()
 }
 
+/******************************************** Program *********************************************/
+
+/// Deploy a program that produces large transactions under the maximum transaction size.
+pub fn small_transaction_program() -> Program<CurrentNetwork> {
+    Program::from_str(
+        r"
+program testing_small.aleo;
+function small_transaction:
+    cast 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field into r0 as [field; 32u32];
+    cast r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 into r1 as [[field; 32u32]; 32u32];
+    cast r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 into r2 as [[field; 32u32]; 32u32];
+    cast r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 into r3 as [[field; 32u32]; 32u32];
+    output r1 as [[field; 32u32]; 32u32].public;
+    output r2 as [[field; 32u32]; 32u32].public;
+    output r3 as [[field; 32u32]; 32u32].public;").unwrap()
+}
+
+/// Deploy a program that produces large transactions above the maximum transaction size.
+pub fn large_transaction_program() -> Program<CurrentNetwork> {
+    Program::from_str(
+        r"
+program testing_large.aleo;
+function large_transaction:
+    cast 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field 0field into r0 as [field; 32u32];
+    cast r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 into r1 as [[field; 32u32]; 27u32];
+    cast r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 into r2 as [[field; 32u32]; 27u32];
+    cast r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 into r3 as [[field; 32u32]; 27u32];
+    cast r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 into r4 as [[field; 32u32]; 27u32];
+    output r1 as [[field; 32u32]; 27u32].public;
+    output r2 as [[field; 32u32]; 27u32].public;
+    output r3 as [[field; 32u32]; 27u32].public;
+    output r4 as [[field; 32u32]; 27u32].public;").unwrap()
+}
+
 /****************************************** Transaction *******************************************/
 
 /// Samples a random deployment transaction with a private or public fee.
@@ -319,6 +384,61 @@ pub fn sample_execution_transaction_with_fee(is_fee_private: bool, rng: &mut Tes
         true => crate::sample_fee_private(execution_id, rng),
         false => crate::sample_fee_public(execution_id, rng),
     };
+
+    // Construct an execution transaction.
+    Transaction::from_execution(execution, Some(fee)).unwrap()
+}
+
+/// Samples a large transaction.
+pub fn sample_large_execution_transaction(rng: &mut TestRng) -> Transaction<CurrentNetwork> {
+    static INSTANCE: once_cell::sync::OnceCell<Execution<CurrentNetwork>> = once_cell::sync::OnceCell::new();
+
+    let execution = INSTANCE
+        .get_or_init(|| {
+            // Initialize a program that produces large transactions.
+            let program = large_transaction_program();
+
+            // Construct the process.
+            let mut process = synthesizer_process::Process::load().unwrap();
+            // Add the program.
+            process.add_program(&program).unwrap();
+
+            // Initialize a private key.
+            let private_key = PrivateKey::new(rng).unwrap();
+
+            // Authorize the function.
+            let authorization = process
+                .authorize::<CurrentAleo, _>(
+                    &private_key,
+                    "testing_large.aleo",
+                    "large_transaction",
+                    Vec::<Value<CurrentNetwork>>::new().iter(),
+                    rng,
+                )
+                .unwrap();
+            // Execute the function.
+            let (_, mut trace) = process.execute::<CurrentAleo, _>(authorization, rng).unwrap();
+
+            // Initialize a new block store.
+            let block_store =
+                ledger_store::BlockStore::<CurrentNetwork, ledger_store::helpers::memory::BlockMemory<_>>::open(None)
+                    .unwrap();
+
+            // Prepare the assignments.
+            trace.prepare(ledger_query::Query::from(block_store)).unwrap();
+            // Compute the proof and construct the execution.
+            let execution = trace.prove_execution::<CurrentAleo, _>("testing.aleo", rng).unwrap();
+            // Reconstruct the execution from bytes.
+            // This is a hack to get around Rust dependency resolution.
+            Execution::from_bytes_le(&execution.to_bytes_le().unwrap()).unwrap()
+        })
+        .clone();
+
+    // Compute the execution ID.
+    let execution_id = execution.to_execution_id().unwrap();
+
+    // Sample the fee.
+    let fee = crate::sample_fee_public(execution_id, rng);
 
     // Construct an execution transaction.
     Transaction::from_execution(execution, Some(fee)).unwrap()
@@ -413,7 +533,7 @@ fn sample_genesis_block_and_components_raw(
     // Prepare the confirmed transaction.
     let confirmed = ConfirmedTransaction::accepted_execute(0, transaction.clone(), vec![]).unwrap();
     // Prepare the transactions.
-    let transactions = Transactions::from_iter([confirmed].into_iter());
+    let transactions = Transactions::from_iter([confirmed]);
 
     // Construct the ratifications.
     let ratifications = Ratifications::try_from(vec![]).unwrap();
@@ -424,8 +544,18 @@ fn sample_genesis_block_and_components_raw(
     let previous_hash = <CurrentNetwork as Network>::BlockHash::default();
 
     // Construct the block.
-    let block =
-        Block::new_beacon(&private_key, previous_hash, header, ratifications, None, transactions, vec![], rng).unwrap();
+    let block = Block::new_beacon(
+        &private_key,
+        previous_hash,
+        header,
+        ratifications,
+        None.into(),
+        vec![],
+        transactions,
+        vec![],
+        rng,
+    )
+    .unwrap();
     assert!(block.header().is_genesis(), "Failed to initialize a genesis block");
     // Return the block, transaction, and private key.
     (block, transaction, private_key)

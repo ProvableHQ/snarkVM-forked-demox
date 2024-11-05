@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -52,22 +53,20 @@ impl<N: Network> FromBits for FinalizeOperation<N> {
             2 => {
                 // Read the mapping ID.
                 let mapping_id = Field::from_bits_le(&next_bits(Field::<N>::size_in_bits())?)?;
-                // Read the index.
-                let index = u64::from_bits_le(&next_bits(64)?)?;
                 // Read the key ID.
                 let key_id = Field::from_bits_le(&next_bits(Field::<N>::size_in_bits())?)?;
                 // Read the value ID.
                 let value_id = Field::from_bits_le(&next_bits(Field::<N>::size_in_bits())?)?;
                 // Return the finalize operation.
-                Ok(Self::UpdateKeyValue(mapping_id, index, key_id, value_id))
+                Ok(Self::UpdateKeyValue(mapping_id, key_id, value_id))
             }
             3 => {
                 // Read the mapping ID.
                 let mapping_id = Field::from_bits_le(&next_bits(Field::<N>::size_in_bits())?)?;
-                // Read the index.
-                let index = u64::from_bits_le(&next_bits(64)?)?;
+                // Read the key ID.
+                let key_id = Field::from_bits_le(&next_bits(Field::<N>::size_in_bits())?)?;
                 // Return the finalize operation.
-                Ok(Self::RemoveKeyValue(mapping_id, index))
+                Ok(Self::RemoveKeyValue(mapping_id, key_id))
             }
             4 => {
                 // Read the mapping ID.
@@ -122,22 +121,20 @@ impl<N: Network> FromBits for FinalizeOperation<N> {
             2 => {
                 // Read the mapping ID.
                 let mapping_id = Field::from_bits_be(&next_bits(Field::<N>::size_in_bits())?)?;
-                // Read the index.
-                let index = u64::from_bits_be(&next_bits(64)?)?;
                 // Read the key ID.
                 let key_id = Field::from_bits_be(&next_bits(Field::<N>::size_in_bits())?)?;
                 // Read the value ID.
                 let value_id = Field::from_bits_be(&next_bits(Field::<N>::size_in_bits())?)?;
                 // Return the finalize operation.
-                Ok(Self::UpdateKeyValue(mapping_id, index, key_id, value_id))
+                Ok(Self::UpdateKeyValue(mapping_id, key_id, value_id))
             }
             3 => {
                 // Read the mapping ID.
                 let mapping_id = Field::from_bits_be(&next_bits(Field::<N>::size_in_bits())?)?;
-                // Read the index.
-                let index = u64::from_bits_be(&next_bits(64)?)?;
+                // Read the key ID.
+                let key_id = Field::from_bits_be(&next_bits(Field::<N>::size_in_bits())?)?;
                 // Return the finalize operation.
-                Ok(Self::RemoveKeyValue(mapping_id, index))
+                Ok(Self::RemoveKeyValue(mapping_id, key_id))
             }
             4 => {
                 // Read the mapping ID.
@@ -176,25 +173,23 @@ impl<N: Network> ToBits for FinalizeOperation<N> {
                 // Write the value ID.
                 value_id.write_bits_le(vec);
             }
-            Self::UpdateKeyValue(mapping_id, index, key_id, value_id) => {
+            Self::UpdateKeyValue(mapping_id, key_id, value_id) => {
                 // Write the variant.
                 2u8.write_bits_le(vec);
                 // Write the mapping ID.
                 mapping_id.write_bits_le(vec);
-                // Write the index.
-                index.write_bits_le(vec);
                 // Write the key ID.
                 key_id.write_bits_le(vec);
                 // Write the value ID.
                 value_id.write_bits_le(vec);
             }
-            Self::RemoveKeyValue(mapping_id, index) => {
+            Self::RemoveKeyValue(mapping_id, key_id) => {
                 // Write the variant.
                 3u8.write_bits_le(vec);
                 // Write the mapping ID.
                 mapping_id.write_bits_le(vec);
-                // Write the index.
-                index.write_bits_le(vec);
+                // Write the key ID.
+                key_id.write_bits_le(vec);
             }
             Self::ReplaceMapping(mapping_id) => {
                 // Write the variant.
@@ -230,25 +225,23 @@ impl<N: Network> ToBits for FinalizeOperation<N> {
                 // Write the value ID.
                 value_id.write_bits_be(vec);
             }
-            Self::UpdateKeyValue(mapping_id, index, key_id, value_id) => {
+            Self::UpdateKeyValue(mapping_id, key_id, value_id) => {
                 // Write the variant.
                 2u8.write_bits_be(vec);
                 // Write the mapping ID.
                 mapping_id.write_bits_be(vec);
-                // Write the index.
-                index.write_bits_be(vec);
                 // Write the key ID.
                 key_id.write_bits_be(vec);
                 // Write the value ID.
                 value_id.write_bits_be(vec);
             }
-            Self::RemoveKeyValue(mapping_id, index) => {
+            Self::RemoveKeyValue(mapping_id, key_id) => {
                 // Write the variant.
                 3u8.write_bits_be(vec);
                 // Write the mapping ID.
                 mapping_id.write_bits_be(vec);
-                // Write the index.
-                index.write_bits_be(vec);
+                // Write the key ID.
+                key_id.write_bits_be(vec);
             }
             Self::ReplaceMapping(mapping_id) => {
                 // Write the variant.

@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -70,7 +71,7 @@ impl<N: Network> Parser for StructType<N> {
             Ok(members)
         })(string)?;
         // Return the struct.
-        Ok((string, Self { name, members: IndexMap::from_iter(members.into_iter()) }))
+        Ok((string, Self { name, members: IndexMap::from_iter(members) }))
     }
 }
 
@@ -114,21 +115,18 @@ impl<N: Network> Display for StructType<N> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use snarkvm_console_network::Testnet3;
+    use snarkvm_console_network::MainnetV0;
 
-    type CurrentNetwork = Testnet3;
+    type CurrentNetwork = MainnetV0;
 
     #[test]
     fn test_parse() -> Result<()> {
         let expected = StructType::<CurrentNetwork> {
             name: Identifier::from_str("message")?,
-            members: IndexMap::from_iter(
-                vec![
-                    (Identifier::from_str("sender")?, PlaintextType::from_str("address")?),
-                    (Identifier::from_str("amount")?, PlaintextType::from_str("u64")?),
-                ]
-                .into_iter(),
-            ),
+            members: IndexMap::from_iter(vec![
+                (Identifier::from_str("sender")?, PlaintextType::from_str("address")?),
+                (Identifier::from_str("amount")?, PlaintextType::from_str("u64")?),
+            ]),
         };
 
         let (remainder, candidate) = StructType::<CurrentNetwork>::parse(

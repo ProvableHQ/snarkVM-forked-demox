@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -23,6 +24,7 @@ impl<N: Network> FromBytes for Operand<N> {
             3 => Ok(Self::Signer),
             4 => Ok(Self::Caller),
             5 => Ok(Self::BlockHeight),
+            6 => Ok(Self::NetworkID),
             variant => Err(error(format!("Failed to deserialize operand variant {variant}"))),
         }
     }
@@ -46,6 +48,7 @@ impl<N: Network> ToBytes for Operand<N> {
             Self::Signer => 3u8.write_le(&mut writer),
             Self::Caller => 4u8.write_le(&mut writer),
             Self::BlockHeight => 5u8.write_le(&mut writer),
+            Self::NetworkID => 6u8.write_le(&mut writer),
         }
     }
 }

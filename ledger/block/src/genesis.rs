@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -29,7 +30,7 @@ impl<N: Network> Block<N> {
             // Ensure there is the correct number of ratification operations in the genesis block.
             && self.ratifications.len() == 1
             // Ensure there are no solutions in the genesis block.
-            && self.solutions.is_none()
+            && self.solutions.is_empty()
             // Ensure there is the correct number of accepted transaction in the genesis block.
             && self.transactions.num_accepted() == Self::NUM_GENESIS_TRANSACTIONS
             // Ensure there is the correct number of rejected transaction in the genesis block.
@@ -44,9 +45,9 @@ impl<N: Network> Block<N> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use console::network::Testnet3;
+    use console::network::MainnetV0;
 
-    type CurrentNetwork = Testnet3;
+    type CurrentNetwork = MainnetV0;
 
     #[test]
     fn test_genesis() {

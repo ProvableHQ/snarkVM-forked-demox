@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -37,7 +38,7 @@ impl<F: PrimeField> FirstOracles<F> {
 
     /// Iterate over the polynomials output by the prover in the first round.
     pub fn into_iter(self) -> impl Iterator<Item = LabeledPolynomial<F>> {
-        self.batches.into_values().flat_map(|b| b.into_iter()).map(|b| b.0).chain(self.mask_poly.into_iter())
+        self.batches.into_values().flat_map(|b| b.into_iter()).map(|b| b.0).chain(self.mask_poly)
     }
 
     pub fn matches_info(&self, info: &BTreeMap<PolynomialLabel, PolynomialInfo>) -> bool {

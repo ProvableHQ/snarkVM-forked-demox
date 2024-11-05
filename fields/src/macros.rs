@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -44,7 +45,7 @@ macro_rules! impl_primefield_standard_sample {
                 loop {
                     let mut tmp = $field(rng.sample(rand::distributions::Standard), PhantomData);
                     // Mask away the unused bits at the beginning.
-                    tmp.0.as_mut().last_mut().map(|val| *val &= std::u64::MAX >> P::REPR_SHAVE_BITS);
+                    tmp.0.as_mut().last_mut().map(|val| *val &= u64::MAX >> P::REPR_SHAVE_BITS);
 
                     if tmp.is_valid() {
                         return tmp;
@@ -104,12 +105,12 @@ macro_rules! sqrt_impl {
                 let l_minus_one_times_k = n - 1 - k_2;
                 let l_minus_one = l_minus_one_times_k / k;
                 let l = l_minus_one + 1;
-                let mut l_s: Vec<u64> = Vec::with_capacity(k as usize);
-                l_s.resize(l_s.len() + k_1 as usize, l_minus_one);
-                l_s.resize(l_s.len() + k_2 as usize, l);
+
+                let l_s =
+                    || std::iter::repeat(l_minus_one).take(k_1 as usize).chain(std::iter::repeat(l).take(k_2 as usize));
 
                 let mut l_sum = 0;
-                let x_s = l_s.iter().take((k as usize) - 1).map(|l| {
+                let x_s = l_s().take((k as usize) - 1).map(|l| {
                     l_sum += l;
                     x.pow(BigInteger::from(2u64.pow((n - 1 - l_sum) as u32)))
                 });
@@ -140,20 +141,16 @@ macro_rules! sqrt_impl {
                     s
                 };
 
-                let calculate_kappa = |i: usize, j: usize, l_s: &[u64]| -> u64 {
-                    l_s.iter().take(j).sum::<u64>() + 1 + l_s.iter().skip(i + 1).sum::<u64>()
-                };
-
                 let calculate_gamma = |i: usize, q_s: &[u64], last: bool| -> $Self {
                     let mut gamma = $Self::one();
                     if i != 0 {
-                        q_s.iter().zip(l_s.iter()).enumerate().for_each(|(j, (q, l))| {
-                            let mut kappa = calculate_kappa(i, j, &l_s);
+                        q_s.iter().zip(l_s()).enumerate().for_each(|(j, (q, l))| {
+                            let mut kappa = l_s().take(j).sum::<u64>() + 1 + l_s().skip(i + 1).sum::<u64>();
                             if last {
                                 kappa -= 1;
                             }
                             let mut value = *q;
-                            (0..*l as usize).for_each(|k| {
+                            (0..l as usize).for_each(|k| {
                                 let bit = value & 1 == 1;
                                 if bit {
                                     gamma *= $Self($P::POWERS_OF_ROOTS_OF_UNITY[(kappa as usize) + k], PhantomData);
@@ -196,7 +193,7 @@ macro_rules! impl_primefield_serializer {
                 mut writer: W,
                 flags: F,
             ) -> Result<(), snarkvm_utilities::serialize::SerializationError> {
-                use snarkvm_utilities::serialize::{number_of_bits_and_bytes, SerializationError};
+                use snarkvm_utilities::serialize::{SerializationError, number_of_bits_and_bytes};
                 // All reasonable `Flags` should be less than 8 bits in size
                 // (256 values are enough for anyone!)
                 if F::BIT_SIZE > 8 {

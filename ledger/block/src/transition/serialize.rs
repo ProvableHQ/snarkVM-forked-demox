@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -19,7 +20,7 @@ impl<N: Network> Serialize for Transition<N> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match serializer.is_human_readable() {
             true => {
-                let mut transition = serializer.serialize_struct("Transition", 7)?;
+                let mut transition = serializer.serialize_struct("Transition", 8)?;
                 transition.serialize_field("id", &self.id)?;
                 transition.serialize_field("program", &self.program_id)?;
                 transition.serialize_field("function", &self.function_name)?;
@@ -27,6 +28,7 @@ impl<N: Network> Serialize for Transition<N> {
                 transition.serialize_field("outputs", &self.outputs)?;
                 transition.serialize_field("tpk", &self.tpk)?;
                 transition.serialize_field("tcm", &self.tcm)?;
+                transition.serialize_field("scm", &self.scm)?;
                 transition.end()
             }
             false => ToBytesSerializer::serialize_with_size_encoding(self, serializer),
@@ -58,13 +60,15 @@ impl<'de, N: Network> Deserialize<'de> for Transition<N> {
                     DeserializeExt::take_from_value::<D>(&mut transition, "tpk")?,
                     // Retrieve the `tcm`.
                     DeserializeExt::take_from_value::<D>(&mut transition, "tcm")?,
+                    // Retrieve the `scm`.
+                    DeserializeExt::take_from_value::<D>(&mut transition, "scm")?,
                 )
                 .map_err(de::Error::custom)?;
 
                 // Ensure the transition ID is correct.
                 match id == *transition.id() {
                     true => Ok(transition),
-                    false => Err(error("Transition ID mismatch, possible data corruption")).map_err(de::Error::custom),
+                    false => Err(de::Error::custom(error("Transition ID mismatch, possible data corruption"))),
                 }
             }
             false => FromBytesDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "transition"),

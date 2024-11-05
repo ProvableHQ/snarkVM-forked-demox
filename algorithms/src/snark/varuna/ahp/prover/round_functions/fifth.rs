@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -18,9 +19,9 @@ use crate::{
     fft::DensePolynomial,
     polycommit::sonic_pc::{LabeledPolynomial, PolynomialInfo, PolynomialLabel},
     snark::varuna::{
-        ahp::{verifier, AHPError, AHPForR1CS},
-        prover,
         SNARKMode,
+        ahp::{AHPError, AHPForR1CS, verifier},
+        prover,
     },
 };
 use snarkvm_fields::PrimeField;
@@ -44,6 +45,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         state: prover::State<'_, F, SM>,
         _r: &mut R,
     ) -> Result<prover::FifthOracles<F>, AHPError> {
+        let round_time = start_timer!(|| "AHP::Prover::FifthRound");
+
         let lhs_sum: DensePolynomial<F> = cfg_reduce!(
             cfg_par_bridge!(verifier_message.into_iter().zip_eq(state.lhs_polys_into_iter())).map(
                 |(delta, mut lhs)| {
@@ -62,6 +65,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let h_2 = LabeledPolynomial::new("h_2", lhs_sum, None, None);
         let oracles = prover::FifthOracles { h_2 };
         assert!(oracles.matches_info(&Self::fifth_round_polynomial_info()));
+
+        end_timer!(round_time);
         Ok(oracles)
     }
 

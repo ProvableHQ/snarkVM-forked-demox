@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -41,8 +42,24 @@ impl<N: Network> FromBytes for Ratify<N> {
                     // Insert the public balance.
                     public_balances.insert(address, amount);
                 }
+                // Read the number of bonded balances.
+                let num_bonded_balances: u16 = FromBytes::read_le(&mut reader)?;
+                // Read the bonded balances.
+                let mut bonded_balances = BondedBalances::with_capacity(num_bonded_balances as usize);
+                for _ in 0..num_bonded_balances {
+                    // Read the address.
+                    let address: Address<N> = FromBytes::read_le(&mut reader)?;
+                    // Read the validator address.
+                    let validator_address: Address<N> = FromBytes::read_le(&mut reader)?;
+                    // Read the withdrawal address.
+                    let withdrawal_address: Address<N> = FromBytes::read_le(&mut reader)?;
+                    // Read the amount.
+                    let amount: u64 = FromBytes::read_le(&mut reader)?;
+                    // Insert the bonded balance.
+                    bonded_balances.insert(address, (validator_address, withdrawal_address, amount));
+                }
                 // Return the ratify object.
-                Self::Genesis(committee, public_balances)
+                Self::Genesis(Box::new(committee), Box::new(public_balances), Box::new(bonded_balances))
             }
             1 => {
                 // Read the amount.
@@ -69,12 +86,19 @@ impl<N: Network> ToBytes for Ratify<N> {
         1u8.write_le(&mut writer)?;
 
         match self {
-            Self::Genesis(committee, public_balances) => {
+            Self::Genesis(committee, public_balances, bonded_balances) => {
                 (0 as Variant).write_le(&mut writer)?;
                 committee.write_le(&mut writer)?;
                 u16::try_from(public_balances.len()).map_err(|e| error(e.to_string()))?.write_le(&mut writer)?;
-                for (address, amount) in public_balances {
+                for (address, amount) in public_balances.iter() {
                     address.write_le(&mut writer)?;
+                    amount.write_le(&mut writer)?;
+                }
+                u16::try_from(bonded_balances.len()).map_err(|e| error(e.to_string()))?.write_le(&mut writer)?;
+                for (address, (validator_address, withdrawal_address, amount)) in bonded_balances.iter() {
+                    address.write_le(&mut writer)?;
+                    validator_address.write_le(&mut writer)?;
+                    withdrawal_address.write_le(&mut writer)?;
                     amount.write_le(&mut writer)?;
                 }
                 Ok(())

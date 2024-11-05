@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -65,17 +66,17 @@ impl<N: Network> Package<N> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use snarkvm_console::network::Testnet3;
+    use snarkvm_console::network::MainnetV0;
     use std::{fs::File, io::Write};
 
-    type CurrentNetwork = Testnet3;
+    type CurrentNetwork = MainnetV0;
     type Aleo = crate::circuit::AleoV0;
 
     fn temp_dir() -> PathBuf {
         tempfile::tempdir().expect("Failed to open temporary directory").into_path()
     }
 
-    fn initialize_unbuilt_package(valid: bool) -> Result<Package<Testnet3>> {
+    fn initialize_unbuilt_package(valid: bool) -> Result<Package<MainnetV0>> {
         // Initialize a temporary directory.
         let directory = temp_dir();
 
@@ -99,7 +100,7 @@ mod tests {
         std::fs::create_dir_all(build_directory).unwrap();
 
         // Open the package at the temporary directory.
-        Package::<Testnet3>::open(&directory)
+        Package::<MainnetV0>::open(&directory)
     }
 
     fn program_with_id(id: &str) -> String {

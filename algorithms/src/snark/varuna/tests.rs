@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -16,22 +17,23 @@
 mod varuna {
     use crate::{
         snark::varuna::{
-            mode::SNARKMode,
-            test_circuit::TestCircuit,
             AHPForR1CS,
             CircuitVerifyingKey,
             VarunaHidingMode,
             VarunaNonHidingMode,
             VarunaSNARK,
+            mode::SNARKMode,
+            test_circuit::TestCircuit,
         },
         traits::{AlgebraicSponge, SNARK},
     };
+
     use std::collections::BTreeMap;
 
     use snarkvm_curves::bls12_377::{Bls12_377, Fq, Fr};
     use snarkvm_utilities::{
-        rand::{TestRng, Uniform},
         ToBytes,
+        rand::{TestRng, Uniform},
     };
 
     type FS = crate::crypto_hash::PoseidonSponge<Fq, 2, 1>;
@@ -57,6 +59,8 @@ mod varuna {
                         let mul_depth = 1;
                         println!("running test with SM::ZK: {}, mul_depth: {}, num_constraints: {}, num_variables: {}", $snark_mode::ZK, mul_depth + i, num_constraints + i, num_variables + i);
                         let (circ, public_inputs) = TestCircuit::gen_rand(mul_depth + i, num_constraints + i, num_variables + i, rng);
+                        let mut fake_inputs = public_inputs.clone();
+                        fake_inputs[public_inputs.len() - 1] = random;
 
                         let (index_pk, index_vk) = $snark_inst::circuit_setup(&universal_srs, &circ).unwrap();
                         println!("Called circuit setup");
@@ -76,7 +80,7 @@ mod varuna {
                         assert!($snark_inst::verify(universal_verifier, &fs_parameters, &index_vk, public_inputs, &proof).unwrap());
                         println!("Called verifier");
                         eprintln!("\nShould not verify (i.e. verifier messages should print below):");
-                        assert!(!$snark_inst::verify(universal_verifier, &fs_parameters, &index_vk, [random, random], &proof).unwrap());
+                        assert!(!$snark_inst::verify(universal_verifier, &fs_parameters, &index_vk, fake_inputs, &proof).unwrap());
                     }
 
                     for circuit_batch_size in (0..4).map(|i| 2usize.pow(i)) {
@@ -129,7 +133,8 @@ mod varuna {
                             for instance_input in vks_to_inputs.values() {
                                 let mut fake_instance_input = Vec::with_capacity(instance_input.len());
                                 for input in instance_input.iter() {
-                                    let fake_input: Vec<_> = (0..input.len()).map(|_| Fr::rand(rng)).collect();
+                                    let mut fake_input = input.clone();
+                                    fake_input[input.len() - 1] = Fr::rand(rng);
                                     fake_instance_input.push(fake_input);
                                 }
                                 fake_instance_inputs.push(fake_instance_input);
@@ -300,19 +305,19 @@ mod varuna_hiding {
     use crate::{
         crypto_hash::PoseidonSponge,
         snark::varuna::{
-            ahp::AHPForR1CS,
-            test_circuit::TestCircuit,
             CircuitVerifyingKey,
             VarunaHidingMode,
             VarunaSNARK,
+            ahp::AHPForR1CS,
+            test_circuit::TestCircuit,
         },
         traits::{AlgebraicSponge, SNARK},
     };
     use snarkvm_curves::bls12_377::{Bls12_377, Fq, Fr};
     use snarkvm_utilities::{
-        rand::{TestRng, Uniform},
         FromBytes,
         ToBytes,
+        rand::{TestRng, Uniform},
     };
 
     use std::str::FromStr;
@@ -332,6 +337,8 @@ mod varuna_hiding {
         for _ in 0..num_times {
             let mul_depth = 2;
             let (circuit, public_inputs) = TestCircuit::gen_rand(mul_depth, num_constraints, num_variables, rng);
+            let mut fake_inputs = public_inputs.clone();
+            fake_inputs[public_inputs.len() - 1] = Fr::rand(rng);
 
             let (index_pk, index_vk) = VarunaInst::circuit_setup(&universal_srs, &circuit).unwrap();
             println!("Called circuit setup");
@@ -342,16 +349,7 @@ mod varuna_hiding {
             assert!(VarunaInst::verify(universal_verifier, &fs_parameters, &index_vk, public_inputs, &proof).unwrap());
             println!("Called verifier");
             eprintln!("\nShould not verify (i.e. verifier messages should print below):");
-            assert!(
-                !VarunaInst::verify(
-                    universal_verifier,
-                    &fs_parameters,
-                    &index_vk,
-                    [Fr::rand(rng), Fr::rand(rng)],
-                    &proof
-                )
-                .unwrap()
-            );
+            assert!(!VarunaInst::verify(universal_verifier, &fs_parameters, &index_vk, fake_inputs, &proof).unwrap());
         }
     }
 
@@ -535,7 +533,7 @@ mod varuna_hiding {
 mod varuna_test_vectors {
     use crate::{
         fft::EvaluationDomain,
-        snark::varuna::{ahp::verifier, AHPForR1CS, TestCircuit, VarunaNonHidingMode, VarunaSNARK},
+        snark::varuna::{AHPForR1CS, TestCircuit, VarunaNonHidingMode, VarunaSNARK, ahp::verifier},
         traits::snark::SNARK,
     };
     use snarkvm_curves::bls12_377::{Bls12_377, Fq, Fr};
@@ -743,7 +741,8 @@ mod varuna_test_vectors {
         let non_zero_a_domain = EvaluationDomain::<Fr>::new(index_pk.circuit.index_info.num_non_zero_a).unwrap();
         let non_zero_b_domain = EvaluationDomain::<Fr>::new(index_pk.circuit.index_info.num_non_zero_b).unwrap();
         let non_zero_c_domain = EvaluationDomain::<Fr>::new(index_pk.circuit.index_info.num_non_zero_c).unwrap();
-        let variable_domain = EvaluationDomain::<Fr>::new(index_pk.circuit.index_info.num_variables).unwrap();
+        let variable_domain =
+            EvaluationDomain::<Fr>::new(index_pk.circuit.index_info.num_public_and_private_variables).unwrap();
         let constraint_domain = EvaluationDomain::<Fr>::new(index_pk.circuit.index_info.num_constraints).unwrap();
         let input_domain = EvaluationDomain::<Fr>::new(index_pk.circuit.index_info.num_public_inputs).unwrap();
 

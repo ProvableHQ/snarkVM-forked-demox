@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -115,6 +116,10 @@ impl<N: Network> StackExecute<N> for Stack<N> {
                     Operand::BlockHeight => {
                         bail!("Illegal operation: cannot retrieve the block height in a closure scope")
                     }
+                    // If the operand is the network id, throw an error.
+                    Operand::NetworkID => {
+                        bail!("Illegal operation: cannot retrieve the network id in a closure scope")
+                    }
                 }
             })
             .collect();
@@ -135,12 +140,22 @@ impl<N: Network> StackExecute<N> for Stack<N> {
         &self,
         mut call_stack: CallStack<N>,
         console_caller: Option<ProgramID<N>>,
+        root_tvk: Option<Field<N>>,
         rng: &mut R,
     ) -> Result<Response<N>> {
         let timer = timer!("Stack::execute_function");
 
+        // Ensure the global constants for the Aleo environment are initialized.
+        A::initialize_global_constants();
         // Ensure the circuit environment is clean.
         A::reset();
+
+        // If in 'CheckDeployment' mode, set the constraint limit and variable limit.
+        // We do not have to reset it after function calls because `CheckDeployment` mode does not execute those.
+        if let CallStack::CheckDeployment(_, _, _, constraint_limit, variable_limit) = &call_stack {
+            A::set_constraint_limit(*constraint_limit);
+            A::set_variable_limit(*variable_limit);
+        }
 
         // Retrieve the next request.
         let console_request = call_stack.pop()?;
@@ -153,6 +168,8 @@ impl<N: Network> StackExecute<N> for Stack<N> {
             console_request.network_id()
         );
 
+        // We can only have a root_tvk if this request was called by another request
+        ensure!(console_caller.is_some() == root_tvk.is_some());
         // Determine if this is the top-level caller.
         let console_is_root = console_caller.is_none();
 
@@ -188,11 +205,23 @@ impl<N: Network> StackExecute<N> for Stack<N> {
         lap!(timer, "Verify the input types");
 
         // Ensure the request is well-formed.
-        ensure!(console_request.verify(&input_types), "Request is invalid");
+        ensure!(console_request.verify(&input_types, console_is_root), "Request is invalid");
         lap!(timer, "Verify the console request");
 
         // Initialize the registers.
         let mut registers = Registers::new(call_stack, self.get_register_types(function.name())?.clone());
+
+        // Set the root tvk, from a parent request or the current request.
+        // inject the `root_tvk` as `Mode::Private`.
+        if let Some(root_tvk) = root_tvk {
+            registers.set_root_tvk(root_tvk);
+            registers.set_root_tvk_circuit(circuit::Field::<A>::new(circuit::Mode::Private, root_tvk));
+        } else {
+            registers.set_root_tvk(*console_request.tvk());
+            registers.set_root_tvk_circuit(circuit::Field::<A>::new(circuit::Mode::Private, *console_request.tvk()));
+        }
+
+        let root_tvk = Some(registers.root_tvk_circuit()?);
 
         use circuit::{Eject, Inject};
 
@@ -209,7 +238,7 @@ impl<N: Network> StackExecute<N> for Stack<N> {
         let caller = Ternary::ternary(&is_root, request.signer(), &parent);
 
         // Ensure the request has a valid signature, inputs, and transition view key.
-        A::assert(request.verify(&input_types, &tpk));
+        A::assert(request.verify(&input_types, &tpk, root_tvk, is_root));
         lap!(timer, "Verify the circuit request");
 
         // Set the transition signer.
@@ -322,6 +351,10 @@ impl<N: Network> StackExecute<N> for Stack<N> {
                     Operand::BlockHeight => {
                         bail!("Illegal operation: cannot retrieve the block height in a function scope")
                     }
+                    // If the operand is the network id, throw an error.
+                    Operand::NetworkID => {
+                        bail!("Illegal operation: cannot retrieve the network id in a function scope")
+                    }
                 }
             })
             .collect::<Result<Vec<_>>>()?;
@@ -397,9 +430,7 @@ impl<N: Network> StackExecute<N> for Stack<N> {
         let assignment = A::eject_assignment_and_reset();
 
         // If the circuit is in `Synthesize` or `Execute` mode, synthesize the circuit key, if it does not exist.
-        if matches!(registers.call_stack(), CallStack::Synthesize(..))
-            || matches!(registers.call_stack(), CallStack::Execute(..))
-        {
+        if matches!(registers.call_stack(), CallStack::Synthesize(..) | CallStack::Execute(..)) {
             // If the proving key does not exist, then synthesize it.
             if !self.contains_proving_key(function.name()) {
                 // Add the circuit key to the mapping.
@@ -416,7 +447,7 @@ impl<N: Network> StackExecute<N> for Stack<N> {
             lap!(timer, "Save the transition");
         }
         // If the circuit is in `CheckDeployment` mode, then save the assignment.
-        else if let CallStack::CheckDeployment(_, _, ref assignments) = registers.call_stack() {
+        else if let CallStack::CheckDeployment(_, _, ref assignments, _, _) = registers.call_stack() {
             // Construct the call metrics.
             let metrics = CallMetrics {
                 program_id: *self.program_id(),

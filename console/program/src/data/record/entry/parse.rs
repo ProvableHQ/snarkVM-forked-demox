@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -95,7 +96,7 @@ impl<N: Network> Parser for Entry<N, Plaintext<N>> {
             // Parse the '}' from the string.
             let (string, _) = tag("}")(string)?;
             // Output the plaintext and visibility.
-            Ok((string, (Plaintext::Struct(IndexMap::from_iter(members.into_iter()), Default::default()), mode)))
+            Ok((string, (Plaintext::Struct(IndexMap::from_iter(members), Default::default()), mode)))
         }
 
         /// Parses an entry as an array: `[plaintext_0.visibility, ..., plaintext_n.visibility]`.
@@ -288,9 +289,9 @@ impl<N: Network> Entry<N, Plaintext<N>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use snarkvm_console_network::Testnet3;
+    use snarkvm_console_network::MainnetV0;
 
-    type CurrentNetwork = Testnet3;
+    type CurrentNetwork = MainnetV0;
 
     #[test]
     fn test_parse() -> Result<()> {

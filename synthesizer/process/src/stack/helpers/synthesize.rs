@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -49,16 +50,32 @@ impl<N: Network> Stack<N> {
                 _ => self.sample_value(&burner_address, input_type, rng),
             })
             .collect::<Result<Vec<_>>>()?;
+        // Sample 'is_root'.
+        let is_root = true;
+
+        // The `root_tvk` is `None` when deploying an individual circuit.
+        let root_tvk = None;
+
+        // The caller is `None` when deploying an individual circuit.
+        let caller = None;
 
         // Compute the request, with a burner private key.
-        let request =
-            Request::sign(&burner_private_key, *program_id, *function_name, inputs.into_iter(), &input_types, rng)?;
+        let request = Request::sign(
+            &burner_private_key,
+            *program_id,
+            *function_name,
+            inputs.into_iter(),
+            &input_types,
+            root_tvk,
+            is_root,
+            rng,
+        )?;
         // Initialize the authorization.
         let authorization = Authorization::new(request.clone());
         // Initialize the call stack.
         let call_stack = CallStack::Synthesize(vec![request], burner_private_key, authorization);
         // Synthesize the circuit.
-        let _response = self.execute_function::<A, R>(call_stack, None, rng)?;
+        let _response = self.execute_function::<A, R>(call_stack, caller, root_tvk, rng)?;
 
         // Ensure the proving key exists.
         ensure!(self.contains_proving_key(function_name), "Function '{function_name}' is missing a proving key.");

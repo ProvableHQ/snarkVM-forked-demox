@@ -1,10 +1,10 @@
 [package]
 name = "snarkvm-metrics"
-version = "0.16.15"
+version = "1.0.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Metrics for a decentralized virtual machine"
 homepage = "https://aleo.org"
-repository = "https://github.com/AleoHQ/snarkVM"
+repository = "https://github.com/AleoNet/snarkVM"
 keywords = [
   "aleo",
   "cryptography",
@@ -24,7 +24,7 @@ license = "Apache-2.0"
 edition = "2021"
 
 [dependencies.metrics]
-version = "0.21"
+version = "0.22"
 
 [dependencies.metrics-exporter-prometheus]
-version = "0.12"
+version = "0.13"

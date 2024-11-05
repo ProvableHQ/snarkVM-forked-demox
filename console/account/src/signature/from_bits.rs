@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -71,9 +72,9 @@ impl<N: Network> FromBits for Signature<N> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use snarkvm_console_network::Testnet3;
+    use snarkvm_console_network::MainnetV0;
 
-    type CurrentNetwork = Testnet3;
+    type CurrentNetwork = MainnetV0;
 
     const ITERATIONS: usize = 100;
 
@@ -91,7 +92,7 @@ mod tests {
             assert_eq!(expected, candidate);
 
             // Add excess zero bits.
-            let candidate = vec![given_bits, vec![false; i]].concat();
+            let candidate = [given_bits, vec![false; i]].concat();
 
             let candidate = Signature::<CurrentNetwork>::from_bits_le(&candidate)?;
             assert_eq!(expected, candidate);
@@ -114,7 +115,7 @@ mod tests {
             assert_eq!(expected, candidate);
 
             // Add excess zero bits.
-            let candidate = vec![given_bits, vec![false; i]].concat();
+            let candidate = [given_bits, vec![false; i]].concat();
 
             let candidate = Signature::<CurrentNetwork>::from_bits_be(&candidate)?;
             assert_eq!(expected, candidate);

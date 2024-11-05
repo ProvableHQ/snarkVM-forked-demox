@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -308,15 +309,16 @@ impl<N: Network> Trace<N> {
         let batch_inclusion_inputs = Inclusion::prepare_verifier_inputs(global_state_root, transitions)?;
         // Insert the batch of inclusion verifier inputs to the verifier inputs.
         if !batch_inclusion_inputs.is_empty() {
-            // Fetch the inclusion verifying key.
-            let verifying_key = VerifyingKey::<N>::new(N::inclusion_verifying_key().clone());
+            // Retrieve the inclusion verifying key.
+            let verifying_key = N::inclusion_verifying_key().clone();
+            // Retrieve the number of public and private variables.
+            // Note: This number does *NOT* include the number of constants. This is safe because
+            // this program is never deployed, as it is a first-class citizen of the protocol.
+            let num_variables = verifying_key.circuit_info.num_public_and_private_variables as u64;
             // Insert the inclusion verifier inputs.
-            verifier_inputs.push((verifying_key, batch_inclusion_inputs));
+            verifier_inputs.push((VerifyingKey::<N>::new(verifying_key, num_variables), batch_inclusion_inputs));
         }
         // Verify the proof.
-        match VerifyingKey::verify_batch(locator, verifier_inputs, proof) {
-            true => Ok(()),
-            false => bail!("Failed to verify proof"),
-        }
+        VerifyingKey::verify_batch(locator, verifier_inputs, proof).map_err(|e| anyhow!("Failed to verify proof - {e}"))
     }
 }

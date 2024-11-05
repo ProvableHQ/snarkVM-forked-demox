@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -12,12 +13,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{CallStack, Registers, RegistersCall, StackEvaluate, StackExecute};
+use crate::{CallStack, Registers, RegistersCall, StackEvaluate, StackExecute, stack::Address};
 use aleo_std::prelude::{finish, lap, timer};
-use console::{network::prelude::*, program::Request};
+use console::{
+    account::Field,
+    network::prelude::*,
+    program::{Register, Request, Value, ValueType},
+};
 use synthesizer_program::{
     Call,
     CallOperator,
+    Operand,
     RegistersLoad,
     RegistersLoadCircuit,
     RegistersSigner,
@@ -42,6 +48,7 @@ pub trait CallTrait<N: Network> {
         stack: &(impl StackEvaluate<N> + StackExecute<N> + StackMatches<N> + StackProgram<N>),
         registers: &mut (
                  impl RegistersCall<N>
+                 + RegistersSigner<N>
                  + RegistersSignerCircuit<N, A>
                  + RegistersLoadCircuit<N, A>
                  + RegistersStoreCircuit<N, A>
@@ -61,8 +68,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
         let timer = timer!("Call::evaluate");
 
         // Load the operands values.
-        let inputs: Vec<_> =
-            self.operands().iter().map(|operand| registers.load(stack.deref(), operand)).try_collect()?;
+        let inputs: Vec<_> = self.operands().iter().map(|operand| registers.load(stack, operand)).try_collect()?;
 
         // Retrieve the substack and resource.
         let (substack, resource) = match self.operator() {
@@ -135,6 +141,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
         stack: &(impl StackEvaluate<N> + StackExecute<N> + StackMatches<N> + StackProgram<N>),
         registers: &mut (
                  impl RegistersCall<N>
+                 + RegistersSigner<N>
                  + RegistersSignerCircuit<N, A>
                  + RegistersLoadCircuit<N, A>
                  + RegistersStoreCircuit<N, A>
@@ -177,6 +184,9 @@ impl<N: Network> CallTrait<N> for Call<N> {
         };
         lap!(timer, "Retrieve the substack and resource");
 
+        // If we are not handling the root request, retrieve the root request's tvk
+        let root_tvk = registers.root_tvk().ok();
+
         // If the operator is a closure, retrieve the closure and compute the output.
         let outputs = if let Ok(closure) = substack.program().get_closure(resource) {
             lap!(timer, "Execute the closure");
@@ -203,6 +213,9 @@ impl<N: Network> CallTrait<N> for Call<N> {
             // Retrieve the number of public variables in the circuit.
             let num_public = A::num_public();
 
+            // Indicate that external calls are never a root request.
+            let is_root = false;
+
             use circuit::Eject;
             // Eject the existing circuit.
             let r1cs = A::eject_r1cs_and_reset();
@@ -224,6 +237,8 @@ impl<N: Network> CallTrait<N> for Call<N> {
                             *function.name(),
                             inputs.iter(),
                             &function.input_types(),
+                            root_tvk,
+                            is_root,
                             rng,
                         )?;
 
@@ -236,12 +251,12 @@ impl<N: Network> CallTrait<N> for Call<N> {
                         authorization.push(request.clone());
 
                         // Execute the request.
-                        let response = substack.execute_function::<A, R>(call_stack, console_caller, rng)?;
+                        let response = substack.execute_function::<A, R>(call_stack, console_caller, root_tvk, rng)?;
 
                         // Return the request and response.
                         (request, response)
                     }
-                    CallStack::CheckDeployment(_, private_key, ..) | CallStack::PackageRun(_, private_key, ..) => {
+                    CallStack::PackageRun(_, private_key, ..) => {
                         // Compute the request.
                         let request = Request::sign(
                             &private_key,
@@ -249,6 +264,8 @@ impl<N: Network> CallTrait<N> for Call<N> {
                             *function.name(),
                             inputs.iter(),
                             &function.input_types(),
+                            root_tvk,
+                            is_root,
                             rng,
                         )?;
 
@@ -257,8 +274,75 @@ impl<N: Network> CallTrait<N> for Call<N> {
                         // Push the request onto the call stack.
                         call_stack.push(request.clone())?;
 
-                        // Execute the request.
-                        let response = substack.execute_function::<A, R>(call_stack, console_caller, rng)?;
+                        // Evaluate the request.
+                        let response = substack.execute_function::<A, _>(call_stack, console_caller, root_tvk, rng)?;
+
+                        // Return the request and response.
+                        (request, response)
+                    }
+                    CallStack::CheckDeployment(_, private_key, ..) => {
+                        // Compute the request.
+                        let request = Request::sign(
+                            &private_key,
+                            *substack.program_id(),
+                            *function.name(),
+                            inputs.iter(),
+                            &function.input_types(),
+                            root_tvk,
+                            is_root,
+                            rng,
+                        )?;
+
+                        // Compute the address.
+                        let address = Address::try_from(&private_key)?;
+                        // Sample dummy outputs
+                        let outputs = function
+                            .outputs()
+                            .iter()
+                            .map(|output| match output.value_type() {
+                                ValueType::Record(record_name) => {
+                                    // Get the register index containing the record.
+                                    let index = match output.operand() {
+                                        Operand::Register(Register::Locator(index)) => Field::from_u64(*index),
+                                        _ => bail!("Expected a `Register::Locator` operand for a record output."),
+                                    };
+                                    // Compute the encryption randomizer as `HashToScalar(tvk || index)`.
+                                    let randomizer = N::hash_to_scalar_psd2(&[*request.tvk(), index])?;
+                                    // Construct the record nonce.
+                                    let record_nonce = N::g_scalar_multiply(&randomizer);
+                                    Ok(Value::Record(substack.sample_record(
+                                        &address,
+                                        record_name,
+                                        record_nonce,
+                                        rng,
+                                    )?))
+                                }
+                                _ => substack.sample_value(&address, output.value_type(), rng),
+                            })
+                            .collect::<Result<Vec<_>>>()?;
+                        // Map the output operands to registers.
+                        let output_registers = function
+                            .outputs()
+                            .iter()
+                            .map(|output| match output.operand() {
+                                Operand::Register(register) => Some(register.clone()),
+                                _ => None,
+                            })
+                            .collect::<Vec<_>>();
+
+                        // Compute the response.
+                        let response = crate::Response::new(
+                            request.network_id(),
+                            substack.program().id(),
+                            function.name(),
+                            request.inputs().len(),
+                            request.tvk(),
+                            request.tcm(),
+                            outputs,
+                            &function.output_types(),
+                            &output_registers,
+                        )?;
+
                         // Return the request and response.
                         (request, response)
                     }
@@ -281,7 +365,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                             substack.evaluate_function::<A>(registers.call_stack().replicate(), console_caller)?;
                         // Execute the request.
                         let response =
-                            substack.execute_function::<A, R>(registers.call_stack(), console_caller, rng)?;
+                            substack.execute_function::<A, R>(registers.call_stack(), console_caller, root_tvk, rng)?;
                         // Ensure the values are equal.
                         if console_response.outputs() != response.outputs() {
                             #[cfg(debug_assertions)]
@@ -321,7 +405,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
             // Compute the transition commitment as `Hash(tvk)`.
             let candidate_tcm = A::hash_psd2(&[tvk.clone()]);
             // Ensure the transition commitment matches the computed transition commitment.
-            A::assert_eq(&tcm, &candidate_tcm);
+            A::assert_eq(&tcm, candidate_tcm);
             // Inject the input IDs (from the request) as `Mode::Public`.
             let input_ids = request
                 .input_ids()

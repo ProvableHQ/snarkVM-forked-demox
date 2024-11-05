@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -15,13 +16,13 @@
 #[macro_use]
 extern crate criterion;
 
-use circuit::{collections::kary_merkle_tree::*, AleoV0, Eject, Environment, Inject, Mode};
+use circuit::{AleoV0, Eject, Environment, Inject, Mode, collections::kary_merkle_tree::*};
 use console::{
     algorithms::Sha3_256,
     collections::kary_merkle_tree::KaryMerkleTree,
     network::{
+        MainnetV0,
         prelude::{TestRng, ToBits, Uniform},
-        Testnet3,
     },
     types::Field,
 };
@@ -29,7 +30,7 @@ use synthesizer_snark::{ProvingKey, UniversalSRS};
 
 use criterion::Criterion;
 
-type CurrentNetwork = Testnet3;
+type CurrentNetwork = MainnetV0;
 type CurrentAleo = AleoV0;
 
 type NativePathHasher = Sha3_256;
@@ -42,7 +43,7 @@ const ARITY: u8 = 8;
 
 /// Generates the specified number of random Merkle tree leaves.
 macro_rules! generate_leaves {
-    ($num_leaves:expr, $rng:expr) => {{ (0..$num_leaves).map(|_| Field::<Testnet3>::rand($rng).to_bits_le()).collect::<Vec<_>>() }};
+    ($num_leaves:expr, $rng:expr) => {{ (0..$num_leaves).map(|_| Field::<MainnetV0>::rand($rng).to_bits_le()).collect::<Vec<_>>() }};
 }
 
 fn batch_prove(c: &mut Criterion) {
@@ -74,14 +75,12 @@ fn batch_prove(c: &mut Criterion) {
     CurrentAleo::reset();
 
     // Initialize the Merkle path circuit.
-    let path = KaryMerklePath::<CurrentAleo, circuit::Sha3_256<CurrentAleo>, DEPTH, ARITY>::new(
-        Mode::Private,
-        merkle_path.clone(),
-    );
+    let path =
+        KaryMerklePath::<CurrentAleo, circuit::Sha3_256<CurrentAleo>, DEPTH, ARITY>::new(Mode::Private, merkle_path);
     // Initialize the Merkle root.
     let root = <CircuitPathHasher as PathHash<CurrentAleo>>::Hash::new(Mode::Private, *merkle_tree.root());
     // Initialize the Merkle leaf.
-    let leaf: Vec<_> = Inject::new(Mode::Private, merkle_leaf.clone());
+    let leaf: Vec<_> = Inject::new(Mode::Private, merkle_leaf);
 
     // Verify the merkle path.
     let candidate = path.verify(&circuit_leaf_hasher, &circuit_path_hasher, &root, &leaf);

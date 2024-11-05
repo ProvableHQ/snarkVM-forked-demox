@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -48,8 +49,22 @@ impl<N: Network> FromBytes for Request<N> {
         let tvk = FromBytes::read_le(&mut reader)?;
         // Read the transition commitment.
         let tcm = FromBytes::read_le(&mut reader)?;
+        // Read the signer commitment.
+        let scm = FromBytes::read_le(&mut reader)?;
 
-        Ok(Self::from((signer, network_id, program_id, function_name, input_ids, inputs, signature, sk_tag, tvk, tcm)))
+        Ok(Self::from((
+            signer,
+            network_id,
+            program_id,
+            function_name,
+            input_ids,
+            inputs,
+            signature,
+            sk_tag,
+            tvk,
+            tcm,
+            scm,
+        )))
     }
 }
 
@@ -93,7 +108,9 @@ impl<N: Network> ToBytes for Request<N> {
         // Write the transition view key.
         self.tvk.write_le(&mut writer)?;
         // Write the transition commitment.
-        self.tcm.write_le(&mut writer)
+        self.tcm.write_le(&mut writer)?;
+        // Write the signer commitment.
+        self.scm.write_le(&mut writer)
     }
 }
 

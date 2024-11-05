@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -19,16 +20,14 @@ impl<N: Network> Serialize for BatchHeader<N> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match serializer.is_human_readable() {
             true => {
-                let mut header = serializer.serialize_struct("BatchHeader", 9)?;
-                // TODO (howardwu): For mainnet - Remove the version field, and update the 'len' above to 8.
-                header.serialize_field("version", &self.version)?;
+                let mut header = serializer.serialize_struct("BatchHeader", 8)?;
                 header.serialize_field("batch_id", &self.batch_id)?;
                 header.serialize_field("author", &self.author)?;
                 header.serialize_field("round", &self.round)?;
                 header.serialize_field("timestamp", &self.timestamp)?;
+                header.serialize_field("committee_id", &self.committee_id)?;
                 header.serialize_field("transmission_ids", &self.transmission_ids)?;
                 header.serialize_field("previous_certificate_ids", &self.previous_certificate_ids)?;
-                header.serialize_field("last_election_certificate_ids", &self.last_election_certificate_ids)?;
                 header.serialize_field("signature", &self.signature)?;
                 header.end()
             }
@@ -45,31 +44,14 @@ impl<'de, N: Network> Deserialize<'de> for BatchHeader<N> {
                 let mut header = serde_json::Value::deserialize(deserializer)?;
                 let batch_id: Field<N> = DeserializeExt::take_from_value::<D>(&mut header, "batch_id")?;
 
-                // TODO (howardwu): For mainnet - Remove the version parsing.
-                // If the version field is present, then parse the version.
-                let version = DeserializeExt::take_from_value::<D>(&mut header, "version").unwrap_or(1);
-                // TODO (howardwu): For mainnet - Remove the version checking.
-                // Ensure the version is valid.
-                if version != 1 && version != 2 {
-                    return Err(error("Invalid batch header version")).map_err(de::Error::custom);
-                }
-                // TODO (howardwu): For mainnet - Always take from the 'header', no need to use this match case anymore.
-                // If the version is not 1, then parse the last election certificate IDs.
-                let last_election_certificate_ids = match version {
-                    1 => IndexSet::new(),
-                    2 => DeserializeExt::take_from_value::<D>(&mut header, "last_election_certificate_ids")?,
-                    _ => unreachable!(),
-                };
-
                 // Recover the header.
                 let batch_header = Self::from(
-                    version,
                     DeserializeExt::take_from_value::<D>(&mut header, "author")?,
                     DeserializeExt::take_from_value::<D>(&mut header, "round")?,
                     DeserializeExt::take_from_value::<D>(&mut header, "timestamp")?,
+                    DeserializeExt::take_from_value::<D>(&mut header, "committee_id")?,
                     DeserializeExt::take_from_value::<D>(&mut header, "transmission_ids")?,
                     DeserializeExt::take_from_value::<D>(&mut header, "previous_certificate_ids")?,
-                    last_election_certificate_ids,
                     DeserializeExt::take_from_value::<D>(&mut header, "signature")?,
                 )
                 .map_err(de::Error::custom)?;
@@ -77,10 +59,10 @@ impl<'de, N: Network> Deserialize<'de> for BatchHeader<N> {
                 // Ensure that the batch ID matches the recovered header.
                 match batch_id == batch_header.batch_id() {
                     true => Ok(batch_header),
-                    false => {
-                        Err(error(format!("Batch ID mismatch: expected {batch_id}, got {}", batch_header.batch_id())))
-                            .map_err(de::Error::custom)
-                    }
+                    false => Err(de::Error::custom(error(format!(
+                        "Batch ID mismatch: expected {batch_id}, got {}",
+                        batch_header.batch_id()
+                    )))),
                 }
             }
             false => FromBytesDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "batch header"),

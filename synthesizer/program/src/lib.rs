@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -48,24 +49,13 @@ mod serialize;
 
 use console::{
     network::prelude::{
-        alt,
-        anyhow,
-        bail,
-        de,
-        ensure,
-        error,
-        fmt,
-        many0,
-        many1,
-        map,
-        map_res,
-        tag,
-        take,
         Debug,
         Deserialize,
         Deserializer,
         Display,
+        Err,
         Error,
+        ErrorKind,
         Formatter,
         FromBytes,
         FromBytesDeserializer,
@@ -83,6 +73,19 @@ use console::{
         ToBytesSerializer,
         TypeName,
         Write,
+        anyhow,
+        bail,
+        de,
+        ensure,
+        error,
+        fmt,
+        make_error,
+        many0,
+        many1,
+        map,
+        map_res,
+        tag,
+        take,
     },
     program::{Identifier, PlaintextType, ProgramID, RecordType, StructType},
 };
@@ -265,13 +268,13 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
 
     /// Returns the function with the given name.
     pub fn get_function(&self, name: &Identifier<N>) -> Result<FunctionCore<N, Instruction, Command>> {
-        self.get_function_ref(name).map(|function| function.clone())
+        self.get_function_ref(name).cloned()
     }
 
     /// Returns a reference to the function with the given name.
     pub fn get_function_ref(&self, name: &Identifier<N>) -> Result<&FunctionCore<N, Instruction, Command>> {
         // Attempt to retrieve the function.
-        let function = self.functions.get(name).ok_or_else(|| anyhow!("Function '{name}' is not defined."))?;
+        let function = self.functions.get(name).ok_or(anyhow!("Function '{}/{name}' is not defined.", self.id))?;
         // Ensure the function name matches.
         ensure!(function.name() == name, "Expected function '{name}', but found function '{}'", function.name());
         // Ensure the number of inputs is within the allowed range.
@@ -294,6 +297,9 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     fn add_import(&mut self, import: Import<N>) -> Result<()> {
         // Retrieve the imported program name.
         let import_name = *import.name();
+
+        // Ensure that the number of imports is within the allowed range.
+        ensure!(self.imports.len() < N::MAX_IMPORTS, "Program exceeds the maximum number of imports");
 
         // Ensure the import name is new.
         ensure!(self.is_unique_name(&import_name), "'{import_name}' is already in use.");
@@ -359,6 +365,9 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
         // Retrieve the struct name.
         let struct_name = *struct_.name();
 
+        // Ensure the program has not exceeded the maximum number of structs.
+        ensure!(self.structs.len() < N::MAX_STRUCTS, "Program exceeds the maximum number of structs.");
+
         // Ensure the struct name is new.
         ensure!(self.is_unique_name(&struct_name), "'{struct_name}' is already in use.");
         // Ensure the struct name is not a reserved opcode.
@@ -416,6 +425,9 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     fn add_record(&mut self, record: RecordType<N>) -> Result<()> {
         // Retrieve the record name.
         let record_name = *record.name();
+
+        // Ensure the program has not exceeded the maximum number of records.
+        ensure!(self.records.len() < N::MAX_RECORDS, "Program exceeds the maximum number of records.");
 
         // Ensure the record name is new.
         ensure!(self.is_unique_name(&record_name), "'{record_name}' is already in use.");
@@ -476,6 +488,9 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
     fn add_closure(&mut self, closure: ClosureCore<N, Instruction>) -> Result<()> {
         // Retrieve the closure name.
         let closure_name = *closure.name();
+
+        // Ensure the program has not exceeded the maximum number of closures.
+        ensure!(self.closures.len() < N::MAX_CLOSURES, "Program exceeds the maximum number of closures.");
 
         // Ensure the closure name is new.
         ensure!(self.is_unique_name(&closure_name), "'{closure_name}' is already in use.");
@@ -575,6 +590,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
         "u64",
         "u128",
         "scalar",
+        "signature",
         "string",
         // Boolean
         "true",
@@ -660,11 +676,11 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Typ
 mod tests {
     use super::*;
     use console::{
-        network::Testnet3,
+        network::MainnetV0,
         program::{Locator, ValueType},
     };
 
-    type CurrentNetwork = Testnet3;
+    type CurrentNetwork = MainnetV0;
 
     #[test]
     fn test_program_mapping() -> Result<()> {

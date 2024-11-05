@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -19,14 +20,18 @@ use snarkvm_console_network::BHPMerkleTree;
 pub const BLOCKS_DEPTH: u8 = 32;
 /// The depth of the Merkle tree for the block header.
 pub const HEADER_DEPTH: u8 = 3;
+/// The depth of the Merkle tree for finalize operations in a transaction.
+pub const FINALIZE_ID_DEPTH: u8 = TRANSACTION_DEPTH + 4; // '+ 4' is to support 16 finalize operations per transition.
 /// The depth of the Merkle tree for finalize operations in a block.
-pub const FINALIZE_OPERATIONS_DEPTH: u8 = 20;
+pub const FINALIZE_OPERATIONS_DEPTH: u8 = TRANSACTIONS_DEPTH;
 /// The depth of the Merkle tree for the ratifications in a block.
 pub const RATIFICATIONS_DEPTH: u8 = 16;
 /// The depth the Merkle tree for the subdag certificates in a block.
 pub const SUBDAG_CERTIFICATES_DEPTH: u8 = 16;
 /// The depth of the Merkle tree for transactions in a block.
-pub const TRANSACTIONS_DEPTH: u8 = 16;
+/// Note: The technical limit is 2^20 - 1 transactions, to allow compatibility with the
+/// finalize operations tree, which requires 1 leaf for the ratified finalize ID.
+pub const TRANSACTIONS_DEPTH: u8 = 20;
 /// The depth of the Merkle tree for the transaction.
 pub const TRANSACTION_DEPTH: u8 = 5;
 /// The depth of the Merkle tree for the transition.
@@ -67,7 +72,7 @@ mod tests {
     use super::*;
     use snarkvm_console_network::Network;
 
-    type CurrentNetwork = snarkvm_console_network::Testnet3;
+    type CurrentNetwork = snarkvm_console_network::MainnetV0;
 
     #[test]
     fn test_transaction_depth_is_correct() {

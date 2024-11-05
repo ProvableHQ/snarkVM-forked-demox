@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -85,9 +86,14 @@ impl<F: PrimeField> AssignmentLC<F> {
 /// and constraint assignments.
 #[derive(Clone, Debug)]
 pub struct Assignment<F: PrimeField> {
+    /// The public variables.
     public: Arc<[(Index, F)]>,
+    /// The private variables.
     private: Arc<[(Index, F)]>,
+    /// The constraints.
     constraints: Arc<[(AssignmentLC<F>, AssignmentLC<F>, AssignmentLC<F>)]>,
+    /// The number of constants, public, and private variables in the assignment.
+    num_variables: u64,
 }
 
 impl<F: PrimeField> From<crate::R1CS<F>> for Assignment<F> {
@@ -104,6 +110,7 @@ impl<F: PrimeField> From<crate::R1CS<F>> for Assignment<F> {
                 let (a, b, c) = constraint.to_terms();
                 (a.into(), b.into(), c.into())
             })),
+            num_variables: r1cs.num_variables(),
         }
     }
 }
@@ -132,6 +139,11 @@ impl<F: PrimeField> Assignment<F> {
     /// Returns the number of private variables in the assignment.
     pub fn num_private(&self) -> u64 {
         self.private.len() as u64
+    }
+
+    /// Returns the number of constants, public, and private variables in the assignment.
+    pub fn num_variables(&self) -> u64 {
+        self.num_variables
     }
 
     /// Returns the number of constraints in the assignment.
@@ -167,14 +179,18 @@ impl<F: PrimeField> snarkvm_algorithms::r1cs::ConstraintSynthesizer<F> for Assig
         assert_eq!(0, cs.num_private_variables());
         assert_eq!(0, cs.num_constraints());
 
+        let result = converter.public.insert(0, CS::one());
+        assert!(result.is_none(), "Overwrote an existing public variable in the converter");
+
         // Allocate the public variables.
-        for (i, (index, value)) in self.public.iter().enumerate() {
-            assert_eq!(i as u64, *index, "Public variables in first system must be processed in lexicographic order");
+        // NOTE: we skip the first public `One` variable because we already allocated it in the `ConstraintSystem` constructor.
+        for (i, (index, value)) in self.public.iter().skip(1).enumerate() {
+            assert_eq!((i + 1) as u64, *index, "Public vars in first system must be processed in lexicographic order");
 
             let gadget = cs.alloc_input(|| format!("Public {i}"), || Ok(*value))?;
 
             assert_eq!(
-                snarkvm_algorithms::r1cs::Index::Public((index + 1) as usize),
+                snarkvm_algorithms::r1cs::Index::Public(*index as usize),
                 gadget.get_unchecked(),
                 "Public variables in the second system must match the first system (with an off-by-1 for the public case)"
             );
@@ -219,7 +235,7 @@ impl<F: PrimeField> snarkvm_algorithms::r1cs::ConstraintSynthesizer<F> for Assig
                         AssignmentVariable::Public(index) => {
                             let gadget = converter.public.get(index).unwrap();
                             assert_eq!(
-                                snarkvm_algorithms::r1cs::Index::Public((index + 1) as usize),
+                                snarkvm_algorithms::r1cs::Index::Public(*index as usize),
                                 gadget.get_unchecked(),
                                 "Failed during constraint translation. The public variable in the second system must match the first system (with an off-by-1 for the public case)"
                             );
@@ -258,7 +274,7 @@ impl<F: PrimeField> snarkvm_algorithms::r1cs::ConstraintSynthesizer<F> for Assig
         }
 
         // Ensure the given `cs` matches in size with the first system.
-        assert_eq!(self.num_public() + 1, cs.num_public_variables() as u64);
+        assert_eq!(self.num_public(), cs.num_public_variables() as u64);
         assert_eq!(self.num_private(), cs.num_private_variables() as u64);
         assert_eq!(self.num_constraints(), cs.num_constraints() as u64);
 
@@ -268,7 +284,7 @@ impl<F: PrimeField> snarkvm_algorithms::r1cs::ConstraintSynthesizer<F> for Assig
 
 #[cfg(test)]
 mod tests {
-    use snarkvm_algorithms::{r1cs::ConstraintSynthesizer, AlgebraicSponge, SNARK};
+    use snarkvm_algorithms::{AlgebraicSponge, SNARK, r1cs::ConstraintSynthesizer};
     use snarkvm_circuit::prelude::*;
     use snarkvm_curves::bls12_377::Fr;
 
@@ -309,7 +325,7 @@ mod tests {
         assignment.generate_constraints(&mut cs).unwrap();
         {
             use snarkvm_algorithms::r1cs::ConstraintSystem;
-            assert_eq!(assignment.num_public() + 1, cs.num_public_variables() as u64);
+            assert_eq!(assignment.num_public(), cs.num_public_variables() as u64);
             assert_eq!(assignment.num_private(), cs.num_private_variables() as u64);
             assert_eq!(assignment.num_constraints(), cs.num_constraints() as u64);
             assert!(cs.is_satisfied());
@@ -329,7 +345,7 @@ mod tests {
 
         use snarkvm_algorithms::{
             crypto_hash::PoseidonSponge,
-            snark::varuna::{ahp::AHPForR1CS, VarunaHidingMode, VarunaSNARK},
+            snark::varuna::{VarunaHidingMode, VarunaSNARK, ahp::AHPForR1CS},
         };
         use snarkvm_curves::bls12_377::{Bls12_377, Fq};
         use snarkvm_utilities::rand::TestRng;

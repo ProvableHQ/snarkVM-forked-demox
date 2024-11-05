@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -15,10 +16,10 @@
 #![allow(clippy::type_complexity)]
 
 use crate::{
-    helpers::memory::{MemoryMap, NestedMemoryMap},
     CommitteeStorage,
     CommitteeStore,
     FinalizeStorage,
+    helpers::memory::{MemoryMap, NestedMemoryMap},
 };
 use console::{
     prelude::*,
@@ -26,6 +27,7 @@ use console::{
 };
 use ledger_committee::Committee;
 
+use aleo_std_storage::StorageMode;
 use indexmap::IndexSet;
 
 /// An in-memory finalize storage.
@@ -37,8 +39,8 @@ pub struct FinalizeMemory<N: Network> {
     program_id_map: MemoryMap<ProgramID<N>, IndexSet<Identifier<N>>>,
     /// The key-value map.
     key_value_map: NestedMemoryMap<(ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>,
-    /// The optional development ID.
-    dev: Option<u16>,
+    /// The storage mode.
+    storage_mode: StorageMode,
 }
 
 #[rustfmt::skip]
@@ -48,15 +50,15 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
     type KeyValueMap = NestedMemoryMap<(ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>;
 
     /// Initializes the finalize storage.
-    fn open(dev: Option<u16>) -> Result<Self> {
+    fn open<S: Clone + Into<StorageMode>>(storage: S) -> Result<Self> {
         // Initialize the committee store.
-        let committee_store = CommitteeStore::<N, CommitteeMemory<N>>::open(dev)?;
+        let committee_store = CommitteeStore::<N, CommitteeMemory<N>>::open(storage.clone())?;
         // Return the finalize store.
         Ok(Self {
             committee_store,
             program_id_map: MemoryMap::default(),
             key_value_map: NestedMemoryMap::default(),
-            dev,
+            storage_mode: storage.into(),
         })
     }
 
@@ -81,9 +83,9 @@ impl<N: Network> FinalizeStorage<N> for FinalizeMemory<N> {
         &self.key_value_map
     }
 
-    /// Returns the optional development ID.
-    fn dev(&self) -> Option<u16> {
-        self.dev
+    /// Returns the storage mode.
+    fn storage_mode(&self) -> &StorageMode {
+        &self.storage_mode
     }
 }
 
@@ -96,8 +98,8 @@ pub struct CommitteeMemory<N: Network> {
     round_to_height_map: MemoryMap<u64, u32>,
     /// The committee map.
     committee_map: MemoryMap<u32, Committee<N>>,
-    /// The optional development ID.
-    dev: Option<u16>,
+    /// The storage mode.
+    storage_mode: StorageMode,
 }
 
 #[rustfmt::skip]
@@ -107,12 +109,12 @@ impl<N: Network> CommitteeStorage<N> for CommitteeMemory<N> {
     type CommitteeMap = MemoryMap<u32, Committee<N>>;
 
     /// Initializes the committee storage.
-    fn open(dev: Option<u16>) -> Result<Self> {
+    fn open<S: Clone + Into<StorageMode>>(storage: S) -> Result<Self> {
         Ok(Self {
             current_round_map: MemoryMap::default(),
             round_to_height_map: MemoryMap::default(),
             committee_map: MemoryMap::default(),
-            dev,
+            storage_mode: storage.into(),
         })
     }
 
@@ -137,8 +139,8 @@ impl<N: Network> CommitteeStorage<N> for CommitteeMemory<N> {
         &self.committee_map
     }
 
-    /// Returns the optional development ID.
-    fn dev(&self) -> Option<u16> {
-        self.dev
+    /// Returns the storage mode.
+    fn storage_mode(&self) -> &StorageMode {
+        &self.storage_mode
     }
 }

@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -124,6 +125,40 @@ impl<N: Network> Deployment<N> {
         &self.verifying_keys
     }
 
+    /// Returns the sum of the variable counts for all functions in this deployment.
+    pub fn num_combined_variables(&self) -> Result<u64> {
+        // Initialize the accumulator.
+        let mut num_combined_variables = 0u64;
+        // Iterate over the functions.
+        for (_, (vk, _)) in &self.verifying_keys {
+            // Add the number of variables.
+            // Note: This method must be *checked* because the claimed variable count
+            // is from the user, not the synthesizer.
+            num_combined_variables = num_combined_variables
+                .checked_add(vk.num_variables())
+                .ok_or_else(|| anyhow!("Overflow when counting variables for '{}'", self.program_id()))?;
+        }
+        // Return the number of combined variables.
+        Ok(num_combined_variables)
+    }
+
+    /// Returns the sum of the constraint counts for all functions in this deployment.
+    pub fn num_combined_constraints(&self) -> Result<u64> {
+        // Initialize the accumulator.
+        let mut num_combined_constraints = 0u64;
+        // Iterate over the functions.
+        for (_, (vk, _)) in &self.verifying_keys {
+            // Add the number of constraints.
+            // Note: This method must be *checked* because the claimed constraint count
+            // is from the user, not the synthesizer.
+            num_combined_constraints = num_combined_constraints
+                .checked_add(vk.circuit_info.num_constraints as u64)
+                .ok_or_else(|| anyhow!("Overflow when counting constraints for '{}'", self.program_id()))?;
+        }
+        // Return the number of combined constraints.
+        Ok(num_combined_constraints)
+    }
+
     /// Returns the deployment ID.
     pub fn to_deployment_id(&self) -> Result<Field<N>> {
         Ok(*Transaction::deployment_tree(self, None)?.root())
@@ -133,12 +168,12 @@ impl<N: Network> Deployment<N> {
 #[cfg(test)]
 pub mod test_helpers {
     use super::*;
-    use console::network::Testnet3;
+    use console::network::MainnetV0;
     use synthesizer_process::Process;
 
     use once_cell::sync::OnceCell;
 
-    type CurrentNetwork = Testnet3;
+    type CurrentNetwork = MainnetV0;
     type CurrentAleo = circuit::network::AleoV0;
 
     pub(crate) fn sample_deployment(rng: &mut TestRng) -> Deployment<CurrentNetwork> {

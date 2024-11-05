@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -25,12 +26,9 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         self.vm.block_store().find_block_hash(transaction_id)
     }
 
-    /// Returns the block height that contains the given `puzzle commitment`.
-    pub fn find_block_height_from_puzzle_commitment(
-        &self,
-        puzzle_commitment: &PuzzleCommitment<N>,
-    ) -> Result<Option<u32>> {
-        self.vm.block_store().find_block_height_from_puzzle_commitment(puzzle_commitment)
+    /// Returns the block height that contains the given `solution ID`.
+    pub fn find_block_height_from_solution_id(&self, solution_id: &SolutionID<N>) -> Result<Option<u32>> {
+        self.vm.block_store().find_block_height_from_solution_id(solution_id)
     }
 
     /// Returns the transaction ID that contains the given `program ID`.

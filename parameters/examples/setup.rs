@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -14,11 +15,11 @@
 
 use snarkvm_algorithms::crypto_hash::sha256::sha256;
 use snarkvm_circuit::Aleo;
-use snarkvm_console::network::{prelude::ToBytes, Network, Testnet3};
+use snarkvm_console::network::{CanaryV0, MainnetV0, Network, TestnetV0, prelude::ToBytes};
 use snarkvm_synthesizer::{Process, Program};
 
 use anyhow::Result;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::{
     fs,
     fs::File,
@@ -60,7 +61,7 @@ fn write_metadata(filename: &str, metadata: &Value) -> Result<()> {
 
 /// (Do not use) Writes the metadata files. (cargo run --release --example setup usrs)
 pub fn usrs() -> Result<()> {
-    let paths = fs::read_dir("../src/testnet3/resources/").unwrap();
+    let paths = fs::read_dir("../src/mainnet/resources/").unwrap();
     for path in paths {
         let path = path?.path();
         if let Some("usrs") = path.extension().and_then(|s| s.to_str()) {
@@ -142,14 +143,19 @@ pub fn credits_program<N: Network, A: Aleo<Network = N>>() -> Result<()> {
 /// `cargo run --example setup [variant]`
 pub fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
-    if args.len() < 2 {
-        eprintln!("Invalid number of arguments. Given: {} - Required: 1", args.len() - 1);
+    if args.len() < 3 {
+        eprintln!("Invalid number of arguments. Given: {} - Required: 2", args.len() - 1);
         return Ok(());
     }
 
     match args[1].as_str() {
         "usrs" => usrs()?,
-        "credits" => credits_program::<Testnet3, snarkvm_circuit::AleoV0>()?,
+        "credits" => match args[2].as_str() {
+            "mainnet" => credits_program::<MainnetV0, snarkvm_circuit::AleoV0>(),
+            "testnet" => credits_program::<TestnetV0, snarkvm_circuit::AleoTestnetV0>(),
+            "canary" => credits_program::<CanaryV0, snarkvm_circuit::AleoCanaryV0>(),
+            _ => panic!("Invalid network"),
+        }?,
         _ => panic!("Invalid parameter"),
     };
 

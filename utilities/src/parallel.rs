@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -198,6 +199,20 @@ macro_rules! cfg_reduce_with {
 
 /// Turns a collection into an iterator.
 #[macro_export]
+macro_rules! cfg_keys {
+    ($e: expr) => {{
+        #[cfg(not(feature = "serial"))]
+        let result = $e.par_keys();
+
+        #[cfg(feature = "serial")]
+        let result = $e.keys();
+
+        result
+    }};
+}
+
+/// Turns a collection into an iterator.
+#[macro_export]
 macro_rules! cfg_values {
     ($e: expr) => {{
         #[cfg(not(feature = "serial"))]
@@ -252,5 +267,45 @@ macro_rules! cfg_zip_fold {
         let result = result.sum::<$type>();
 
         result
+    }};
+}
+
+/// Performs an unstable sort
+#[macro_export]
+macro_rules! cfg_sort_unstable_by {
+    ($self: expr, $closure: expr) => {{
+        #[cfg(feature = "serial")]
+        $self.sort_unstable_by($closure);
+
+        #[cfg(not(feature = "serial"))]
+        $self.par_sort_unstable_by($closure);
+    }};
+}
+
+/// Performs a sort that caches the extracted keys
+#[macro_export]
+macro_rules! cfg_sort_by_cached_key {
+    ($self: expr, $closure: expr) => {{
+        #[cfg(feature = "serial")]
+        $self.sort_by_cached_key($closure);
+
+        #[cfg(not(feature = "serial"))]
+        $self.par_sort_by_cached_key($closure);
+    }};
+}
+
+/// Returns a sorted, by-value iterator for the given IndexMap/IndexSet
+#[macro_export]
+macro_rules! cfg_sorted_by {
+    ($self: expr, $closure: expr) => {{
+        #[cfg(feature = "serial")]
+        {
+            $self.sorted_by($closure)
+        }
+
+        #[cfg(not(feature = "serial"))]
+        {
+            $self.par_sorted_by($closure)
+        }
     }};
 }

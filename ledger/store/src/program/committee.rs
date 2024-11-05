@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -21,6 +22,7 @@ use crate::{
 use console::network::prelude::*;
 use ledger_committee::Committee;
 
+use aleo_std_storage::StorageMode;
 use anyhow::Result;
 use core::marker::PhantomData;
 
@@ -36,7 +38,7 @@ pub trait CommitteeStorage<N: Network>: 'static + Clone + Send + Sync {
     type CommitteeMap: for<'a> Map<'a, u32, Committee<N>>;
 
     /// Initializes the committee storage.
-    fn open(dev: Option<u16>) -> Result<Self>;
+    fn open<S: Clone + Into<StorageMode>>(storage: S) -> Result<Self>;
 
     /// Initializes the test-variant of the storage.
     #[cfg(any(test, feature = "test"))]
@@ -49,8 +51,8 @@ pub trait CommitteeStorage<N: Network>: 'static + Clone + Send + Sync {
     /// Returns the committee map.
     fn committee_map(&self) -> &Self::CommitteeMap;
 
-    /// Returns the optional development ID.
-    fn dev(&self) -> Option<u16>;
+    /// Returns the storage mode.
+    fn storage_mode(&self) -> &StorageMode;
 
     /// Starts an atomic batch write operation.
     fn start_atomic(&self) {
@@ -299,9 +301,9 @@ pub struct CommitteeStore<N: Network, C: CommitteeStorage<N>> {
 
 impl<N: Network, C: CommitteeStorage<N>> CommitteeStore<N, C> {
     /// Initializes the committee store.
-    pub fn open(dev: Option<u16>) -> Result<Self> {
+    pub fn open<S: Clone + Into<StorageMode>>(storage: S) -> Result<Self> {
         // Initialize the committee storage.
-        let storage = C::open(dev)?;
+        let storage = C::open(storage.clone())?;
         // Return the committee store.
         Ok(Self { storage, _phantom: PhantomData })
     }
@@ -355,9 +357,9 @@ impl<N: Network, C: CommitteeStorage<N>> CommitteeStore<N, C> {
         self.storage.finish_atomic()
     }
 
-    /// Returns the optional development ID.
-    pub fn dev(&self) -> Option<u16> {
-        self.storage.dev()
+    /// Returns the storage mode.
+    pub fn storage_mode(&self) -> &StorageMode {
+        self.storage.storage_mode()
     }
 }
 
@@ -412,7 +414,7 @@ mod tests {
     use super::*;
     use crate::helpers::memory::CommitteeMemory;
 
-    type CurrentNetwork = console::network::Testnet3;
+    type CurrentNetwork = console::network::MainnetV0;
 
     #[test]
     fn test_insert_get_remove() {

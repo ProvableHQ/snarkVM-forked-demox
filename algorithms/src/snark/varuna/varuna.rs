@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -14,6 +15,9 @@
 
 use super::Certificate;
 use crate::{
+    AlgebraicSponge,
+    SNARK,
+    SNARKError,
     fft::EvaluationDomain,
     polycommit::sonic_pc::{
         Commitment,
@@ -26,34 +30,30 @@ use crate::{
     },
     r1cs::{ConstraintSynthesizer, SynthesisError},
     snark::varuna::{
-        ahp::{AHPError, AHPForR1CS, CircuitId, EvaluationsProvider},
-        proof,
-        prover,
-        witness_label,
         CircuitProvingKey,
         CircuitVerifyingKey,
         Proof,
         SNARKMode,
         UniversalSRS,
+        ahp::{AHPError, AHPForR1CS, CircuitId, EvaluationsProvider},
+        proof,
+        prover,
+        witness_label,
     },
     srs::UniversalVerifier,
-    AlgebraicSponge,
-    SNARKError,
-    SNARK,
 };
 use rand::RngCore;
 use snarkvm_curves::PairingEngine;
 use snarkvm_fields::{One, PrimeField, ToConstraintField, Zero};
-use snarkvm_utilities::{to_bytes_le, ToBytes};
+use snarkvm_utilities::{ToBytes, to_bytes_le};
 
-use anyhow::{anyhow, bail, ensure, Result};
+use anyhow::{Result, anyhow, bail, ensure};
 use core::marker::PhantomData;
 use itertools::Itertools;
 use rand::{CryptoRng, Rng};
 use std::{borrow::Borrow, collections::BTreeMap, ops::Deref, sync::Arc};
 
 use crate::srs::UniversalProver;
-#[cfg(not(feature = "std"))]
 use snarkvm_utilities::println;
 
 /// The Varuna proof system.
@@ -302,7 +302,7 @@ where
         // (since the first coeff is 1), and so we squeeze out `num_polynomials` points.
         let mut challenges = sponge.squeeze_nonnative_field_elements(verifying_key.circuit_commitments.len());
         let point = challenges.pop().ok_or(anyhow!("Failed to squeeze random element"))?;
-        let combiners = core::iter::once(E::Fr::one()).chain(challenges.into_iter());
+        let combiners = core::iter::once(E::Fr::one()).chain(challenges);
 
         // We will construct a linear combination and provide a proof of evaluation of the lc at `point`.
         let (lc, evaluation) =
@@ -332,7 +332,7 @@ where
 
     /// This is the main entrypoint for creating proofs.
     /// You can find a specification of the prover algorithm in:
-    /// https://github.com/AleoHQ/protocol-docs
+    /// https://github.com/AleoNet/protocol-docs
     fn prove_batch<C: ConstraintSynthesizer<E::Fr>, R: Rng + CryptoRng>(
         universal_prover: &Self::UniversalProver,
         fs_parameters: &Self::FSParameters,
@@ -621,7 +621,7 @@ where
 
     /// This is the main entrypoint for verifying proofs.
     /// You can find a specification of the verifier algorithm in:
-    /// https://github.com/AleoHQ/protocol-docs
+    /// https://github.com/AleoNet/protocol-docs
     fn verify_batch<B: Borrow<Self::VerifierInput>>(
         universal_verifier: &Self::UniversalVerifier,
         fs_parameters: &Self::FSParameters,
@@ -657,9 +657,9 @@ where
         let mut input_domains = BTreeMap::new();
         let mut circuit_infos = BTreeMap::new();
         let mut circuit_ids = Vec::with_capacity(keys_to_inputs.len());
-        for (vk, public_inputs_i) in keys_to_inputs.iter() {
+        for (&vk, &public_inputs_i) in keys_to_inputs.iter() {
             max_num_constraints = max_num_constraints.max(vk.circuit_info.num_constraints);
-            max_num_variables = max_num_variables.max(vk.circuit_info.num_variables);
+            max_num_variables = max_num_variables.max(vk.circuit_info.num_public_and_private_variables);
 
             let non_zero_domains = AHPForR1CS::<_, SM>::cmp_non_zero_domains(&vk.circuit_info, max_non_zero_domain)?;
             max_non_zero_domain = non_zero_domains.max_non_zero_domain;
@@ -670,17 +670,25 @@ where
 
             let input_fields = public_inputs_i
                 .iter()
-                .map(|input| input.borrow().to_field_elements())
+                .map(|input| {
+                    let input = input.borrow().to_field_elements()?;
+                    ensure!(input.len() > 0);
+                    ensure!(input[0] == E::Fr::one());
+                    if input.len() > input_domain.size() {
+                        bail!(SNARKError::PublicInputSizeMismatch);
+                    }
+                    Ok(input)
+                })
                 .collect::<Result<Vec<_>, _>>()?;
 
             let (padded_public_inputs_i, parsed_public_inputs_i): (Vec<_>, Vec<_>) = {
                 input_fields
                     .iter()
                     .map(|input| {
-                        let mut new_input = Vec::with_capacity((1 + input.len()).max(input_domain.size()));
-                        new_input.push(E::Fr::one());
+                        let input_len = input.len().max(input_domain.size());
+                        let mut new_input = Vec::with_capacity(input_len);
                         new_input.extend_from_slice(input);
-                        new_input.resize(input.len().max(input_domain.size()), E::Fr::zero());
+                        new_input.resize(input_len, E::Fr::zero());
                         if cfg!(debug_assertions) {
                             println!("Number of padded public variables: {}", new_input.len());
                         }

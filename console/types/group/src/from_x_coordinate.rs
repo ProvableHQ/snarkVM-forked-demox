@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -18,14 +19,11 @@ impl<E: Environment> Group<E> {
     /// Attempts to recover an affine group element from a given x-coordinate field element.
     /// For safety, the resulting point is always enforced to be on the curve and in the correct subgroup.
     pub fn from_x_coordinate(x_coordinate: Field<E>) -> Result<Self> {
-        if let Some(point) = E::Affine::from_x_coordinate(*x_coordinate, true) {
-            if point.is_in_correct_subgroup_assuming_on_curve() {
-                return Ok(Self::new(point));
-            }
-        }
-        if let Some(point) = E::Affine::from_x_coordinate(*x_coordinate, false) {
-            if point.is_in_correct_subgroup_assuming_on_curve() {
-                return Ok(Self::new(point));
+        if let Some((p1, p2)) = E::Affine::pair_from_x_coordinate(*x_coordinate) {
+            for point in [p2, p1] {
+                if point.is_in_correct_subgroup_assuming_on_curve() {
+                    return Ok(Self::new(point));
+                }
             }
         }
         bail!("Failed to recover an affine group from an x-coordinate of {x_coordinate}")

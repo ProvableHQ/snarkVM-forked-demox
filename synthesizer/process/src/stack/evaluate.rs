@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -82,6 +83,8 @@ impl<N: Network> StackEvaluate<N> for Stack<N> {
                     Operand::Caller => Ok(Value::Plaintext(Plaintext::from(Literal::Address(registers.caller()?)))),
                     // If the operand is the block height, throw an error.
                     Operand::BlockHeight => bail!("Cannot retrieve the block height from a closure scope."),
+                    // If the operand is the network id, throw an error.
+                    Operand::NetworkID => bail!("Cannot retrieve the network ID from a closure scope."),
                 }
             })
             .collect();
@@ -132,11 +135,11 @@ impl<N: Network> StackEvaluate<N> for Stack<N> {
         let function = self.get_function(request.function_name())?;
         let inputs = request.inputs();
         let signer = *request.signer();
-        let caller = match caller {
+        let (is_root, caller) = match caller {
             // If a caller is provided, then this is an evaluation of a child function.
-            Some(caller) => caller.to_address()?,
+            Some(caller) => (false, caller.to_address()?),
             // If no caller is provided, then this is an evaluation of a top-level function.
-            None => signer,
+            None => (true, signer),
         };
         let tvk = *request.tvk();
 
@@ -163,7 +166,7 @@ impl<N: Network> StackEvaluate<N> for Stack<N> {
         lap!(timer, "Initialize the registers");
 
         // Ensure the request is well-formed.
-        ensure!(request.verify(&function.input_types()), "Request is invalid");
+        ensure!(request.verify(&function.input_types(), is_root), "Request is invalid");
         lap!(timer, "Verify the request");
 
         // Store the inputs.
@@ -213,6 +216,8 @@ impl<N: Network> StackEvaluate<N> for Stack<N> {
                     Operand::Caller => Ok(Value::Plaintext(Plaintext::from(Literal::Address(registers.caller()?)))),
                     // If the operand is the block height, throw an error.
                     Operand::BlockHeight => bail!("Cannot retrieve the block height from a function scope."),
+                    // If the operand is the network id, throw an error.
+                    Operand::NetworkID => bail!("Cannot retrieve the network ID from a function scope."),
                 }
             })
             .collect::<Result<Vec<_>>>()?;

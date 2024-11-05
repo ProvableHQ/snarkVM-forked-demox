@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -12,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Circuit, LinearCombination, Variable, R1CS};
+use crate::{CanaryCircuit, Circuit, LinearCombination, R1CS, TestnetCircuit, Variable};
 use snarkvm_curves::edwards_bls12::Fq;
 use snarkvm_fields::PrimeField;
 
@@ -34,6 +35,26 @@ impl snarkvm_algorithms::r1cs::ConstraintSynthesizer<Fq> for Circuit {
     }
 }
 
+impl snarkvm_algorithms::r1cs::ConstraintSynthesizer<Fq> for TestnetCircuit {
+    /// Synthesizes the constraints from the environment into a `snarkvm_algorithms::r1cs`-compliant constraint system.
+    fn generate_constraints<CS: snarkvm_algorithms::r1cs::ConstraintSystem<Fq>>(
+        &self,
+        cs: &mut CS,
+    ) -> Result<(), snarkvm_algorithms::r1cs::SynthesisError> {
+        crate::testnet_circuit::TESTNET_CIRCUIT.with(|circuit| circuit.borrow().generate_constraints(cs))
+    }
+}
+
+impl snarkvm_algorithms::r1cs::ConstraintSynthesizer<Fq> for CanaryCircuit {
+    /// Synthesizes the constraints from the environment into a `snarkvm_algorithms::r1cs`-compliant constraint system.
+    fn generate_constraints<CS: snarkvm_algorithms::r1cs::ConstraintSystem<Fq>>(
+        &self,
+        cs: &mut CS,
+    ) -> Result<(), snarkvm_algorithms::r1cs::SynthesisError> {
+        crate::canary_circuit::CANARY_CIRCUIT.with(|circuit| circuit.borrow().generate_constraints(cs))
+    }
+}
+
 impl<F: PrimeField> R1CS<F> {
     /// Synthesizes the constraints from the environment into a `snarkvm_algorithms::r1cs`-compliant constraint system.
     fn generate_constraints<CS: snarkvm_algorithms::r1cs::ConstraintSystem<F>>(
@@ -47,21 +68,26 @@ impl<F: PrimeField> R1CS<F> {
         assert_eq!(0, cs.num_private_variables());
         assert_eq!(0, cs.num_constraints());
 
+        let result = converter.public.insert(0, CS::one());
+        assert!(result.is_none(), "Overwrote an existing public variable in the converter");
+
         // Allocate the public variables.
-        for (i, public) in self.to_public_variables().iter().enumerate() {
+        // NOTE: we skip the first public `One` variable because we already allocated it in the `ConstraintSystem` constructor.
+        for (i, public) in self.to_public_variables().iter().skip(1).enumerate() {
             match public {
                 Variable::Public(index_value) => {
                     let (index, value) = index_value.as_ref();
 
                     assert_eq!(
-                        i as u64, *index,
-                        "Public variables in first system must be processed in lexicographic order"
+                        (i + 1) as u64,
+                        *index,
+                        "Public vars in first system must be processed in lexicographic order"
                     );
 
                     let gadget = cs.alloc_input(|| format!("Public {i}"), || Ok(*value))?;
 
                     assert_eq!(
-                        snarkvm_algorithms::r1cs::Index::Public((index + 1) as usize),
+                        snarkvm_algorithms::r1cs::Index::Public(*index as usize),
                         gadget.get_unchecked(),
                         "Public variables in the second system must match the first system (with an off-by-1 for the public case)"
                     );
@@ -165,7 +191,7 @@ impl<F: PrimeField> R1CS<F> {
         }
 
         // Ensure the given `cs` matches in size with the first system.
-        assert_eq!(self.num_public() + 1, cs.num_public_variables() as u64);
+        assert_eq!(self.num_public(), cs.num_public_variables() as u64);
         assert_eq!(self.num_private(), cs.num_private_variables() as u64);
         assert_eq!(self.num_constraints(), cs.num_constraints() as u64);
 
@@ -175,7 +201,7 @@ impl<F: PrimeField> R1CS<F> {
 
 #[cfg(test)]
 mod tests {
-    use snarkvm_algorithms::{r1cs::ConstraintSynthesizer, AlgebraicSponge, SNARK};
+    use snarkvm_algorithms::{AlgebraicSponge, SNARK, r1cs::ConstraintSynthesizer};
     use snarkvm_circuit::prelude::*;
     use snarkvm_curves::bls12_377::Fr;
 
@@ -211,7 +237,7 @@ mod tests {
         Circuit.generate_constraints(&mut cs).unwrap();
         {
             use snarkvm_algorithms::r1cs::ConstraintSystem;
-            assert_eq!(Circuit::num_public() + 1, cs.num_public_variables() as u64);
+            assert_eq!(Circuit::num_public(), cs.num_public_variables() as u64);
             assert_eq!(Circuit::num_private(), cs.num_private_variables() as u64);
             assert_eq!(Circuit::num_constraints(), cs.num_constraints() as u64);
             assert!(cs.is_satisfied());
@@ -227,7 +253,7 @@ mod tests {
 
         use snarkvm_algorithms::{
             crypto_hash::PoseidonSponge,
-            snark::varuna::{ahp::AHPForR1CS, VarunaHidingMode, VarunaSNARK},
+            snark::varuna::{VarunaHidingMode, VarunaSNARK, ahp::AHPForR1CS},
         };
         use snarkvm_curves::bls12_377::{Bls12_377, Fq};
         use snarkvm_utilities::rand::TestRng;

@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -24,6 +25,8 @@ impl<N: Network> FromBytes for Committee<N> {
             return Err(error("Invalid committee version"));
         }
 
+        // Read the committee ID.
+        let id = Field::read_le(&mut reader)?;
         // Read the starting round.
         let starting_round = u64::read_le(&mut reader)?;
         // Read the number of members.
@@ -35,22 +38,36 @@ impl<N: Network> FromBytes for Committee<N> {
                 Self::MAX_COMMITTEE_SIZE,
             )));
         }
+
+        // Calculate the number of bytes per member. Each member is a (address, stake, is_open, commission) tuple.
+        let member_byte_size = Address::<N>::size_in_bytes() + 8 + 1 + 1;
+        // Read the member bytes.
+        let mut member_bytes = vec![0u8; num_members as usize * member_byte_size];
+        reader.read_exact(&mut member_bytes)?;
         // Read the members.
-        let mut members = IndexMap::with_capacity(num_members as usize);
-        for _ in 0..num_members {
-            // Read the address.
-            let member = Address::read_le(&mut reader)?;
-            // Read the stake.
-            let stake = u64::read_le(&mut reader)?;
-            // Read the is_open flag.
-            let is_open = bool::read_le(&mut reader)?;
-            // Insert the member and (stake, is_open).
-            members.insert(member, (stake, is_open));
-        }
+        let members = cfg_chunks!(member_bytes, member_byte_size)
+            .map(|mut bytes| {
+                // Read the address.
+                let member = Address::<N>::read_le(&mut bytes)?;
+                // Read the stake.
+                let stake = u64::read_le(&mut bytes)?;
+                // Read the is_open flag.
+                let is_open = bool::read_le(&mut bytes)?;
+                // Read the commission.
+                let commission = u8::read_le(&mut bytes)?;
+                // Insert the member and (stake, is_open).
+                Ok((member, (stake, is_open, commission)))
+            })
+            .collect::<Result<IndexMap<_, _>, std::io::Error>>()?;
+
         // Read the total stake.
         let total_stake = u64::read_le(&mut reader)?;
         // Construct the committee.
         let committee = Self::new(starting_round, members).map_err(|e| error(e.to_string()))?;
+        // Ensure the committee ID matches.
+        if committee.id() != id {
+            return Err(error("Invalid committee ID during deserialization"));
+        }
         // Ensure the total stake matches.
         match committee.total_stake() == total_stake {
             true => Ok(committee),
@@ -64,18 +81,22 @@ impl<N: Network> ToBytes for Committee<N> {
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         // Write the version.
         1u8.write_le(&mut writer)?;
+        // Write the committee ID.
+        self.id().write_le(&mut writer)?;
         // Write the starting round.
         self.starting_round.write_le(&mut writer)?;
         // Write the number of members.
         u16::try_from(self.members.len()).map_err(|e| error(e.to_string()))?.write_le(&mut writer)?;
         // Write the members.
-        for (address, (stake, is_open)) in &self.members {
+        for (address, (stake, is_open, commission)) in &self.members {
             // Write the address.
             address.write_le(&mut writer)?;
             // Write the stake.
             stake.write_le(&mut writer)?;
             // Write the is_open flag.
             is_open.write_le(&mut writer)?;
+            // Write the commission.
+            commission.write_le(&mut writer)?;
         }
         // Write the total stake.
         self.total_stake.write_le(&mut writer)

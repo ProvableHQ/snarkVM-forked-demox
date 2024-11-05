@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -113,7 +114,7 @@ impl<N: Network, Command: CommandTrait<N>> FinalizeCore<N, Command> {
         // Ensure the maximum number of commands has not been exceeded.
         ensure!(self.commands.len() < N::MAX_COMMANDS, "Cannot add more than {} commands", N::MAX_COMMANDS);
         // Ensure the number of write commands has not been exceeded.
-        ensure!(self.num_writes < N::MAX_WRITES, "Cannot add more than {} 'set' commands", N::MAX_WRITES);
+        ensure!(self.num_writes < N::MAX_WRITES, "Cannot add more than {} 'set' & 'remove' commands", N::MAX_WRITES);
 
         // Ensure the command is not a call instruction.
         ensure!(!command.is_call(), "Forbidden operation: Finalize cannot invoke a 'call'");
@@ -168,7 +169,7 @@ mod tests {
 
     use crate::{Command, Finalize};
 
-    type CurrentNetwork = console::network::Testnet3;
+    type CurrentNetwork = console::network::MainnetV0;
 
     #[test]
     fn test_add_input() {
@@ -202,7 +203,7 @@ mod tests {
 
         // Ensure that a command can be added.
         let command = Command::<CurrentNetwork>::from_str("add r0 r1 into r2;").unwrap();
-        assert!(finalize.add_command(command.clone()).is_ok());
+        assert!(finalize.add_command(command).is_ok());
 
         // Ensure that adding more than the maximum number of commands will fail.
         for i in 3..CurrentNetwork::MAX_COMMANDS * 2 {

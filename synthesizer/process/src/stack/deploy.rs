@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -14,7 +15,7 @@
 
 use super::*;
 
-use rand::{rngs::StdRng, SeedableRng};
+use rand::{SeedableRng, rngs::StdRng};
 
 impl<N: Network> Stack<N> {
     /// Deploys the given program ID, if it does not exist.
@@ -73,11 +74,36 @@ impl<N: Network> Stack<N> {
 
         let program_id = self.program.id();
 
+        // Check that the number of combined variables does not exceed the deployment limit.
+        ensure!(deployment.num_combined_variables()? <= N::MAX_DEPLOYMENT_VARIABLES);
+        // Check that the number of combined constraints does not exceed the deployment limit.
+        ensure!(deployment.num_combined_constraints()? <= N::MAX_DEPLOYMENT_CONSTRAINTS);
+
         // Construct the call stacks and assignments used to verify the certificates.
         let mut call_stacks = Vec::with_capacity(deployment.verifying_keys().len());
 
+        // The `root_tvk` is `None` when verifying the deployment of an individual circuit.
+        let root_tvk = None;
+
+        // The `caller` is `None` when verifying the deployment of an individual circuit.
+        let caller = None;
+
+        // Check that the number of functions matches the number of verifying keys.
+        ensure!(
+            deployment.program().functions().len() == deployment.verifying_keys().len(),
+            "The number of functions in the program does not match the number of verifying keys"
+        );
+
+        // Create a seeded rng to use for input value and sub-stack generation.
+        // This is needed to ensure that the verification results of deployments are consistent across all parties,
+        // because currently there is a possible flakiness due to overflows in Field to Scalar casting.
+        let seed = u64::from_bytes_le(&deployment.to_deployment_id()?.to_bytes_le()?[0..8])?;
+        let mut seeded_rng = rand_chacha::ChaChaRng::seed_from_u64(seed);
+
         // Iterate through the program functions and construct the callstacks and corresponding assignments.
-        for function in deployment.program().functions().values() {
+        for (function, (_, (verifying_key, _))) in
+            deployment.program().functions().values().zip_eq(deployment.verifying_keys())
+        {
             // Initialize a burner private key.
             let burner_private_key = PrivateKey::new(rng)?;
             // Compute the burner address.
@@ -92,12 +118,14 @@ impl<N: Network> Stack<N> {
                         // Retrieve the external stack.
                         let stack = self.get_external_stack(locator.program_id())?;
                         // Sample the input.
-                        stack.sample_value(&burner_address, &ValueType::Record(*locator.resource()), rng)
+                        stack.sample_value(&burner_address, &ValueType::Record(*locator.resource()), &mut seeded_rng)
                     }
-                    _ => self.sample_value(&burner_address, input_type, rng),
+                    _ => self.sample_value(&burner_address, input_type, &mut seeded_rng),
                 })
                 .collect::<Result<Vec<_>>>()?;
             lap!(timer, "Sample the inputs");
+            // Sample 'is_root'.
+            let is_root = true;
 
             // Compute the request, with a burner private key.
             let request = Request::sign(
@@ -106,23 +134,38 @@ impl<N: Network> Stack<N> {
                 *function.name(),
                 inputs.into_iter(),
                 &input_types,
+                root_tvk,
+                is_root,
                 rng,
             )?;
             lap!(timer, "Compute the request for {}", function.name());
             // Initialize the assignments.
             let assignments = Assignments::<N>::default();
+            // Initialize the constraint limit. Account for the constraint added after synthesis that makes the Varuna zerocheck hiding.
+            let Some(constraint_limit) = verifying_key.circuit_info.num_constraints.checked_sub(1) else {
+                // Since a deployment must always pay non-zero fee, it must always have at least one constraint.
+                bail!("The constraint limit of 0 for function '{}' is invalid", function.name());
+            };
+            // Retrieve the variable limit.
+            let variable_limit = verifying_key.num_variables();
             // Initialize the call stack.
-            let call_stack = CallStack::CheckDeployment(vec![request], burner_private_key, assignments.clone());
+            let call_stack = CallStack::CheckDeployment(
+                vec![request],
+                burner_private_key,
+                assignments.clone(),
+                Some(constraint_limit as u64),
+                Some(variable_limit),
+            );
             // Append the function name, callstack, and assignments.
             call_stacks.push((function.name(), call_stack, assignments));
         }
 
         // Verify the certificates.
-        let rngs = (0..call_stacks.len()).map(|_| StdRng::from_seed(rng.gen())).collect::<Vec<_>>();
-        cfg_iter!(call_stacks).zip_eq(deployment.verifying_keys()).zip_eq(rngs).try_for_each(
+        let rngs = (0..call_stacks.len()).map(|_| StdRng::from_seed(seeded_rng.gen())).collect::<Vec<_>>();
+        cfg_into_iter!(call_stacks).zip_eq(deployment.verifying_keys()).zip_eq(rngs).try_for_each(
             |(((function_name, call_stack, assignments), (_, (verifying_key, certificate))), mut rng)| {
                 // Synthesize the circuit.
-                if let Err(err) = self.execute_function::<A, _>(call_stack.clone(), None, &mut rng) {
+                if let Err(err) = self.execute_function::<A, _>(call_stack, caller, root_tvk, &mut rng) {
                     bail!("Failed to synthesize the circuit for '{function_name}': {err}")
                 }
                 // Check the certificate.

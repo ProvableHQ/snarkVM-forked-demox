@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -15,24 +16,48 @@
 mod initialize;
 mod matches;
 
+use crate::RegisterTypes;
+
 use console::{
     network::prelude::*,
-    program::{ArrayType, Identifier, LiteralType, PlaintextType, Register, RegisterType, StructType},
+    program::{
+        Access,
+        ArrayType,
+        FinalizeType,
+        Identifier,
+        LiteralType,
+        Locator,
+        PlaintextType,
+        Register,
+        RegisterType,
+        StructType,
+    },
 };
 use synthesizer_program::{
+    Await,
+    Branch,
+    CallOperator,
+    CastType,
     Command,
+    Contains,
     Finalize,
+    Get,
+    GetOrUse,
     Instruction,
     InstructionTrait,
+    MAX_ADDITIONAL_SEEDS,
     Opcode,
     Operand,
     Program,
+    RandChaCha,
+    Remove,
+    Set,
     StackMatches,
     StackProgram,
 };
 
-use console::program::{Access, FinalizeType, Locator};
 use indexmap::IndexMap;
+use std::collections::HashSet;
 
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct FinalizeTypes<N: Network> {
@@ -79,6 +104,7 @@ impl<N: Network> FinalizeTypes<N> {
             Operand::Signer => bail!("'self.signer' is not a valid operand in a finalize context."),
             Operand::Caller => bail!("'self.caller' is not a valid operand in a finalize context."),
             Operand::BlockHeight => FinalizeType::Plaintext(PlaintextType::Literal(LiteralType::U32)),
+            Operand::NetworkID => FinalizeType::Plaintext(PlaintextType::Literal(LiteralType::U16)),
         })
     }
 

@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -14,6 +15,10 @@
 
 use crate::Aleo;
 use snarkvm_circuit_algorithms::{
+    BHP256,
+    BHP512,
+    BHP768,
+    BHP1024,
     Commit,
     CommitUncompressed,
     Hash,
@@ -24,26 +29,22 @@ use snarkvm_circuit_algorithms::{
     Keccak256,
     Keccak384,
     Keccak512,
-    Pedersen128,
     Pedersen64,
+    Pedersen128,
     Poseidon2,
     Poseidon4,
     Poseidon8,
     Sha3_256,
     Sha3_384,
     Sha3_512,
-    BHP1024,
-    BHP256,
-    BHP512,
-    BHP768,
 };
 use snarkvm_circuit_collections::merkle_tree::MerklePath;
 use snarkvm_circuit_types::{
-    environment::{prelude::*, Assignment, Circuit, R1CS},
     Boolean,
     Field,
     Group,
     Scalar,
+    environment::{Assignment, Circuit, R1CS, prelude::*},
 };
 
 use core::fmt;
@@ -52,14 +53,14 @@ type E = Circuit;
 
 thread_local! {
     /// The group bases for the Aleo signature and encryption schemes.
-    static GENERATOR_G: Vec<Group<AleoV0>> = Vec::constant(<console::Testnet3 as console::Network>::g_powers().to_vec());
+    static GENERATOR_G: Vec<Group<AleoV0>> = Vec::constant(<console::MainnetV0 as console::Network>::g_powers().to_vec());
 
     /// The encryption domain as a constant field element.
-    static ENCRYPTION_DOMAIN: Field<AleoV0> = Field::constant(<console::Testnet3 as console::Network>::encryption_domain());
+    static ENCRYPTION_DOMAIN: Field<AleoV0> = Field::constant(<console::MainnetV0 as console::Network>::encryption_domain());
     /// The graph key domain as a constant field element.
-    static GRAPH_KEY_DOMAIN: Field<AleoV0> = Field::constant(<console::Testnet3 as console::Network>::graph_key_domain());
+    static GRAPH_KEY_DOMAIN: Field<AleoV0> = Field::constant(<console::MainnetV0 as console::Network>::graph_key_domain());
     /// The serial number domain as a constant field element.
-    static SERIAL_NUMBER_DOMAIN: Field<AleoV0> = Field::constant(<console::Testnet3 as console::Network>::serial_number_domain());
+    static SERIAL_NUMBER_DOMAIN: Field<AleoV0> = Field::constant(<console::MainnetV0 as console::Network>::serial_number_domain());
 
     /// The BHP hash function, which can take an input of up to 256 bits.
     static BHP_256: BHP256<AleoV0> = BHP256::<AleoV0>::constant(console::BHP_256.clone());
@@ -101,6 +102,29 @@ thread_local! {
 pub struct AleoV0;
 
 impl Aleo for AleoV0 {
+    /// Initializes the global constants for the Aleo environment.
+    fn initialize_global_constants() {
+        GENERATOR_G.with(|_| ());
+        ENCRYPTION_DOMAIN.with(|_| ());
+        GRAPH_KEY_DOMAIN.with(|_| ());
+        SERIAL_NUMBER_DOMAIN.with(|_| ());
+        BHP_256.with(|_| ());
+        BHP_512.with(|_| ());
+        BHP_768.with(|_| ());
+        BHP_1024.with(|_| ());
+        KECCAK_256.with(|_| ());
+        KECCAK_384.with(|_| ());
+        KECCAK_512.with(|_| ());
+        PEDERSEN_64.with(|_| ());
+        PEDERSEN_128.with(|_| ());
+        POSEIDON_2.with(|_| ());
+        POSEIDON_4.with(|_| ());
+        POSEIDON_8.with(|_| ());
+        SHA3_256.with(|_| ());
+        SHA3_384.with(|_| ());
+        SHA3_512.with(|_| ());
+    }
+
     /// Returns the encryption domain as a constant field element.
     fn encryption_domain() -> Field<Self> {
         ENCRYPTION_DOMAIN.with(|domain| domain.clone())
@@ -426,6 +450,11 @@ impl Environment for AleoV0 {
         E::num_private()
     }
 
+    /// Returns the number of constant, public, and private variables in the entire circuit.
+    fn num_variables() -> u64 {
+        E::num_variables()
+    }
+
     /// Returns the number of constraints in the entire circuit.
     fn num_constraints() -> u64 {
         E::num_constraints()
@@ -459,6 +488,26 @@ impl Environment for AleoV0 {
     /// Returns the number of nonzeros for the current scope.
     fn num_nonzeros_in_scope() -> (u64, u64, u64) {
         E::num_nonzeros_in_scope()
+    }
+
+    /// Returns the variable limit for the circuit, if one exists.
+    fn get_variable_limit() -> Option<u64> {
+        E::get_variable_limit()
+    }
+
+    /// Sets the variable limit for the circuit.
+    fn set_variable_limit(limit: Option<u64>) {
+        E::set_variable_limit(limit)
+    }
+
+    /// Returns the constraint limit for the circuit, if one exists.
+    fn get_constraint_limit() -> Option<u64> {
+        E::get_constraint_limit()
+    }
+
+    /// Sets the constraint limit for the circuit.
+    fn set_constraint_limit(limit: Option<u64>) {
+        E::set_constraint_limit(limit)
     }
 
     /// Halts the program from further synthesis, evaluation, and execution in the current environment.

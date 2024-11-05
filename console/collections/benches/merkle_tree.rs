@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -16,9 +17,9 @@
 extern crate criterion;
 
 use snarkvm_console_network::{
-    prelude::{TestRng, ToBits, Uniform},
+    MainnetV0,
     Network,
-    Testnet3,
+    prelude::{TestRng, ToBits, Uniform},
 };
 use snarkvm_console_types::Field;
 
@@ -34,7 +35,7 @@ const UPDATE_SIZES: &[usize] = &[1, 10, 100, 1_000, 10_000];
 
 /// Generates the specified number of random Merkle tree leaves.
 macro_rules! generate_leaves {
-    ($num_leaves:expr, $rng:expr) => {{ (0..$num_leaves).map(|_| Field::<Testnet3>::rand($rng).to_bits_le()).collect::<Vec<_>>() }};
+    ($num_leaves:expr, $rng:expr) => {{ (0..$num_leaves).map(|_| Field::<MainnetV0>::rand($rng).to_bits_le()).collect::<Vec<_>>() }};
 }
 
 fn new(c: &mut Criterion) {
@@ -45,7 +46,7 @@ fn new(c: &mut Criterion) {
         // Benchmark the creation of a Merkle tree with the specified number of leaves.
         c.bench_function(&format!("MerkleTree/new/{num_leaves}"), |b| {
             b.iter(|| {
-                let _tree = Testnet3::merkle_tree_bhp::<DEPTH>(&leaves[0..*num_leaves]).unwrap();
+                let _tree = MainnetV0::merkle_tree_bhp::<DEPTH>(&leaves[0..*num_leaves]).unwrap();
             })
         });
     }
@@ -61,7 +62,7 @@ fn append(c: &mut Criterion) {
     for num_leaves in NUM_LEAVES {
         for num_new_leaves in APPEND_SIZES {
             // Construct a Merkle tree with the specified number of leaves.
-            let merkle_tree = Testnet3::merkle_tree_bhp::<DEPTH>(&leaves[..*num_leaves]).unwrap();
+            let merkle_tree = MainnetV0::merkle_tree_bhp::<DEPTH>(&leaves[..*num_leaves]).unwrap();
             c.bench_function(&format!("MerkleTree/append/{num_leaves}/{num_new_leaves}"), |b| {
                 b.iter_batched(
                     || merkle_tree.clone(),
@@ -93,7 +94,7 @@ fn update(c: &mut Criterion) {
 
         for num_new_leaves in UPDATE_SIZES {
             // Construct a Merkle tree with the specified number of leaves.
-            let merkle_tree = Testnet3::merkle_tree_bhp::<DEPTH>(&leaves[..*num_leaves]).unwrap();
+            let merkle_tree = MainnetV0::merkle_tree_bhp::<DEPTH>(&leaves[..*num_leaves]).unwrap();
 
             c.bench_function(&format!("MerkleTree/update/{num_leaves}/{num_new_leaves}"), |b| {
                 b.iter_batched(
@@ -131,7 +132,7 @@ fn update_many(c: &mut Criterion) {
 
         for num_new_leaves in UPDATE_SIZES {
             // Construct a Merkle tree with the specified number of leaves.
-            let merkle_tree = Testnet3::merkle_tree_bhp::<DEPTH>(&leaves[..*num_leaves]).unwrap();
+            let merkle_tree = MainnetV0::merkle_tree_bhp::<DEPTH>(&leaves[..*num_leaves]).unwrap();
             let num_new_leaves = std::cmp::min(*num_new_leaves, updates.len());
             let updates = BTreeMap::from_iter(updates[..num_new_leaves].iter().cloned());
             c.bench_function(&format!("MerkleTree/update_many/{num_leaves}/{num_new_leaves}",), |b| {
@@ -157,18 +158,18 @@ fn update_vs_update_many(c: &mut Criterion) {
         // Compute the number of leaves at this depth.
         let num_leaves = 2usize.saturating_pow(depth as u32);
         // Construct a Merkle tree with the specified number of leaves.
-        let tree = Testnet3::merkle_tree_bhp::<DEPTH>(&leaves[..num_leaves]).unwrap();
+        let tree = MainnetV0::merkle_tree_bhp::<DEPTH>(&leaves[..num_leaves]).unwrap();
         // Generate a new leaf and select a random index to update.
         let index: usize = Uniform::rand(&mut rng);
         let index = index % num_leaves;
         let new_leaf = generate_leaves!(1, &mut rng).pop().unwrap();
         // Benchmark the standard update operation.
-        group.bench_with_input(BenchmarkId::new("Single", &format!("{depth}")), &new_leaf, |b, new_leaf| {
+        group.bench_with_input(BenchmarkId::new("Single", format!("{depth}")), &new_leaf, |b, new_leaf| {
             b.iter_batched(|| tree.clone(), |mut tree| tree.update(index, new_leaf), BatchSize::SmallInput)
         });
         // Benchmark the `update_many` operation.
         group.bench_with_input(
-            BenchmarkId::new("Batch", &format!("{depth}")),
+            BenchmarkId::new("Batch", format!("{depth}")),
             &BTreeMap::from([(index, new_leaf)]),
             |b, updates| b.iter_batched(|| tree.clone(), |mut tree| tree.update_many(updates), BatchSize::SmallInput),
         );

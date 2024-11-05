@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -24,17 +25,19 @@ pub use nested_map::*;
 #[cfg(test)]
 mod tests;
 
-use anyhow::{bail, Result};
+use aleo_std_storage::StorageMode;
+use anyhow::{Result, bail, ensure};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use std::{
     borrow::Borrow,
     marker::PhantomData,
+    mem,
     ops::Deref,
     sync::{
-        atomic::{AtomicBool, AtomicUsize},
         Arc,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
 };
 
@@ -42,45 +45,68 @@ pub const PREFIX_LEN: usize = 4; // N::ID (u16) + DataID (u16)
 
 pub trait Database {
     /// Opens the database.
-    fn open(network_id: u16, dev: Option<u16>) -> Result<Self>
+    fn open<S: Clone + Into<StorageMode>>(network_id: u16, storage: S) -> Result<Self>
     where
         Self: Sized;
 
-    /// Opens the map with the given `network_id`, `(optional) development ID`, and `map_id` from storage.
-    fn open_map<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned, T: Into<u16>>(
+    /// Opens the map with the given `network_id`, `storage mode`, and `map_id` from storage.
+    fn open_map<
+        S: Clone + Into<StorageMode>,
+        K: Serialize + DeserializeOwned,
+        V: Serialize + DeserializeOwned,
+        T: Into<u16>,
+    >(
         network_id: u16,
-        dev: Option<u16>,
+        storage: S,
         map_id: T,
     ) -> Result<DataMap<K, V>>;
 
-    /// Opens the nested map with the given `network_id`, `(optional) development ID`, and `map_id` from storage.
+    /// Opens the nested map with the given `network_id`, `storage mode`, and `map_id` from storage.
     fn open_nested_map<
+        S: Clone + Into<StorageMode>,
         M: Serialize + DeserializeOwned,
         K: Serialize + DeserializeOwned,
         V: Serialize + DeserializeOwned,
         T: Into<u16>,
     >(
         network_id: u16,
-        dev: Option<u16>,
+        storage: S,
         map_id: T,
     ) -> Result<NestedDataMap<M, K, V>>;
 }
 
 /// An instance of a RocksDB database.
-#[derive(Clone)]
 pub struct RocksDB {
     /// The RocksDB instance.
     rocksdb: Arc<rocksdb::DB>,
     /// The network ID.
     network_id: u16,
-    /// The optional development ID.
-    dev: Option<u16>,
+    /// The storage mode.
+    storage_mode: StorageMode,
     /// The low-level database transaction that gets executed atomically at the end
     /// of a real-run `atomic_finalize` or the outermost `atomic_batch_scope`.
     pub(super) atomic_batch: Arc<Mutex<rocksdb::WriteBatch>>,
     /// The depth of the current atomic write batch; it gets incremented with every call
     /// to `start_atomic` and decremented with each call to `finish_atomic`.
     pub(super) atomic_depth: Arc<AtomicUsize>,
+    /// A flag indicating whether the atomic writes are currently paused.
+    pub(super) atomic_writes_paused: Arc<AtomicBool>,
+    /// This is an optimization that avoids some allocations when querying the database.
+    pub(super) default_readopts: rocksdb::ReadOptions,
+}
+
+impl Clone for RocksDB {
+    fn clone(&self) -> Self {
+        Self {
+            rocksdb: self.rocksdb.clone(),
+            network_id: self.network_id,
+            storage_mode: self.storage_mode.clone(),
+            atomic_batch: self.atomic_batch.clone(),
+            atomic_depth: self.atomic_depth.clone(),
+            atomic_writes_paused: self.atomic_writes_paused.clone(),
+            default_readopts: Default::default(),
+        }
+    }
 }
 
 impl Deref for RocksDB {
@@ -96,7 +122,7 @@ impl Database for RocksDB {
     ///
     /// In production mode, the database opens directory `~/.aleo/storage/ledger-{network}`.
     /// In development mode, the database opens directory `/path/to/repo/.ledger-{network}-{id}`.
-    fn open(network_id: u16, dev: Option<u16>) -> Result<Self> {
+    fn open<S: Clone + Into<StorageMode>>(network_id: u16, storage: S) -> Result<Self> {
         static DB: OnceCell<RocksDB> = OnceCell::new();
 
         // Retrieve the database.
@@ -110,11 +136,12 @@ impl Database for RocksDB {
                 let prefix_extractor = rocksdb::SliceTransform::create_fixed_prefix(PREFIX_LEN);
                 options.set_prefix_extractor(prefix_extractor);
 
-                let primary = aleo_std::aleo_ledger_dir(network_id, dev);
+                let primary = aleo_std_storage::aleo_ledger_dir(network_id, storage.clone().into());
                 let rocksdb = {
                     options.increase_parallelism(2);
                     options.set_max_background_jobs(4);
                     options.create_if_missing(true);
+                    options.set_max_open_files(8192);
 
                     Arc::new(rocksdb::DB::open(&options, primary)?)
                 };
@@ -122,28 +149,35 @@ impl Database for RocksDB {
                 Ok::<_, anyhow::Error>(RocksDB {
                     rocksdb,
                     network_id,
-                    dev,
+                    storage_mode: storage.clone().into(),
                     atomic_batch: Default::default(),
                     atomic_depth: Default::default(),
+                    atomic_writes_paused: Default::default(),
+                    default_readopts: Default::default(),
                 })
             })?
             .clone();
 
-        // Ensure the database network ID and development ID match.
-        match database.network_id == network_id && database.dev == dev {
+        // Ensure the database network ID and storage mode match.
+        match database.network_id == network_id && database.storage_mode == storage.into() {
             true => Ok(database),
-            false => bail!("Mismatching network ID or development ID in the database"),
+            false => bail!("Mismatching network ID or storage mode in the database"),
         }
     }
 
-    /// Opens the map with the given `network_id`, `(optional) development ID`, and `map_id` from storage.
-    fn open_map<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned, T: Into<u16>>(
+    /// Opens the map with the given `network_id`, `storage mode`, and `map_id` from storage.
+    fn open_map<
+        S: Clone + Into<StorageMode>,
+        K: Serialize + DeserializeOwned,
+        V: Serialize + DeserializeOwned,
+        T: Into<u16>,
+    >(
         network_id: u16,
-        dev: Option<u16>,
+        storage: S,
         map_id: T,
     ) -> Result<DataMap<K, V>> {
         // Open the RocksDB database.
-        let database = Self::open(network_id, dev)?;
+        let database = Self::open(network_id, storage)?;
 
         // Combine contexts to create a new scope.
         let mut context = database.network_id.to_le_bytes().to_vec();
@@ -159,19 +193,20 @@ impl Database for RocksDB {
         })))
     }
 
-    /// Opens the nested map with the given `network_id`, `(optional) development ID`, and `map_id` from storage.
+    /// Opens the nested map with the given `network_id`, `storage mode`, and `map_id` from storage.
     fn open_nested_map<
+        S: Clone + Into<StorageMode>,
         M: Serialize + DeserializeOwned,
         K: Serialize + DeserializeOwned,
         V: Serialize + DeserializeOwned,
         T: Into<u16>,
     >(
         network_id: u16,
-        dev: Option<u16>,
+        storage: S,
         map_id: T,
     ) -> Result<NestedDataMap<M, K, V>> {
         // Open the RocksDB database.
-        let database = Self::open(network_id, dev)?;
+        let database = Self::open(network_id, storage)?;
 
         // Combine contexts to create a new scope.
         let mut context = database.network_id.to_le_bytes().to_vec();
@@ -189,10 +224,72 @@ impl Database for RocksDB {
 }
 
 impl RocksDB {
+    /// Pause the execution of atomic writes for the entire database.
+    fn pause_atomic_writes(&self) -> Result<()> {
+        // This operation is only intended to be performed before or after
+        // atomic batches - never in the middle of them.
+        assert_eq!(self.atomic_depth.load(Ordering::SeqCst), 0);
+
+        // Set the flag indicating that the pause is in effect.
+        let already_paused = self.atomic_writes_paused.swap(true, Ordering::SeqCst);
+        // Make sure that we haven't already paused atomic writes (which would
+        // indicate a logic bug).
+        assert!(!already_paused);
+
+        Ok(())
+    }
+
+    /// Unpause the execution of atomic writes for the entire database; this
+    /// executes all the writes that have been queued since they were paused.
+    fn unpause_atomic_writes<const DISCARD_BATCH: bool>(&self) -> Result<()> {
+        // Ensure the call to unpause is only performed before or after an atomic batch scope
+        // - and never in the middle of one (otherwise there is a fundamental logic bug).
+        // Note: In production, this `ensure` is a safety-critical invariant that never fails.
+        ensure!(self.atomic_depth.load(Ordering::SeqCst) == 0, "Atomic depth must be 0 to unpause atomic writes");
+
+        // https://github.com/rust-lang/rust/issues/98485
+        let currently_paused = self.atomic_writes_paused.load(Ordering::SeqCst);
+        // Ensure the database is paused (otherwise there is a fundamental logic bug).
+        // Note: In production, this `ensure` is a safety-critical invariant that never fails.
+        ensure!(currently_paused, "Atomic writes must be paused to unpause them");
+
+        // In order to ensure that all the operations that are intended
+        // to be atomic via the usual macro approach are still performed
+        // atomically (just as a part of a larger batch), every atomic
+        // storage operation that has accumulated from the moment the
+        // writes have been paused becomes executed as a single atomic batch.
+        let batch = mem::take(&mut *self.atomic_batch.lock());
+        if !DISCARD_BATCH {
+            self.rocksdb.write(batch)?;
+        }
+
+        // Unset the flag indicating that the pause is in effect.
+        self.atomic_writes_paused.store(false, Ordering::SeqCst);
+
+        Ok(())
+    }
+
+    /// Checks whether the atomic writes are currently paused.
+    fn are_atomic_writes_paused(&self) -> bool {
+        self.atomic_writes_paused.load(Ordering::SeqCst)
+    }
+
     /// Opens the test database.
     #[cfg(any(test, feature = "test"))]
     pub fn open_testing(temp_dir: std::path::PathBuf, dev: Option<u16>) -> Result<Self> {
         use console::prelude::{Rng, TestRng};
+
+        // Ensure the `temp_dir` is unique.
+        let temp_dir = temp_dir.join(Rng::gen::<u64>(&mut TestRng::default()).to_string());
+
+        // Construct the directory for the test database.
+        let primary = match dev {
+            Some(dev) => temp_dir.join(dev.to_string()),
+            None => temp_dir,
+        };
+
+        // Prepare the storage mode.
+        let storage_mode = StorageMode::from(primary.clone());
 
         let database = {
             // Customize database options.
@@ -202,15 +299,6 @@ impl RocksDB {
             // Register the prefix length.
             let prefix_extractor = rocksdb::SliceTransform::create_fixed_prefix(PREFIX_LEN);
             options.set_prefix_extractor(prefix_extractor);
-
-            // Ensure the `temp_dir` is unique.
-            let temp_dir = temp_dir.join(Rng::gen::<u64>(&mut TestRng::default()).to_string());
-
-            // Construct the directory for the test database.
-            let primary = match dev {
-                Some(dev) => temp_dir.join(dev.to_string()),
-                None => temp_dir,
-            };
 
             let rocksdb = {
                 options.increase_parallelism(2);
@@ -235,16 +323,18 @@ impl RocksDB {
             Ok::<_, anyhow::Error>(RocksDB {
                 rocksdb,
                 network_id: u16::MAX,
-                dev,
+                storage_mode: storage_mode.clone(),
                 atomic_batch: Default::default(),
                 atomic_depth: Default::default(),
+                atomic_writes_paused: Default::default(),
+                default_readopts: Default::default(),
             })
         }?;
 
-        // Ensure the database development ID match.
-        match database.dev == dev {
+        // Ensure the database storage mode match.
+        match database.storage_mode == storage_mode {
             true => Ok(database),
-            false => bail!("Mismatching development ID in the test database"),
+            false => bail!("Mismatching storage mode in the test database"),
         }
     }
 

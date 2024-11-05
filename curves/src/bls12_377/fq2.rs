@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -14,14 +15,14 @@
 
 use serde::{Deserialize, Serialize};
 
-use snarkvm_fields::{field, Field, Fp2, Fp2Parameters};
+use snarkvm_fields::{Field, Fp2, Fp2Parameters, field};
 use snarkvm_utilities::biginteger::BigInteger384 as BigInteger;
 
 use crate::bls12_377::Fq;
 
 pub type Fq2 = Fp2<Fq2Parameters>;
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Fq2Parameters;
 
 impl Fp2Parameters for Fq2Parameters {

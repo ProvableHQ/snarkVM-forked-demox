@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -14,27 +15,27 @@
 
 use crate::{
     fft::{
-        domain::{FFTPrecomputation, IFFTPrecomputation},
-        polynomial::PolyMultiplier,
         DensePolynomial,
         EvaluationDomain,
         Evaluations,
+        domain::{FFTPrecomputation, IFFTPrecomputation},
+        polynomial::PolyMultiplier,
     },
     polycommit::sonic_pc::{LabeledPolynomial, PolynomialInfo, PolynomialLabel},
     snark::varuna::{
-        ahp::{indexer::CircuitId, verifier, AHPForR1CS},
-        matrices::transpose,
-        prover::{self, MatrixSums, ThirdMessage},
-        selectors::apply_randomized_selector,
         AHPError,
         Matrix,
         SNARKMode,
+        ahp::{AHPForR1CS, indexer::CircuitId, verifier},
+        matrices::transpose,
+        prover::{self, MatrixSums, ThirdMessage},
+        selectors::apply_randomized_selector,
     },
 };
 use snarkvm_fields::PrimeField;
-use snarkvm_utilities::{cfg_iter, ExecutionPool};
+use snarkvm_utilities::{ExecutionPool, cfg_iter};
 
-use anyhow::{ensure, Result};
+use anyhow::{Result, ensure};
 use itertools::Itertools;
 use rand_core::RngCore;
 use std::collections::BTreeMap;
@@ -153,9 +154,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             let fft_precomputation = &circuit.fft_precomputation;
             let ifft_precomputation = &circuit.ifft_precomputation;
 
-            for (_j, (&instance_combiner, assignment)) in
-                itertools::izip!(instance_combiners, assignments_i).enumerate()
-            {
+            for (&instance_combiner, assignment) in itertools::izip!(instance_combiners, assignments_i) {
                 for (label, matrix_combiner) in itertools::izip!(matrix_labels, matrix_combiners) {
                     let matrix_transpose = &matrix_transposes_i[label];
                     let combiner = circuit_combiner * instance_combiner * matrix_combiner;

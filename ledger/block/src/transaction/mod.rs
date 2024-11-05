@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -29,7 +30,7 @@ mod string;
 use crate::Transition;
 use console::{
     network::prelude::*,
-    program::{Ciphertext, ProgramOwner, Record, TransactionLeaf, TransactionPath, TransactionTree, TRANSACTION_DEPTH},
+    program::{Ciphertext, ProgramOwner, Record, TRANSACTION_DEPTH, TransactionLeaf, TransactionPath, TransactionTree},
     types::{Field, Group, U64},
 };
 
@@ -407,9 +408,9 @@ impl<N: Network> Transaction<N> {
 #[cfg(test)]
 pub mod test_helpers {
     use super::*;
-    use console::{account::PrivateKey, network::Testnet3, program::ProgramOwner};
+    use console::{account::PrivateKey, network::MainnetV0, program::ProgramOwner};
 
-    type CurrentNetwork = Testnet3;
+    type CurrentNetwork = MainnetV0;
 
     /// Samples a random deployment transaction with a private or public fee.
     pub fn sample_deployment_transaction(is_fee_private: bool, rng: &mut TestRng) -> Transaction<CurrentNetwork> {

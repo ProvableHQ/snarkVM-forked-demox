@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -16,24 +17,24 @@ use core::marker::PhantomData;
 
 use crate::{
     fft::{
-        domain::{FFTPrecomputation, IFFTPrecomputation},
         EvaluationDomain,
+        domain::{FFTPrecomputation, IFFTPrecomputation},
     },
     polycommit::sonic_pc::LabeledPolynomial,
     snark::varuna::{
-        ahp::matrices::MatrixEvals,
-        matrices::MatrixArithmetization,
         AHPForR1CS,
         CircuitInfo,
         Matrix,
         SNARKMode,
+        ahp::matrices::MatrixEvals,
+        matrices::MatrixArithmetization,
     },
 };
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use blake2::Digest;
 use hex::FromHex;
 use snarkvm_fields::PrimeField;
-use snarkvm_utilities::{serialize::*, SerializationError};
+use snarkvm_utilities::{SerializationError, serialize::*};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Ord, PartialOrd, CanonicalSerialize, CanonicalDeserialize)]
 pub struct CircuitId(pub [u8; 32]);
@@ -133,7 +134,7 @@ impl<F: PrimeField, SM: SNARKMode> Circuit<F, SM> {
 
     /// The size of the variable domain in this R1CS instance.
     pub fn variable_domain_size(&self) -> Result<usize> {
-        Ok(crate::fft::EvaluationDomain::<F>::new(self.index_info.num_variables)
+        Ok(crate::fft::EvaluationDomain::<F>::new(self.index_info.num_public_and_private_variables)
             .ok_or(anyhow!("Cannot create EvaluationDomain"))?
             .size())
     }
@@ -197,8 +198,9 @@ impl<F: PrimeField, SM: SNARKMode> CanonicalDeserialize for Circuit<F, SM> {
         let index_info: CircuitInfo = CanonicalDeserialize::deserialize_with_mode(&mut reader, compress, validate)?;
         let constraint_domain_size = EvaluationDomain::<F>::compute_size_of_domain(index_info.num_constraints)
             .ok_or(SerializationError::InvalidData)?;
-        let variable_domain_size = EvaluationDomain::<F>::compute_size_of_domain(index_info.num_variables)
-            .ok_or(SerializationError::InvalidData)?;
+        let variable_domain_size =
+            EvaluationDomain::<F>::compute_size_of_domain(index_info.num_public_and_private_variables)
+                .ok_or(SerializationError::InvalidData)?;
         let non_zero_a_domain_size = EvaluationDomain::<F>::compute_size_of_domain(index_info.num_non_zero_a)
             .ok_or(SerializationError::InvalidData)?;
         let non_zero_b_domain_size = EvaluationDomain::<F>::compute_size_of_domain(index_info.num_non_zero_b)

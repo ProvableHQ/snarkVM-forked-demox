@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -19,12 +20,12 @@ use crate::{
 };
 use snarkvm_fields::{Field, One, SquareRootField, Zero};
 use snarkvm_utilities::{
+    FromBytes,
+    ToBytes,
     bititerator::BitIteratorBE,
     io::{Error, ErrorKind, Read, Result as IoResult, Write},
     rand::Uniform,
     serialize::*,
-    FromBytes,
-    ToBytes,
 };
 
 use core::{
@@ -32,8 +33,8 @@ use core::{
     ops::{Mul, Neg},
 };
 use rand::{
-    distributions::{Distribution, Standard},
     Rng,
+    distributions::{Distribution, Standard},
 };
 use serde::{Deserialize, Serialize};
 
@@ -146,6 +147,18 @@ impl<P: Parameters> AffineCurve for Affine<P> {
             let y = if (y < negy) ^ greatest { y } else { negy };
             Self::new(x, y, false)
         })
+    }
+
+    /// Attempts to construct both possible affine points given an x-coordinate.
+    /// Points are not guaranteed to be in the prime order subgroup.
+    ///
+    /// The affine points returned should be in lexicographically growing order.
+    ///
+    /// Calling this should be equivalent (but likely more performant) to
+    /// `(AffineCurve::from_x_coordinate(x, false), AffineCurve::from_x_coordinate(x, true))`.
+    #[inline]
+    fn pair_from_x_coordinate(x: Self::BaseField) -> Option<(Self, Self)> {
+        Self::from_x_coordinate(x, false).map(|p1| (p1, Self::new(p1.x, -p1.y, false)))
     }
 
     /// Attempts to construct an affine point given a y-coordinate. The

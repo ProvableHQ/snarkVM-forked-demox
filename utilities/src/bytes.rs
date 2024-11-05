@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -13,17 +14,17 @@
 // limitations under the License.
 
 use crate::{
+    Vec,
     error,
     fmt,
     io::{Read, Result as IoResult, Write},
     marker::PhantomData,
-    Vec,
 };
 use serde::{
-    de::{self, Error, SeqAccess, Visitor},
-    ser::{self, SerializeTuple},
     Deserializer,
     Serializer,
+    de::{self, Error, SeqAccess, Visitor},
+    ser::{self, SerializeTuple},
 };
 use smol_str::SmolStr;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
@@ -80,7 +81,7 @@ pub trait FromBytes {
     }
 }
 
-pub struct ToBytesSerializer<T: ToBytes>(String, Option<usize>, PhantomData<T>);
+pub struct ToBytesSerializer<T: ToBytes>(PhantomData<T>);
 
 impl<T: ToBytes> ToBytesSerializer<T> {
     /// Serializes a static-sized object as a byte array (without length encoding).
@@ -100,7 +101,7 @@ impl<T: ToBytes> ToBytesSerializer<T> {
     }
 }
 
-pub struct FromBytesDeserializer<T: FromBytes>(String, Option<usize>, PhantomData<T>);
+pub struct FromBytesDeserializer<T: FromBytes>(PhantomData<T>);
 
 impl<'de, T: FromBytes> FromBytesDeserializer<T> {
     /// Deserializes a static-sized byte array (without length encoding).
@@ -166,12 +167,12 @@ impl<'de, T: FromBytes> FromBytesDeserializer<T> {
     }
 }
 
-pub struct FromBytesVisitor<'a>(&'a mut Vec<u8>, SmolStr, Option<usize>);
+pub struct FromBytesVisitor<'a>(&'a mut Vec<u8>, SmolStr);
 
 impl<'a> FromBytesVisitor<'a> {
     /// Initializes a new `FromBytesVisitor` with the given `buffer` and `name`.
     pub fn new(buffer: &'a mut Vec<u8>, name: &str) -> Self {
-        Self(buffer, SmolStr::new(name), None)
+        Self(buffer, SmolStr::new(name))
     }
 }
 
@@ -456,7 +457,7 @@ impl<'a, T: 'a + ToBytes> ToBytes for &'a T {
 }
 
 #[inline]
-pub fn bits_from_bytes_le(bytes: &[u8]) -> impl Iterator<Item = bool> + DoubleEndedIterator<Item = bool> + '_ {
+pub fn bits_from_bytes_le(bytes: &[u8]) -> impl DoubleEndedIterator<Item = bool> + '_ {
     bytes.iter().flat_map(|byte| (0..8).map(move |i| (*byte >> i) & 1 == 1))
 }
 
@@ -476,6 +477,40 @@ pub fn bytes_from_bits_le(bits: &[bool]) -> Vec<u8> {
     }
 
     bytes
+}
+
+/// A wrapper around a `Write` instance that limits the number of bytes that can be written.
+pub struct LimitedWriter<W: Write> {
+    writer: W,
+    limit: usize,
+    remaining: usize,
+}
+
+impl<W: Write> LimitedWriter<W> {
+    pub fn new(writer: W, limit: usize) -> Self {
+        Self { writer, limit, remaining: limit }
+    }
+}
+
+impl<W: Write> Write for LimitedWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
+        if self.remaining == 0 && !buf.is_empty() {
+            return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Byte limit exceeded: {}", self.limit)));
+        }
+
+        let max_write = std::cmp::min(buf.len(), self.remaining);
+        match self.writer.write(&buf[..max_write]) {
+            Ok(n) => {
+                self.remaining -= n;
+                Ok(n)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    fn flush(&mut self) -> IoResult<()> {
+        self.writer.flush()
+    }
 }
 
 #[cfg(test)]

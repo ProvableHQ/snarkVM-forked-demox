@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -13,8 +14,6 @@
 // limitations under the License.
 
 use crate::{
-    impl_add_sub_from_field_ref,
-    impl_mul_div_from_field_ref,
     FftField,
     Field,
     FieldError,
@@ -26,13 +25,15 @@ use crate::{
     PrimeField,
     SquareRootField,
     Zero,
+    impl_add_sub_from_field_ref,
+    impl_mul_div_from_field_ref,
 };
 use snarkvm_utilities::{
-    biginteger::{arithmetic as fa, BigInteger as _BigInteger, BigInteger384 as BigInteger},
-    serialize::CanonicalDeserialize,
     FromBytes,
     ToBits,
     ToBytes,
+    biginteger::{BigInteger as _BigInteger, BigInteger384 as BigInteger, arithmetic as fa},
+    serialize::CanonicalDeserialize,
 };
 
 use std::{
@@ -47,21 +48,8 @@ use zeroize::Zeroize;
 
 pub trait Fp384Parameters: FieldParameters<BigInteger = BigInteger> {}
 
-#[derive(Derivative, Zeroize)]
-#[derivative(
-    Default(bound = "P: Fp384Parameters"),
-    Hash(bound = "P: Fp384Parameters"),
-    Clone(bound = "P: Fp384Parameters"),
-    Copy(bound = "P: Fp384Parameters"),
-    PartialEq(bound = "P: Fp384Parameters"),
-    Eq(bound = "P: Fp384Parameters")
-)]
-pub struct Fp384<P: Fp384Parameters>(
-    pub BigInteger,
-    #[derivative(Debug = "ignore")]
-    #[doc(hidden)]
-    pub PhantomData<P>,
-);
+#[derive(Copy, Clone, Default, PartialEq, Eq, Hash, Zeroize)]
+pub struct Fp384<P: Fp384Parameters>(pub BigInteger, #[doc(hidden)] pub PhantomData<P>);
 
 impl<P: Fp384Parameters> Fp384<P> {
     #[inline]
@@ -169,7 +157,7 @@ impl<P: Fp384Parameters> Fp384<P> {
 impl<P: Fp384Parameters> Zero for Fp384<P> {
     #[inline]
     fn zero() -> Self {
-        Fp384::<P>(BigInteger::from(0), PhantomData)
+        Self(BigInteger::from(0), PhantomData)
     }
 
     #[inline]
@@ -181,7 +169,7 @@ impl<P: Fp384Parameters> Zero for Fp384<P> {
 impl<P: Fp384Parameters> One for Fp384<P> {
     #[inline]
     fn one() -> Self {
-        Fp384::<P>(P::R, PhantomData)
+        Self(P::R, PhantomData)
     }
 
     #[inline]
@@ -370,7 +358,7 @@ impl<P: Fp384Parameters> Field for Fp384<P> {
 
             let mut u = self.0;
             let mut v = P::MODULUS;
-            let mut b = Fp384::<P>(P::R2, PhantomData); // Avoids unnecessary reduction step.
+            let mut b = Self(P::R2, PhantomData); // Avoids unnecessary reduction step.
             let mut c = Self::zero();
 
             while u != one && v != one {
@@ -446,7 +434,6 @@ impl<P: Fp384Parameters> PrimeField for Fp384<P> {
         let mut tmp = self.0;
         let mut r = tmp.0;
         // Montgomery Reduction
-        // Iteration 0
         let k = r[0].wrapping_mul(P::INV);
         let mut carry = 0;
         fa::mac_with_carry(r[0], k, P::MODULUS.0[0], &mut carry);
@@ -551,6 +538,7 @@ impl<P: Fp384Parameters> SquareRootField for Fp384<P> {
 
         // s = self^((MODULUS - 1) // 2)
         let s = self.pow(P::MODULUS_MINUS_ONE_DIV_TWO);
+
         if s.is_zero() {
             Zero
         } else if s.is_one() {
@@ -573,6 +561,7 @@ impl<P: Fp384Parameters> SquareRootField for Fp384<P> {
     }
 }
 
+/// `Fp` elements are ordered lexicographically.
 impl<P: Fp384Parameters> Ord for Fp384<P> {
     #[inline(always)]
     fn cmp(&self, other: &Self) -> Ordering {
@@ -704,7 +693,7 @@ impl<P: Fp384Parameters> Neg for Fp384<P> {
         if !self.is_zero() {
             let mut tmp = P::MODULUS;
             tmp.sub_noborrow(&self.0);
-            Fp384::<P>(tmp, PhantomData)
+            Self(tmp, PhantomData)
         } else {
             self
         }
@@ -760,7 +749,7 @@ impl<'a, P: Fp384Parameters> AddAssign<&'a Self> for Fp384<P> {
     fn add_assign(&mut self, other: &Self) {
         // This cannot exceed the backing capacity.
         self.0.add_nocarry(&other.0);
-        // However, it may need to be reduced
+        // However, it may need to be reduced.
         self.reduce();
     }
 }
@@ -784,6 +773,7 @@ impl<'a, P: Fp384Parameters> MulAssign<&'a Self> for Fp384<P> {
         let mut carry1 = 0u64;
         let mut carry2 = 0u64;
 
+        // Iteration 0.
         r[0] = fa::mac(r[0], (self.0).0[0], (other.0).0[0], &mut carry1);
         let k = r[0].wrapping_mul(P::INV);
         fa::mac_discard(r[0], k, P::MODULUS.0[0], &mut carry2);

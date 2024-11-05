@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -17,7 +18,7 @@ mod utilities;
 use console::{
     account::{PrivateKey, ViewKey},
     network::prelude::*,
-    program::{Entry, Identifier, Literal, Plaintext, ProgramID, Record, Value, U64},
+    program::{Entry, Identifier, Literal, Plaintext, ProgramID, Record, U64, Value},
     types::{Boolean, Field},
 };
 use ledger_block::{
@@ -30,15 +31,14 @@ use ledger_block::{
     Transactions,
     Transition,
 };
-use ledger_store::{helpers::memory::ConsensusMemory, ConsensusStorage, ConsensusStore};
-use snarkvm_synthesizer::{program::FinalizeOperation, VM};
+use ledger_store::{ConsensusStorage, ConsensusStore, helpers::memory::ConsensusMemory};
+use snarkvm_synthesizer::{VM, program::FinalizeOperation};
 use synthesizer_program::FinalizeGlobalState;
 
 use anyhow::Result;
 use console::account::Address;
 use indexmap::IndexMap;
 use rayon::prelude::*;
-use std::borrow::Borrow;
 use utilities::*;
 
 #[test]
@@ -90,8 +90,16 @@ fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
                 rng,
             )
             .unwrap();
-        let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) =
-            vm.speculate(construct_finalize_global_state(&vm), Some(0u64), vec![], None, [transaction].iter()).unwrap();
+        let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = vm
+            .speculate(
+                construct_finalize_global_state(&vm),
+                Some(0u64),
+                vec![],
+                &None.into(),
+                [transaction].iter(),
+                rng,
+            )
+            .unwrap();
         assert!(aborted_transaction_ids.is_empty());
 
         let block = construct_next_block(
@@ -126,8 +134,16 @@ fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
             }
         };
 
-        let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) =
-            vm.speculate(construct_finalize_global_state(&vm), Some(0u64), vec![], None, [transaction].iter()).unwrap();
+        let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = vm
+            .speculate(
+                construct_finalize_global_state(&vm),
+                Some(0u64),
+                vec![],
+                &None.into(),
+                [transaction].iter(),
+                rng,
+            )
+            .unwrap();
         assert!(aborted_transaction_ids.is_empty());
 
         let block = construct_next_block(
@@ -265,8 +281,14 @@ fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
 
             // Speculate on the ratifications, solutions, and transaction.
             let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = match vm
-                .speculate(construct_finalize_global_state(&vm), Some(0u64), vec![], None, [transaction].iter())
-            {
+                .speculate(
+                    construct_finalize_global_state(&vm),
+                    Some(0u64),
+                    vec![],
+                    &None.into(),
+                    [transaction].iter(),
+                    rng,
+                ) {
                 Ok((ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations)) => {
                     result.insert(
                         serde_yaml::Value::String("speculate".to_string()),
@@ -400,8 +422,9 @@ fn construct_fee_records<C: ConsensusStorage<CurrentNetwork>, R: Rng + CryptoRng
             }
         }
 
-        let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) =
-            vm.speculate(construct_finalize_global_state(vm), Some(0u64), vec![], None, transactions.iter()).unwrap();
+        let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = vm
+            .speculate(construct_finalize_global_state(vm), Some(0u64), vec![], &None.into(), transactions.iter(), rng)
+            .unwrap();
         assert!(aborted_transaction_ids.is_empty());
 
         // Create a block for the fee transactions and add them to the VM.
@@ -434,8 +457,7 @@ fn construct_next_block<C: ConsensusStorage<CurrentNetwork>, R: Rng + CryptoRng>
     rng: &mut R,
 ) -> Result<Block<CurrentNetwork>> {
     // Get the most recent block.
-    let block_hash =
-        vm.block_store().get_block_hash(*vm.block_store().heights().max().unwrap().borrow()).unwrap().unwrap();
+    let block_hash = vm.block_store().get_block_hash(vm.block_store().max_height().unwrap()).unwrap().unwrap();
     let previous_block = vm.block_store().get_block(&block_hash).unwrap().unwrap();
 
     // Construct the metadata associated with the block.
@@ -468,7 +490,8 @@ fn construct_next_block<C: ConsensusStorage<CurrentNetwork>, R: Rng + CryptoRng>
         previous_block.hash(),
         header,
         ratifications,
-        None,
+        None.into(),
+        vec![],
         transactions,
         aborted_transaction_ids,
         rng,
@@ -499,7 +522,7 @@ fn construct_finalize_global_state<C: ConsensusStorage<CurrentNetwork>>(
     vm: &VM<CurrentNetwork, C>,
 ) -> FinalizeGlobalState {
     // Retrieve the latest block.
-    let block_height = *vm.block_store().heights().max().unwrap().clone();
+    let block_height = vm.block_store().max_height().unwrap();
     let latest_block_hash = vm.block_store().get_block_hash(block_height).unwrap().unwrap();
     let latest_block = vm.block_store().get_block(&latest_block_hash).unwrap().unwrap();
     // Retrieve the latest round.

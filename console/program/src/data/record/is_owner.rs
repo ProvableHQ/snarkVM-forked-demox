@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -15,6 +16,7 @@
 use super::*;
 
 impl<N: Network> Record<N, Ciphertext<N>> {
+    /// Returns `true` if the given view key corresponds to the owner of the record.
     /// Decrypts `self` into plaintext using the given view key.
     pub fn is_owner(&self, view_key: &ViewKey<N>) -> bool {
         // Compute the address.
@@ -23,6 +25,7 @@ impl<N: Network> Record<N, Ciphertext<N>> {
         self.is_owner_with_address_x_coordinate(view_key, &address.to_x_coordinate())
     }
 
+    /// Returns `true` if the given view key and address x-coordinate corresponds to the owner of the record.
     /// Decrypts `self` into plaintext using the x-coordinate of the address corresponding to the given view key.
     pub fn is_owner_with_address_x_coordinate(&self, view_key: &ViewKey<N>, address_x_coordinate: &Field<N>) -> bool {
         // In debug mode, check that the address corresponds to the given view key.
@@ -62,10 +65,10 @@ mod tests {
     use super::*;
     use crate::Literal;
     use snarkvm_console_account::PrivateKey;
-    use snarkvm_console_network::Testnet3;
+    use snarkvm_console_network::MainnetV0;
     use snarkvm_console_types::Field;
 
-    type CurrentNetwork = Testnet3;
+    type CurrentNetwork = MainnetV0;
 
     const ITERATIONS: u64 = 1_000;
 
@@ -78,13 +81,10 @@ mod tests {
         let randomizer = Scalar::rand(rng);
         let record = Record {
             owner,
-            data: IndexMap::from_iter(
-                vec![
-                    (Identifier::from_str("a")?, Entry::Private(Plaintext::from(Literal::Field(Field::rand(rng))))),
-                    (Identifier::from_str("b")?, Entry::Private(Plaintext::from(Literal::Scalar(Scalar::rand(rng))))),
-                ]
-                .into_iter(),
-            ),
+            data: IndexMap::from_iter(vec![
+                (Identifier::from_str("a")?, Entry::Private(Plaintext::from(Literal::Field(Field::rand(rng))))),
+                (Identifier::from_str("b")?, Entry::Private(Plaintext::from(Literal::Scalar(Scalar::rand(rng))))),
+            ]),
             nonce: N::g_scalar_multiply(&randomizer),
         };
 

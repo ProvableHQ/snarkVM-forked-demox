@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -13,12 +14,12 @@
 // limitations under the License.
 
 use crate::{
+    FeeStorage,
+    FeeStore,
     atomic_batch_scope,
     cow_to_cloned,
     cow_to_copied,
     helpers::{Map, MapRead},
-    FeeStorage,
-    FeeStore,
 };
 use console::{
     network::prelude::*,
@@ -28,6 +29,7 @@ use ledger_block::{Deployment, Fee, Transaction};
 use synthesizer_program::Program;
 use synthesizer_snark::{Certificate, VerifyingKey};
 
+use aleo_std_storage::StorageMode;
 use anyhow::Result;
 use core::marker::PhantomData;
 use std::borrow::Cow;
@@ -71,9 +73,9 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     /// Returns the fee storage.
     fn fee_store(&self) -> &FeeStore<N, Self::FeeStorage>;
 
-    /// Returns the optional development ID.
-    fn dev(&self) -> Option<u16> {
-        self.fee_store().dev()
+    /// Returns the storage mode.
+    fn storage_mode(&self) -> &StorageMode {
+        self.fee_store().storage_mode()
     }
 
     /// Starts an atomic batch write operation.
@@ -341,7 +343,12 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         if program_id == &ProgramID::from_str("credits.aleo")? {
             // Load the verifying key.
             let verifying_key = N::get_credits_verifying_key(function_name.to_string())?;
-            return Ok(Some(VerifyingKey::new(verifying_key.clone())));
+            // Retrieve the number of public and private variables.
+            // Note: This number does *NOT* include the number of constants. This is safe because
+            // this program is never deployed, as it is a first-class citizen of the protocol.
+            let num_variables = verifying_key.circuit_info.num_public_and_private_variables as u64;
+            // Return the verifying key.
+            return Ok(Some(VerifyingKey::new(verifying_key.clone(), num_variables)));
         }
 
         // Retrieve the edition.
@@ -547,9 +554,9 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
         self.storage.finish_atomic()
     }
 
-    /// Returns the optional development ID.
-    pub fn dev(&self) -> Option<u16> {
-        self.storage.dev()
+    /// Returns the storage mode.
+    pub fn storage_mode(&self) -> &StorageMode {
+        self.storage.storage_mode()
     }
 }
 
@@ -665,7 +672,7 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{helpers::memory::DeploymentMemory, TransitionStore};
+    use crate::{TransitionStore, helpers::memory::DeploymentMemory};
 
     #[test]
     fn test_insert_get_remove() {

@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -22,7 +23,7 @@ use snarkvm_circuit_types::environment::assert_scope;
 
 use snarkvm_circuit_collections::merkle_tree::MerklePath;
 use snarkvm_circuit_network::Aleo;
-use snarkvm_circuit_types::{environment::prelude::*, Boolean, Field, U8};
+use snarkvm_circuit_types::{Boolean, Field, U8, environment::prelude::*};
 
 /// The depth of the Merkle tree for the blocks.
 const BLOCKS_DEPTH: u8 = console::BLOCKS_DEPTH;
@@ -152,7 +153,7 @@ impl<A: Aleo> Eject for StatePath<A> {
     }
 }
 
-#[cfg(all(test, console))]
+#[cfg(all(test, feature = "console"))]
 mod tests {
     use super::*;
     use crate::Circuit;
@@ -191,16 +192,16 @@ mod tests {
 
     #[test]
     fn test_state_path_new_constant() -> Result<()> {
-        check_new(Mode::Constant, 446, 1, 0, 0)
+        check_new(Mode::Constant, 450, 1, 0, 0)
     }
 
     #[test]
     fn test_state_path_new_public() -> Result<()> {
-        check_new(Mode::Public, 0, 447, 0, 376)
+        check_new(Mode::Public, 0, 451, 0, 376)
     }
 
     #[test]
     fn test_state_path_new_private() -> Result<()> {
-        check_new(Mode::Private, 0, 1, 446, 376)
+        check_new(Mode::Private, 0, 1, 450, 376)
     }
 }

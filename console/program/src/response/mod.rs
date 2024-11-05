@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -12,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Identifier, ProgramID, Register, Value, ValueType};
+use crate::{Identifier, ProgramID, Register, Value, ValueType, compute_function_id};
 use snarkvm_console_network::Network;
 use snarkvm_console_types::prelude::*;
 
@@ -60,9 +61,8 @@ impl<N: Network> Response<N> {
         output_types: &[ValueType<N>],
         output_operands: &[Option<Register<N>>],
     ) -> Result<Self> {
-        // Compute the function ID as `Hash(network_id, program_id, function_name)`.
-        let function_id =
-            N::hash_bhp1024(&(*network_id, program_id.name(), program_id.network(), function_name).to_bits_le())?;
+        // Compute the function ID.
+        let function_id = compute_function_id(network_id, program_id, function_name)?;
 
         // Compute the output IDs.
         let output_ids = outputs

@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -32,7 +33,8 @@ impl<N: Network> FromBytes for Future<N> {
             // Read the argument (in 2 steps to prevent infinite recursion).
             let num_bytes = u16::read_le(&mut reader)?;
             // Read the argument bytes.
-            let bytes = (0..num_bytes).map(|_| u8::read_le(&mut reader)).collect::<Result<Vec<_>, _>>()?;
+            let mut bytes = Vec::new();
+            (&mut reader).take(num_bytes as u64).read_to_end(&mut bytes)?;
             // Recover the argument.
             let entry = Argument::read_le(&mut bytes.as_slice())?;
             // Add the argument.
@@ -71,9 +73,9 @@ impl<N: Network> ToBytes for Future<N> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use snarkvm_console_network::Testnet3;
+    use snarkvm_console_network::MainnetV0;
 
-    type CurrentNetwork = Testnet3;
+    type CurrentNetwork = MainnetV0;
 
     #[test]
     fn test_bytes() -> Result<()> {

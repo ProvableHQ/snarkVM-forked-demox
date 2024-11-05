@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -25,16 +26,6 @@ impl<A: Aleo> Ternary for Signature<A> {
             response: Scalar::ternary(condition, &first.response, &second.response),
             compute_key: ComputeKey::ternary(condition, &first.compute_key, &second.compute_key),
         }
-    }
-}
-
-impl<A: Aleo> Ternary for Box<Signature<A>> {
-    type Boolean = Boolean<A>;
-    type Output = Box<Signature<A>>;
-
-    /// Returns `first` if `condition` is `true`, otherwise returns `second`.
-    fn ternary(condition: &Self::Boolean, first: &Self, second: &Self) -> Self::Output {
-        Box::new(Signature::ternary(condition, first, second))
     }
 }
 
@@ -68,7 +59,7 @@ impl<A: Aleo> OutputMode<dyn Ternary<Boolean = Boolean<A>, Output = Self>> for S
     }
 }
 
-#[cfg(all(test, console))]
+#[cfg(all(test, feature = "console"))]
 mod tests {
     use super::*;
     use crate::Circuit;

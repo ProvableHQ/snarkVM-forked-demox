@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -13,20 +14,20 @@
 // limitations under the License.
 
 use crate::{
-    polycommit::sonic_pc,
-    snark::varuna::{ahp, CircuitId},
     SNARKError,
+    polycommit::sonic_pc,
+    snark::varuna::{CircuitId, ahp},
 };
 
 use ahp::prover::{FourthMessage, ThirdMessage};
 use snarkvm_curves::PairingEngine;
 use snarkvm_fields::PrimeField;
 use snarkvm_utilities::{
+    FromBytes,
+    ToBytes,
     error,
     io::{self, Read, Write},
     serialize::*,
-    FromBytes,
-    ToBytes,
 };
 
 use std::collections::BTreeMap;
@@ -88,7 +89,7 @@ impl<E: PairingEngine> Commitments<E> {
         compress: Compress,
         validate: Validate,
     ) -> Result<Self, snarkvm_utilities::SerializationError> {
-        let mut w = Vec::with_capacity(batch_sizes.iter().sum());
+        let mut w = Vec::new();
         for batch_size in batch_sizes {
             w.extend(deserialize_vec_without_len(&mut reader, compress, validate, *batch_size)?);
         }
@@ -255,13 +256,21 @@ impl<E: PairingEngine> Proof<E> {
         Ok(Self { batch_sizes, commitments, evaluations, third_msg, fourth_msg, pc_proof })
     }
 
+    pub fn is_hiding(&self) -> bool {
+        self.pc_proof.is_hiding()
+    }
+
     pub fn batch_sizes(&self) -> &[usize] {
         &self.batch_sizes
     }
 
     /// Check that the number of messages is consistent with our batch size
     pub fn check_batch_sizes(&self) -> Result<(), SNARKError> {
-        let total_instances = self.batch_sizes.iter().sum::<usize>();
+        let total_instances = self
+            .batch_sizes
+            .iter()
+            .try_fold(0usize, |acc, &size| acc.checked_add(size))
+            .ok_or(SNARKError::BatchSizeMismatch)?;
         if self.commitments.witness_commitments.len() != total_instances {
             return Err(SNARKError::BatchSizeMismatch);
         }
@@ -384,8 +393,8 @@ mod test {
         snark::varuna::prover::MatrixSums,
     };
     use snarkvm_curves::{
-        bls12_377::{Bls12_377, Fr, G1Affine},
         AffineCurve,
+        bls12_377::{Bls12_377, Fr, G1Affine},
     };
     use snarkvm_utilities::{TestRng, Uniform};
 

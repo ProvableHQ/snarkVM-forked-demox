@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -38,11 +39,11 @@ impl Error for crate::String {}
 #[cfg(not(feature = "std"))]
 impl Error for crate::io::Error {}
 
-/// This purpose of this macro is to catch the instances of halting
-/// without producing logs looking like unexpected panics. It prints
-/// to stderr using the format: "Halted at <location>: <halt message>".
+/// This macro provides a VM runtime environment which will safely halt
+/// without producing logs that look like unexpected behavior.
+/// In debug mode, it prints to stderr using the format: "VM safely halted at <location>: <halt message>".
 #[macro_export]
-macro_rules! handle_halting {
+macro_rules! try_vm_runtime {
     ($e:expr) => {{
         use std::panic;
 
@@ -52,12 +53,13 @@ macro_rules! handle_halting {
             let msg = e.to_string();
             let msg = msg.split_ascii_whitespace().skip_while(|&word| word != "panicked").collect::<Vec<&str>>();
             let mut msg = msg.join(" ");
-            msg = msg.replacen("panicked", "Halted", 1);
+            msg = msg.replacen("panicked", "VM safely halted", 1);
+            #[cfg(debug_assertions)]
             eprintln!("{msg}");
         }));
 
         // Perform the operation that may panic.
-        let result = panic::catch_unwind($e);
+        let result = panic::catch_unwind(panic::AssertUnwindSafe($e));
 
         // Restore the standard panic hook.
         let _ = panic::take_hook();

@@ -1,10 +1,10 @@
 [package]
 name = "snarkvm-ledger-narwhal-batch-header"
-version = "0.16.15"
+version = "1.0.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A batch header for a Narwhal-style memory pool in a decentralized virtual machine"
 homepage = "https://aleo.org"
-repository = "https://github.com/AleoHQ/snarkVM"
+repository = "https://github.com/AleoNet/snarkVM"
 keywords = [
   "aleo",
   "cryptography",
@@ -24,7 +24,7 @@ license = "Apache-2.0"
 edition = "2021"
 
 [features]
-default = [ ]
+default = [ "rayon" ]
 serial = [ "console/serial" ]
 wasm = [ "console/wasm" ]
 test-helpers = [ "narwhal-transmission-id/test-helpers", "time" ]
@@ -32,16 +32,20 @@ test-helpers = [ "narwhal-transmission-id/test-helpers", "time" ]
 [dependencies.console]
 package = "snarkvm-console"
 path = "../../../console"
-version = "=0.16.15"
+version = "=1.0.0"
 
 [dependencies.narwhal-transmission-id]
 package = "snarkvm-ledger-narwhal-transmission-id"
 path = "../transmission-id"
-version = "=0.16.15"
+version = "=1.0.0"
 
 [dependencies.indexmap]
 version = "2.0"
 features = [ "serde" ]
+
+[dependencies.rayon]
+version = "1"
+optional = true
 
 [dependencies.serde_json]
 version = "1.0"

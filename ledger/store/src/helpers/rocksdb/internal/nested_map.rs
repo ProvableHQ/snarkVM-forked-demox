@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -16,11 +17,14 @@
 
 use super::*;
 use crate::helpers::{NestedMap, NestedMapRead};
-use console::prelude::{anyhow, FromBytes};
+use console::prelude::{FromBytes, anyhow, cfg_into_iter};
 
 use core::{fmt, fmt::Debug, hash::Hash, mem};
 use std::{borrow::Cow, sync::atomic::Ordering};
 use tracing::error;
+
+#[cfg(not(feature = "serial"))]
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 #[derive(Clone)]
 pub struct NestedDataMap<
@@ -72,7 +76,7 @@ impl<M: Serialize + DeserializeOwned, K: Serialize + DeserializeOwned, V: Serial
     #[inline]
     fn get_map_key_raw(&self, map: &M, key: &K) -> Result<Option<rocksdb::DBPinnableSlice>> {
         let raw_map_key = self.create_prefixed_map_key(map, key)?;
-        match self.database.get_pinned(&raw_map_key)? {
+        match self.database.get_pinned_opt(&raw_map_key, &self.database.default_readopts)? {
             Some(data) => Ok(Some(data)),
             None => Ok(None),
         }
@@ -198,8 +202,11 @@ impl<
 
         // Ensure that the atomic batch is empty.
         assert!(self.atomic_batch.lock().is_empty());
-        // Ensure that the database atomic batch is empty.
-        assert!(self.database.atomic_batch.lock().is_empty());
+        // Ensure that the database atomic batch is empty; skip this check if the atomic
+        // writes are paused, as there may be pending operations.
+        if !self.database.are_atomic_writes_paused() {
+            assert!(self.database.atomic_batch.lock().is_empty());
+        }
     }
 
     ///
@@ -320,8 +327,9 @@ impl<
         assert!(previous_atomic_depth != 0);
 
         // If we're at depth 0, it is the final call to `finish_atomic` and the
-        // atomic write batch can be physically executed.
-        if previous_atomic_depth == 1 {
+        // atomic write batch can be physically executed. This is skipped if the
+        // atomic writes are paused.
+        if previous_atomic_depth == 1 && !self.database.are_atomic_writes_paused() {
             // Empty the collection of pending operations.
             let batch = mem::take(&mut *self.database.atomic_batch.lock());
             // Execute all the operations atomically.
@@ -364,18 +372,22 @@ impl<
 
         // Count the number of keys belonging to the nested map.
         let mut len = 0usize;
-        while let Some(key) = iter.key() {
-            // Only compare the nested map - the network ID and the outer map
-            // ID are guaranteed to remain the same as long as there is more
-            // than a single map in the database.
-            if !key[PREFIX_LEN + 4..].starts_with(serialized_map) {
-                // If the nested map ID is different, it's the end of iteration.
+        while iter.valid() {
+            if let Some(key) = iter.key() {
+                // Only compare the nested map - the network ID and the outer map
+                // ID are guaranteed to remain the same as long as there is more
+                // than a single map in the database.
+                if !key[PREFIX_LEN + 4..].starts_with(serialized_map) {
+                    // If the nested map ID is different, it's the end of iteration.
+                    break;
+                }
+
+                // Increment the length and go to the next record.
+                len += 1;
+                iter.next();
+            } else {
                 break;
             }
-
-            // Increment the length and go to the next record.
-            len += 1;
-            iter.next();
         }
 
         Ok(len)
@@ -441,12 +453,8 @@ impl<
 
             // If the 'entry_map' matches 'serialized_map', deserialize the key and value.
             if entry_map == serialized_map {
-                // Deserialize the key.
-                let key = bincode::deserialize(entry_key)?;
-                // Deserialize the value.
-                let value = bincode::deserialize(&value)?;
                 // Push the key-value pair to the vector.
-                entries.push((key, value));
+                entries.push((entry_key.to_owned(), value));
             } else {
                 // If the 'entry_map' no longer matches the 'serialized_map',
                 // we've moved past the relevant keys and can break the loop.
@@ -454,7 +462,15 @@ impl<
             }
         }
 
-        Ok(entries)
+        // Possibly deserialize the entries in parallel.
+        Ok(cfg_into_iter!(entries)
+            .map(|(k, v)| {
+                let k = bincode::deserialize::<K>(&k);
+                let v = bincode::deserialize::<V>(&v);
+
+                k.and_then(|k| v.map(|v| (k, v)))
+            })
+            .collect::<Result<_, bincode::Error>>()?)
     }
 
     ///
@@ -468,14 +484,14 @@ impl<
         let operations = self.atomic_batch.lock().clone();
 
         if !operations.is_empty() {
-            // Perform all the queued operations.
+            // Traverse the queued operations.
             for (m, k, v) in operations {
                 // If the map does not match the given map, then continue.
                 if &m != map {
                     continue;
                 }
 
-                // Perform the operation.
+                // Update the confirmed pairs based on the pending operations.
                 match (k, v) {
                     // Insert or update the key-value pair for the key.
                     (Some(k), Some(v)) => {
@@ -583,7 +599,7 @@ pub struct NestedIter<
     K: 'a + Debug + PartialEq + Eq + Serialize + DeserializeOwned,
     V: 'a + PartialEq + Eq + Serialize + DeserializeOwned,
 > {
-    db_iter: rocksdb::DBIterator<'a>,
+    db_iter: rocksdb::DBRawIterator<'a>,
     _phantom: PhantomData<(M, K, V)>,
 }
 
@@ -595,7 +611,7 @@ impl<
 > NestedIter<'a, M, K, V>
 {
     pub(super) fn new(db_iter: rocksdb::DBIterator<'a>) -> Self {
-        Self { db_iter, _phantom: PhantomData }
+        Self { db_iter: db_iter.into(), _phantom: PhantomData }
     }
 }
 
@@ -609,16 +625,14 @@ impl<
     type Item = (Cow<'a, M>, Cow<'a, K>, Cow<'a, V>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        let (map_key, value) = self
-            .db_iter
-            .next()?
-            .map_err(|e| {
-                error!("RocksDB NestedIter iterator error: {e}");
-            })
-            .ok()?;
+        if !self.db_iter.valid() {
+            return None;
+        }
+
+        let (map_key, value) = self.db_iter.item()?;
 
         // Extract the bytes belonging to the map and the key.
-        let (entry_map, entry_key) = get_map_and_key(&map_key)
+        let (entry_map, entry_key) = get_map_and_key(map_key)
             .map_err(|e| {
                 error!("RocksDB NestedIter get_map_and_key error: {e}");
             })
@@ -636,11 +650,13 @@ impl<
             })
             .ok()?;
         // Deserialize the value.
-        let value = bincode::deserialize(&value)
+        let value = bincode::deserialize(value)
             .map_err(|e| {
                 error!("RocksDB NestedIter deserialize(value) error: {e}");
             })
             .ok()?;
+
+        self.db_iter.next();
 
         Some((Cow::Owned(map), Cow::Owned(key), Cow::Owned(value)))
     }
@@ -652,7 +668,7 @@ pub struct NestedKeys<
     M: 'a + Clone + Debug + PartialEq + Eq + Hash + Serialize + DeserializeOwned,
     K: 'a + Clone + Debug + PartialEq + Eq + Serialize + DeserializeOwned,
 > {
-    db_iter: rocksdb::DBIterator<'a>,
+    db_iter: rocksdb::DBRawIterator<'a>,
     _phantom: PhantomData<(M, K)>,
 }
 
@@ -663,7 +679,7 @@ impl<
 > NestedKeys<'a, M, K>
 {
     pub(crate) fn new(db_iter: rocksdb::DBIterator<'a>) -> Self {
-        Self { db_iter, _phantom: PhantomData }
+        Self { db_iter: db_iter.into(), _phantom: PhantomData }
     }
 }
 
@@ -676,16 +692,14 @@ impl<
     type Item = (Cow<'a, M>, Cow<'a, K>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        let (map_key, _) = self
-            .db_iter
-            .next()?
-            .map_err(|e| {
-                error!("RocksDB NestedKeys iterator error: {e}");
-            })
-            .ok()?;
+        if !self.db_iter.valid() {
+            return None;
+        }
+
+        let map_key = self.db_iter.key()?;
 
         // Extract the bytes belonging to the map and the key.
-        let (entry_map, entry_key) = get_map_and_key(&map_key)
+        let (entry_map, entry_key) = get_map_and_key(map_key)
             .map_err(|e| {
                 error!("RocksDB NestedKeys get_map_and_key error: {e}");
             })
@@ -703,19 +717,21 @@ impl<
             })
             .ok()?;
 
+        self.db_iter.next();
+
         Some((Cow::Owned(map), Cow::Owned(key)))
     }
 }
 
 /// An iterator over the values of a prefix.
 pub struct NestedValues<'a, V: 'a + PartialEq + Eq + Serialize + DeserializeOwned> {
-    db_iter: rocksdb::DBIterator<'a>,
+    db_iter: rocksdb::DBRawIterator<'a>,
     _phantom: PhantomData<V>,
 }
 
 impl<'a, V: 'a + PartialEq + Eq + Serialize + DeserializeOwned> NestedValues<'a, V> {
     pub(crate) fn new(db_iter: rocksdb::DBIterator<'a>) -> Self {
-        Self { db_iter, _phantom: PhantomData }
+        Self { db_iter: db_iter.into(), _phantom: PhantomData }
     }
 }
 
@@ -723,20 +739,20 @@ impl<'a, V: 'a + Clone + PartialEq + Eq + Serialize + DeserializeOwned> Iterator
     type Item = Cow<'a, V>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let (_, value) = self
-            .db_iter
-            .next()?
-            .map_err(|e| {
-                error!("RocksDB NestedValues iterator error: {e}");
-            })
-            .ok()?;
+        if !self.db_iter.valid() {
+            return None;
+        }
+
+        let value = self.db_iter.value()?;
 
         // Deserialize the value.
-        let value = bincode::deserialize(&value)
+        let value = bincode::deserialize(value)
             .map_err(|e| {
                 error!("RocksDB NestedValues deserialize(value) error: {e}");
             })
             .ok()?;
+
+        self.db_iter.next();
 
         Some(Cow::Owned(value))
     }
@@ -746,24 +762,24 @@ impl<'a, V: 'a + Clone + PartialEq + Eq + Serialize + DeserializeOwned> Iterator
 mod tests {
     use super::*;
     use crate::{
+        FinalizeMode,
         atomic_batch_scope,
         atomic_finalize,
         helpers::{
-            rocksdb::{internal::tests::temp_dir, MapID, TestMap},
+            rocksdb::{MapID, TestMap, internal::tests::temp_dir},
             traits::Map,
         },
-        FinalizeMode,
     };
     use console::{
         account::{Address, FromStr},
-        network::Testnet3,
+        network::MainnetV0,
     };
 
     use anyhow::anyhow;
     use serial_test::serial;
     use tracing_test::traced_test;
 
-    type CurrentNetwork = Testnet3;
+    type CurrentNetwork = MainnetV0;
 
     // Below are a few objects that mimic the way our NestedDataMaps are organized,
     // in order to provide a more accurate test setup for some scenarios.

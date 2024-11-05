@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -13,17 +14,18 @@
 // limitations under the License.
 
 use crate::{
+    TransitionStorage,
+    TransitionStore,
     atomic_batch_scope,
     cow_to_cloned,
     cow_to_copied,
     helpers::{Map, MapRead},
-    TransitionStorage,
-    TransitionStore,
 };
 use console::network::prelude::*;
 use ledger_block::Fee;
 use synthesizer_snark::Proof;
 
+use aleo_std_storage::StorageMode;
 use anyhow::Result;
 use core::marker::PhantomData;
 
@@ -47,9 +49,9 @@ pub trait FeeStorage<N: Network>: Clone + Send + Sync {
     /// Returns the transition storage.
     fn transition_store(&self) -> &TransitionStore<N, Self::TransitionStorage>;
 
-    /// Returns the optional development ID.
-    fn dev(&self) -> Option<u16> {
-        self.transition_store().dev()
+    /// Returns the storage mode.
+    fn storage_mode(&self) -> &StorageMode {
+        self.transition_store().storage_mode()
     }
 
     /// Starts an atomic batch write operation.
@@ -235,9 +237,9 @@ impl<N: Network, F: FeeStorage<N>> FeeStore<N, F> {
         self.storage.finish_atomic()
     }
 
-    /// Returns the optional development ID.
-    pub fn dev(&self) -> Option<u16> {
-        self.storage.dev()
+    /// Returns the storage mode.
+    pub fn storage_mode(&self) -> &StorageMode {
+        self.storage.storage_mode()
     }
 }
 

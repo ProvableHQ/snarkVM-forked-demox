@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -15,9 +16,9 @@
 use crate::{
     r1cs::ConstraintSynthesizer,
     snark::varuna::{
-        ahp::{indexer::Circuit, AHPError, AHPForR1CS},
-        prover,
         SNARKMode,
+        ahp::{AHPError, AHPForR1CS, indexer::Circuit},
+        prover,
     },
 };
 use snarkvm_fields::PrimeField;
@@ -28,9 +29,7 @@ use rand::Rng;
 use rand_core::CryptoRng;
 use std::collections::BTreeMap;
 
-use snarkvm_utilities::cfg_iter;
-#[cfg(not(feature = "std"))]
-use snarkvm_utilities::println;
+use snarkvm_utilities::{cfg_iter, println};
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
@@ -121,7 +120,8 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                         }
 
                         if circuit.index_info.num_constraints != num_constraints
-                            || circuit.index_info.num_variables != (num_public_variables + num_private_variables)
+                            || circuit.index_info.num_public_and_private_variables
+                                != (num_public_variables + num_private_variables)
                         {
                             return Err(AHPError::InstanceDoesNotMatchIndex);
                         }

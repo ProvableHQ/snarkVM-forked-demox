@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -13,7 +14,7 @@
 // limitations under the License.
 
 use super::BooleanHash;
-use snarkvm_console_algorithms::{Keccak, Poseidon, BHP};
+use snarkvm_console_algorithms::{BHP, Keccak, Poseidon};
 use snarkvm_console_types::prelude::*;
 
 #[cfg(not(feature = "serial"))]
@@ -32,8 +33,8 @@ pub trait PathHash: Clone + Send + Sync {
         self.hash_children(&children)
     }
 
-    /// Returns the hash for each tuple of child nodes.
-    fn hash_all_children(&self, child_nodes: &[Vec<Self::Hash>]) -> Result<Vec<Self::Hash>> {
+    /// Returns the hash for each child node.
+    fn hash_all_children(&self, child_nodes: &[&[Self::Hash]]) -> Result<Vec<Self::Hash>> {
         match child_nodes.len() {
             0 => Ok(vec![]),
             1..=100 => child_nodes.iter().map(|children| self.hash_children(children)).collect(),

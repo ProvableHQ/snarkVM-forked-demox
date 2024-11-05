@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -14,25 +15,29 @@
 
 use crate::{Field, LegendreSymbol, One, PrimeField, SquareRootField, Zero};
 use snarkvm_utilities::{
-    rand::Uniform,
-    serialize::{SerializationError, *},
     FromBytes,
     ToBits,
     ToBytes,
+    rand::Uniform,
+    serialize::{SerializationError, *},
 };
 
 use rand::{
-    distributions::{Distribution, Standard},
     Rng,
+    distributions::{Distribution, Standard},
 };
 use serde::{Deserialize, Serialize};
 use std::{
     cmp::{Ord, Ordering, PartialOrd},
+    fmt::Debug,
+    hash::Hash,
     io::{Read, Result as IoResult, Write},
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
-pub trait Fp2Parameters: 'static + Send + Sync + Serialize + for<'a> Deserialize<'a> {
+pub trait Fp2Parameters:
+    'static + Copy + Clone + Default + Debug + PartialEq + Eq + Hash + Serialize + for<'a> Deserialize<'a> + Send + Sync
+{
     type Fp: PrimeField;
 
     /// Coefficients for the Frobenius automorphism.
@@ -48,26 +53,20 @@ pub trait Fp2Parameters: 'static + Send + Sync + Serialize + for<'a> Deserialize
     }
 }
 
-#[derive(Derivative, Serialize, Deserialize)]
-#[derivative(
-    Default(bound = "P: Fp2Parameters"),
-    Hash(bound = "P: Fp2Parameters"),
-    Clone(bound = "P: Fp2Parameters"),
-    Copy(bound = "P: Fp2Parameters"),
-    Debug(bound = "P: Fp2Parameters"),
-    PartialEq(bound = "P: Fp2Parameters"),
-    Eq(bound = "P: Fp2Parameters")
-)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Fp2<P: Fp2Parameters> {
     pub c0: P::Fp,
     pub c1: P::Fp,
 }
 
 impl<P: Fp2Parameters> Fp2<P> {
-    pub fn new(c0: P::Fp, c1: P::Fp) -> Self {
+    /// Initializes a `Fp2` element from two `Fp` elements.
+    pub const fn new(c0: P::Fp, c1: P::Fp) -> Self {
         Fp2 { c0, c1 }
     }
+}
 
+impl<P: Fp2Parameters> Fp2<P> {
     /// Norm of Fp2 over Fp: Norm(a) = a.x^2 - beta * a.y^2
     pub fn norm(&self) -> P::Fp {
         let t0 = self.c0.square();

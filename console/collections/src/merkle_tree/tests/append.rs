@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -13,7 +14,7 @@
 // limitations under the License.
 
 use super::*;
-use snarkvm_console_algorithms::{Poseidon, BHP1024, BHP512};
+use snarkvm_console_algorithms::{BHP512, BHP1024, Poseidon};
 use snarkvm_console_types::prelude::Console;
 
 type CurrentEnvironment = Console;
@@ -30,12 +31,11 @@ fn check_merkle_tree<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash
     path_hasher: &PH,
     leaves: &[LH::Leaf],
     additional_leaves: &[LH::Leaf],
+    rng: &mut TestRng,
 ) -> Result<()> {
     // Construct the Merkle tree for the given leaves.
     let mut merkle_tree = MerkleTree::<E, LH, PH, DEPTH>::new(leaf_hasher, path_hasher, leaves)?;
     assert_eq!(leaves.len(), merkle_tree.number_of_leaves);
-
-    let mut rng = TestRng::default();
 
     // Check each leaf in the Merkle tree.
     if !leaves.is_empty() {
@@ -47,7 +47,7 @@ fn check_merkle_tree<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash
             // Verify the Merkle proof **fails** on an invalid root.
             assert!(!proof.verify(leaf_hasher, path_hasher, &PH::Hash::zero(), leaf));
             assert!(!proof.verify(leaf_hasher, path_hasher, &PH::Hash::one(), leaf));
-            assert!(!proof.verify(leaf_hasher, path_hasher, &PH::Hash::rand(&mut rng), leaf));
+            assert!(!proof.verify(leaf_hasher, path_hasher, &PH::Hash::rand(rng), leaf));
         }
     }
     // If additional leaves are provided, check that the Merkle tree is consistent with them.
@@ -63,7 +63,7 @@ fn check_merkle_tree<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash
             // Verify the Merkle proof **fails** on an invalid root.
             assert!(!proof.verify(leaf_hasher, path_hasher, &PH::Hash::zero(), leaf));
             assert!(!proof.verify(leaf_hasher, path_hasher, &PH::Hash::one(), leaf));
-            assert!(!proof.verify(leaf_hasher, path_hasher, &PH::Hash::rand(&mut rng), leaf));
+            assert!(!proof.verify(leaf_hasher, path_hasher, &PH::Hash::rand(rng), leaf));
         }
     }
     Ok(())
@@ -158,7 +158,7 @@ fn check_merkle_tree_depth_3_padded<E: Environment, LH: LeafHash<Hash = PH::Hash
 
     // Rebuild the Merkle tree with the additional leaf.
     merkle_tree.append(additional_leaves)?;
-    assert_eq!(15, merkle_tree.tree.len());
+    assert_eq!(13, merkle_tree.tree.len());
     // assert_eq!(0, merkle_tree.padding_tree.len());
     assert_eq!(5, merkle_tree.number_of_leaves);
 
@@ -174,8 +174,6 @@ fn check_merkle_tree_depth_3_padded<E: Environment, LH: LeafHash<Hash = PH::Hash
     assert_eq!(expected_leaf3, merkle_tree.tree[10]);
     assert_eq!(expected_leaf4, merkle_tree.tree[11]);
     assert_eq!(path_hasher.hash_empty()?, merkle_tree.tree[12]);
-    assert_eq!(path_hasher.hash_empty()?, merkle_tree.tree[13]);
-    assert_eq!(path_hasher.hash_empty()?, merkle_tree.tree[14]);
 
     // Depth 2.
     let expected_left0 = PathHash::hash_children(path_hasher, &expected_leaf0, &expected_leaf1)?;
@@ -259,7 +257,7 @@ fn check_merkle_tree_depth_4_padded<E: Environment, LH: LeafHash<Hash = PH::Hash
 
     // Rebuild the Merkle tree with the additional leaf.
     merkle_tree.append(&[additional_leaves[0].clone()])?;
-    assert_eq!(15, merkle_tree.tree.len());
+    assert_eq!(13, merkle_tree.tree.len());
     // assert_eq!(0, merkle_tree.padding_tree.len());
     assert_eq!(5, merkle_tree.number_of_leaves);
 
@@ -275,8 +273,6 @@ fn check_merkle_tree_depth_4_padded<E: Environment, LH: LeafHash<Hash = PH::Hash
     assert_eq!(expected_leaf3, merkle_tree.tree[10]);
     assert_eq!(expected_leaf4, merkle_tree.tree[11]);
     assert_eq!(path_hasher.hash_empty()?, merkle_tree.tree[12]);
-    assert_eq!(path_hasher.hash_empty()?, merkle_tree.tree[13]);
-    assert_eq!(path_hasher.hash_empty()?, merkle_tree.tree[14]);
 
     // Depth 3.
     let expected_left0 = PathHash::hash_children(path_hasher, &expected_leaf0, &expected_leaf1)?;
@@ -309,13 +305,13 @@ fn check_merkle_tree_depth_4_padded<E: Environment, LH: LeafHash<Hash = PH::Hash
     // ------------------------------------------------------------------------------------------ //
 
     // Ensure we're starting where we left off from the previous rebuild.
-    assert_eq!(15, merkle_tree.tree.len());
+    assert_eq!(13, merkle_tree.tree.len());
     // assert_eq!(0, merkle_tree.padding_tree.len());
     assert_eq!(5, merkle_tree.number_of_leaves);
 
     // Rebuild the Merkle tree with the additional leaf.
     merkle_tree.append(&[additional_leaves[1].clone()])?;
-    assert_eq!(15, merkle_tree.tree.len());
+    assert_eq!(13, merkle_tree.tree.len());
     // assert_eq!(0, merkle_tree.padding_tree.len());
     assert_eq!(6, merkle_tree.number_of_leaves);
 
@@ -332,8 +328,6 @@ fn check_merkle_tree_depth_4_padded<E: Environment, LH: LeafHash<Hash = PH::Hash
     assert_eq!(expected_leaf3, merkle_tree.tree[10]);
     assert_eq!(expected_leaf4, merkle_tree.tree[11]);
     assert_eq!(expected_leaf5, merkle_tree.tree[12]);
-    assert_eq!(path_hasher.hash_empty()?, merkle_tree.tree[13]);
-    assert_eq!(path_hasher.hash_empty()?, merkle_tree.tree[14]);
 
     // Depth 3.
     let expected_left0 = PathHash::hash_children(path_hasher, &expected_leaf0, &expected_leaf1)?;
@@ -388,6 +382,7 @@ fn test_merkle_tree_bhp() -> Result<()> {
                     &(0..num_additional_leaves)
                         .map(|_| Field::<CurrentEnvironment>::rand(rng).to_bits_le())
                         .collect::<Vec<Vec<bool>>>(),
+                    rng,
                 )?;
             }
         }
@@ -439,6 +434,7 @@ fn test_merkle_tree_poseidon() -> Result<()> {
                     &path_hasher,
                     &(0..num_leaves).map(|_| vec![Uniform::rand(rng)]).collect::<Vec<_>>(),
                     &(0..num_additional_leaves).map(|_| vec![Uniform::rand(rng)]).collect::<Vec<_>>(),
+                    rng,
                 )?;
             }
         }

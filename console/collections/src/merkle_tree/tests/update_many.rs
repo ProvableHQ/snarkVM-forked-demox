@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -13,7 +14,7 @@
 // limitations under the License.
 
 use super::*;
-use snarkvm_console_algorithms::{Poseidon, BHP1024, BHP512};
+use snarkvm_console_algorithms::{BHP512, BHP1024, Poseidon};
 use snarkvm_console_types::prelude::Console;
 
 use indexmap::IndexMap;
@@ -32,12 +33,11 @@ fn check_merkle_tree<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash
     path_hasher: &PH,
     leaves: &[LH::Leaf],
     updates: &BTreeMap<usize, LH::Leaf>,
+    rng: &mut TestRng,
 ) -> Result<()> {
     // Construct the Merkle tree for the given leaves.
     let mut merkle_tree = MerkleTree::<E, LH, PH, DEPTH>::new(leaf_hasher, path_hasher, leaves)?;
     assert_eq!(leaves.len(), merkle_tree.number_of_leaves);
-
-    let mut rng = TestRng::default();
 
     // Check each leaf in the Merkle tree.
     for (leaf_index, leaf) in leaves.iter().enumerate() {
@@ -48,7 +48,7 @@ fn check_merkle_tree<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash
         // Verify the Merkle proof **fails** on an invalid root.
         assert!(!proof.verify(leaf_hasher, path_hasher, &PH::Hash::zero(), leaf));
         assert!(!proof.verify(leaf_hasher, path_hasher, &PH::Hash::one(), leaf));
-        assert!(!proof.verify(leaf_hasher, path_hasher, &PH::Hash::rand(&mut rng), leaf));
+        assert!(!proof.verify(leaf_hasher, path_hasher, &PH::Hash::rand(rng), leaf));
     }
 
     // If additional leaves are provided, check that the Merkle tree is consistent with them.
@@ -64,7 +64,7 @@ fn check_merkle_tree<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash
             // Verify the Merkle proof **fails** on an invalid root.
             assert!(!proof.verify(leaf_hasher, path_hasher, &PH::Hash::zero(), leaf));
             assert!(!proof.verify(leaf_hasher, path_hasher, &PH::Hash::one(), leaf));
-            assert!(!proof.verify(leaf_hasher, path_hasher, &PH::Hash::rand(&mut rng), leaf));
+            assert!(!proof.verify(leaf_hasher, path_hasher, &PH::Hash::rand(rng), leaf));
         }
     }
     Ok(())
@@ -235,6 +235,7 @@ fn test_merkle_tree_bhp() -> Result<()> {
                         .rev()
                         .map(|i| ((i % num_leaves) as usize, Field::<CurrentEnvironment>::rand(rng).to_bits_le()))
                         .collect::<BTreeMap<usize, Vec<bool>>>(),
+                    rng,
                 )?;
             }
         }
@@ -275,6 +276,7 @@ fn test_merkle_tree_poseidon() -> Result<()> {
                         .rev()
                         .map(|i| ((i % num_leaves) as usize, vec![Uniform::rand(rng)]))
                         .collect::<BTreeMap<_, _>>(),
+                    rng,
                 )?;
             }
         }

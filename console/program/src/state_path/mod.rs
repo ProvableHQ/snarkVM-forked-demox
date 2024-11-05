@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -280,7 +281,7 @@ pub mod test_helpers {
         let header_path = header_tree.prove(1, &header_leaf.to_bits_le())?;
 
         let previous_block_hash: N::BlockHash = Field::<N>::rand(rng).into();
-        let preimage = (*previous_block_hash).to_bits_le().into_iter().chain(header_root.to_bits_le().into_iter());
+        let preimage = (*previous_block_hash).to_bits_le().into_iter().chain(header_root.to_bits_le());
         let block_hash = N::hash_bhp1024(&preimage.collect::<Vec<_>>())?;
 
         // Construct the global state root and block path.

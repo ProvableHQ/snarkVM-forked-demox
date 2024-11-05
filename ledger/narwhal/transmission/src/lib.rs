@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -21,8 +22,8 @@ mod string;
 
 use console::prelude::*;
 use ledger_block::Transaction;
-use ledger_coinbase::ProverSolution;
 use ledger_narwhal_data::Data;
+use ledger_puzzle::Solution;
 
 #[derive(Clone, PartialEq, Eq)]
 pub enum Transmission<N: Network> {
@@ -30,15 +31,15 @@ pub enum Transmission<N: Network> {
     Ratification,
     /// A prover solution.
     /// Attention: Observe that the solution is encapsulated in `Data`, and thus possibly unchecked.
-    Solution(Data<ProverSolution<N>>),
+    Solution(Data<Solution<N>>),
     /// A transaction.
     /// Attention: Observe that the transaction is encapsulated in `Data`, and thus possibly unchecked.
     Transaction(Data<Transaction<N>>),
 }
 
-impl<N: Network> From<ProverSolution<N>> for Transmission<N> {
+impl<N: Network> From<Solution<N>> for Transmission<N> {
     /// Converts the prover solution into a transmission.
-    fn from(solution: ProverSolution<N>) -> Self {
+    fn from(solution: Solution<N>) -> Self {
         Self::Solution(Data::Object(solution))
     }
 }
@@ -50,9 +51,9 @@ impl<N: Network> From<Transaction<N>> for Transmission<N> {
     }
 }
 
-impl<N: Network> From<Data<ProverSolution<N>>> for Transmission<N> {
+impl<N: Network> From<Data<Solution<N>>> for Transmission<N> {
     /// Converts the prover solution into a transmission.
-    fn from(solution: Data<ProverSolution<N>>) -> Self {
+    fn from(solution: Data<Solution<N>>) -> Self {
         Self::Solution(solution)
     }
 }
@@ -64,17 +65,28 @@ impl<N: Network> From<Data<Transaction<N>>> for Transmission<N> {
     }
 }
 
+impl<N: Network> Transmission<N> {
+    /// Returns the checksum of the transmission.
+    pub fn to_checksum(&self) -> Result<Option<N::TransmissionChecksum>> {
+        match self {
+            Self::Ratification => Ok(None),
+            Self::Solution(solution) => solution.to_checksum::<N>().map(Some),
+            Self::Transaction(transaction) => transaction.to_checksum::<N>().map(Some),
+        }
+    }
+}
+
 #[cfg(any(test, feature = "test-helpers"))]
 pub mod test_helpers {
     use super::*;
     use console::{
-        network::Testnet3,
+        network::MainnetV0,
         prelude::{Rng, TestRng},
     };
 
     use ::bytes::Bytes;
 
-    type CurrentNetwork = Testnet3;
+    type CurrentNetwork = MainnetV0;
 
     /// Returns a list of sample transmissions, sampled at random.
     pub fn sample_transmissions(rng: &mut TestRng) -> Vec<Transmission<CurrentNetwork>> {

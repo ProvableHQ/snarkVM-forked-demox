@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -14,20 +15,20 @@
 
 use crate::{
     fft::{
-        domain::{FFTPrecomputation, IFFTPrecomputation},
         EvaluationDomain,
+        domain::{FFTPrecomputation, IFFTPrecomputation},
     },
     polycommit::sonic_pc::{LCTerm, LabeledPolynomial, LinearCombination},
     r1cs::SynthesisError,
     snark::varuna::{
-        ahp::{verifier, AHPError, CircuitId, CircuitInfo},
+        SNARKMode,
+        ahp::{AHPError, CircuitId, CircuitInfo, verifier},
         prover,
         selectors::precompute_selectors,
         verifier::QueryPoints,
-        SNARKMode,
     },
 };
-use anyhow::{anyhow, ensure, Result};
+use anyhow::{Result, anyhow, ensure};
 use snarkvm_fields::{Field, PrimeField};
 
 use core::{borrow::Borrow, marker::PhantomData};
@@ -107,7 +108,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
 
     /// Get all the strict degree bounds enforced in the AHP.
     pub fn get_degree_bounds(info: &CircuitInfo) -> Result<[usize; 4]> {
-        let num_variables = info.num_variables;
+        let num_variables = info.num_public_and_private_variables;
         let num_non_zero_a = info.num_non_zero_a;
         let num_non_zero_b = info.num_non_zero_b;
         let num_non_zero_c = info.num_non_zero_c;
@@ -180,23 +181,20 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         let max_constraint_domain = state.max_constraint_domain;
         let max_variable_domain = state.max_variable_domain;
         let max_non_zero_domain = state.max_non_zero_domain;
-        let public_inputs = state
-            .circuit_specific_states
-            .iter()
-            .map(|(circuit_id, circuit_state)| {
-                let input_domain = circuit_state.input_domain;
-                let public_inputs = public_inputs[circuit_id]
-                    .iter()
-                    .map(|p| {
-                        let public_input = prover::ConstraintSystem::format_public_input(p);
-                        Self::formatted_public_input_is_admissible(&public_input)?;
-                        Ok::<_, AHPError>(public_input)
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                ensure!(public_inputs[0].len() == input_domain.size());
-                Ok(public_inputs)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let mut formatted_public_inputs = Vec::with_capacity(state.circuit_specific_states.len());
+        for (circuit_id, circuit_state) in &state.circuit_specific_states {
+            let input_domain = circuit_state.input_domain;
+            let public_inputs_i = public_inputs[circuit_id]
+                .iter()
+                .map(|p| {
+                    let public_input = prover::ConstraintSystem::format_public_input(p);
+                    Self::formatted_public_input_is_admissible(&public_input)?;
+                    Ok::<_, AHPError>(public_input)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            ensure!(public_inputs_i[0].len() == input_domain.size());
+            formatted_public_inputs.push(public_inputs_i);
+        }
 
         let verifier::FirstMessage { batch_combiners } = state.first_round_message.as_ref().unwrap();
         let verifier::SecondMessage { alpha, eta_b, eta_c } = state.second_round_message.unwrap();
@@ -286,7 +284,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             .enumerate()
             .map(|(i, (circuit_id, circuit_state))| {
                 let lag_at_beta = circuit_state.input_domain.evaluate_all_lagrange_coefficients(beta);
-                let x_at_beta = public_inputs[i]
+                let x_at_beta = formatted_public_inputs[i]
                     .iter()
                     .map(|x| x.iter().zip_eq(&lag_at_beta).map(|(x, l)| *x * l).sum::<F>())
                     .collect_vec();

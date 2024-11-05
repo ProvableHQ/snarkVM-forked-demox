@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -16,7 +17,7 @@
 #![allow(clippy::type_complexity)]
 
 use super::*;
-use ledger_coinbase::{CoinbasePuzzle, EpochChallenge};
+use ledger_puzzle::Puzzle;
 use synthesizer_program::FinalizeOperation;
 
 use std::collections::HashSet;
@@ -30,18 +31,29 @@ impl<N: Network> Block<N> {
         &self,
         previous_block: &Block<N>,
         current_state_root: N::StateRoot,
-        current_committee: &Committee<N>,
-        current_puzzle: &CoinbasePuzzle<N>,
-        current_epoch_challenge: &EpochChallenge<N>,
+        previous_committee_lookback: &Committee<N>,
+        current_committee_lookback: &Committee<N>,
+        current_puzzle: &Puzzle<N>,
+        current_epoch_hash: N::BlockHash,
         current_timestamp: i64,
         ratified_finalize_operations: Vec<FinalizeOperation<N>>,
-    ) -> Result<()> {
+    ) -> Result<(Vec<SolutionID<N>>, Vec<N::TransactionID>)> {
         // Ensure the block hash is correct.
         self.verify_hash(previous_block.height(), previous_block.hash())?;
 
         // Ensure the block authority is correct.
-        let (expected_round, expected_height, expected_timestamp) =
-            self.verify_authority(previous_block.round(), previous_block.height(), current_committee)?;
+        let (
+            expected_round,
+            expected_height,
+            expected_timestamp,
+            expected_existing_solution_ids,
+            expected_existing_transaction_ids,
+        ) = self.verify_authority(
+            previous_block.round(),
+            previous_block.height(),
+            previous_committee_lookback,
+            current_committee_lookback,
+        )?;
 
         // Ensure the block solutions are correct.
         let (
@@ -53,7 +65,7 @@ impl<N: Network> Block<N> {
             expected_last_coinbase_timestamp,
             expected_block_reward,
             expected_puzzle_reward,
-        ) = self.verify_solutions(previous_block, current_puzzle, current_epoch_challenge)?;
+        ) = self.verify_solutions(previous_block, current_puzzle, current_epoch_hash)?;
 
         // Ensure the block ratifications are correct.
         self.verify_ratifications(expected_block_reward, expected_puzzle_reward)?;
@@ -92,7 +104,10 @@ impl<N: Network> Block<N> {
             expected_last_coinbase_timestamp,
             expected_timestamp,
             current_timestamp,
-        )
+        )?;
+
+        // Return the expected existing solution IDs and transaction IDs.
+        Ok((expected_existing_solution_ids, expected_existing_transaction_ids))
     }
 }
 
@@ -135,8 +150,10 @@ impl<N: Network> Block<N> {
         &self,
         previous_round: u64,
         previous_height: u32,
-        current_committee: &Committee<N>,
-    ) -> Result<(u64, u32, i64)> {
+        previous_committee_lookback: &Committee<N>,
+        current_committee_lookback: &Committee<N>,
+    ) -> Result<(u64, u32, i64, Vec<SolutionID<N>>, Vec<N::TransactionID>)> {
+        // Note: Do not remove this. This ensures that all blocks after genesis are quorum blocks.
         #[cfg(not(any(test, feature = "test")))]
         ensure!(self.authority.is_quorum(), "The next block must be a quorum block");
 
@@ -157,26 +174,37 @@ impl<N: Network> Block<N> {
                     subdag.anchor_round(),
                     previous_round
                 );
+                // Ensure that the rounds in the subdag are sequential.
+                if previous_round != 0 {
+                    for round in previous_round..=subdag.anchor_round() {
+                        ensure!(
+                            subdag.contains_key(&round),
+                            "Subdag is missing round {round} in block {expected_height}",
+                        );
+                    }
+                }
                 // Output the subdag anchor round.
                 subdag.anchor_round()
             }
         };
-        // Ensure the block round is at least the starting round of the committee.
+        // Ensure the block round minus the committee lookback range is at least the starting round of the committee lookback.
         ensure!(
-            expected_round >= current_committee.starting_round(),
-            "Block {} has an invalid round (found '{expected_round}', expected at least '{}')",
-            expected_height,
-            current_committee.starting_round()
+            expected_round.saturating_sub(Committee::<N>::COMMITTEE_LOOKBACK_RANGE)
+                >= current_committee_lookback.starting_round(),
+            "Block {expected_height} has an invalid round (found '{}', expected at least '{}')",
+            expected_round.saturating_sub(Committee::<N>::COMMITTEE_LOOKBACK_RANGE),
+            current_committee_lookback.starting_round()
         );
 
         // Ensure the block authority is correct.
-        match &self.authority {
+        // Determine the solution IDs and transaction IDs that are expected to be in previous blocks.
+        let (expected_existing_solution_ids, expected_existing_transaction_ids) = match &self.authority {
             Authority::Beacon(signature) => {
                 // Retrieve the signer.
                 let signer = signature.to_address();
                 // Ensure the block is signed by a committee member.
                 ensure!(
-                    current_committee.members().contains_key(&signer),
+                    current_committee_lookback.members().contains_key(&signer),
                     "Beacon block {expected_height} has a signer not in the committee (found '{signer}')",
                 );
                 // Ensure the signature is valid.
@@ -184,10 +212,12 @@ impl<N: Network> Block<N> {
                     signature.verify(&signer, &[*self.block_hash]),
                     "Signature is invalid in block {expected_height}"
                 );
+
+                (vec![], vec![])
             }
             Authority::Quorum(subdag) => {
                 // Compute the expected leader.
-                let expected_leader = current_committee.get_leader(expected_round)?;
+                let expected_leader = current_committee_lookback.get_leader(expected_round)?;
                 // Ensure the block is authored by the expected leader.
                 ensure!(
                     subdag.leader_address() == expected_leader,
@@ -198,22 +228,52 @@ impl<N: Network> Block<N> {
                 Self::check_subdag_transmissions(
                     subdag,
                     &self.solutions,
+                    &self.aborted_solution_ids,
                     &self.transactions,
                     &self.aborted_transaction_ids,
-                )?;
+                )?
             }
-        }
+        };
 
         // Determine the expected timestamp.
         let expected_timestamp = match &self.authority {
             // Beacon blocks do not have a timestamp check.
             Authority::Beacon(..) => self.timestamp(),
-            // Quorum blocks use the median timestamp from the subdag.
-            Authority::Quorum(subdag) => subdag.timestamp(),
+            // Quorum blocks use the weighted median timestamp from the subdag.
+            Authority::Quorum(subdag) => subdag.timestamp(previous_committee_lookback),
         };
 
+        // Check that the committee IDs are correct.
+        if let Authority::Quorum(subdag) = &self.authority {
+            // Check that the committee ID of the leader certificate is correct.
+            ensure!(
+                subdag.leader_certificate().committee_id() == current_committee_lookback.id(),
+                "Leader certificate has an incorrect committee ID"
+            );
+
+            // Check that all all certificates on each round have the same committee ID.
+            cfg_iter!(subdag).try_for_each(|(round, certificates)| {
+                // Check that every certificate for a given round shares the same committee ID.
+                let expected_committee_id = certificates
+                    .first()
+                    .map(|certificate| certificate.committee_id())
+                    .ok_or(anyhow!("No certificates found for subdag round {round}"))?;
+                ensure!(
+                    certificates.iter().skip(1).all(|certificate| certificate.committee_id() == expected_committee_id),
+                    "Certificates on round {round} do not all have the same committee ID",
+                );
+                Ok(())
+            })?;
+        }
+
         // Return success.
-        Ok((expected_round, expected_height, expected_timestamp))
+        Ok((
+            expected_round,
+            expected_height,
+            expected_timestamp,
+            expected_existing_solution_ids,
+            expected_existing_transaction_ids,
+        ))
     }
 
     /// Ensures the block ratifications are correct.
@@ -254,95 +314,78 @@ impl<N: Network> Block<N> {
     fn verify_solutions(
         &self,
         previous_block: &Block<N>,
-        current_puzzle: &CoinbasePuzzle<N>,
-        current_epoch_challenge: &EpochChallenge<N>,
+        current_puzzle: &Puzzle<N>,
+        current_epoch_hash: N::BlockHash,
     ) -> Result<(u128, u128, u64, u64, u64, i64, u64, u64)> {
         let height = self.height();
         let timestamp = self.timestamp();
 
-        let (combined_proof_target, expected_cumulative_proof_target, is_coinbase_target_reached) = match &self
-            .solutions
-        {
-            Some(coinbase) => {
-                // Ensure the number of solutions is within the allowed range.
-                ensure!(
-                    coinbase.len() <= N::MAX_SOLUTIONS,
-                    "Block {height} contains too many prover solutions (found '{}', expected '{}')",
-                    coinbase.len(),
-                    N::MAX_SOLUTIONS
-                );
-                // Ensure the solutions are not accepted after the block height at year 10.
-                if height > block_height_at_year(N::BLOCK_TIME, 10) {
-                    bail!("Solutions are no longer accepted after the block height at year 10.");
-                }
+        // Ensure the number of solutions is within the allowed range.
+        ensure!(
+            self.solutions.len() <= N::MAX_SOLUTIONS,
+            "Block {height} contains too many prover solutions (found '{}', expected '{}')",
+            self.solutions.len(),
+            N::MAX_SOLUTIONS
+        );
+        // Ensure the number of aborted solution IDs is within the allowed range.
+        ensure!(
+            self.aborted_solution_ids.len() <= Solutions::<N>::MAX_ABORTED_SOLUTIONS,
+            "Block {height} contains too many aborted solution IDs (found '{}', expected '{}')",
+            self.aborted_solution_ids.len(),
+            Solutions::<N>::MAX_ABORTED_SOLUTIONS
+        );
 
-                // Ensure the puzzle proof is valid.
-                if let Err(e) =
-                    current_puzzle.check_solutions(coinbase, current_epoch_challenge, previous_block.proof_target())
-                {
-                    bail!("Block {height} contains an invalid puzzle proof - {e}");
-                }
+        // Ensure there are no duplicate solution IDs.
+        if has_duplicates(
+            self.solutions
+                .as_ref()
+                .map(PuzzleSolutions::solution_ids)
+                .into_iter()
+                .flatten()
+                .chain(self.aborted_solution_ids()),
+        ) {
+            bail!("Found a duplicate solution in block {height}");
+        }
 
-                // Compute the combined proof target.
-                let combined_proof_target = coinbase.to_combined_proof_target()?;
+        // Compute the combined proof target.
+        let combined_proof_target = match self.solutions.deref() {
+            Some(solutions) => current_puzzle.get_combined_proof_target(solutions)?,
+            None => 0u128,
+        };
 
-                // Ensure that the block cumulative proof target is less than the previous block's coinbase target.
-                // Note: This is a sanity check, as the cumulative proof target resets to 0 if the
-                // coinbase target was reached in this block.
-                if self.cumulative_proof_target() >= previous_block.coinbase_target() as u128 {
-                    bail!(
-                        "The cumulative proof target in block {height} must be less than the previous coinbase target"
-                    )
-                }
-
-                // Compute the actual cumulative proof target (which can exceed the coinbase target).
-                let cumulative_proof_target =
-                    previous_block.cumulative_proof_target().saturating_add(combined_proof_target);
-                // Determine if the coinbase target is reached.
-                let is_coinbase_target_reached = cumulative_proof_target >= previous_block.coinbase_target() as u128;
-                // Compute the block cumulative proof target (which cannot exceed the coinbase target).
-                let expected_cumulative_proof_target = match is_coinbase_target_reached {
-                    true => 0u128,
-                    false => cumulative_proof_target,
-                };
-
-                (combined_proof_target, expected_cumulative_proof_target, is_coinbase_target_reached)
+        // Verify the solutions.
+        if let Some(coinbase) = self.solutions.deref() {
+            // Ensure the puzzle proof is valid.
+            if let Err(e) = current_puzzle.check_solutions(coinbase, current_epoch_hash, previous_block.proof_target())
+            {
+                bail!("Block {height} contains an invalid puzzle proof - {e}");
             }
-            None => {
-                // Set the combined proof target.
-                let combined_proof_target = 0;
-                // Determine the cumulative proof target.
-                let expected_cumulative_proof_target = previous_block.cumulative_proof_target();
 
-                (combined_proof_target, expected_cumulative_proof_target, false)
+            // Ensure that the block cumulative proof target is less than the previous block's coinbase target.
+            // Note: This is a sanity check, as the cumulative proof target resets to 0 if the
+            // coinbase target was reached in this block.
+            if self.cumulative_proof_target() >= previous_block.coinbase_target() as u128 {
+                bail!("The cumulative proof target in block {height} must be less than the previous coinbase target")
             }
         };
 
-        // Compute the expected cumulative weight.
-        let expected_cumulative_weight = previous_block.cumulative_weight().saturating_add(combined_proof_target);
-
-        // Construct the next coinbase target.
-        let expected_coinbase_target = coinbase_target(
+        // Calculate the next coinbase targets and timestamps.
+        let (
+            expected_coinbase_target,
+            expected_proof_target,
+            expected_cumulative_proof_target,
+            expected_cumulative_weight,
+            expected_last_coinbase_target,
+            expected_last_coinbase_timestamp,
+        ) = to_next_targets::<N>(
+            previous_block.cumulative_proof_target(),
+            combined_proof_target,
+            previous_block.coinbase_target(),
+            previous_block.cumulative_weight(),
             previous_block.last_coinbase_target(),
             previous_block.last_coinbase_timestamp(),
             timestamp,
-            N::ANCHOR_TIME,
-            N::NUM_BLOCKS_PER_EPOCH,
-            N::GENESIS_COINBASE_TARGET,
         )?;
-        // Ensure the proof target is correct.
-        let expected_proof_target = proof_target(expected_coinbase_target, N::GENESIS_PROOF_TARGET);
-
-        // Determine the expected last coinbase target.
-        let expected_last_coinbase_target = match is_coinbase_target_reached {
-            true => expected_coinbase_target,
-            false => previous_block.last_coinbase_target(),
-        };
-        // Determine the expected last coinbase timestamp.
-        let expected_last_coinbase_timestamp = match is_coinbase_target_reached {
-            true => timestamp,
-            false => previous_block.last_coinbase_timestamp(),
-        };
 
         // Calculate the expected coinbase reward.
         let expected_coinbase_reward = coinbase_reward(
@@ -381,9 +424,6 @@ impl<N: Network> Block<N> {
     fn verify_transactions(&self) -> Result<()> {
         let height = self.height();
 
-        // Ensure there are transactions.
-        ensure!(!self.transactions.is_empty(), "Block {height} must contain at least 1 transaction");
-
         // Ensure the number of transactions is within the allowed range.
         if self.transactions.len() > Transactions::<N>::MAX_TRANSACTIONS {
             bail!(
@@ -393,10 +433,10 @@ impl<N: Network> Block<N> {
         }
 
         // Ensure the number of aborted transaction IDs is within the allowed range.
-        if self.aborted_transaction_ids.len() > Transactions::<N>::MAX_TRANSACTIONS {
+        if self.aborted_transaction_ids.len() > Transactions::<N>::MAX_ABORTED_TRANSACTIONS {
             bail!(
                 "Cannot validate a block with more than {} aborted transaction IDs",
-                Transactions::<N>::MAX_TRANSACTIONS
+                Transactions::<N>::MAX_ABORTED_TRANSACTIONS
             );
         }
 
@@ -487,10 +527,7 @@ impl<N: Network> Block<N> {
 
     /// Computes the solutions root for the block.
     fn compute_solutions_root(&self) -> Result<Field<N>> {
-        match self.solutions {
-            Some(ref coinbase) => coinbase.to_accumulator_point(),
-            None => Ok(Field::zero()),
-        }
+        self.solutions.to_solutions_root()
     }
 
     /// Computes the subdag root for the block.
@@ -502,58 +539,88 @@ impl<N: Network> Block<N> {
     }
 
     /// Checks that the transmission IDs in the given subdag matches the solutions and transactions in the block.
+    /// Returns the IDs of the transactions and solutions that should already exist in the ledger.
     pub(super) fn check_subdag_transmissions(
         subdag: &Subdag<N>,
-        solutions: &Option<CoinbaseSolution<N>>,
+        solutions: &Option<PuzzleSolutions<N>>,
+        aborted_solution_ids: &[SolutionID<N>],
         transactions: &Transactions<N>,
         aborted_transaction_ids: &[N::TransactionID],
-    ) -> Result<()> {
+    ) -> Result<(Vec<SolutionID<N>>, Vec<N::TransactionID>)> {
         // Prepare an iterator over the solution IDs.
         let mut solutions = solutions.as_ref().map(|s| s.deref()).into_iter().flatten().peekable();
-        // Prepare an iterator over the unconfirmed transaction IDs.
-        let unconfirmed_transaction_ids = cfg_iter!(transactions)
-            .map(|confirmed| confirmed.to_unconfirmed_transaction_id())
+        // Prepare an iterator over the unconfirmed transactions.
+        let unconfirmed_transactions = cfg_iter!(transactions)
+            .map(|confirmed| confirmed.to_unconfirmed_transaction())
             .collect::<Result<Vec<_>>>()?;
-        let mut unconfirmed_transaction_ids = unconfirmed_transaction_ids.iter().peekable();
+        let mut unconfirmed_transactions = unconfirmed_transactions.iter().peekable();
 
-        // Initialize a list of already seen transmission IDs.
-        let mut seen_transmission_ids = HashSet::new();
+        // Initialize a set of already seen transaction and solution IDs.
+        let mut seen_transaction_ids = HashSet::new();
+        let mut seen_solution_ids = HashSet::new();
 
-        // Initialize a list of aborted or already-existing solution IDs.
-        let mut aborted_or_existing_solution_ids = Vec::new();
-        // Initialize a list of aborted or already-existing transaction IDs.
-        let mut aborted_or_existing_transaction_ids = Vec::new();
+        // Initialize a set of aborted or already-existing solution IDs.
+        let mut aborted_or_existing_solution_ids = HashSet::new();
+        // Initialize a set of aborted or already-existing transaction IDs.
+        let mut aborted_or_existing_transaction_ids = HashSet::new();
 
         // Iterate over the transmission IDs.
         for transmission_id in subdag.transmission_ids() {
-            // If the transmission ID has already been seen, then continue.
-            if !seen_transmission_ids.insert(transmission_id) {
-                continue;
+            // If the transaction or solution ID has already been seen, then continue.
+            // Note: This is done instead of checking `TransmissionID` directly, because we need to
+            // ensure that each transaction or solution ID is unique. The `TransmissionID` is guaranteed
+            // to be unique, however the transaction/solution ID may not be due to malleability concerns.
+            match transmission_id {
+                TransmissionID::Ratification => {}
+                TransmissionID::Solution(solution_id, _) => {
+                    if !seen_solution_ids.insert(solution_id) {
+                        continue;
+                    }
+                }
+                TransmissionID::Transaction(transaction_id, _) => {
+                    if !seen_transaction_ids.insert(transaction_id) {
+                        continue;
+                    }
+                }
             }
 
             // Process the transmission ID.
             match transmission_id {
                 TransmissionID::Ratification => {}
-                TransmissionID::Solution(commitment) => {
+                TransmissionID::Solution(solution_id, _checksum) => {
                     match solutions.peek() {
-                        // Check the next solution matches the expected commitment.
-                        Some((_, solution)) if solution.commitment() == *commitment => {
+                        // Check the next solution matches the expected solution ID.
+                        // We don't check against the checksum, because check_solution_mut might mutate the solution.
+                        Some((_, solution)) if solution.id() == *solution_id => {
                             // Increment the solution iterator.
                             solutions.next();
                         }
                         // Otherwise, add the solution ID to the aborted or existing list.
-                        _ => aborted_or_existing_solution_ids.push(commitment),
+                        _ => {
+                            if !aborted_or_existing_solution_ids.insert(*solution_id) {
+                                bail!("Block contains a duplicate aborted solution ID (found '{solution_id}')");
+                            }
+                        }
                     }
                 }
-                TransmissionID::Transaction(transaction_id) => {
-                    match unconfirmed_transaction_ids.peek() {
+                TransmissionID::Transaction(transaction_id, checksum) => {
+                    match unconfirmed_transactions.peek() {
                         // Check the next transaction matches the expected transaction.
-                        Some(expected_id) if transaction_id == *expected_id => {
-                            // Increment the unconfirmed transaction ID iterator.
-                            unconfirmed_transaction_ids.next();
+                        Some(transaction)
+                            if transaction.id() == *transaction_id
+                                && Data::<Transaction<N>>::Buffer(transaction.to_bytes_le()?.into())
+                                    .to_checksum::<N>()?
+                                    == *checksum =>
+                        {
+                            // Increment the unconfirmed transaction iterator.
+                            unconfirmed_transactions.next();
                         }
                         // Otherwise, add the transaction ID to the aborted or existing list.
-                        _ => aborted_or_existing_transaction_ids.push(*transaction_id),
+                        _ => {
+                            if !aborted_or_existing_transaction_ids.insert(*transaction_id) {
+                                bail!("Block contains a duplicate aborted transaction ID (found '{transaction_id}')");
+                            }
+                        }
                     }
                 }
             }
@@ -562,11 +629,17 @@ impl<N: Network> Block<N> {
         // Ensure there are no more solutions in the block.
         ensure!(solutions.next().is_none(), "There exists more solutions than expected.");
         // Ensure there are no more transactions in the block.
-        ensure!(unconfirmed_transaction_ids.next().is_none(), "There exists more transactions than expected.");
+        ensure!(unconfirmed_transactions.next().is_none(), "There exists more transactions than expected.");
 
-        // TODO: Move this check to be outside of this method, and check against the ledger for existence.
-        // Ensure there are no aborted or existing solution IDs.
-        // ensure!(aborted_or_existing_solution_ids.is_empty(), "Block contains aborted or already-existing solutions.");
+        // Ensure the aborted solution IDs match.
+        for aborted_solution_id in aborted_solution_ids {
+            // If the aborted transaction ID is not found, throw an error.
+            if !aborted_or_existing_solution_ids.contains(aborted_solution_id) {
+                bail!(
+                    "Block contains an aborted solution ID that is not found in the subdag (found '{aborted_solution_id}')"
+                );
+            }
+        }
         // Ensure the aborted transaction IDs match.
         for aborted_transaction_id in aborted_transaction_ids {
             // If the aborted transaction ID is not found, throw an error.
@@ -577,6 +650,17 @@ impl<N: Network> Block<N> {
             }
         }
 
-        Ok(())
+        // Retrieve the solution IDs that should already exist in the ledger.
+        let existing_solution_ids: Vec<_> = aborted_or_existing_solution_ids
+            .difference(&aborted_solution_ids.iter().copied().collect())
+            .copied()
+            .collect();
+        // Retrieve the transaction IDs that should already exist in the ledger.
+        let existing_transaction_ids: Vec<_> = aborted_or_existing_transaction_ids
+            .difference(&aborted_transaction_ids.iter().copied().collect())
+            .copied()
+            .collect();
+
+        Ok((existing_solution_ids, existing_transaction_ids))
     }
 }

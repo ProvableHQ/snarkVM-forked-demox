@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -19,9 +20,8 @@ impl<N: Network> Serialize for Subdag<N> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match serializer.is_human_readable() {
             true => {
-                let mut certificate = serializer.serialize_struct("Subdag", 2)?;
+                let mut certificate = serializer.serialize_struct("Subdag", 1)?;
                 certificate.serialize_field("subdag", &self.subdag)?;
-                certificate.serialize_field("election_certificate_ids", &self.election_certificate_ids)?;
                 certificate.end()
             }
             false => ToBytesSerializer::serialize_with_size_encoding(self, serializer),
@@ -36,11 +36,7 @@ impl<'de, N: Network> Deserialize<'de> for Subdag<N> {
             true => {
                 let mut value = serde_json::Value::deserialize(deserializer)?;
 
-                // TODO (howardwu): For mainnet - Directly take the value, do not check if its missing.
-                let election_certificate_ids =
-                    DeserializeExt::take_from_value::<D>(&mut value, "election_certificate_ids").unwrap_or_default();
-
-                Ok(Self::from(DeserializeExt::take_from_value::<D>(&mut value, "subdag")?, election_certificate_ids)
+                Ok(Self::from(DeserializeExt::take_from_value::<D>(&mut value, "subdag")?)
                     .map_err(de::Error::custom)?)
             }
             false => FromBytesDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "subdag"),

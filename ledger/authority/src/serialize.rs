@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -55,7 +56,7 @@ impl<'de, N: Network> Deserialize<'de> for Authority<N> {
                     "quorum" => Ok(Self::from_quorum(
                         DeserializeExt::take_from_value::<D>(&mut authority, "subdag").map_err(de::Error::custom)?,
                     )),
-                    _ => Err(error("Invalid authority type")).map_err(de::Error::custom),
+                    _ => Err(de::Error::custom(error("Invalid authority type"))),
                 }
             }
             false => FromBytesDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "authority"),

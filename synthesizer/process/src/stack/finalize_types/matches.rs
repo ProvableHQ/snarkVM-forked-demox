@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -96,6 +97,16 @@ impl<N: Network> FinalizeTypes<N> {
                         "Struct member '{struct_name}.{member_name}' expects {member_type}, but found '{block_height_type}' in the operand '{operand}'.",
                     )
                 }
+                // Ensure the network ID type (u16) matches the member type.
+                Operand::NetworkID => {
+                    // Retrieve the network ID type.
+                    let network_id_type = PlaintextType::Literal(LiteralType::U16);
+                    // Ensure the network ID type matches the member type.
+                    ensure!(
+                        &network_id_type == member_type,
+                        "Struct member '{struct_name}.{member_name}' expects {member_type}, but found '{network_id_type}' in the operand '{operand}'.",
+                    )
+                }
             }
         }
         Ok(())
@@ -174,6 +185,17 @@ impl<N: Network> FinalizeTypes<N> {
                     ensure!(
                         &block_height_type == array_type.next_element_type(),
                         "Array element expects {}, but found '{block_height_type}' in the operand '{operand}'.",
+                        array_type.next_element_type()
+                    )
+                }
+                // Ensure the network ID type (u16) matches the member type.
+                Operand::NetworkID => {
+                    // Retrieve the network ID type.
+                    let network_id_type = PlaintextType::Literal(LiteralType::U16);
+                    // Ensure the network ID type matches the member type.
+                    ensure!(
+                        &network_id_type == array_type.next_element_type(),
+                        "Array element expects {}, but found '{network_id_type}' in the operand '{operand}'.",
                         array_type.next_element_type()
                     )
                 }

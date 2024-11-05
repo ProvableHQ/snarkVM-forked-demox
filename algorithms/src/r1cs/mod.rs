@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -21,9 +22,6 @@ pub use constraint_counter::*;
 mod constraint_system;
 pub use constraint_system::{ConstraintSynthesizer, ConstraintSystem};
 
-mod constraint_variable;
-pub use constraint_variable::*;
-
 pub mod errors;
 pub use errors::*;
 
@@ -33,13 +31,19 @@ pub use linear_combination::*;
 mod namespace;
 pub use namespace::*;
 
+#[cfg(feature = "test")]
 mod optional_vec;
+#[cfg(feature = "test")]
 pub use optional_vec::*;
 
+#[cfg(feature = "test")]
 mod test_constraint_system;
+#[cfg(feature = "test")]
 pub use test_constraint_system::{Fr, TestConstraintSystem};
 
+#[cfg(feature = "test")]
 mod test_constraint_checker;
+#[cfg(feature = "test")]
 pub use test_constraint_checker::TestConstraintChecker;
 
 use snarkvm_utilities::serialize::*;

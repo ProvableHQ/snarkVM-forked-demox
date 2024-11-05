@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -13,18 +14,15 @@
 // limitations under the License.
 
 use crate::{
-    traits::{FinalizeStoreTrait, RegistersLoad, RegistersStore, StackMatches, StackProgram},
-    MappingLocator,
+    CallOperator,
     Opcode,
     Operand,
+    traits::{FinalizeStoreTrait, RegistersLoad, RegistersStore, StackMatches, StackProgram},
 };
 use console::{
     network::prelude::*,
     program::{Register, Value},
 };
-
-use console::program::Identifier;
-use std::io::{BufRead, BufReader};
 
 /// A get command that uses the provided default in case of failure, e.g. `get.or_use accounts[r0] r1 into r2;`.
 /// Gets the value stored at `operand` in `mapping` and stores the result in `destination`.
@@ -32,8 +30,7 @@ use std::io::{BufRead, BufReader};
 #[derive(Clone)]
 pub struct GetOrUse<N: Network> {
     /// The mapping.
-    // TODO (howardwu): For mainnet - Use `CallOperator`, delete the above `MappingLocator`.
-    mapping: MappingLocator<N>,
+    mapping: CallOperator<N>,
     /// The key to access the mapping.
     key: Operand<N>,
     /// The default value.
@@ -79,7 +76,7 @@ impl<N: Network> GetOrUse<N> {
 
     /// Returns the mapping.
     #[inline]
-    pub const fn mapping(&self) -> &MappingLocator<N> {
+    pub const fn mapping(&self) -> &CallOperator<N> {
         &self.mapping
     }
 
@@ -113,8 +110,8 @@ impl<N: Network> GetOrUse<N> {
     ) -> Result<()> {
         // Determine the program ID and mapping name.
         let (program_id, mapping_name) = match self.mapping {
-            MappingLocator::Locator(locator) => (*locator.program_id(), *locator.resource()),
-            MappingLocator::Resource(mapping_name) => (*stack.program_id(), mapping_name),
+            CallOperator::Locator(locator) => (*locator.program_id(), *locator.resource()),
+            CallOperator::Resource(mapping_name) => (*stack.program_id(), mapping_name),
         };
 
         // Ensure the mapping exists in storage.
@@ -154,7 +151,7 @@ impl<N: Network> Parser for GetOrUse<N> {
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
 
         // Parse the mapping name from the string.
-        let (string, mapping) = MappingLocator::parse(string)?;
+        let (string, mapping) = CallOperator::parse(string)?;
         // Parse the "[" from the string.
         let (string, _) = tag("[")(string)?;
         // Parse the whitespace from the string.
@@ -227,22 +224,9 @@ impl<N: Network> Display for GetOrUse<N> {
 
 impl<N: Network> FromBytes for GetOrUse<N> {
     /// Reads the command from a buffer.
-    fn read_le<R: Read>(reader: R) -> IoResult<Self> {
-        // Peek at the first byte.
-        // TODO (howardwu): For mainnet - Read a `MappingLocator`.
-        let mut reader = BufReader::with_capacity(1, reader);
-        let first_byte = {
-            let buffer = reader.fill_buf()?;
-            match buffer.first() {
-                Some(byte) => *byte,
-                None => return Err(error("Failed to read `get.or_use`. Expected byte.")),
-            }
-        };
-        // If the first byte is zero, then read a `MappingLocator`, otherwise read an `Identifier`.
-        let mapping = match first_byte {
-            0u8 => MappingLocator::read_le(&mut reader)?,
-            _ => MappingLocator::Resource(Identifier::read_le(&mut reader)?),
-        };
+    fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
+        // Read the mapping name.
+        let mapping = CallOperator::read_le(&mut reader)?;
         // Read the key operand.
         let key = Operand::read_le(&mut reader)?;
         // Read the default value.
@@ -258,11 +242,7 @@ impl<N: Network> ToBytes for GetOrUse<N> {
     /// Writes the operation to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         // Write the mapping name.
-        // TODO (howardwu): For mainnet - Write the `self.mapping` directly, instead of matching on the identifier case.
-        match &self.mapping {
-            MappingLocator::Locator(_) => self.mapping.write_le(&mut writer)?,
-            MappingLocator::Resource(identifier) => identifier.write_le(&mut writer)?,
-        }
+        self.mapping.write_le(&mut writer)?;
         // Write the key operand.
         self.key.write_le(&mut writer)?;
         // Write the default value.
@@ -275,35 +255,15 @@ impl<N: Network> ToBytes for GetOrUse<N> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use console::{network::Testnet3, program::Register};
+    use console::{network::MainnetV0, program::Register};
 
-    type CurrentNetwork = Testnet3;
-
-    pub struct OldGetOrUse<N: Network> {
-        pub mapping: Identifier<N>,
-        pub key: Operand<N>,
-        pub default: Operand<N>,
-        pub destination: Register<N>,
-    }
-
-    impl<N: Network> ToBytes for OldGetOrUse<N> {
-        fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
-            // Write the mapping name.
-            self.mapping.write_le(&mut writer)?;
-            // Write the key operand.
-            self.key.write_le(&mut writer)?;
-            // Write the default value.
-            self.default.write_le(&mut writer)?;
-            // Write the destination register.
-            self.destination.write_le(&mut writer)
-        }
-    }
+    type CurrentNetwork = MainnetV0;
 
     #[test]
     fn test_parse() {
         let (string, get_or_use) = GetOrUse::<CurrentNetwork>::parse("get.or_use account[r0] r1 into r2;").unwrap();
         assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
-        assert_eq!(get_or_use.mapping, MappingLocator::from_str("account").unwrap());
+        assert_eq!(get_or_use.mapping, CallOperator::from_str("account").unwrap());
         assert_eq!(get_or_use.operands().len(), 2, "The number of operands is incorrect");
         assert_eq!(get_or_use.key, Operand::Register(Register::Locator(0)), "The first operand is incorrect");
         assert_eq!(get_or_use.default, Operand::Register(Register::Locator(1)), "The second operand is incorrect");
@@ -312,7 +272,7 @@ mod tests {
         let (string, get_or_use) =
             GetOrUse::<CurrentNetwork>::parse("get.or_use token.aleo/balances[r0] r1 into r2;").unwrap();
         assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
-        assert_eq!(get_or_use.mapping, MappingLocator::from_str("token.aleo/balances").unwrap());
+        assert_eq!(get_or_use.mapping, CallOperator::from_str("token.aleo/balances").unwrap());
         assert_eq!(get_or_use.operands().len(), 2, "The number of operands is incorrect");
         assert_eq!(get_or_use.key, Operand::Register(Register::Locator(0)), "The first operand is incorrect");
         assert_eq!(get_or_use.default, Operand::Register(Register::Locator(1)), "The second operand is incorrect");
@@ -323,19 +283,8 @@ mod tests {
     fn test_from_bytes() {
         let (string, get_or_use) = GetOrUse::<CurrentNetwork>::parse("get.or_use account[r0] r1 into r2;").unwrap();
         assert!(string.is_empty());
-
-        let old_get_or_use = OldGetOrUse::<CurrentNetwork> {
-            mapping: Identifier::from_str("account").unwrap(),
-            key: Operand::Register(Register::Locator(0)),
-            default: Operand::Register(Register::Locator(1)),
-            destination: Register::Locator(2),
-        };
-
-        let get_or_use_bytes = get_or_use.to_bytes_le().unwrap();
-        let old_get_or_use_bytes = old_get_or_use.to_bytes_le().unwrap();
-
-        let first = GetOrUse::<CurrentNetwork>::from_bytes_le(&get_or_use_bytes[..]).unwrap();
-        let second = GetOrUse::<CurrentNetwork>::from_bytes_le(&old_get_or_use_bytes[..]).unwrap();
-        assert_eq!(first, second);
+        let bytes_le = get_or_use.to_bytes_le().unwrap();
+        let result = GetOrUse::<CurrentNetwork>::from_bytes_le(&bytes_le[..]);
+        assert!(result.is_ok());
     }
 }

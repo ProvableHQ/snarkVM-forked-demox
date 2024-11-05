@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -13,12 +14,14 @@
 // limitations under the License.
 
 use crate::{
-    helpers::memory::{BlockMemory, FinalizeMemory, TransactionMemory, TransitionMemory},
     BlockStore,
     ConsensusStorage,
     FinalizeStore,
+    helpers::memory::{BlockMemory, FinalizeMemory, TransactionMemory, TransitionMemory},
 };
 use console::prelude::*;
+
+use aleo_std_storage::StorageMode;
 
 /// An in-memory consensus storage.
 #[derive(Clone)]
@@ -37,11 +40,11 @@ impl<N: Network> ConsensusStorage<N> for ConsensusMemory<N> {
     type TransitionStorage = TransitionMemory<N>;
 
     /// Initializes the consensus storage.
-    fn open(dev: Option<u16>) -> Result<Self> {
+    fn open<S: Clone + Into<StorageMode>>(storage: S) -> Result<Self> {
         // Initialize the finalize store.
-        let finalize_store = FinalizeStore::<N, FinalizeMemory<N>>::open(dev)?;
+        let finalize_store = FinalizeStore::<N, FinalizeMemory<N>>::open(storage.clone())?;
         // Initialize the block store.
-        let block_store = BlockStore::<N, BlockMemory<N>>::open(dev)?;
+        let block_store = BlockStore::<N, BlockMemory<N>>::open(storage)?;
         // Return the consensus storage.
         Ok(Self {
             finalize_store,

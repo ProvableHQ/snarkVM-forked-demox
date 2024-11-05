@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -73,16 +74,10 @@ impl<N: Network> Process<N> {
             // Ensure the number of outputs is within the allowed range.
             ensure!(transition.outputs().len() <= N::MAX_OUTPUTS, "Transition exceeded maximum number of outputs");
 
-            // Compute the function ID as `Hash(network_id, program_id, function_name)`.
-            let function_id = N::hash_bhp1024(
-                &(
-                    U16::<N>::new(N::ID),
-                    transition.program_id().name(),
-                    transition.program_id().network(),
-                    transition.function_name(),
-                )
-                    .to_bits_le(),
-            )?;
+            // Retrieve the network ID.
+            let network_id = U16::new(N::ID);
+            // Compute the function ID.
+            let function_id = compute_function_id(&network_id, transition.program_id(), transition.function_name())?;
 
             // Ensure each input is valid.
             if transition
@@ -97,6 +92,7 @@ impl<N: Network> Process<N> {
 
             // Ensure each output is valid.
             let num_inputs = transition.inputs().len();
+            let num_outputs = transition.outputs().len();
             if transition
                 .outputs()
                 .iter()
@@ -111,6 +107,10 @@ impl<N: Network> Process<N> {
             let stack = self.get_stack(transition.program_id())?;
             // Retrieve the function from the stack.
             let function = stack.get_function(transition.function_name())?;
+
+            // Ensure the number of inputs and outputs match the expected number in the function.
+            ensure!(function.inputs().len() == num_inputs, "The number of transition inputs is incorrect");
+            ensure!(function.outputs().len() == num_outputs, "The number of transition outputs is incorrect");
 
             // Retrieve the parent program ID.
             // Note: The last transition in the execution does not have a parent, by definition.
@@ -137,6 +137,16 @@ impl<N: Network> Process<N> {
         let num_instances = verifier_inputs.values().map(|(_, inputs)| inputs.len()).sum::<usize>();
         // Ensure the number of instances matches the number of transitions.
         ensure!(num_instances == execution.transitions().len(), "The number of verifier instances is incorrect");
+        // Ensure the same signer is used for all transitions.
+        execution.transitions().try_fold(None, |signer, transition| {
+            Ok(match signer {
+                None => Some(transition.scm()),
+                Some(signer) => {
+                    ensure!(signer == transition.scm(), "The transitions did not use the same signer");
+                    Some(signer)
+                }
+            })
+        })?;
 
         // Construct the list of verifier inputs.
         let verifier_inputs: Vec<_> = verifier_inputs.values().cloned().collect();
@@ -173,7 +183,7 @@ impl<N: Network> Process<N> {
         let (parent_x, parent_y) = parent.to_address()?.to_xy_coordinates();
 
         // [Inputs] Construct the verifier inputs to verify the proof.
-        let mut inputs = vec![N::Field::one(), *tpk_x, *tpk_y, **transition.tcm()];
+        let mut inputs = vec![N::Field::one(), *tpk_x, *tpk_y, **transition.tcm(), **transition.scm()];
         // [Inputs] Extend the verifier inputs with the input IDs.
         inputs.extend(transition.inputs().iter().flat_map(|input| input.verifier_inputs()));
         // [Inputs] Extend the verifier inputs with the public inputs for 'self.caller'.

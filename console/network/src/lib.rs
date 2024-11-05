@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -25,21 +26,27 @@ pub use snarkvm_console_network_environment::*;
 mod helpers;
 pub use helpers::*;
 
-mod testnet3;
-pub use testnet3::*;
+mod canary_v0;
+pub use canary_v0::*;
+
+mod mainnet_v0;
+pub use mainnet_v0::*;
+
+mod testnet_v0;
+pub use testnet_v0::*;
 
 pub mod prelude {
-    pub use crate::{environment::prelude::*, Network};
+    pub use crate::{Network, environment::prelude::*};
 }
 
 use crate::environment::prelude::*;
 use snarkvm_algorithms::{
+    AlgebraicSponge,
     crypto_hash::PoseidonSponge,
     snark::varuna::{CircuitProvingKey, CircuitVerifyingKey, VarunaHidingMode},
     srs::{UniversalProver, UniversalVerifier},
-    AlgebraicSponge,
 };
-use snarkvm_console_algorithms::{Poseidon2, Poseidon4, BHP1024, BHP512};
+use snarkvm_console_algorithms::{BHP512, BHP1024, Poseidon2, Poseidon4};
 use snarkvm_console_collections::merkle_tree::{MerklePath, MerkleTree};
 use snarkvm_console_types::{Field, Group, Scalar};
 use snarkvm_curves::PairingEngine;
@@ -88,18 +95,34 @@ pub trait Network:
     const INCLUSION_FUNCTION_NAME: &'static str;
 
     /// The fixed timestamp of the genesis block.
-    const GENESIS_TIMESTAMP: i64 = 1696118400; // 2023-10-01 00:00:00 UTC
+    const GENESIS_TIMESTAMP: i64;
     /// The genesis block coinbase target.
-    const GENESIS_COINBASE_TARGET: u64 = (1u64 << 32).saturating_sub(1);
+    const GENESIS_COINBASE_TARGET: u64;
     /// The genesis block proof target.
-    const GENESIS_PROOF_TARGET: u64 = 1u64 << 25;
+    const GENESIS_PROOF_TARGET: u64;
+    /// The maximum number of solutions that can be included per block as a power of 2.
+    const MAX_SOLUTIONS_AS_POWER_OF_TWO: u8 = 2; // 4 solutions
+    /// The maximum number of solutions that can be included per block.
+    const MAX_SOLUTIONS: usize = 1 << Self::MAX_SOLUTIONS_AS_POWER_OF_TWO; // 4 solutions
 
     /// The starting supply of Aleo credits.
     const STARTING_SUPPLY: u64 = 1_500_000_000_000_000; // 1.5B credits
     /// The cost in microcredits per byte for the deployment transaction.
     const DEPLOYMENT_FEE_MULTIPLIER: u64 = 1_000; // 1 millicredit per byte
+    /// The constant that divides the storage polynomial.
+    const EXECUTION_STORAGE_FEE_SCALING_FACTOR: u64 = 5000;
+    /// The maximum size execution transactions can be before a quadratic storage penalty applies.
+    const EXECUTION_STORAGE_PENALTY_THRESHOLD: u64 = 5000;
+    /// The cost in microcredits per constraint for the deployment transaction.
+    const SYNTHESIS_FEE_MULTIPLIER: u64 = 25; // 25 microcredits per constraint
+    /// The maximum number of variables in a deployment.
+    const MAX_DEPLOYMENT_VARIABLES: u64 = 1 << 20; // 1,048,576 variables
+    /// The maximum number of constraints in a deployment.
+    const MAX_DEPLOYMENT_CONSTRAINTS: u64 = 1 << 20; // 1,048,576 constraints
     /// The maximum number of microcredits that can be spent as a fee.
     const MAX_FEE: u64 = 1_000_000_000_000_000;
+    /// The maximum number of microcredits that can be spent on a finalize block.
+    const TRANSACTION_SPEND_LIMIT: u64 = 100_000_000;
 
     /// The anchor height, defined as the expected number of blocks to reach the coinbase target.
     const ANCHOR_HEIGHT: u32 = Self::ANCHOR_TIME as u32 / Self::BLOCK_TIME as u32;
@@ -107,10 +130,6 @@ pub trait Network:
     const ANCHOR_TIME: u16 = 25;
     /// The expected time per block in seconds.
     const BLOCK_TIME: u16 = 10;
-    /// The coinbase puzzle degree.
-    const COINBASE_PUZZLE_DEGREE: u32 = (1 << 13) - 1; // 8,191
-    /// The maximum number of solutions that can be included per block.
-    const MAX_SOLUTIONS: usize = 1 << 8; // 256 solutions
     /// The number of blocks per epoch.
     const NUM_BLOCKS_PER_EPOCH: u32 = 3600 / Self::BLOCK_TIME as u32; // 360 blocks == ~1 hour
 
@@ -138,10 +157,19 @@ pub trait Network:
     /// The maximum number of entries in a record.
     const MAX_RECORD_ENTRIES: usize = Self::MIN_RECORD_ENTRIES.saturating_add(Self::MAX_DATA_ENTRIES);
 
+    /// The maximum program size by number of characters.
+    const MAX_PROGRAM_SIZE: usize = 100_000; // 100 KB
+
     /// The maximum number of mappings in a program.
     const MAX_MAPPINGS: usize = 31;
     /// The maximum number of functions in a program.
     const MAX_FUNCTIONS: usize = 31;
+    /// The maximum number of structs in a program.
+    const MAX_STRUCTS: usize = 10 * Self::MAX_FUNCTIONS;
+    /// The maximum number of records in a program.
+    const MAX_RECORDS: usize = 10 * Self::MAX_FUNCTIONS;
+    /// The maximum number of closures in a program.
+    const MAX_CLOSURES: usize = 2 * Self::MAX_FUNCTIONS;
     /// The maximum number of operands in an instruction.
     const MAX_OPERANDS: usize = Self::MAX_INPUTS;
     /// The maximum number of instructions in a closure or function.
@@ -156,6 +184,18 @@ pub trait Network:
     /// The maximum number of outputs per transition.
     const MAX_OUTPUTS: usize = 16;
 
+    /// The maximum program depth.
+    const MAX_PROGRAM_DEPTH: usize = 64;
+    /// The maximum number of imports.
+    const MAX_IMPORTS: usize = 64;
+
+    /// The maximum number of certificates in a batch.
+    const MAX_CERTIFICATES: u16;
+
+    /// The maximum number of bytes in a transaction.
+    // Note: This value must **not** be decreased as it would invalidate existing transactions.
+    const MAX_TRANSACTION_SIZE: usize = 128_000; // 128 kB
+
     /// The state root type.
     type StateRoot: Bech32ID<Field<Self>>;
     /// The block hash type.
@@ -166,9 +206,14 @@ pub trait Network:
     type TransactionID: Bech32ID<Field<Self>>;
     /// The transition ID type.
     type TransitionID: Bech32ID<Field<Self>>;
+    /// The transmission checksum type.
+    type TransmissionChecksum: IntegerType;
 
     /// Returns the genesis block bytes.
     fn genesis_bytes() -> &'static [u8];
+
+    /// Returns the restrictions list as a JSON-compatible string.
+    fn restrictions_list_as_str() -> &'static str;
 
     /// Returns the proving key for the given function name in `credits.aleo`.
     fn get_credits_proving_key(function_name: String) -> Result<&'static Arc<VarunaProvingKey<Self>>>;

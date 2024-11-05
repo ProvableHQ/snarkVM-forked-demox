@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -22,9 +23,7 @@ impl<N: Network> Header<N> {
         ratified_finalize_operations: Vec<FinalizeOperation<N>>,
     ) -> Result<Self> {
         #[cfg(not(debug_assertions))]
-        ensure!(!ratifications.is_empty(), "The genesis block must not contain ratifications");
-        #[cfg(not(debug_assertions))]
-        ensure!(ratifications.len() == 1, "The genesis block must not contain 1 ratification");
+        ensure!(ratifications.len() == 1, "The genesis block must contain exactly 1 ratification");
         #[cfg(not(debug_assertions))]
         ensure!(!ratified_finalize_operations.is_empty(), "The genesis block must contain ratify-finalize operations");
 
@@ -71,9 +70,9 @@ impl<N: Network> Header<N> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use console::network::Testnet3;
+    use console::network::MainnetV0;
 
-    type CurrentNetwork = Testnet3;
+    type CurrentNetwork = MainnetV0;
 
     /// Returns the expected block header size by summing its subcomponent sizes.
     /// Update this method if the contents of a block header have changed.

@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -28,7 +29,7 @@ use crate::{
         network::Network,
         program::{Identifier, Locator, ProgramID, Response, Value},
     },
-    file::{AVMFile, AleoFile, Manifest, ProverFile, VerifierFile, README},
+    file::{AVMFile, AleoFile, Manifest, ProverFile, README, VerifierFile},
     ledger::{block::Execution, query::Query, store::helpers::memory::BlockMemory},
     prelude::{Deserialize, Deserializer, Serialize, SerializeStruct, Serializer},
     synthesizer::{
@@ -38,7 +39,7 @@ use crate::{
     },
 };
 
-use anyhow::{bail, ensure, Error, Result};
+use anyhow::{Error, Result, bail, ensure};
 use core::str::FromStr;
 use rand::{CryptoRng, Rng};
 use std::path::{Path, PathBuf};
@@ -180,11 +181,11 @@ impl<N: Network> Package<N> {
 #[cfg(test)]
 pub(crate) mod test_helpers {
     use super::*;
-    use snarkvm_console::{account::Address, network::Testnet3, prelude::TestRng};
+    use snarkvm_console::{account::Address, network::MainnetV0, prelude::TestRng};
 
     use std::{fs::File, io::Write};
 
-    type CurrentNetwork = Testnet3;
+    type CurrentNetwork = MainnetV0;
 
     fn temp_dir() -> PathBuf {
         tempfile::tempdir().expect("Failed to open temporary directory").into_path()
@@ -389,7 +390,7 @@ function main:
         let _manifest_file = Manifest::create(&directory, main_program_id).unwrap();
 
         // Open the package at the temporary directory.
-        let package = Package::<Testnet3>::open(&directory).unwrap();
+        let package = Package::<MainnetV0>::open(&directory).unwrap();
         assert_eq!(package.program_id(), main_program_id);
 
         // Return the temporary directory and the package.
@@ -465,11 +466,11 @@ function main:
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::prelude::Testnet3;
+    use crate::prelude::MainnetV0;
     use snarkvm_utilities::TestRng;
 
     type CurrentAleo = snarkvm_circuit::network::AleoV0;
-    type CurrentNetwork = Testnet3;
+    type CurrentNetwork = MainnetV0;
 
     #[test]
     fn test_imports_directory() {

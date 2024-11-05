@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -96,10 +97,10 @@ mod tests {
     use super::*;
     use crate::Literal;
     use snarkvm_console_account::PrivateKey;
-    use snarkvm_console_network::Testnet3;
+    use snarkvm_console_network::MainnetV0;
     use snarkvm_console_types::Field;
 
-    type CurrentNetwork = Testnet3;
+    type CurrentNetwork = MainnetV0;
 
     const ITERATIONS: u64 = 1000;
 
@@ -112,13 +113,10 @@ mod tests {
         let randomizer = Scalar::rand(rng);
         let record = Record {
             owner,
-            data: IndexMap::from_iter(
-                vec![
-                    (Identifier::from_str("a")?, Entry::Private(Plaintext::from(Literal::Field(Field::rand(rng))))),
-                    (Identifier::from_str("b")?, Entry::Private(Plaintext::from(Literal::Scalar(Scalar::rand(rng))))),
-                ]
-                .into_iter(),
-            ),
+            data: IndexMap::from_iter(vec![
+                (Identifier::from_str("a")?, Entry::Private(Plaintext::from(Literal::Field(Field::rand(rng))))),
+                (Identifier::from_str("b")?, Entry::Private(Plaintext::from(Literal::Scalar(Scalar::rand(rng))))),
+            ]),
             nonce: N::g_scalar_multiply(&randomizer),
         };
         // Encrypt the record.

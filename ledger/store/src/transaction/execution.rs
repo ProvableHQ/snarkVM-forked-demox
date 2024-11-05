@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -13,18 +14,19 @@
 // limitations under the License.
 
 use crate::{
+    FeeStorage,
+    FeeStore,
+    TransitionStore,
     atomic_batch_scope,
     cow_to_cloned,
     cow_to_copied,
     helpers::{Map, MapRead},
-    FeeStorage,
-    FeeStore,
-    TransitionStore,
 };
 use console::network::prelude::*;
 use ledger_block::{Execution, Transaction, Transition};
 use synthesizer_snark::Proof;
 
+use aleo_std_storage::StorageMode;
 use anyhow::Result;
 use core::marker::PhantomData;
 use std::borrow::Cow;
@@ -56,9 +58,9 @@ pub trait ExecutionStorage<N: Network>: Clone + Send + Sync {
         self.fee_store().transition_store()
     }
 
-    /// Returns the optional development ID.
-    fn dev(&self) -> Option<u16> {
-        self.transition_store().dev()
+    /// Returns the storage mode.
+    fn storage_mode(&self) -> &StorageMode {
+        self.transition_store().storage_mode()
     }
 
     /// Starts an atomic batch write operation.
@@ -353,9 +355,9 @@ impl<N: Network, E: ExecutionStorage<N>> ExecutionStore<N, E> {
         self.storage.finish_atomic()
     }
 
-    /// Returns the optional development ID.
-    pub fn dev(&self) -> Option<u16> {
-        self.storage.dev()
+    /// Returns the storage mode.
+    pub fn storage_mode(&self) -> &StorageMode {
+        self.storage.storage_mode()
     }
 }
 
@@ -391,9 +393,9 @@ impl<N: Network, E: ExecutionStorage<N>> ExecutionStore<N, E> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{helpers::memory::ExecutionMemory, TransitionStore};
+    use crate::{TransitionStore, helpers::memory::ExecutionMemory};
 
-    type CurrentNetwork = console::network::Testnet3;
+    type CurrentNetwork = console::network::MainnetV0;
 
     fn insert_get_remove(transaction: Transaction<CurrentNetwork>) -> Result<()> {
         let transaction_id = transaction.id();

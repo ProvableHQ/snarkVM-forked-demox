@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -120,7 +121,7 @@ impl<N: Network> Authorization<N> {
 impl<N: Network> Authorization<N> {
     /// Returns the next `Request` in the authorization.
     pub fn peek_next(&self) -> Result<Request<N>> {
-        self.requests.read().get(0).cloned().ok_or_else(|| anyhow!("Failed to peek at the next request."))
+        self.requests.read().front().cloned().ok_or_else(|| anyhow!("Failed to peek at the next request."))
     }
 
     /// Returns the next `Request` from the authorization.
@@ -238,6 +239,13 @@ fn ensure_request_and_transition_matches<N: Network>(
         request.tcm(),
         transition.tcm(),
     );
+    // Ensure the request and transition have the same 'scm'.
+    ensure!(
+        request.scm() == transition.scm(),
+        "The request ({}) and transition ({}) at index {index} must have the same 'scm' in the authorization.",
+        request.scm(),
+        transition.scm(),
+    );
     Ok(())
 }
 
@@ -247,7 +255,7 @@ pub(crate) mod test_helpers {
     use crate::Process;
     use console::account::PrivateKey;
 
-    type CurrentNetwork = console::network::Testnet3;
+    type CurrentNetwork = console::network::MainnetV0;
     type CurrentAleo = circuit::AleoV0;
 
     /// Returns a sample authorization.

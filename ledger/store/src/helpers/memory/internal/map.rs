@@ -1,9 +1,10 @@
-// Copyright (C) 2019-2023 Aleo Systems Inc.
+// Copyright 2024 Aleo Network Foundation
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at:
+
 // http://www.apache.org/licenses/LICENSE-2.0
 
 // Unless required by applicable law or agreed to in writing, software
@@ -22,10 +23,10 @@ use core::{borrow::Borrow, hash::Hash};
 use parking_lot::{Mutex, RwLock};
 use std::{
     borrow::Cow,
-    collections::{btree_map, BTreeMap},
+    collections::{BTreeMap, btree_map},
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
 };
 
@@ -194,7 +195,7 @@ impl<
         let operations = core::mem::take(&mut *self.atomic_batch.lock());
 
         // Insert the operations into an index map to remove any operations that would have been overwritten anyways.
-        let operations: IndexMap<_, _> = IndexMap::from_iter(operations.into_iter());
+        let operations: IndexMap<_, _> = IndexMap::from_iter(operations);
 
         if !operations.is_empty() {
             // Acquire a write lock on the map.
@@ -226,6 +227,25 @@ impl<
         // Set the atomic batch flag to `false`.
         self.batch_in_progress.store(false, Ordering::SeqCst);
 
+        Ok(())
+    }
+
+    ///
+    /// Once called, the subsequent atomic write batches will be queued instead of being executed
+    /// at the end of their scope. `unpause_atomic_writes` needs to be called in order to
+    /// restore the usual behavior.
+    ///
+    fn pause_atomic_writes(&self) -> Result<()> {
+        // No effect.
+        Ok(())
+    }
+
+    ///
+    /// Executes all of the queued writes as a single atomic operation and restores the usual
+    /// behavior of atomic write batches that was altered by calling `pause_atomic_writes`.
+    ///
+    fn unpause_atomic_writes<const DISCARD_BATCH: bool>(&self) -> Result<()> {
+        // No effect.
         Ok(())
     }
 }
@@ -321,7 +341,7 @@ impl<
     /// Returns an iterator visiting each key-value pair in the atomic batch.
     ///
     fn iter_pending(&'a self) -> Self::PendingIterator {
-        let filtered_atomic_batch: IndexMap<_, _> = IndexMap::from_iter(self.atomic_batch.lock().clone().into_iter());
+        let filtered_atomic_batch: IndexMap<_, _> = IndexMap::from_iter(self.atomic_batch.lock().clone());
         filtered_atomic_batch.into_iter().map(|(k, v)| (Cow::Owned(k), v.map(|v| Cow::Owned(v))))
     }
 
@@ -364,10 +384,10 @@ impl<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{atomic_batch_scope, atomic_finalize, FinalizeMode};
-    use console::{account::Address, network::Testnet3};
+    use crate::{FinalizeMode, atomic_batch_scope, atomic_finalize};
+    use console::{account::Address, network::MainnetV0};
 
-    type CurrentNetwork = Testnet3;
+    type CurrentNetwork = MainnetV0;
 
     #[test]
     fn test_contains_key_sanity_check() {
