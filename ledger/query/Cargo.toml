@@ -29,7 +29,7 @@ wasm = [
   "ledger-store/wasm",
   "synthesizer-program/wasm"
 ]
-query = [ "ledger-store", "synthesizer-program", "ureq" ]
+query = [ "ledger-store", "synthesizer-program", "reqwest" ]
 
 [dependencies.console]
 package = "snarkvm-console"
@@ -53,11 +53,5 @@ version = "0.1"
 
 [dependencies.reqwest]
 version = "0.11.20"
-features = [ "json" ]
-optional = true
-
-[dependencies.ureq]
-version = "2.7.1"
-features = [ "json" ]
-default-features = false
+features = [ "json", "blocking", "native-tls" ]
 optional = true
