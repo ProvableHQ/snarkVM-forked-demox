@@ -18,7 +18,7 @@ extern crate criterion;
 use console::{
     network::{
         prelude::{TestRng, Uniform},
-        Testnet3,
+        MainnetV0,
     },
     prelude::{FromBytes, Itertools, Network},
     program::{Identifier, Literal, Plaintext, ProgramID, Register, Value},
@@ -41,7 +41,7 @@ use criterion::{BatchSize, Criterion};
 
 use std::{str::FromStr, time::Duration};
 
-type CurrentNetwork = Testnet3;
+type CurrentNetwork = MainnetV0;
 #[cfg(not(feature = "rocks"))]
 type ConsensusType<N> = ledger_store::helpers::memory::ConsensusMemory<N>;
 #[cfg(not(feature = "rocks"))]
@@ -52,43 +52,45 @@ type ConsensusType<N> = ledger_store::helpers::rocksdb::ConsensusDB<N>;
 const STORE_TYPE: &str = "rocksdb";
 
 // Initialize the commands we want to benchmark
-const COMMANDS: [&str; 4] = ["contains", "get", "get.or_use", "set"];
+// const COMMANDS: [&str; 4] = ["contains", "get", "get.or_use", "set"];
+const COMMANDS: [&str; 2] = ["get", "set"];
 // Initialize the types of mappings we want to benchmark
-const MAPPING_TYPES: [&str; 14] = [
+const MAPPING_TYPES: [&str; 3] = [
     "field",
-    "group",
+    // "group",
     "u64",
-    "[field; 2u32]",
-    "[field; 4u32]",
-    "[field; 8u32]",
-    "[field; 16u32]",
-    "[[field; 2u32]; 2u32]",
-    "[[field; 4u32]; 4u32]",
-    "[[field; 8u32]; 8u32]",
-    "[[field; 16u32]; 16u32]",
-    "[[[field; 2u32]; 2u32]; 2u32]",
-    "[[[field; 4u32]; 4u32]; 4u32]",
+    // "[field; 2u32]",
+    // "[field; 4u32]",
+    // "[field; 8u32]",
+    // "[field; 16u32]",
+    // "[[field; 2u32]; 2u32]",
+    // "[[field; 4u32]; 4u32]",
+    // "[[field; 8u32]; 8u32]",
+    // "[[field; 16u32]; 16u32]",
+    // "[[[field; 2u32]; 2u32]; 2u32]",
+    // "[[[field; 4u32]; 4u32]; 4u32]",
     "[[[field; 8u32]; 8u32]; 8u32]",
 ];
 // Initialize names for the mappings
-const MAPPING_NAMES: [&str; 14] = [
+const MAPPING_NAMES: [&str; 3] = [
     "m_field",
-    "m_group",
+    // "m_group",
     "m_u64",
-    "m_field_array_depth_0_length_2",
-    "m_field_array_depth_0_length_4",
-    "m_field_array_depth_0_length_8",
-    "m_field_array_depth_0_length_16",
-    "m_field_array_depth_1_length_2",
-    "m_field_array_depth_1_length_4_",
-    "m_field_array_depth_1_length_8",
-    "m_field_array_depth_1_length_16",
-    "m_field_array_depth_2_length_2",
-    "m_field_array_depth_2_length_4",
+    // "m_field_array_depth_0_length_2",
+    // "m_field_array_depth_0_length_4",
+    // "m_field_array_depth_0_length_8",
+    // "m_field_array_depth_0_length_16",
+    // "m_field_array_depth_1_length_2",
+    // "m_field_array_depth_1_length_4",
+    // "m_field_array_depth_1_length_8",
+    // "m_field_array_depth_1_length_16",
+    // "m_field_array_depth_2_length_2",
+    // "m_field_array_depth_2_length_4",
     "m_field_array_depth_2_length_8",
 ];
 // Initialize the number of entries we want to benchmark each command on
-const NUM_ENTRIES: [u64; 8] = [1, 1000, 10_000, 50_000, 100_000, 200_000, 500_000, 1_000_000];
+// const NUM_ENTRIES: [u64; 8] = [1, 1000, 10_000, 50_000, 100_000, 200_000, 500_000, 1_000_000];
+const NUM_ENTRIES: [u64; 2] = [1, 1_000_000];
 
 // Generate an input for the given mapping name
 fn generate_input(mapping_name: &str, rng: &mut TestRng) -> Value<CurrentNetwork> {
@@ -150,13 +152,13 @@ fn setup_registers(
 
     // Construct the FinalizeState & Finalize.
     let state =
-        FinalizeGlobalState::new::<CurrentNetwork>(0, 0, 0, 0, <Testnet3 as Network>::BlockHash::default()).unwrap();
+        FinalizeGlobalState::new::<CurrentNetwork>(0, 0, 0, 0, <MainnetV0 as Network>::BlockHash::default()).unwrap();
     let finalize = Finalize::<CurrentNetwork>::from_str(&finalize_string).unwrap();
 
     // Initialize a fresh set of finalize registers.
     let mut registers = FinalizeRegisters::new(
         state,
-        <Testnet3 as Network>::TransitionID::default(),
+        <MainnetV0 as Network>::TransitionID::default(),
         Identifier::from_str("test").unwrap(),
         FinalizeTypes::from_finalize(stack, &finalize).unwrap(),
     );
@@ -179,7 +181,7 @@ fn bench_mappings(c: &mut Criterion) {
     // Initialize the VM.
     println!("Initializing the VM...");
     let vm = VM::<CurrentNetwork, _>::from(storage).unwrap();
-    let genesis_block = &Block::read_le(Testnet3::genesis_bytes()).unwrap();
+    let genesis_block = &Block::read_le(MainnetV0::genesis_bytes()).unwrap();
     vm.add_next_block(genesis_block).unwrap();
 
     let program = Program::<CurrentNetwork>::from_str(include_str!("mappings.aleo")).unwrap();

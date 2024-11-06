@@ -32,7 +32,7 @@ harness = false
 #harness = false
 
 [features]
-default = [ "async", "indexmap/rayon", "rayon" ]
+default = [ "async", "indexmap/rayon", "rayon", "rocks" ]
 async = [
   "ledger-narwhal/async",
   "ledger-query/async",
