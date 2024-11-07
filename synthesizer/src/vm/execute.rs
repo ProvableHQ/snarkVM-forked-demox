@@ -15,6 +15,8 @@
 
 #![allow(clippy::too_many_arguments)]
 
+use ledger_query::QueryTrait;
+
 use super::*;
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
@@ -46,7 +48,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let fee = match is_fee_required || is_priority_fee_declared {
             true => {
                 // Compute the minimum execution cost.
-                let (minimum_execution_cost, (_, _)) = execution_cost(&self.process().read(), &execution)?;
+                let query = query.unwrap_or(Query::VM(self.block_store().clone()));
+                let block_height = query.current_block_height()?;
+                let (minimum_execution_cost, (_, _)) = match block_height < N::CONSENSUS_V2_HEIGHT {
+                    true => execution_cost_deprecated(&self.process().read(), &execution)?,
+                    false => execution_cost(&self.process().read(), &execution)?,
+                };
                 // Compute the execution ID.
                 let execution_id = execution.to_execution_id()?;
                 // Authorize the fee.
@@ -68,7 +75,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     )?,
                 };
                 // Execute the fee.
-                Some(self.execute_fee_authorization_raw(authorization, query, rng)?)
+                Some(self.execute_fee_authorization_raw(authorization, Some(query), rng)?)
             }
             false => None,
         };
