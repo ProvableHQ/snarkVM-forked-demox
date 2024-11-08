@@ -335,6 +335,78 @@ mod tests {
     }
 
     #[test]
+    fn test_execute_cost_fee_migration() {
+      let rng = &mut TestRng::default();
+        let credits_program = "credits.aleo";
+        let function_name = "transfer_public";
+
+        // Initialize a new caller.
+        let caller_private_key: PrivateKey<MainnetV0> = PrivateKey::new(rng).unwrap();
+        let recipient_private_key: PrivateKey<MainnetV0> = PrivateKey::new(rng).unwrap();
+        let recipient_address = Address::try_from(&recipient_private_key).unwrap();
+        let transfer_public_amount = 1_000_000u64;
+        let inputs =
+            &[recipient_address.to_string(), format!("{transfer_public_amount}_u64")];
+
+        // Prepare the VM and records.
+        let (vm, _) = prepare_vm(rng).unwrap();
+
+        // Prepare the inputs.
+
+        let authorization = vm.authorize(&caller_private_key, credits_program, function_name, inputs, rng).unwrap();
+
+        let execution = vm.execute_authorization_raw(authorization, None, rng).unwrap();
+        let (cost, _) = execution_cost(&vm.process().read(), &execution).unwrap();
+        let (old_cost, _) = execution_cost_deprecated(&vm.process().read(), &execution).unwrap();
+
+        assert_eq!(32_060, cost);
+        assert_eq!(51_060, old_cost);
+
+        // Since transfer_public has 2 get.or_use's, the difference is (MAPPING_COST_V1 - MAPPING_BASE_COST_V2) * 2
+        assert_eq!(old_cost - cost, 9_500 * 2);
+    }
+
+    #[test]
+    fn test_fee_migration_occurs_at_correct_block_height() {
+        // This test will fail if the consensus v2 height is 0
+        assert_ne!(0, CurrentNetwork::CONSENSUS_V2_HEIGHT);
+
+        let rng = &mut TestRng::default();
+
+        // Initialize a new caller.
+        let private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+        let address = Address::try_from(&private_key).unwrap();
+
+        // Prepare the VM and records.
+        let (vm, _) = prepare_vm(rng).unwrap();
+
+        // Prepare the inputs.
+        let inputs = [
+            Value::<CurrentNetwork>::from_str(&address.to_string()).unwrap(),
+            Value::<CurrentNetwork>::from_str("1_000_000u64").unwrap(),
+        ]
+        .into_iter();
+
+        // Execute.
+        let transaction =
+        vm.execute(&private_key, ("credits.aleo", "transfer_public"), inputs.clone(), None, 0, None, rng).unwrap();
+
+        assert_eq!(51_060, *transaction.base_fee_amount().unwrap());
+
+        let transactions: [Transaction<CurrentNetwork>; 0] = [];
+        for _ in 0..CurrentNetwork::CONSENSUS_V2_HEIGHT {
+            // Call the function
+            let next_block = crate::vm::test_helpers::sample_next_block(&vm, &private_key, &transactions, rng).unwrap();
+            vm.add_next_block(&next_block).unwrap();
+        }
+
+        let transaction =
+        vm.execute(&private_key, ("credits.aleo", "transfer_public"), inputs.clone(), None, 0, None, rng).unwrap();
+
+        assert_eq!(32_060, *transaction.base_fee_amount().unwrap());
+    }
+
+    #[test]
     fn test_credits_bond_public_cost() {
         let rng = &mut TestRng::default();
         let credits_program = "credits.aleo";
