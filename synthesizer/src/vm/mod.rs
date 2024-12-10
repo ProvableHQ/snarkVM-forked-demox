@@ -47,7 +47,7 @@ use ledger_block::{
 use ledger_committee::Committee;
 use ledger_narwhal_data::Data;
 use ledger_puzzle::Puzzle;
-use ledger_query::Query;
+use ledger_query::{Query, QueryTrait};
 use ledger_store::{
     BlockStore,
     ConsensusStorage,
@@ -59,7 +59,7 @@ use ledger_store::{
     TransitionStore,
     atomic_finalize,
 };
-use synthesizer_process::{Authorization, Process, Trace, deployment_cost, execution_cost};
+use synthesizer_process::{Authorization, Process, Trace, deployment_cost, execution_cost_v1, execution_cost_v2};
 use synthesizer_program::{FinalizeGlobalState, FinalizeOperation, FinalizeStoreTrait, Program};
 use utilities::try_vm_runtime;
 
@@ -361,7 +361,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let state = FinalizeGlobalState::new_genesis::<N>()?;
         // Speculate on the ratifications, solutions, and transactions.
         let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) =
-            self.speculate(state, None, ratifications, &solutions, transactions.iter(), rng)?;
+            self.speculate(state, 0, None, ratifications, &solutions, transactions.iter(), rng)?;
         ensure!(
             aborted_transaction_ids.is_empty(),
             "Failed to initialize a genesis block - found aborted transaction IDs"
@@ -753,6 +753,36 @@ function compute:
             .clone()
     }
 
+    #[cfg(feature = "test")]
+    pub(crate) fn create_new_transaction_with_different_fee(
+        rng: &mut TestRng,
+        transaction: Transaction<CurrentNetwork>,
+        fee: u64,
+    ) -> Transaction<CurrentNetwork> {
+        // Initialize a new caller.
+        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+
+        // Initialize the genesis block.
+        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+
+        // Initialize the VM.
+        let vm = sample_vm();
+        // Update the VM.
+        vm.add_next_block(&genesis).unwrap();
+
+        // Get Execution
+        let execution = transaction.execution().unwrap().clone();
+
+        // Authorize the fee.
+        let authorization =
+            vm.authorize_fee_public(&caller_private_key, fee, 100, execution.to_execution_id().unwrap(), rng).unwrap();
+        // Compute the fee.
+        let fee = vm.execute_fee_authorization(authorization, None, rng).unwrap();
+
+        // Construct the transaction.
+        Transaction::from_execution(execution, Some(fee)).unwrap()
+    }
+
     pub fn sample_next_block<R: Rng + CryptoRng>(
         vm: &VM<MainnetV0, ConsensusMemory<MainnetV0>>,
         private_key: &PrivateKey<MainnetV0>,
@@ -764,8 +794,16 @@ function compute:
         let previous_block = vm.block_store().get_block(&block_hash).unwrap().unwrap();
 
         // Construct the new block header.
-        let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) =
-            vm.speculate(sample_finalize_state(1), None, vec![], &None.into(), transactions.iter(), rng)?;
+        let time_since_last_block = MainnetV0::BLOCK_TIME as i64;
+        let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = vm.speculate(
+            sample_finalize_state(1),
+            time_since_last_block,
+            None,
+            vec![],
+            &None.into(),
+            transactions.iter(),
+            rng,
+        )?;
 
         // Construct the metadata associated with the block.
         let metadata = Metadata::new(
@@ -778,7 +816,7 @@ function compute:
             MainnetV0::GENESIS_PROOF_TARGET,
             previous_block.last_coinbase_target(),
             previous_block.last_coinbase_timestamp(),
-            MainnetV0::GENESIS_TIMESTAMP + 1,
+            previous_block.timestamp().saturating_add(time_since_last_block),
         )?;
 
         let header = Header::from(

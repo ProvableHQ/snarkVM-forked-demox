@@ -91,6 +91,9 @@ pub trait Network:
     /// The network edition.
     const EDITION: u16;
 
+    /// The block height from which consensus V2 rules apply.
+    const CONSENSUS_V2_HEIGHT: u32;
+
     /// The function name for the inclusion circuit.
     const INCLUSION_FUNCTION_NAME: &'static str;
 
