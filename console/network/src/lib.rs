@@ -61,11 +61,12 @@ pub mod prelude {
 pub use crate::environment::prelude::*;
 
 use snarkvm_algorithms::{
-    AlgebraicSponge,
     crypto_hash::PoseidonSponge,
     snark::varuna::{CircuitProvingKey, CircuitVerifyingKey, VarunaHidingMode},
     srs::{UniversalProver, UniversalVerifier},
+    AlgebraicSponge,
 };
+<<<<<<< HEAD
 use snarkvm_console_algorithms::{BHP512, BHP1024, Poseidon2, Poseidon4, Poseidon8};
 use snarkvm_console_collections::merkle_tree::{MerklePath, MerkleTree};
 use snarkvm_console_types::{Field, Group, Scalar};
@@ -540,6 +541,9 @@ pub trait Network:
 
     /// Returns the extended Poseidon hash with an input rate of 8.
     fn hash_many_psd8(input: &[Field<Self>], num_outputs: u16) -> Vec<Field<Self>>;
+
+    /// Returns the extended Poseidon hash with an input rate of 8, using a precomputed first round of sponge permutations.
+    fn hash_many_psd8_precompute(input: &[Field<Self>], num_outputs: u16) -> Vec<Field<Self>>;
 
     /// Returns the BHP hash with an input hasher of 256-bits.
     fn hash_to_group_bhp256(input: &[bool]) -> Result<Group<Self>>;
