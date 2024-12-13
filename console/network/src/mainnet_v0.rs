@@ -15,22 +15,8 @@
 
 use super::*;
 use snarkvm_console_algorithms::{
-    BHP256,
-    BHP512,
-    BHP768,
-    BHP1024,
-    Blake2Xs,
-    Keccak256,
-    Keccak384,
-    Keccak512,
-    Pedersen64,
-    Pedersen128,
-    Poseidon2,
-    Poseidon4,
-    Poseidon8,
-    Sha3_256,
-    Sha3_384,
-    Sha3_512,
+    Blake2Xs, Keccak256, Keccak384, Keccak512, Pedersen128, Pedersen64, Poseidon2, Poseidon4, Poseidon8, Sha3_256,
+    Sha3_384, Sha3_512, BHP1024, BHP256, BHP512, BHP768,
 };
 
 lazy_static! {
@@ -118,6 +104,8 @@ impl Environment for MainnetV0 {
     const MONTGOMERY_A: Self::Field = Console::MONTGOMERY_A;
     /// The coefficient `B` of the Montgomery curve.
     const MONTGOMERY_B: Self::Field = Console::MONTGOMERY_B;
+    /// The precomputed first round of Poseidon sponge permutations.
+    const PRECOMPUTED_FIRST_POSEIDON_ROUND: [Self::Field; 9] = Console::PRECOMPUTED_FIRST_POSEIDON_ROUND;
 }
 
 impl Network for MainnetV0 {
@@ -416,6 +404,11 @@ impl Network for MainnetV0 {
     /// Returns the extended Poseidon hash with an input rate of 8.
     fn hash_many_psd8(input: &[Field<Self>], num_outputs: u16) -> Vec<Field<Self>> {
         POSEIDON_8.hash_many(input, num_outputs)
+    }
+
+    // Returns the extended Poseidon hash with an input rate of 8, using a precomputed first round of sponge permutations.
+    fn hash_many_psd8_precompute(input: &[Field<Self>], num_outputs: u16) -> Vec<Field<Self>> {
+        POSEIDON_8.hash_many_precompute(input, num_outputs)
     }
 
     /// Returns the BHP hash with an input hasher of 256-bits.

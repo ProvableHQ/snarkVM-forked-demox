@@ -2932,6 +2932,7 @@ name = "snarkvm-console-program"
 version = "1.0.0"
 dependencies = [
  "bincode",
+ "criterion",
  "enum-iterator",
  "enum_index",
  "enum_index_derive",

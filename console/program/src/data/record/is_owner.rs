@@ -30,11 +30,27 @@ impl<N: Network> Record<N, Ciphertext<N>> {
         address_x_coordinate: Field<N>,
         view_key_scalar: Scalar<N>,
         record_nonce: Group<N>,
-        record_owner_x_coordinate: Field<N>
+        record_owner_x_coordinate: Field<N>,
     ) -> bool {
         let record_view_key = (record_nonce * view_key_scalar).to_x_coordinate();
         // Compute the 0th randomizer.
         let randomizer = N::hash_many_psd8(&[N::encryption_domain(), record_view_key], 1);
+        // Decrypt the owner.
+        let owner_x = record_owner_x_coordinate - &randomizer[0];
+        // Check if the address is the owner.
+        owner_x == address_x_coordinate
+    }
+
+    /// Returns `true` if the given view key and address x-coordinate corresponds to the owner of the record, using a precomputed first poseidon round.
+    pub fn is_owner_direct_precompute(
+        address_x_coordinate: Field<N>,
+        view_key_scalar: Scalar<N>,
+        record_nonce: Group<N>,
+        record_owner_x_coordinate: Field<N>,
+    ) -> bool {
+        let record_view_key = (record_nonce * view_key_scalar).to_x_coordinate();
+        // Compute the 0th randomizer.
+        let randomizer = N::hash_many_psd8_precompute(&[N::encryption_domain(), record_view_key], 1);
         // Decrypt the owner.
         let owner_x = record_owner_x_coordinate - &randomizer[0];
         // Check if the address is the owner.
@@ -138,5 +154,23 @@ mod tests {
             check_is_owner::<CurrentNetwork>(view_key, owner, &mut rng)?;
         }
         Ok(())
+    }
+
+    #[test]
+    pub fn test_hash_many() {
+        let mut rng = &mut TestRng::default();
+
+        for _ in 0..ITERATIONS {
+            let some_field_element = Field::<CurrentNetwork>::from_u64(u64::rand(&mut rng));
+            let hash_result =
+                CurrentNetwork::hash_many_psd8(&[CurrentNetwork::encryption_domain(), some_field_element], 1);
+
+            let hash_precompute_result = CurrentNetwork::hash_many_psd8_precompute(
+                &[CurrentNetwork::encryption_domain(), some_field_element],
+                1,
+            );
+
+            assert_eq!(hash_result, hash_precompute_result);
+        }
     }
 }
