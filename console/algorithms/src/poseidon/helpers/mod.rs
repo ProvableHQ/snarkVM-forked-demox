@@ -19,7 +19,7 @@ pub(super) use sponge::*;
 mod state;
 pub(super) use state::*;
 
-use snarkvm_console_types::{Field, prelude::*};
+use snarkvm_console_types::{prelude::*, Field};
 
 use smallvec::SmallVec;
 
@@ -35,6 +35,9 @@ pub trait AlgebraicSponge<E: Environment, const RATE: usize, const CAPACITY: usi
 
     /// Absorb an input into the sponge.
     fn absorb(&mut self, input: &[Field<E>]);
+
+    // Absorb an input into the sponge using a precomputed first round.
+    fn absorb_precompute(&mut self, input: &[Field<E>]);
 
     /// Squeeze `num_elements` field elements from the sponge.
     fn squeeze(&mut self, num_elements: u16) -> SmallVec<[Field<E>; 10]>;

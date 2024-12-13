@@ -51,6 +51,8 @@ pub trait HashMany {
 
     /// Returns the hash of the given input.
     fn hash_many(&self, input: &[Self::Input], num_outputs: u16) -> Vec<Self::Output>;
+    /// Returns the hash of the given input, using a precomputed first poseidon round.
+    fn hash_many_precompute(&self, input: &[Self::Input], num_outputs: u16) -> Vec<Self::Output>;
 }
 
 /// A trait for a hash function that projects the value to an affine group element.

@@ -34,4 +34,21 @@ impl<E: Environment, const RATE: usize> HashMany for Poseidon<E, RATE> {
         sponge.absorb(&preimage);
         sponge.squeeze(num_outputs).into_vec()
     }
+
+    /// Returns the cryptographic hash for a list of field elements as input,
+    /// and returns the specified number of field elements as output. Utilizes
+    /// a precomputed first round of sponge permutations.
+    #[inline]
+    fn hash_many_precompute(&self, input: &[Self::Input], num_outputs: u16) -> Vec<Self::Output> {
+        // Construct the preimage: [ DOMAIN || LENGTH(INPUT) || [0; RATE-2] || INPUT ].
+        let mut preimage = Vec::with_capacity(RATE + input.len());
+        preimage.push(self.domain);
+        preimage.push(Field::<E>::from_u128(input.len() as u128));
+        preimage.resize(RATE, Field::<E>::zero()); // Pad up to RATE.
+        preimage.extend_from_slice(input);
+
+        let mut sponge = PoseidonSponge::<E, RATE, CAPACITY>::new(&self.parameters);
+        sponge.absorb_precompute(&preimage);
+        sponge.squeeze(num_outputs).into_vec()
+    }
 }
