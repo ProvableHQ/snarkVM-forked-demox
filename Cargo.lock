@@ -3308,6 +3308,7 @@ dependencies = [
  "snarkvm-console",
  "snarkvm-ledger-store",
  "snarkvm-synthesizer-program",
+ "ureq",
 ]
 
 [[package]]
