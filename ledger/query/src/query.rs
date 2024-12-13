@@ -146,13 +146,13 @@ impl<N: Network, B: BlockStorage<N>> QueryTrait<N> for Query<N, B> {
             Self::VM(block_store) => Ok(block_store.max_height().unwrap_or_default()),
             Self::REST(url) => match N::ID {
                 console::network::MainnetV0::ID => {
-                    Ok(Self::get_request(&format!("{url}/mainnet/block/height/latest"))?.into_json()?)
+                    Ok(Self::get_request(&format!("{url}/mainnet/block/height/latest"))?.json()?)
                 }
                 console::network::TestnetV0::ID => {
-                    Ok(Self::get_request(&format!("{url}/testnet/block/height/latest"))?.into_json()?)
+                    Ok(Self::get_request(&format!("{url}/testnet/block/height/latest"))?.json()?)
                 }
                 console::network::CanaryV0::ID => {
-                    Ok(Self::get_request(&format!("{url}/canary/block/height/latest"))?.into_json()?)
+                    Ok(Self::get_request(&format!("{url}/canary/block/height/latest"))?.json()?)
                 }
                 _ => bail!("Unsupported network ID in inclusion query"),
             },
