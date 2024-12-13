@@ -14,10 +14,10 @@
 // limitations under the License.
 
 use crate::poseidon::{
-    State,
     helpers::{AlgebraicSponge, DuplexSpongeMode},
+    State,
 };
-use snarkvm_console_types::{Field, prelude::*};
+use snarkvm_console_types::{prelude::*, Field};
 use snarkvm_fields::PoseidonParameters;
 
 use smallvec::SmallVec;
@@ -65,6 +65,24 @@ impl<E: Environment, const RATE: usize, const CAPACITY: usize> AlgebraicSponge<E
                 DuplexSpongeMode::Squeezing { next_squeeze_index: _ } => {
                     self.permute();
                     self.absorb_internal(0, input);
+                }
+            }
+        }
+    }
+
+    fn absorb_precompute(&mut self, input: &[Field<E>]) {
+        if !input.is_empty() {
+            match self.mode {
+                DuplexSpongeMode::Absorbing { mut next_absorb_index } => {
+                    if next_absorb_index == RATE {
+                        self.permute();
+                        next_absorb_index = 0;
+                    }
+                    self.absorb_internal_precompute(next_absorb_index, input);
+                }
+                DuplexSpongeMode::Squeezing { next_squeeze_index: _ } => {
+                    self.permute();
+                    self.absorb_internal_precompute(0, input);
                 }
             }
         }
@@ -176,6 +194,41 @@ impl<E: Environment, const RATE: usize, const CAPACITY: usize> PoseidonSponge<E,
                 // If so, let's wrap up.
                 if i == total_num_chunks - 1 {
                     self.mode = DuplexSpongeMode::Absorbing { next_absorb_index: rate_start + chunk.len() };
+
+                    return;
+                } else {
+                    self.permute();
+                }
+                rate_start = 0;
+            }
+        }
+    }
+
+    #[inline]
+    fn absorb_internal_precompute(&mut self, mut rate_start: usize, input: &[Field<E>]) {
+        if !input.is_empty() {
+            let first_chunk_size = std::cmp::min(RATE - rate_start, input.len());
+            let (_first_chunk, rest_chunk) = input.split_at(first_chunk_size);
+            let rest_chunks = rest_chunk.chunks(RATE);
+
+            let mut new_state = State::default();
+            new_state.iter_mut().zip(E::PRECOMPUTED_FIRST_POSEIDON_ROUND).for_each(|(new_elem, hash_elem)| {
+                *new_elem = Field::<E>::new(hash_elem.clone());
+            });
+            self.state = new_state;
+
+            // Absorb the input elements, `RATE` elements at a time, except for the first chunk, which
+            // is of size `RATE - rate_start`.
+            let total_rest_chunks = rest_chunks.len();
+            for (i, chunk) in rest_chunks.enumerate() {
+                for (element, state_elem) in chunk.iter().zip(&mut self.state.rate_state_mut()[rate_start..]) {
+                    *state_elem += element;
+                }
+                // Are we in the last chunk?
+                // If so, let's wrap up.
+                if i == total_rest_chunks - 1 {
+                    self.mode = DuplexSpongeMode::Absorbing { next_absorb_index: rate_start + chunk.len() };
+
                     return;
                 } else {
                     self.permute();

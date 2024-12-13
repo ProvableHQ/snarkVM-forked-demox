@@ -13,6 +13,16 @@ default = [ ]
 test = [ ]
 dev-print = [ "snarkvm-utilities/dev-print" ]
 
+[[bench]]
+name = "psd8"
+path = "benches/psd8.rs"
+harness = false
+
+[[bench]]
+name = "isOwner"
+path = "benches/isOwner.rs"
+harness = false
+
 [dependencies.snarkvm-console-account]
 workspace = true
 
@@ -59,3 +69,7 @@ version = "0.3"
 
 [dev-dependencies.bincode]
 workspace = true
+version = "1.3"
+
+[dev-dependencies.criterion]
+version = "0.5.1"
