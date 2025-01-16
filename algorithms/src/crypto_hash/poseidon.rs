@@ -158,7 +158,7 @@ impl<F: PrimeField, const RATE: usize> AlgebraicSponge<F, RATE> for PoseidonSpon
 
                     #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
                     {
-                        let result = snarkvm_algorithms_cuda::poseidon_absorb(&next_absorb_index, &input);
+                        let result = snarkvm_algorithms_cuda::poseidon_absorb::<F>(next_absorb_index, &input);
                         if let Ok(result) = result {
                             return result;
                         }
@@ -169,7 +169,12 @@ impl<F: PrimeField, const RATE: usize> AlgebraicSponge<F, RATE> for PoseidonSpon
                 DuplexSpongeMode::Squeezing { next_squeeze_index: _ } => {
                     self.permute();
                     #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
-                    return snarkvm_algorithms_cuda::poseidon_absorb(0, input);
+                    {
+                        let result = snarkvm_algorithms_cuda::poseidon_absorb::<F>(0, &input);
+                        if let Ok(result) = result {
+                            return result;
+                        }
+                    }
 
                     self.absorb_internal(0, &input);
                 }

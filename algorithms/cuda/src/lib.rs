@@ -68,7 +68,7 @@ extern "C" {
     ) -> cuda::Error;
 
     fn snarkvm_poseidon_absorb(
-        rate_start: *const c_void,
+        rate_start: u32,
         input: *const c_void,
     ) -> cuda::Error;
 }
@@ -173,13 +173,15 @@ pub fn msm<Affine, Projective, Scalar>(points: &[Affine], scalars: &[Scalar]) ->
 }
 
 // wrapper function for snarkvm_poseidon_absorb, returning the resut or error
-pub fn poseidon_absorb(
-    rate_start: &[usize],
-    input: &[u8],
+pub fn poseidon_absorb<PrimeField>(
+    rate_start: usize,
+    input: &[PrimeField],
 ) -> Result<(), cuda::Error> {
+    let lg_rate_start = rate_start.trailing_zeros();
+
     let err = unsafe {
         snarkvm_poseidon_absorb(
-            rate_start as *const _ as *const c_void,
+            lg_rate_start,
             input.as_ptr() as *const _ as *const c_void
         )
     };
