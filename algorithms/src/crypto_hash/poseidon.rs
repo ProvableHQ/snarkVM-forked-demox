@@ -147,6 +147,7 @@ impl<F: PrimeField, const RATE: usize> AlgebraicSponge<F, RATE> for PoseidonSpon
     /// Takes in field elements.
     fn absorb_native_field_elements<T: ToConstraintField<F>>(&mut self, elements: &[T]) {
         let input = elements.iter().flat_map(|e| e.to_field_elements().unwrap()).collect::<Vec<_>>();
+
         if !input.is_empty() {
             match self.mode {
                 DuplexSpongeMode::Absorbing { mut next_absorb_index } => {
@@ -154,10 +155,17 @@ impl<F: PrimeField, const RATE: usize> AlgebraicSponge<F, RATE> for PoseidonSpon
                         self.permute();
                         next_absorb_index = 0;
                     }
+
+                    #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+                    return snarkvm_algorithms_cuda::poseidon_absorb(next_absorb_index, input);
+
                     self.absorb_internal(next_absorb_index, &input);
                 }
                 DuplexSpongeMode::Squeezing { next_squeeze_index: _ } => {
                     self.permute();
+                    #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
+                    return snarkvm_algorithms_cuda::poseidon_absorb(0, input);
+
                     self.absorb_internal(0, &input);
                 }
             }
@@ -489,5 +497,46 @@ impl<F: PrimeField, const RATE: usize> PoseidonSponge<F, RATE, 1> {
         debug_assert_eq!(dest_elements.len(), num_elements);
 
         dest_elements
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use snarkvm_curves::bls12_377::Fq;
+    use snarkvm_utilities::{TestRng, Uniform};
+
+    #[test]
+    fn test_poseidon_absorb_cuda_vs_cpu() {
+        let rng = &mut TestRng::default();
+
+        // Initialize CUDA and CPU instances with the same parameters
+        let mut sponge_cpu = PoseidonSponge::<Fq, 3, 1>::new();
+        let mut sponge_cuda = PoseidonSponge::<Fq, 3, 1>::new();
+
+        // Create a sample input
+        let mut input = Vec::with_capacity(100);
+        for _ in 0..100 {
+            input.push(Fq::rand(rng));
+        }
+
+        // Absorb using both CUDA and CPU versions
+        #[cfg(feature = "cuda")]
+        {
+            sponge_cuda.absorb_native_field_elements(&input);
+        }
+        
+        sponge_cpu.absorb_native_field_elements(&input);
+
+        // Squeeze both sponges to obtain outputs
+        #[cfg(feature = "cuda")]
+        let output_cuda  = sponge_cuda.squeeze_native_field_elements(3).to_vec();
+        
+        let output_cpu = sponge_cpu.squeeze_native_field_elements(3).to_vec();
+
+        // Compare outputs (ensure CUDA feature is enabled for the comparison)
+        #[cfg(feature = "cuda")]
+        assert_eq!(output_cuda, output_cpu, "CUDA and CPU absorb implementations differ!");
     }
 }

@@ -34,6 +34,16 @@ path = "benches/crypto_hash/poseidon.rs"
 harness = false
 
 [[bench]]
+name = "poseidon_cpu"
+path = "benches/crypto_hash/poseidon_cpu.rs"
+harness = false
+
+[[bench]]
+name = "poseidon_cuda"
+path = "benches/crypto_hash/poseidon_cuda.rs"
+harness = false
+
+[[bench]]
 name = "fft"
 path = "benches/fft/fft.rs"
 harness = false

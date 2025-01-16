@@ -66,6 +66,11 @@ extern "C" {
         scalars: *const c_void,
         ffi_affine_sz: usize,
     ) -> cuda::Error;
+
+    fn snarkvm_poseidon_absorb(
+        rate_start: *const c_void,
+        input: *const c_void,
+    ) -> cuda::Error;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -165,4 +170,21 @@ pub fn msm<Affine, Projective, Scalar>(points: &[Affine], scalars: &[Scalar]) ->
         return Err(err);
     }
     Ok(ret)
+}
+
+// wrapper function for snarkvm_poseidon_absorb, returning the resut or error
+pub fn poseidon_absorb(
+    rate_start: &[usize],
+    input: &[u8],
+) -> Result<(), cuda::Error> {
+    let err = unsafe {
+        snarkvm_poseidon_absorb(
+            rate_start as *const _ as *const c_void,
+            input.as_ptr() as *const _ as *const c_void
+        )
+    };
+    if err.code != 0 {
+        return Err(err);
+    }
+    Ok(())
 }
