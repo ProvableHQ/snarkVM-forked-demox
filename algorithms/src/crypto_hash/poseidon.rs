@@ -157,7 +157,12 @@ impl<F: PrimeField, const RATE: usize> AlgebraicSponge<F, RATE> for PoseidonSpon
                     }
 
                     #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
-                    return snarkvm_algorithms_cuda::poseidon_absorb(next_absorb_index, input);
+                    {
+                        let result = snarkvm_algorithms_cuda::poseidon_absorb(&next_absorb_index, &input);
+                        if let Ok(result) = result {
+                            return result;
+                        }
+                    }
 
                     self.absorb_internal(next_absorb_index, &input);
                 }
@@ -526,12 +531,11 @@ mod tests {
         {
             sponge_cuda.absorb_native_field_elements(&input);
         }
-        
         sponge_cpu.absorb_native_field_elements(&input);
 
         // Squeeze both sponges to obtain outputs
         #[cfg(feature = "cuda")]
-        let output_cuda  = sponge_cuda.squeeze_native_field_elements(3).to_vec();
+        let output_cuda = sponge_cuda.squeeze_native_field_elements(3).to_vec();
         
         let output_cpu = sponge_cpu.squeeze_native_field_elements(3).to_vec();
 
