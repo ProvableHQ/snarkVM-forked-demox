@@ -309,6 +309,84 @@ public:
         // printf("MSM size %ld took %ld us\n", npoints, dt);
         // return res;
     }
+
+    // Define the kernel for the absorb operation.
+    __global__ void poseidon_absorb_kernel(
+        const uint32_t rate_start,
+        const size_t chunk_size,
+        const size_t num_elements,
+        const size_t rate,
+        const size_t capacity,
+        const fr_t* input,
+        fr_t* state
+    ) {
+        size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+        if (idx < chunk_size) {
+            size_t state_index = rate_start + idx;
+            if (state_index >= rate + capacity) {
+                state_index %= (rate + capacity);
+            }
+            state[state_index] = state[state_index] + input[idx];
+        }
+    }
+
+    RustError PoseidonAbsorb(uint32_t rate_start, fr_t** input, size_t input_size, fr_t* state, size_t rate, size_t capacity) {
+        size_t gpu_count = ngpus();
+        size_t inputs_per_gpu = (rate_start + gpu_count - 1) / gpu_count;
+        channel_t<size_t> ch;
+        RustError error = RustError{cudaSuccess};
+
+        for (size_t i = 0; i < gpu_count; i++) {
+            pool.spawn([&, i]() {
+                int dev = i;
+                select_gpu(dev);
+
+                size_t start_index = i * inputs_per_gpu;
+                size_t end_index = min(start_index + inputs_per_gpu, input_size);
+                size_t chunk_size = end_index - start_index;
+
+                if (chunk_size > 0) {
+                    // Allocate device memory for the input and state.
+                    fr_t* d_input;
+                    fr_t* d_state;
+                    cudaMalloc(&d_input, chunk_size * sizeof(fr_t));
+                    cudaMalloc(&d_state, (rate + capacity) * sizeof(fr_t));
+
+                    // Copy input and state to the device.
+                    cudaMemcpy(d_input, &input[start_index], chunk_size * sizeof(fr_t), cudaMemcpyHostToDevice);
+                    cudaMemcpy(d_state, state, (rate + capacity) * sizeof(fr_t), cudaMemcpyHostToDevice);
+
+                    // Launch the kernel.
+                    size_t threads_per_block = 256;
+                    size_t num_blocks = (chunk_size + threads_per_block - 1) / threads_per_block;
+                    poseidon_absorb_kernel<<<num_blocks, threads_per_block>>>(
+                        rate_start, chunk_size, input_size, rate, capacity, d_input, d_state
+                    );
+
+                    // Synchronize and check for errors.
+                    cudaError_t ret = cudaDeviceSynchronize();
+                    if (ret != cudaSuccess) {
+                        error = RustError{ret};
+                    }
+
+                    // Copy the updated state back to the host.
+                    cudaMemcpy(state, d_state, (rate + capacity) * sizeof(fr_t), cudaMemcpyDeviceToHost);
+
+                    // Free device memory.
+                    cudaFree(d_input);
+                    cudaFree(d_state);
+                }
+
+                ch.send(i);
+            });
+        }
+        size_t dev = ch.recv();
+        for (size_t i = 0; i < gpu_count - 1; i++) {
+            dev = ch.recv();
+        }
+
+        return error;
+    }
 };
 
 #endif

@@ -81,6 +81,13 @@ extern "C" {
         }
         return snarkvm_g->MSM(out, points, npoints, scalars, ffi_affine_size);
     }
+
+    RustError snarkvm_poseidon_absorb(size_t rate_start, fr_t* input, size_t input_size, fr_t* state, size_t rate, size_t capacity) {
+        if (!snarkvm_g.ok()) {
+            return RustError{cudaErrorMemoryAllocation};
+        }
+        return snarkvm_g->PoseidonAbsorb(rate_start, input, input_size, state, rate, capacity);
+    }
 }
 #endif // __CUDA_ARCH__
 

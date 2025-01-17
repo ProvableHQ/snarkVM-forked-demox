@@ -70,6 +70,10 @@ extern "C" {
     fn snarkvm_poseidon_absorb(
         rate_start: u32,
         input: *const c_void,
+        input_size: usize,
+        state: *mut c_void,
+        rate: usize,
+        capacity: usize
     ) -> cuda::Error;
 }
 
@@ -172,21 +176,37 @@ pub fn msm<Affine, Projective, Scalar>(points: &[Affine], scalars: &[Scalar]) ->
     Ok(ret)
 }
 
-// wrapper function for snarkvm_poseidon_absorb, returning the resut or error
-pub fn poseidon_absorb<PrimeField>(
+/// Rust wrapper for the CUDA Poseidon absorb function.
+pub fn poseidon_absorb<F>(
     rate_start: usize,
-    input: &[PrimeField],
+    input: &[F],
+    state: &mut [F],
+    rate: usize,
+    capacity: usize,
 ) -> Result<(), cuda::Error> {
-    let lg_rate_start = rate_start.trailing_zeros();
-
-    let err = unsafe {
-        snarkvm_poseidon_absorb(
-            lg_rate_start,
-            input.as_ptr() as *const _ as *const c_void
-        )
-    };
-    if err.code != 0 {
-        return Err(err);
+    // Ensure input validity.
+    if input.len() > state.len() {
+        panic!("input length is greater than state length");
     }
-    Ok(())
+
+    // Convert usize to u32 for CUDA compatibility (for rate_start).
+    let rate_start = rate_start as u32;
+
+    // Call the CUDA function.
+    unsafe {
+        let err = snarkvm_poseidon_absorb(
+            rate_start,
+            input.as_ptr() as *const c_void,
+            input.len(),
+            state.as_mut_ptr() as *mut c_void,
+            rate,
+            capacity,
+        );
+
+        if err.code != 0 {
+            Err(err)
+        } else {
+            Ok(())
+        }
+    }
 }

@@ -158,7 +158,16 @@ impl<F: PrimeField, const RATE: usize> AlgebraicSponge<F, RATE> for PoseidonSpon
 
                     #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
                     {
-                        let result = snarkvm_algorithms_cuda::poseidon_absorb::<F>(next_absorb_index, &input);
+                        let mut state = self.state.to_vec(); // Convert state to a Vec for mutable handling.
+
+                        let result = snarkvm_algorithms_cuda::poseidon_absorb::<F>(
+                            next_absorb_index,
+                            &input,
+                            input.len(),
+                            state.as_mut_slice(),
+                            RATE,
+                            CAPACITY,
+                        );
                         if let Ok(result) = result {
                             return result;
                         }
@@ -170,7 +179,16 @@ impl<F: PrimeField, const RATE: usize> AlgebraicSponge<F, RATE> for PoseidonSpon
                     self.permute();
                     #[cfg(all(feature = "cuda", target_arch = "x86_64"))]
                     {
-                        let result = snarkvm_algorithms_cuda::poseidon_absorb::<F>(0, &input);
+                        let mut state = self.state.to_vec(); // Convert state to a Vec for mutable handling.
+
+                        let result = snarkvm_algorithms_cuda::poseidon_absorb::<F>(
+                            0,
+                            &input,
+                            input.len(),
+                            state.as_mut_slice(),
+                            RATE,
+                            CAPACITY
+                        );
                         if let Ok(result) = result {
                             return result;
                         }
