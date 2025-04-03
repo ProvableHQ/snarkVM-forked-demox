@@ -295,9 +295,12 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         )?;
 
         // Calculate the coinbase reward.
-        let coinbase_reward = coinbase_reward(
+        let coinbase_reward = coinbase_reward::<N>(
             next_height,
+            next_timestamp,
+            N::GENESIS_TIMESTAMP,
             N::STARTING_SUPPLY,
+            N::ANCHOR_TIME,
             N::ANCHOR_HEIGHT,
             N::BLOCK_TIME,
             combined_proof_target,
@@ -316,6 +319,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         // Speculate over the ratifications, solutions, and transactions.
         let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = self.vm.speculate(
             state,
+            next_timestamp.saturating_sub(previous_block.timestamp()),
             Some(coinbase_reward),
             candidate_ratifications,
             &solutions,

@@ -20,7 +20,7 @@ use crate::{
     polycommit::sonic_pc::LabeledPolynomial,
     r1cs::{ConstraintSystem, Index as VarIndex},
     snark::varuna::{
-        VarunaHidingMode,
+        SNARKMode,
         ahp::{AHPForR1CS, CircuitId, indexer::Matrix},
     },
 };
@@ -88,7 +88,8 @@ pub(crate) fn pad_input_for_indexer_and_prover<F: PrimeField, CS: ConstraintSyst
     let power_of_two =
         EvaluationDomain::<F>::new(num_public_variables).ok_or(anyhow!("Could not create EvaluationDomain"))?;
 
-    // Allocated `zero` variables to pad the public input up to the next power of two.
+    // Allocated `zero` variables to pad the public input up to the next power of
+    // two.
     let padded_size = power_of_two.size();
     if padded_size > num_public_variables {
         for i in 0..(padded_size - num_public_variables) {
@@ -105,7 +106,8 @@ pub struct MatrixEvals<F: PrimeField> {
     /// Evaluations of the `col` polynomial.
     pub col: EvaluationsOnDomain<F>,
     /// Evaluations of the `row_col` polynomial.
-    /// After indexing, we drop these evaluations to save space in the ProvingKey
+    /// After indexing, we drop these evaluations to save space in the
+    /// ProvingKey
     pub row_col: Option<EvaluationsOnDomain<F>>,
     /// Evaluations of the `row_col_val` polynomial.
     pub row_col_val: EvaluationsOnDomain<F>,
@@ -204,13 +206,18 @@ pub struct MatrixArithmetization<F: PrimeField> {
     pub col: LabeledPolynomial<F>,
     /// LDE of the vector containing entry-wise products of `row` and `col`.
     pub row_col: LabeledPolynomial<F>,
-    /// LDE of the vector containing entry-wise products of `row`, `col` and the non-zero entries of M.
+    /// LDE of the vector containing entry-wise products of `row`, `col` and the
+    /// non-zero entries of M.
     pub row_col_val: LabeledPolynomial<F>,
 }
 
 impl<F: PrimeField> MatrixArithmetization<F> {
     /// Create a new MatrixArithmetization
-    pub fn new(id: &CircuitId, label: &str, matrix_evals: &MatrixEvals<F>) -> Result<MatrixArithmetization<F>> {
+    pub fn new<SM: SNARKMode>(
+        id: &CircuitId,
+        label: &str,
+        matrix_evals: &MatrixEvals<F>,
+    ) -> Result<MatrixArithmetization<F>> {
         let interpolate_time = start_timer!(|| "Interpolating on K");
         let non_zero_domain = matrix_evals.domain()?;
         let row = matrix_evals.row.clone().interpolate();
@@ -228,7 +235,7 @@ impl<F: PrimeField> MatrixArithmetization<F> {
         let row_col_val = matrix_evals.row_col_val.clone().interpolate();
         end_timer!(interpolate_time);
 
-        let mut labels = AHPForR1CS::<F, VarunaHidingMode>::index_polynomial_labels_single(label, id);
+        let mut labels = AHPForR1CS::<F, SM>::index_polynomial_labels_single(label, id);
         ensure!(labels.len() == 4);
 
         Ok(MatrixArithmetization {
@@ -252,7 +259,8 @@ pub(crate) fn transpose<F: PrimeField>(
     variable_domain: &EvaluationDomain<F>,
     input_domain: &EvaluationDomain<F>,
 ) -> Result<Matrix<F>> {
-    // NOTE: we cannot preallocate the inner Vec because we don't know ahead of time how many rows are used by which variables
+    // NOTE: we cannot preallocate the inner Vec because we don't know ahead of time
+    // how many rows are used by which variables
     let mut transpose = vec![vec![]; variable_domain.size()];
     for (row_index, row) in matrix.iter().enumerate() {
         for (val, input_var_index) in row {
@@ -266,7 +274,7 @@ pub(crate) fn transpose<F: PrimeField>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::snark::varuna::num_non_zero;
+    use crate::snark::varuna::{VarunaHidingMode, num_non_zero};
     use snarkvm_curves::bls12_377::Fr as F;
     use snarkvm_fields::{One, Zero};
     use std::{borrow::Cow, collections::HashMap};
@@ -332,7 +340,7 @@ mod tests {
             )
             .unwrap();
             let dummy_id = CircuitId([0; 32]);
-            let arith = MatrixArithmetization::new(&dummy_id, label, &evals).unwrap();
+            let arith = MatrixArithmetization::new::<VarunaHidingMode>(&dummy_id, label, &evals).unwrap();
 
             for (k_index, k) in interpolation_domain.elements().enumerate() {
                 let row_val = arith.row.evaluate(k);

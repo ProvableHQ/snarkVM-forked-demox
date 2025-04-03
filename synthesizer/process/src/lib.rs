@@ -43,13 +43,14 @@ mod verify_fee;
 #[cfg(test)]
 mod tests;
 
+use algorithms::snark::varuna::VarunaVersion;
 use console::{
     account::PrivateKey,
     network::prelude::*,
     program::{Identifier, Literal, Locator, Plaintext, ProgramID, Record, Response, Value, compute_function_id},
     types::{Field, U16, U64},
 };
-use ledger_block::{Deployment, Execution, Fee, Input, Transition};
+use ledger_block::{Deployment, Execution, Fee, Input, Output, Transition};
 use ledger_store::{FinalizeStorage, FinalizeStore, atomic_batch_scope};
 use synthesizer_program::{
     Branch,
@@ -62,6 +63,7 @@ use synthesizer_program::{
     Program,
     RegistersLoad,
     RegistersStore,
+    StackKeys,
     StackProgram,
 };
 use synthesizer_snark::{ProvingKey, UniversalSRS, VerifyingKey};
@@ -344,7 +346,7 @@ pub mod test_helpers {
         let locator = format!("{:?}:{function_name:?}", program.id());
 
         // Return the execution object.
-        trace.prove_execution::<CurrentAleo, _>(&locator, rng).unwrap()
+        trace.prove_execution::<CurrentAleo, _>(&locator, VarunaVersion::V1, rng).unwrap()
     }
 
     pub fn sample_key() -> (Identifier<CurrentNetwork>, ProvingKey<CurrentNetwork>, VerifyingKey<CurrentNetwork>) {
@@ -439,7 +441,7 @@ function compute:
                 // Prepare the trace.
                 trace.prepare(Query::from(block_store)).unwrap();
                 // Compute the execution.
-                trace.prove_execution::<CurrentAleo, _>("testing", rng).unwrap()
+                trace.prove_execution::<CurrentAleo, _>("testing", VarunaVersion::V1, rng).unwrap()
             })
             .clone()
     }

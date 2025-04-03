@@ -154,11 +154,8 @@ impl<N: Network> Block<N> {
         aborted_transaction_ids: Vec<N::TransactionID>,
     ) -> Result<Self> {
         // Ensure the number of aborted solutions IDs is within the allowed range.
-        if aborted_solution_ids.len() > Solutions::<N>::MAX_ABORTED_SOLUTIONS {
-            bail!(
-                "Cannot initialize a block with more than {} aborted solutions IDs",
-                Solutions::<N>::MAX_ABORTED_SOLUTIONS
-            );
+        if aborted_solution_ids.len() > Solutions::<N>::max_aborted_solutions()? {
+            bail!("Cannot initialize a block with {} aborted solutions IDs", aborted_solution_ids.len());
         }
 
         // Ensure the number of transactions is within the allowed range.
@@ -170,10 +167,10 @@ impl<N: Network> Block<N> {
         }
 
         // Ensure the number of aborted transaction IDs is within the allowed range.
-        if aborted_transaction_ids.len() > Transactions::<N>::MAX_ABORTED_TRANSACTIONS {
+        if aborted_transaction_ids.len() > Transactions::<N>::max_aborted_transactions()? {
             bail!(
                 "Cannot initialize a block with more than {} aborted transaction IDs",
-                Transactions::<N>::MAX_ABORTED_TRANSACTIONS
+                Transactions::<N>::max_aborted_transactions()?
             );
         }
 
@@ -603,6 +600,7 @@ impl<N: Network> Block<N> {
 #[cfg(test)]
 pub mod test_helpers {
     use super::*;
+    use algorithms::snark::varuna::VarunaVersion;
     use console::account::{Address, PrivateKey};
     use ledger_query::Query;
     use ledger_store::{BlockStore, helpers::memory::BlockMemory};
@@ -669,7 +667,7 @@ pub mod test_helpers {
         // Prepare the assignments.
         trace.prepare(Query::from(block_store)).unwrap();
         // Compute the proof and construct the execution.
-        let execution = trace.prove_execution::<CurrentAleo, _>(locator.0, rng).unwrap();
+        let execution = trace.prove_execution::<CurrentAleo, _>(locator.0, VarunaVersion::V1, rng).unwrap();
         // Convert the execution.
         // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
         let execution = Execution::from_str(&execution.to_string()).unwrap();
@@ -706,13 +704,41 @@ pub mod test_helpers {
         // Return the block, transaction, and private key.
         (block, transaction, private_key)
     }
+
+    pub(crate) fn sample_metadata() -> Metadata<CurrentNetwork> {
+        let network = CurrentNetwork::ID;
+        let round = u64::MAX;
+        let height = u32::MAX;
+        let cumulative_weight = u128::MAX - 1;
+        let cumulative_proof_target = u128::MAX - 1;
+        let coinbase_target = u64::MAX;
+        let proof_target = u64::MAX - 1;
+        let last_coinbase_target = u64::MAX;
+        let timestamp = i64::MAX - 1;
+        let last_coinbase_timestamp = timestamp - 1;
+        Metadata::new(
+            network,
+            round,
+            height,
+            cumulative_weight,
+            cumulative_proof_target,
+            coinbase_target,
+            proof_target,
+            last_coinbase_target,
+            last_coinbase_timestamp,
+            timestamp,
+        )
+        .unwrap()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    use console::network::MainnetV0;
     use indexmap::IndexMap;
+    type CurrentNetwork = MainnetV0;
 
     #[test]
     fn test_find_transaction_for_transition_id() {
@@ -849,5 +875,13 @@ mod tests {
             assert_eq!(transactions.find_record(commitment), None);
             assert_eq!(transaction.find_record(commitment), None);
         }
+    }
+
+    #[test]
+    fn test_serde_metadata() {
+        let metadata = crate::test_helpers::sample_metadata();
+        let json_metadata = serde_json::to_string(&metadata).unwrap();
+        let deserialized_metadata: Metadata<CurrentNetwork> = serde_json::from_str(&json_metadata).unwrap();
+        assert_eq!(metadata, deserialized_metadata);
     }
 }
