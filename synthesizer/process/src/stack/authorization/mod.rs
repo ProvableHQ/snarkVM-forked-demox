@@ -180,7 +180,7 @@ impl<N: Network> Authorization<N> {
         if transitions.is_empty() {
             bail!("Cannot compute the execution ID for an empty authorization.");
         }
-        Ok(*Transaction::transitions_tree(transitions.values(), &None)?.root())
+        Ok(*Transaction::transitions_tree(transitions.values())?.root())
     }
 }
 
@@ -197,57 +197,6 @@ impl<N: Network> PartialEq for Authorization<N> {
 }
 
 impl<N: Network> Eq for Authorization<N> {}
-
-/// Ensures the given request and transition correspond to one another.
-fn ensure_request_and_transition_matches<N: Network>(
-    index: usize,
-    request: &Request<N>,
-    transition: &Transition<N>,
-) -> Result<()> {
-    // Ensure the request and transition have the same program ID.
-    ensure!(
-        request.program_id() == transition.program_id(),
-        "The request ({}) and transition ({}) at index {index} must have the same program ID in the authorization.",
-        request.program_id(),
-        transition.program_id(),
-    );
-    // Ensure the request and transition have the same function name.
-    ensure!(
-        request.function_name() == transition.function_name(),
-        "The request ({}) and transition ({}) at index {index} must have the same function name in the authorization.",
-        request.function_name(),
-        transition.function_name(),
-    );
-    // Ensure the request and transition have the same number of inputs.
-    ensure!(
-        request.input_ids().len() == transition.input_ids().len(),
-        "The request ({}) and transition ({}) at index {index} must have the same number of inputs in the authorization.",
-        request.input_ids().len(),
-        transition.input_ids().len(),
-    );
-    // Ensure the request and transition have the same 'tpk'.
-    ensure!(
-        request.to_tpk() == *transition.tpk(),
-        "The request ({}) and transition ({}) at index {index} must have the same 'tpk' in the authorization.",
-        request.to_tpk(),
-        *transition.tpk(),
-    );
-    // Ensure the request and transition have the same 'tcm'.
-    ensure!(
-        request.tcm() == transition.tcm(),
-        "The request ({}) and transition ({}) at index {index} must have the same 'tcm' in the authorization.",
-        request.tcm(),
-        transition.tcm(),
-    );
-    // Ensure the request and transition have the same 'scm'.
-    ensure!(
-        request.scm() == transition.scm(),
-        "The request ({}) and transition ({}) at index {index} must have the same 'scm' in the authorization.",
-        request.scm(),
-        transition.scm(),
-    );
-    Ok(())
-}
 
 #[cfg(test)]
 pub(crate) mod test_helpers {

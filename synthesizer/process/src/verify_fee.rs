@@ -19,7 +19,12 @@ impl<N: Network> Process<N> {
     /// Verifies the given fee is valid.
     /// Note: This does *not* check that the global state root exists in the ledger.
     #[inline]
-    pub fn verify_fee(&self, fee: &Fee<N>, deployment_or_execution_id: Field<N>) -> Result<()> {
+    pub fn verify_fee(
+        &self,
+        varuna_version: VarunaVersion,
+        fee: &Fee<N>,
+        deployment_or_execution_id: Field<N>,
+    ) -> Result<()> {
         let timer = timer!("Process::verify_fee");
 
         // Retrieve the stack.
@@ -73,8 +78,8 @@ impl<N: Network> Process<N> {
 
         // Verify the fee transition is well-formed.
         match is_fee_private {
-            true => self.verify_fee_private(&fee)?,
-            false => self.verify_fee_public(&fee)?,
+            true => self.verify_fee_private(varuna_version, &fee)?,
+            false => self.verify_fee_public(varuna_version, &fee)?,
         }
         finish!(timer, "Verify the fee transition");
         Ok(())
@@ -83,7 +88,7 @@ impl<N: Network> Process<N> {
 
 impl<N: Network> Process<N> {
     /// Verifies the transition for `credits.aleo/fee_private` is well-formed.
-    fn verify_fee_private(&self, fee: &&Fee<N>) -> Result<()> {
+    fn verify_fee_private(&self, varuna_version: VarunaVersion, fee: &&Fee<N>) -> Result<()> {
         let timer = timer!("Process::verify_fee_private");
 
         // Retrieve the network ID.
@@ -125,8 +130,11 @@ impl<N: Network> Process<N> {
         // Compute the x- and y-coordinate of `tpk`.
         let (tpk_x, tpk_y) = fee.tpk().to_xy_coordinates();
 
+        // Retrieve the adress belonging to the program ID.
+        let program_adress = self.get_stack(fee.program_id())?.program_address();
+
         // Compute the x- and y-coordinate of `parent`.
-        let (parent_x, parent_y) = fee.program_id().to_address()?.to_xy_coordinates();
+        let (parent_x, parent_y) = program_adress.to_xy_coordinates();
 
         // Construct the public inputs to verify the proof.
         let mut inputs = vec![N::Field::one(), *tpk_x, *tpk_y, **fee.tcm(), **fee.scm()];
@@ -145,14 +153,14 @@ impl<N: Network> Process<N> {
         let verifying_key = self.get_verifying_key(fee.program_id(), fee.function_name())?;
 
         // Ensure the fee proof is valid.
-        Trace::verify_fee_proof((verifying_key, vec![inputs]), fee)?;
+        Trace::verify_fee_proof(varuna_version, (verifying_key, vec![inputs]), fee)?;
         finish!(timer, "Verify the fee proof");
         Ok(())
     }
 
     /// Verifies the transition for `credits.aleo/fee_public` is well-formed.
     /// Attention: This method does *not* verify the account balance is sufficient.
-    fn verify_fee_public(&self, fee: &&Fee<N>) -> Result<()> {
+    fn verify_fee_public(&self, varuna_version: VarunaVersion, fee: &&Fee<N>) -> Result<()> {
         let timer = timer!("Process::verify_fee_public");
 
         // Retrieve the network ID.
@@ -194,8 +202,11 @@ impl<N: Network> Process<N> {
         // Compute the x- and y-coordinate of `tpk`.
         let (tpk_x, tpk_y) = fee.tpk().to_xy_coordinates();
 
+        // Retrieve the adress belonging to the program ID.
+        let program_adress = self.get_stack(fee.program_id())?.program_address();
+
         // Compute the x- and y-coordinate of `parent`.
-        let (parent_x, parent_y) = fee.program_id().to_address()?.to_xy_coordinates();
+        let (parent_x, parent_y) = program_adress.to_xy_coordinates();
 
         // Construct the public inputs to verify the proof.
         let mut inputs = vec![N::Field::one(), *tpk_x, *tpk_y, **fee.tcm(), **fee.scm()];
@@ -214,7 +225,7 @@ impl<N: Network> Process<N> {
         let verifying_key = self.get_verifying_key(fee.program_id(), fee.function_name())?;
 
         // Ensure the fee proof is valid.
-        Trace::verify_fee_proof((verifying_key, vec![inputs]), fee)?;
+        Trace::verify_fee_proof(varuna_version, (verifying_key, vec![inputs]), fee)?;
         finish!(timer, "Verify the fee proof");
         Ok(())
     }
@@ -245,21 +256,21 @@ mod tests {
 
         for transaction in transactions {
             match transaction {
-                Transaction::Deploy(_, _, deployment, fee) => {
+                Transaction::Deploy(_, _, _, deployment, fee) => {
                     // Compute the deployment ID.
                     let deployment_id = deployment.to_deployment_id().unwrap();
                     // Verify the fee.
-                    process.verify_fee(&fee, deployment_id).unwrap();
+                    process.verify_fee(VarunaVersion::V1, &fee, deployment_id).unwrap();
                 }
-                Transaction::Execute(_, execution, fee) => {
+                Transaction::Execute(_, _, execution, fee) => {
                     // Compute the execution ID.
                     let execution_id = execution.to_execution_id().unwrap();
                     // Verify the fee.
-                    process.verify_fee(&fee.unwrap(), execution_id).unwrap();
+                    process.verify_fee(VarunaVersion::V1, &fee.unwrap(), execution_id).unwrap();
                 }
                 Transaction::Fee(_, fee) => match fee.is_fee_private() {
-                    true => process.verify_fee_private(&&fee).unwrap(),
-                    false => process.verify_fee_public(&&fee).unwrap(),
+                    true => process.verify_fee_private(VarunaVersion::V1, &&fee).unwrap(),
+                    false => process.verify_fee_public(VarunaVersion::V1, &&fee).unwrap(),
                 },
             }
         }

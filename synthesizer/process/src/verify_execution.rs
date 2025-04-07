@@ -19,7 +19,7 @@ impl<N: Network> Process<N> {
     /// Verifies the given execution is valid.
     /// Note: This does *not* check that the global state root exists in the ledger.
     #[inline]
-    pub fn verify_execution(&self, execution: &Execution<N>) -> Result<()> {
+    pub fn verify_execution(&self, varuna_version: VarunaVersion, execution: &Execution<N>) -> Result<()> {
         let timer = timer!("Process::verify_execution");
 
         // Ensure the execution contains transitions.
@@ -159,7 +159,7 @@ impl<N: Network> Process<N> {
         // Construct the list of verifier inputs.
         let verifier_inputs: Vec<_> = verifier_inputs.values().cloned().collect();
         // Verify the execution proof.
-        Trace::verify_execution_proof(&locator, verifier_inputs, execution)?;
+        Trace::verify_execution_proof(&locator, varuna_version, verifier_inputs, execution)?;
 
         lap!(timer, "Verify the proof");
 
@@ -187,8 +187,12 @@ impl<N: Network> Process<N> {
             // If there is no parent, then `is_root` is `1` and `parent` is the root program ID.
             None => (Field::one(), *transition.program_id()),
         };
+
+        // Retrieve the adress belonging to the parent.
+        let parent_address = self.get_stack(parent)?.program_address();
+
         // Compute the x- and y-coordinate of `parent`.
-        let (parent_x, parent_y) = parent.to_address()?.to_xy_coordinates();
+        let (parent_x, parent_y) = parent_address.to_xy_coordinates();
 
         // [Inputs] Construct the verifier inputs to verify the proof.
         let mut inputs = vec![N::Field::one(), *tpk_x, *tpk_y, **transition.tcm(), **transition.scm()];
