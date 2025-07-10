@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,6 +20,9 @@ use console::network::prelude::*;
 use indexmap::IndexMap;
 
 use core::{borrow::Borrow, hash::Hash};
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::{Mutex, RwLock};
+#[cfg(not(feature = "locktick"))]
 use parking_lot::{Mutex, RwLock};
 use std::{
     borrow::Cow,
@@ -33,7 +36,7 @@ use std::{
 #[derive(Clone)]
 pub struct MemoryMap<
     K: Copy + Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
-    V: Clone + PartialEq + Eq + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+    V: Clone + Serialize + for<'de> Deserialize<'de> + Send + Sync,
 > {
     // The reason for using BTreeMap with binary keys is for the order of items to be the same as
     // the one in the RocksDB-backed DataMap; if not for that, it could be any map
@@ -46,7 +49,7 @@ pub struct MemoryMap<
 
 impl<
     K: Copy + Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
-    V: Clone + PartialEq + Eq + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+    V: Clone + Serialize + for<'de> Deserialize<'de> + Send + Sync,
 > Default for MemoryMap<K, V>
 {
     fn default() -> Self {
@@ -61,7 +64,7 @@ impl<
 
 impl<
     K: Copy + Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
-    V: Clone + PartialEq + Eq + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+    V: Clone + Serialize + for<'de> Deserialize<'de> + Send + Sync,
 > FromIterator<(K, V)> for MemoryMap<K, V>
 {
     /// Initializes a new `MemoryMap` from the given iterator.
@@ -82,7 +85,7 @@ impl<
 impl<
     'a,
     K: 'a + Copy + Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
-    V: 'a + Clone + PartialEq + Eq + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+    V: 'a + Clone + Serialize + for<'de> Deserialize<'de> + Send + Sync,
 > Map<'a, K, V> for MemoryMap<K, V>
 {
     ///
@@ -253,7 +256,7 @@ impl<
 impl<
     'a,
     K: 'a + Copy + Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
-    V: 'a + Clone + PartialEq + Eq + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+    V: 'a + Clone + Serialize + for<'de> Deserialize<'de> + Send + Sync,
 > MapRead<'a, K, V> for MemoryMap<K, V>
 {
     type Iterator = core::iter::Map<btree_map::IntoIter<Vec<u8>, V>, fn((Vec<u8>, V)) -> (Cow<'a, K>, Cow<'a, V>)>;
@@ -371,7 +374,7 @@ impl<
 
 impl<
     K: Copy + Clone + PartialEq + Eq + Hash + Serialize + for<'de> Deserialize<'de> + Send + Sync,
-    V: Clone + PartialEq + Eq + Serialize + for<'de> Deserialize<'de> + Send + Sync,
+    V: Clone + Serialize + for<'de> Deserialize<'de> + Send + Sync,
 > Deref for MemoryMap<K, V>
 {
     type Target = Arc<RwLock<BTreeMap<Vec<u8>, V>>>;

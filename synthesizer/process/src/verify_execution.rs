@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,11 +19,23 @@ impl<N: Network> Process<N> {
     /// Verifies the given execution is valid.
     /// Note: This does *not* check that the global state root exists in the ledger.
     #[inline]
-    pub fn verify_execution(&self, varuna_version: VarunaVersion, execution: &Execution<N>) -> Result<()> {
+    pub fn verify_execution(
+        &self,
+        consensus_version: ConsensusVersion,
+        varuna_version: VarunaVersion,
+        inclusion_version: InclusionVersion,
+        execution: &Execution<N>,
+    ) -> Result<()> {
         let timer = timer!("Process::verify_execution");
 
         // Ensure the execution contains transitions.
         ensure!(!execution.is_empty(), "There are no transitions in the execution");
+        // Ensure that the execution does not exceed the maximum number of transitions.
+        ensure!(
+            execution.len() < Transaction::<N>::MAX_TRANSITIONS,
+            "The number of transitions in an execution must be less than '{}'",
+            Transaction::<N>::MAX_TRANSITIONS
+        );
 
         // Ensure the number of transitions matches the program function.
         let locator = {
@@ -93,13 +105,23 @@ impl<N: Network> Process<N> {
             // Ensure each output is valid.
             let num_inputs = transition.inputs().len();
             let num_outputs = transition.outputs().len();
-            if transition
-                .outputs()
-                .iter()
-                .enumerate()
-                .any(|(index, output)| !output.verify(function_id, transition.tcm(), num_inputs + index))
-            {
-                bail!("Failed to verify a transition output")
+            for (index, output) in transition.outputs().iter().enumerate() {
+                // If the consensus version are before `ConsensusVersion::V8`, ensure the output record is on Version 0.
+                // if the consensus version is on or after `ConsensusVersion::V8`, ensure the output record is on Version 1.
+                if let Some((_, record)) = output.record() {
+                    if (ConsensusVersion::V1..=ConsensusVersion::V7).contains(&consensus_version) {
+                        #[cfg(not(any(test, feature = "test")))]
+                        ensure!(record.version().is_zero(), "Output record must be Version 0 before Consensus V8");
+                        #[cfg(any(test, feature = "test"))]
+                        ensure!(record.version().is_one(), "Output record must be Version 1 on or after Consensus V8");
+                    } else {
+                        ensure!(record.version().is_one(), "Output record must be Version 1 on or after Consensus V8");
+                    }
+                }
+                // Ensure the output is valid.
+                if !output.verify(function_id, transition.tcm(), num_inputs + index) {
+                    bail!("Failed to verify a transition output")
+                }
             }
             lap!(timer, "Verify the outputs");
 
@@ -159,7 +181,7 @@ impl<N: Network> Process<N> {
         // Construct the list of verifier inputs.
         let verifier_inputs: Vec<_> = verifier_inputs.values().cloned().collect();
         // Verify the execution proof.
-        Trace::verify_execution_proof(&locator, varuna_version, verifier_inputs, execution)?;
+        Trace::verify_execution_proof(&locator, varuna_version, inclusion_version, verifier_inputs, execution)?;
 
         lap!(timer, "Verify the proof");
 
@@ -188,8 +210,9 @@ impl<N: Network> Process<N> {
             None => (Field::one(), *transition.program_id()),
         };
 
-        // Retrieve the adress belonging to the parent.
-        let parent_address = self.get_stack(parent)?.program_address();
+        // Retrieve the address belonging to the parent.
+        let stack = self.get_stack(parent)?;
+        let parent_address = stack.program_address();
 
         // Compute the x- and y-coordinate of `parent`.
         let (parent_x, parent_y) = parent_address.to_xy_coordinates();

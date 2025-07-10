@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -251,8 +251,8 @@ mod tests {
 
         // Sample transactions
         let transactions = [
-            ledger_test_helpers::sample_deployment_transaction(true, rng),
-            ledger_test_helpers::sample_deployment_transaction(false, rng),
+            ledger_test_helpers::sample_deployment_transaction(0, true, rng),
+            ledger_test_helpers::sample_deployment_transaction(0, false, rng),
             ledger_test_helpers::sample_execution_transaction_with_fee(true, rng),
             ledger_test_helpers::sample_execution_transaction_with_fee(false, rng),
             ledger_test_helpers::sample_fee_private_transaction(rng),

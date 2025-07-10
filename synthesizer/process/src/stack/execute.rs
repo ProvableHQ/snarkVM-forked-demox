@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,13 +15,12 @@
 
 use super::*;
 
-impl<N: Network> StackExecute<N> for Stack<N> {
+impl<N: Network> Stack<N> {
     /// Executes a program closure on the given inputs.
     ///
     /// # Errors
     /// This method will halt if the given inputs are not the same length as the input statements.
-    #[inline]
-    fn execute_closure<A: circuit::Aleo<Network = N>>(
+    pub fn execute_closure<A: circuit::Aleo<Network = N>>(
         &self,
         closure: &Closure<N>,
         inputs: &[circuit::Value<A>],
@@ -135,8 +134,7 @@ impl<N: Network> StackExecute<N> for Stack<N> {
     ///
     /// # Errors
     /// This method will halt if the given inputs are not the same length as the input statements.
-    #[inline]
-    fn execute_function<A: circuit::Aleo<Network = N>, R: CryptoRng + Rng>(
+    pub fn execute_function<A: circuit::Aleo<Network = N>, R: CryptoRng + Rng>(
         &self,
         mut call_stack: CallStack<N>,
         console_caller: Option<ProgramID<N>>,
@@ -258,8 +256,7 @@ impl<N: Network> StackExecute<N> for Stack<N> {
 
         lap!(timer, "Initialize the registers");
 
-        #[cfg(debug_assertions)]
-        Self::log_circuit::<A, _>("Request");
+        Self::log_circuit::<A>("Request");
 
         // Retrieve the number of constraints for verifying the request in the circuit.
         let num_request_constraints = A::num_constraints();
@@ -369,8 +366,7 @@ impl<N: Network> StackExecute<N> for Stack<N> {
             })
             .collect::<Vec<_>>();
 
-        #[cfg(debug_assertions)]
-        Self::log_circuit::<A, _>(format!("Function '{}()'", function.name()));
+        Self::log_circuit::<A>(format!("Function '{}()'", function.name()));
 
         // Retrieve the number of constraints for executing the function in the circuit.
         let num_function_constraints = A::num_constraints().saturating_sub(num_request_constraints);
@@ -383,6 +379,7 @@ impl<N: Network> StackExecute<N> for Stack<N> {
 
         // Construct the response.
         let response = circuit::Response::from_outputs(
+            request.signer(),
             request.network_id(),
             request.program_id(),
             request.function_name(),
@@ -395,15 +392,13 @@ impl<N: Network> StackExecute<N> for Stack<N> {
         );
         lap!(timer, "Construct the response");
 
-        #[cfg(debug_assertions)]
-        Self::log_circuit::<A, _>("Response");
+        Self::log_circuit::<A>("Response");
 
         // Retrieve the number of constraints for verifying the response in the circuit.
         let num_response_constraints =
             A::num_constraints().saturating_sub(num_request_constraints).saturating_sub(num_function_constraints);
 
-        #[cfg(debug_assertions)]
-        Self::log_circuit::<A, _>("Complete");
+        Self::log_circuit::<A>("Complete");
 
         // Eject the response.
         let response = response.eject_value();
@@ -513,20 +508,26 @@ impl<N: Network> StackExecute<N> for Stack<N> {
 
 impl<N: Network> Stack<N> {
     /// Prints the current state of the circuit.
-    #[cfg(debug_assertions)]
-    pub(crate) fn log_circuit<A: circuit::Aleo<Network = N>, S: Into<String>>(scope: S) {
-        use colored::Colorize;
+    #[allow(unused_variables)]
+    pub(crate) fn log_circuit<A: circuit::Aleo<Network = N>>(scope: impl std::fmt::Display) {
+        #[cfg(debug_assertions)]
+        {
+            use utilities::dev_println;
 
-        // Determine if the circuit is satisfied.
-        let is_satisfied = if A::is_satisfied() { "✅".green() } else { "❌".red() };
-        // Determine the count.
-        let (num_constant, num_public, num_private, num_constraints, num_nonzeros) = A::count();
+            use colored::Colorize as _;
 
-        // Print the log.
-        println!(
-            "{is_satisfied} {:width$} (Constant: {num_constant}, Public: {num_public}, Private: {num_private}, Constraints: {num_constraints}, NonZeros: {num_nonzeros:?})",
-            scope.into().bold(),
-            width = 20
-        );
+            // Determine if the circuit is satisfied.
+            let is_satisfied = if A::is_satisfied() { "✅" } else { "❌" };
+            // Determine the count.
+            let (num_constant, num_public, num_private, num_constraints, num_nonzeros) = A::count();
+
+            let scope = scope.to_string().bold();
+
+            // Print the log.
+            dev_println!(
+                "{is_satisfied} {scope:width$} (Constant: {num_constant}, Public: {num_public}, Private: {num_private}, Constraints: {num_constraints}, NonZeros: {num_nonzeros:?})",
+                width = 20
+            );
+        }
     }
 }

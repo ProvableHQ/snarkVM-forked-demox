@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,13 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{
-    CallStack,
-    Process,
-    Stack,
-    Trace,
-    traits::{StackEvaluate, StackExecute},
-};
+use crate::{CallStack, InclusionVersion, Process, Stack, Trace};
 use algorithms::snark::varuna::VarunaVersion;
 use circuit::{Aleo, network::AleoV0};
 use console::{
@@ -28,7 +22,7 @@ use console::{
     program::{Identifier, Literal, Plaintext, ProgramID, Record, Value},
     types::{Field, U64},
 };
-use ledger_block::{Fee, Transaction};
+use ledger_block::{Fee, Output, Transaction, Transition};
 use ledger_query::Query;
 use ledger_store::{
     BlockStorage,
@@ -37,10 +31,13 @@ use ledger_store::{
     FinalizeStore,
     helpers::memory::{BlockMemory, FinalizeMemory},
 };
-use synthesizer_program::{FinalizeGlobalState, FinalizeStoreTrait, Program, StackProgram};
+use synthesizer_program::{FinalizeGlobalState, FinalizeStoreTrait, Program, StackTrait};
 use synthesizer_snark::UniversalSRS;
 
-use indexmap::IndexMap;
+use aleo_std::StorageMode;
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::RwLock;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
 use std::sync::Arc;
 
@@ -90,7 +87,7 @@ pub fn sample_fee<N: Network, A: Aleo<Network = N>, B: BlockStorage<N>, P: Final
     // Execute the fee.
     let (_, mut trace) = process.execute::<A, _>(authorization, rng).unwrap();
     // Prepare the assignments.
-    trace.prepare(Query::from(block_store)).unwrap();
+    trace.prepare(&Query::from(block_store)).unwrap();
     // Compute the proof and construct the fee.
     trace.prove_fee::<A, _>(VarunaVersion::V1, rng).unwrap()
 }
@@ -458,7 +455,7 @@ output r1 as token.record;",
 
     // Declare the expected output value.
     let expected = Value::from_str(&format!(
-        "{{ owner: {caller}.private, token_amount: 100u64.private, _nonce: {nonce}.public }}"
+        "{{ owner: {caller}.private, token_amount: 100u64.private, _nonce: {nonce}.public, _version: 1u8.public }}"
     ))
     .unwrap();
 
@@ -488,10 +485,14 @@ fn test_process_execute_transfer_public_to_private() {
     let rng = &mut TestRng::default();
     // Initialize a new caller account.
     let caller_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
-    let _caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
+    let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
     let caller = Address::try_from(&caller_private_key).unwrap();
+    // Initialize a new recipient address.
+    let recipient_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+    let recipient_view_key = ViewKey::try_from(&recipient_private_key).unwrap();
+    let recipient = Address::try_from(&recipient_private_key).unwrap();
     // Declare the input value.
-    let r0 = Value::<CurrentNetwork>::from_str(&format!("{caller}")).unwrap();
+    let r0 = Value::<CurrentNetwork>::from_str(&format!("{recipient}")).unwrap();
     let r1 = Value::<CurrentNetwork>::from_str("99_000_000_000_000_u64").unwrap();
 
     // Construct the process.
@@ -516,7 +517,7 @@ fn test_process_execute_transfer_public_to_private() {
 
     // Declare the expected output value.
     let r2 = Value::from_str(&format!(
-        "{{ owner: {caller}.private, microcredits: 99_000_000_000_000_u64.private, _nonce: {nonce}.public }}"
+        "{{ owner: {recipient}.private, microcredits: 99_000_000_000_000_u64.private, _nonce: {nonce}.public, _version: 1u8.public }}"
     ))
     .unwrap();
 
@@ -533,12 +534,51 @@ fn test_process_execute_transfer_public_to_private() {
     assert_eq!(authorization.len(), 1);
 
     // Execute the request.
-    let (response, _trace) = process.execute::<CurrentAleo, _>(authorization, rng).unwrap();
+    let (response, mut trace) = process.execute::<CurrentAleo, _>(authorization, rng).unwrap();
     let candidate = response.outputs();
     assert_eq!(2, candidate.len());
     assert_eq!(r2, candidate[0]);
 
-    // process.verify_execution::<true>(&execution).unwrap();
+    // Check that the sender ciphertext is well-formed.
+    {
+        // Construct a new process.
+        let process = Process::load().unwrap();
+        // Initialize a new block store.
+        let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
+        // Prepare the trace.
+        trace.prepare(&Query::from(block_store)).unwrap();
+        // Prove the execution.
+        let execution = trace.prove_execution::<CurrentAleo, _>("credits.aleo", VarunaVersion::V1, rng).unwrap();
+        // Verify the execution.
+        process.verify_execution(ConsensusVersion::V8, VarunaVersion::V1, InclusionVersion::V0, &execution).unwrap();
+
+        // Ensure there is only one transition.
+        assert_eq!(1, execution.transitions().len());
+        // Retrieve the transition.
+        let transition: Transition<_> = execution.into_transitions().next().unwrap();
+        // Ensure the transition program ID and function name are correct.
+        assert_eq!(transition.program_id(), program.id());
+        assert_eq!(transition.function_name(), &Identifier::from_str("transfer_public_to_private").unwrap());
+        // Ensure the transition has 2 inputs and 2 outputs.
+        assert_eq!(2, transition.inputs().len());
+        assert_eq!(2, transition.outputs().len());
+        // Ensure the first output is a record.
+        assert!(matches!(transition.outputs()[0], Output::Record(..)));
+
+        // Retrieve the first output.
+        let output = transition.outputs()[0].clone();
+        // Decrypt the sender ciphertext.
+        let expected_caller = output.decrypt_sender_ciphertext(&recipient_view_key).unwrap();
+        // Ensure the caller address matches the expected caller.
+        assert_eq!(Some(caller), expected_caller);
+
+        // Ensure decryption fails with the caller view key.
+        assert!(output.decrypt_sender_ciphertext(&caller_view_key).is_err());
+
+        // Ensure decryption fails with a different view key.
+        let different_view_key = ViewKey::try_from(&PrivateKey::<CurrentNetwork>::new(rng).unwrap()).unwrap();
+        assert!(output.decrypt_sender_ciphertext(&different_view_key).is_err());
+    }
 
     // use circuit::Environment;
     //
@@ -655,15 +695,18 @@ fn test_process_multirecords() {
     let nonce_c = CurrentNetwork::g_scalar_multiply(&randomizer_c);
 
     // Declare the output value.
-    let output_a =
-        Value::from_str(&format!("{{ owner: {caller}.private, item: 1234u64.private, _nonce: {nonce_a}.public }}"))
-            .unwrap();
-    let output_b =
-        Value::from_str(&format!("{{ owner: {caller}.private, item: 4321u64.private, _nonce: {nonce_b}.public }}"))
-            .unwrap();
-    let output_c =
-        Value::from_str(&format!("{{ owner: {caller}.private, item: 5678u64.private, _nonce: {nonce_c}.public }}"))
-            .unwrap();
+    let output_a = Value::from_str(&format!(
+        "{{ owner: {caller}.private, item: 1234u64.private, _nonce: {nonce_a}.public, _version: 1u8.public }}"
+    ))
+    .unwrap();
+    let output_b = Value::from_str(&format!(
+        "{{ owner: {caller}.private, item: 4321u64.private, _nonce: {nonce_b}.public, _version: 1u8.public }}"
+    ))
+    .unwrap();
+    let output_c = Value::from_str(&format!(
+        "{{ owner: {caller}.private, item: 5678u64.private, _nonce: {nonce_c}.public, _version: 1u8.public }}"
+    ))
+    .unwrap();
 
     // Check again to make sure we didn't modify the authorization before calling `evaluate`.
     assert_eq!(authorization.len(), 1);
@@ -744,9 +787,10 @@ fn test_process_self_caller() {
     let nonce = CurrentNetwork::g_scalar_multiply(&randomizer);
 
     // Declare the output value.
-    let output =
-        Value::from_str(&format!("{{ owner: {caller}.private, item: 1234u64.private, _nonce: {nonce}.public }}"))
-            .unwrap();
+    let output = Value::from_str(&format!(
+        "{{ owner: {caller}.private, item: 1234u64.private, _nonce: {nonce}.public, _version: 1u8.public }}"
+    ))
+    .unwrap();
 
     // Check again to make sure we didn't modify the authorization before calling `evaluate`.
     assert_eq!(authorization.len(), 1);
@@ -1000,7 +1044,7 @@ function compute:
 
     // Declare the expected output value.
     let r3 = Value::<CurrentNetwork>::from_str(&format!(
-        "{{ owner: {caller}.private, token_amount: 100u64.private, _nonce: {nonce}.public }}"
+        "{{ owner: {caller}.private, token_amount: 100u64.private, _nonce: {nonce}.public, _version: 1u8.public }}"
     ))
     .unwrap();
     let r4 = Value::from_str("19field").unwrap();
@@ -1149,12 +1193,13 @@ function transfer:
 
         // Declare the expected output value.
         let output_a = Value::from_str(&format!(
-            "{{ owner: {caller1}.private, amount: 99u64.private, _nonce: {nonce_a}.public }}"
+            "{{ owner: {caller1}.private, amount: 99u64.private, _nonce: {nonce_a}.public, _version: 1u8.public }}"
         ))
         .unwrap();
-        let output_b =
-            Value::from_str(&format!("{{ owner: {caller0}.private, amount: 1u64.private, _nonce: {nonce_b}.public }}"))
-                .unwrap();
+        let output_b = Value::from_str(&format!(
+            "{{ owner: {caller0}.private, amount: 1u64.private, _nonce: {nonce_b}.public, _version: 1u8.public }}"
+        ))
+        .unwrap();
 
         (output_a, output_b)
     };
@@ -1243,14 +1288,14 @@ finalize compute:
     let mut process = Process::load().unwrap();
 
     // Initialize a new block store.
-    let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(None).unwrap();
+    let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
     // Initialize a new finalize store.
-    let finalize_store = FinalizeStore::<_, FinalizeMemory<_>>::open(None).unwrap();
+    let finalize_store = FinalizeStore::<_, FinalizeMemory<_>>::open(StorageMode::new_test(None)).unwrap();
 
     // Add the program to the process.
     let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
     // Check that the deployment verifies.
-    process.verify_deployment::<CurrentAleo, _>(&deployment, rng).unwrap();
+    process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V8, &deployment, rng).unwrap();
     // Compute the fee.
     let fee = sample_fee::<_, CurrentAleo, _, _>(&process, &block_store, &finalize_store, rng);
     // Finalize the deployment.
@@ -1288,11 +1333,11 @@ finalize compute:
     assert_eq!(1, candidate.len());
 
     // Prepare the trace.
-    trace.prepare(Query::from(block_store)).unwrap();
+    trace.prepare(&Query::from(block_store)).unwrap();
     // Prove the execution.
     let execution = trace.prove_execution::<CurrentAleo, _>("testing", VarunaVersion::V1, rng).unwrap();
     // Verify the execution.
-    process.verify_execution(VarunaVersion::V1, &execution).unwrap();
+    process.verify_execution(ConsensusVersion::V8, VarunaVersion::V1, InclusionVersion::V0, &execution).unwrap();
 
     // Now, finalize the execution.
     process.finalize_execution(sample_finalize_state(1), &finalize_store, &execution, None).unwrap();
@@ -1355,14 +1400,14 @@ finalize compute:
     let mut process = Process::load().unwrap();
 
     // Initialize a new block store.
-    let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(None).unwrap();
+    let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
     // Initialize a new finalize store.
-    let finalize_store = FinalizeStore::<_, FinalizeMemory<_>>::open(None).unwrap();
+    let finalize_store = FinalizeStore::<_, FinalizeMemory<_>>::open(StorageMode::new_test(None)).unwrap();
 
     // Add the program to the process.
     let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
     // Check that the deployment verifies.
-    process.verify_deployment::<CurrentAleo, _>(&deployment, rng).unwrap();
+    process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V8, &deployment, rng).unwrap();
     // Compute the fee.
     let fee = sample_fee::<_, CurrentAleo, _, _>(&process, &block_store, &finalize_store, rng);
     // Finalize the deployment.
@@ -1400,12 +1445,12 @@ finalize compute:
     assert_eq!(1, candidate.len());
 
     // Prepare the trace.
-    trace.prepare(Query::from(block_store)).unwrap();
+    trace.prepare(&Query::from(block_store)).unwrap();
     // Prove the execution.
     let execution = trace.prove_execution::<CurrentAleo, _>("testing", VarunaVersion::V1, rng).unwrap();
 
     // Verify the execution.
-    process.verify_execution(VarunaVersion::V1, &execution).unwrap();
+    process.verify_execution(ConsensusVersion::V8, VarunaVersion::V1, InclusionVersion::V0, &execution).unwrap();
 
     // Now, finalize the execution.
     process.finalize_execution(sample_finalize_state(1), &finalize_store, &execution, None).unwrap();
@@ -1482,14 +1527,14 @@ finalize mint_public:
     let mut process = Process::load().unwrap();
 
     // Initialize a new block store.
-    let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(None).unwrap();
+    let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
     // Initialize a new finalize store.
-    let finalize_store = FinalizeStore::<_, FinalizeMemory<_>>::open(None).unwrap();
+    let finalize_store = FinalizeStore::<_, FinalizeMemory<_>>::open(StorageMode::new_test(None)).unwrap();
 
     // Add the program to the process.
     let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
     // Check that the deployment verifies.
-    process.verify_deployment::<CurrentAleo, _>(&deployment, rng).unwrap();
+    process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V8, &deployment, rng).unwrap();
     // Compute the fee.
     let fee = sample_fee::<_, CurrentAleo, _, _>(&process, &block_store, &finalize_store, rng);
     // Finalize the deployment.
@@ -1531,12 +1576,12 @@ finalize mint_public:
     assert_eq!(1, candidate.len());
 
     // Prepare the trace.
-    trace.prepare(Query::from(block_store)).unwrap();
+    trace.prepare(&Query::from(block_store)).unwrap();
     // Prove the execution.
     let execution = trace.prove_execution::<CurrentAleo, _>("token", VarunaVersion::V1, rng).unwrap();
 
     // Verify the execution.
-    process.verify_execution(VarunaVersion::V1, &execution).unwrap();
+    process.verify_execution(ConsensusVersion::V8, VarunaVersion::V1, InclusionVersion::V0, &execution).unwrap();
 
     // Now, finalize the execution.
     process.finalize_execution(sample_finalize_state(1), &finalize_store, &execution, None).unwrap();
@@ -1611,14 +1656,14 @@ finalize mint_public:
     let mut process = Process::load().unwrap();
 
     // Initialize a new block store.
-    let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(None).unwrap();
+    let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
     // Initialize a new finalize store.
-    let finalize_store = FinalizeStore::<_, FinalizeMemory<_>>::open(None).unwrap();
+    let finalize_store = FinalizeStore::<_, FinalizeMemory<_>>::open(StorageMode::new_test(None)).unwrap();
 
     // Add the program to the process.
     let deployment = process.deploy::<CurrentAleo, _>(&program0, rng).unwrap();
     // Check that the deployment verifies.
-    process.verify_deployment::<CurrentAleo, _>(&deployment, rng).unwrap();
+    process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V8, &deployment, rng).unwrap();
     // Compute the fee.
     let fee = sample_fee::<_, CurrentAleo, _, _>(&process, &block_store, &finalize_store, rng);
     // Finalize the deployment.
@@ -1658,7 +1703,7 @@ finalize init:
     // Add the program to the process.
     let deployment = process.deploy::<CurrentAleo, _>(&program1, rng).unwrap();
     // Check that the deployment verifies.
-    process.verify_deployment::<CurrentAleo, _>(&deployment, rng).unwrap();
+    process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V8, &deployment, rng).unwrap();
     // Compute the fee.
     let fee = sample_fee::<_, CurrentAleo, _, _>(&process, &block_store, &finalize_store, rng);
     // Finalize the deployment.
@@ -1699,12 +1744,12 @@ finalize init:
     assert_eq!(1, candidate.len());
 
     // Prepare the trace.
-    trace.prepare(Query::from(block_store)).unwrap();
+    trace.prepare(&Query::from(block_store)).unwrap();
     // Prove the execution.
     let execution = trace.prove_execution::<CurrentAleo, _>("public_wallet", VarunaVersion::V1, rng).unwrap();
 
     // Verify the execution.
-    process.verify_execution(VarunaVersion::V1, &execution).unwrap();
+    process.verify_execution(ConsensusVersion::V8, VarunaVersion::V1, InclusionVersion::V0, &execution).unwrap();
 
     // Now, finalize the execution.
     process.finalize_execution(sample_finalize_state(1), &finalize_store, &execution, None).unwrap();
@@ -1769,14 +1814,14 @@ finalize compute:
     let mut process = Process::load().unwrap();
 
     // Initialize a new block store.
-    let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(None).unwrap();
+    let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
     // Initialize a new finalize store.
-    let finalize_store = FinalizeStore::<_, FinalizeMemory<_>>::open(None).unwrap();
+    let finalize_store = FinalizeStore::<_, FinalizeMemory<_>>::open(StorageMode::new_test(None)).unwrap();
 
     // Add the program to the process.
     let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
     // Check that the deployment verifies.
-    process.verify_deployment::<CurrentAleo, _>(&deployment, rng).unwrap();
+    process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V8, &deployment, rng).unwrap();
     // Compute the fee.
     let fee = sample_fee::<_, CurrentAleo, _, _>(&process, &block_store, &finalize_store, rng);
     // Finalize the deployment.
@@ -1814,12 +1859,12 @@ finalize compute:
     assert_eq!(1, candidate.len());
 
     // Prepare the trace.
-    trace.prepare(Query::from(block_store)).unwrap();
+    trace.prepare(&Query::from(block_store)).unwrap();
     // Prove the execution.
     let execution = trace.prove_execution::<CurrentAleo, _>("testing", VarunaVersion::V1, rng).unwrap();
 
     // Verify the execution.
-    process.verify_execution(VarunaVersion::V1, &execution).unwrap();
+    process.verify_execution(ConsensusVersion::V8, VarunaVersion::V1, InclusionVersion::V0, &execution).unwrap();
 
     // Now, finalize the execution.
     process.finalize_execution(sample_finalize_state(1), &finalize_store, &execution, None).unwrap();
@@ -1942,14 +1987,14 @@ function a:
     }
 
     // Initialize a new block store.
-    let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(None).unwrap();
+    let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
     // Prepare the trace.
-    trace.prepare(Query::from(block_store)).unwrap();
+    trace.prepare(&Query::from(block_store)).unwrap();
     // Prove the execution.
     let execution = trace.prove_execution::<CurrentAleo, _>("two", VarunaVersion::V1, rng).unwrap();
 
     // Verify the execution.
-    process.verify_execution(VarunaVersion::V1, &execution).unwrap();
+    process.verify_execution(ConsensusVersion::V8, VarunaVersion::V1, InclusionVersion::V0, &execution).unwrap();
 }
 
 #[test]
@@ -2129,14 +2174,14 @@ fn test_complex_execution_order() {
     }
 
     // Initialize a new block store.
-    let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(None).unwrap();
+    let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
     // Prepare the trace.
-    trace.prepare(Query::from(block_store)).unwrap();
+    trace.prepare(&Query::from(block_store)).unwrap();
     // Prove the execution.
     let execution = trace.prove_execution::<CurrentAleo, _>("four", VarunaVersion::V1, rng).unwrap();
 
     // Verify the execution.
-    process.verify_execution(VarunaVersion::V1, &execution).unwrap();
+    process.verify_execution(ConsensusVersion::V8, VarunaVersion::V1, InclusionVersion::V0, &execution).unwrap();
 }
 
 #[test]
@@ -2198,14 +2243,14 @@ finalize compute:
     let mut process = Process::load().unwrap();
 
     // Initialize a new block store.
-    let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(None).unwrap();
+    let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
     // Initialize a new finalize store.
-    let finalize_store = FinalizeStore::<_, FinalizeMemory<_>>::open(None).unwrap();
+    let finalize_store = FinalizeStore::<_, FinalizeMemory<_>>::open(StorageMode::new_test(None)).unwrap();
 
     // Add the program to the process.
     let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
     // Check that the deployment verifies.
-    process.verify_deployment::<CurrentAleo, _>(&deployment, rng).unwrap();
+    process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V8, &deployment, rng).unwrap();
     // Compute the fee.
     let fee = sample_fee::<_, CurrentAleo, _, _>(&process, &block_store, &finalize_store, rng);
     // Finalize the deployment.
@@ -2242,12 +2287,12 @@ finalize compute:
     assert_eq!(1, candidate.len());
 
     // Prepare the trace.
-    trace.prepare(Query::from(block_store)).unwrap();
+    trace.prepare(&Query::from(block_store)).unwrap();
     // Prove the execution.
     let execution = trace.prove_execution::<CurrentAleo, _>("testing", VarunaVersion::V1, rng).unwrap();
 
     // Verify the execution.
-    process.verify_execution(VarunaVersion::V1, &execution).unwrap();
+    process.verify_execution(ConsensusVersion::V8, VarunaVersion::V1, InclusionVersion::V0, &execution).unwrap();
 
     // Now, finalize the execution.
     process.finalize_execution(sample_finalize_state(1), &finalize_store, &execution, None).unwrap();
@@ -2349,14 +2394,14 @@ function compute:
     assert_eq!(r4, candidate[2]);
 
     // Initialize a new block store.
-    let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(None).unwrap();
+    let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
     // Prepare the trace.
-    trace.prepare(Query::from(block_store)).unwrap();
+    trace.prepare(&Query::from(block_store)).unwrap();
     // Prove the execution.
     let execution = trace.prove_execution::<CurrentAleo, _>("testing", VarunaVersion::V1, rng).unwrap();
 
     // Verify the execution.
-    process.verify_execution(VarunaVersion::V1, &execution).unwrap();
+    process.verify_execution(ConsensusVersion::V8, VarunaVersion::V1, InclusionVersion::V0, &execution).unwrap();
 }
 
 #[test]
@@ -2364,8 +2409,11 @@ fn test_process_deploy_credits_program() {
     let rng = &mut TestRng::default();
 
     // Initialize an empty process without the `credits` program.
-    let empty_process =
-        Process { universal_srs: Arc::new(UniversalSRS::<CurrentNetwork>::load().unwrap()), stacks: IndexMap::new() };
+    let empty_process = Process {
+        universal_srs: UniversalSRS::<CurrentNetwork>::load().unwrap(),
+        stacks: Default::default(),
+        old_stacks: Default::default(),
+    };
 
     // Construct the process.
     let process = Process::load().unwrap();
@@ -2377,9 +2425,9 @@ fn test_process_deploy_credits_program() {
     let deployment = empty_process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
 
     // Ensure the deployment is valid on the empty process.
-    empty_process.verify_deployment::<CurrentAleo, _>(&deployment, rng).unwrap();
+    empty_process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V8, &deployment, rng).unwrap();
     // Ensure the deployment is not valid on the standard process.
-    assert!(process.verify_deployment::<CurrentAleo, _>(&deployment, rng).is_err());
+    assert!(process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V8, &deployment, rng).is_err());
 
     // Create a new `credits.aleo` program.
     let program = Program::from_str(
@@ -2401,9 +2449,9 @@ function compute:
     let deployment = empty_process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
 
     // Ensure the deployment is valid on the empty process.
-    empty_process.verify_deployment::<CurrentAleo, _>(&deployment, rng).unwrap();
+    empty_process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V8, &deployment, rng).unwrap();
     // Ensure the deployment is not valid on the standard process.
-    assert!(process.verify_deployment::<CurrentAleo, _>(&deployment, rng).is_err());
+    assert!(process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V8, &deployment, rng).is_err());
 }
 
 #[test]
@@ -2425,14 +2473,14 @@ function {function_name}:
     let mut process = Process::load().unwrap();
 
     // Initialize a new block store.
-    let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(None).unwrap();
+    let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
     // Initialize a new finalize store.
-    let finalize_store = FinalizeStore::<_, FinalizeMemory<_>>::open(None).unwrap();
+    let finalize_store = FinalizeStore::<_, FinalizeMemory<_>>::open(StorageMode::new_test(None)).unwrap();
 
     // Add the program to the process.
     let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
     // Check that the deployment verifies.
-    process.verify_deployment::<CurrentAleo, _>(&deployment, rng).unwrap();
+    process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V8, &deployment, rng).unwrap();
     // Compute the fee.
     let fee = sample_fee::<_, CurrentAleo, _, _>(&process, &block_store, &finalize_store, rng);
     // Finalize the deployment.
@@ -2456,7 +2504,7 @@ function {function_name}:
         assert_eq!(response.outputs().len(), 0);
 
         // Prepare the trace.
-        trace.prepare(Query::from(block_store.clone())).unwrap();
+        trace.prepare(&Query::from(block_store.clone())).unwrap();
         // Prove the execution.
         trace.prove_execution::<CurrentAleo, _>("testing", VarunaVersion::V1, rng).unwrap()
     };
@@ -2475,7 +2523,7 @@ function {function_name}:
         assert_eq!(response.outputs().len(), 0);
 
         // Prepare the trace.
-        trace.prepare(Query::from(block_store)).unwrap();
+        trace.prepare(&Query::from(block_store)).unwrap();
         // Prove the execution.
         trace.prove_execution::<CurrentAleo, _>("testing", VarunaVersion::V1, rng).unwrap()
     };
@@ -2488,6 +2536,7 @@ function {function_name}:
 
 #[test]
 fn test_long_import_chain() {
+    const MAX_PROGRAM_DEPTH: usize = 64;
     // Initialize a new program.
     let program = Program::<CurrentNetwork>::from_str(
         r"
@@ -2500,7 +2549,7 @@ fn test_long_import_chain() {
     let mut process = crate::test_helpers::sample_process(&program);
 
     // Add `MAX_PROGRAM_DEPTH` programs to the process.
-    for i in 1..=CurrentNetwork::MAX_PROGRAM_DEPTH {
+    for i in 1..=MAX_PROGRAM_DEPTH {
         println!("Adding program {i}");
         // Initialize a new program.
         let program = Program::from_str(&format!(
@@ -2522,12 +2571,13 @@ fn test_long_import_chain() {
         import test{}.aleo;
         program test{}.aleo;
         function c:",
-        CurrentNetwork::MAX_PROGRAM_DEPTH,
-        CurrentNetwork::MAX_PROGRAM_DEPTH + 1
+        MAX_PROGRAM_DEPTH,
+        MAX_PROGRAM_DEPTH + 1
     ))
     .unwrap();
     let result = process.add_program(&program);
-    assert!(result.is_err());
+    // Programs may create long import chains as long as number of calls does not exceed the maximum number of transitions.
+    assert!(result.is_ok());
 }
 
 #[test]

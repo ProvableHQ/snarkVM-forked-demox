@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,9 +15,7 @@
 
 use super::*;
 
-impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> FromBytes
-    for ProgramCore<N, Instruction, Command>
-{
+impl<N: Network> FromBytes for ProgramCore<N> {
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
         // Read the version.
         let version = u8::read_le(&mut reader)?;
@@ -65,9 +63,7 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Fro
     }
 }
 
-impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ToBytes
-    for ProgramCore<N, Instruction, Command>
-{
+impl<N: Network> ToBytes for ProgramCore<N> {
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         // Write the version.
         1u8.write_le(&mut writer)?;
@@ -83,9 +79,9 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ToB
         }
 
         // Write the number of components.
-        u16::try_from(self.identifiers.len()).map_err(|e| error(e.to_string()))?.write_le(&mut writer)?;
+        u16::try_from(self.components.len()).map_err(|e| error(e.to_string()))?.write_le(&mut writer)?;
         // Write the components.
-        for (identifier, definition) in self.identifiers.iter() {
+        for (identifier, definition) in self.components.iter() {
             match definition {
                 ProgramDefinition::Mapping => match self.mappings.get(identifier) {
                     Some(mapping) => {

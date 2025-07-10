@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,8 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod load;
-mod store;
+mod registers_trait;
 
 use crate::FinalizeTypes;
 use console::{
@@ -22,15 +21,7 @@ use console::{
     program::{Identifier, Literal, Plaintext, Register, Value},
     types::{U16, U32},
 };
-use synthesizer_program::{
-    FinalizeGlobalState,
-    FinalizeRegistersState,
-    Operand,
-    RegistersLoad,
-    RegistersStore,
-    StackMatches,
-    StackProgram,
-};
+use synthesizer_program::{FinalizeGlobalState, FinalizeRegistersState, Operand, RegistersTrait, StackTrait};
 
 use indexmap::IndexMap;
 

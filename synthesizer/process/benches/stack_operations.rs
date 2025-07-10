@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,12 +22,12 @@ use console::{
     types::Field,
 };
 use snarkvm_synthesizer_process::{Process, Stack};
-use synthesizer_program::{Program, StackProgram};
+use synthesizer_program::{Program, StackTrait};
 
 use circuit::prelude::bail;
 use console::{network::Network, prelude::SizeInDataBits};
 use criterion::{BatchSize, Criterion};
-use rand::{Rng, distributions::Alphanumeric};
+use rand::{Rng as _, distributions::Alphanumeric};
 use std::str::FromStr;
 use utilities::TestRng;
 

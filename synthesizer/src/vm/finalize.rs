@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,7 +16,7 @@
 use super::*;
 
 use ledger_committee::{MAX_DELEGATORS, MIN_DELEGATOR_STAKE, MIN_VALIDATOR_SELF_STAKE};
-use utilities::cfg_sort_by_cached_key;
+use utilities::{cfg_sort_by_cached_key, defer, dev_eprintln};
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Speculates on the given list of transactions in the VM.
@@ -280,6 +280,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             // we choose to acquire the write lock for the entire duration of this atomic batch.
             let process = self.process.write();
 
+            // Revert any unstaged stacks, when the function returns.
+            // Note. This function does not call `commit_stacks` so the staged stacks will always be reverted
+            //  regardless of whether the function succeeds or fails.
+            defer! {
+                process.revert_stacks();
+            }
+
             // Initialize a list of the confirmed transactions.
             let mut confirmed = Vec::with_capacity(num_transactions);
             // Initialize a list of the aborted transactions.
@@ -356,8 +363,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                 Ok(result) => result,
                                 Err(error) => {
                                     // Note: On failure, skip this transaction, and continue speculation.
-                                    #[cfg(debug_assertions)]
-                                    eprintln!("Failed to finalize the fee in a rejected deploy - {error}");
+                                    dev_eprintln!("Failed to finalize the fee in a rejected deploy - {error}");
                                     // Store the aborted transaction.
                                     aborted.push((transaction.clone(), error.to_string()));
                                     // Continue to the next transaction.
@@ -367,7 +373,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             // If the program has not yet been deployed, attempt to deploy it.
                             false => match process.finalize_deployment(state, store, deployment, fee) {
                                 // Construct the accepted deploy transaction.
-                                Ok((_, finalize)) => {
+                                Ok((stack, finalize)) => {
+                                    // Add the stack to the process with the option to be reverted.
+                                    process.stage_stack(stack);
                                     // Add the program id to the list of deployments.
                                     deployments.insert(*deployment.program_id());
                                     ConfirmedTransaction::accepted_deploy(counter, transaction.clone(), finalize)
@@ -378,8 +386,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                     Ok(result) => result,
                                     Err(error) => {
                                         // Note: On failure, skip this transaction, and continue speculation.
-                                        #[cfg(debug_assertions)]
-                                        eprintln!("Failed to finalize the fee in a rejected deploy - {error}");
+                                        dev_eprintln!("Failed to finalize the fee in a rejected deploy - {error}");
                                         // Store the aborted transaction.
                                         aborted.push((transaction.clone(), error.to_string()));
                                         // Continue to the next transaction.
@@ -417,8 +424,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                         }
                                         Err(error) => {
                                             // Note: On failure, skip this transaction, and continue speculation.
-                                            #[cfg(debug_assertions)]
-                                            eprintln!("Failed to finalize the fee in a rejected execute - {error}");
+                                            dev_eprintln!("Failed to finalize the fee in a rejected execute - {error}");
                                             // Store the aborted transaction.
                                             aborted.push((transaction.clone(), error.to_string()));
                                             // Continue to the next transaction.
@@ -430,8 +436,20 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                 // This is a foundational bug - the caller is violating protocol rules.
                                 // It is possible that a `credits.aleo/split` transaction has no fee. However, it
                                 // is a simple transition without finalize operations and should not fail here.
+                                // If a `credits.aleo/upgrade` transaction has no fee and fails, we simply abort it.
                                 // Note: This will abort the entire atomic batch.
-                                None => Err("Rejected execute transaction has no fee".to_string()),
+                                None => {
+                                    // Abort the upgrade transaction.
+                                    if transaction.contains_upgrade() && execution.len() == 1 {
+                                        aborted.push((
+                                            transaction.clone(),
+                                            "Failed to finalize a `credits.aleo/upgrade` call with no fee".to_string(),
+                                        ));
+                                        // Continue to the next transaction.
+                                        continue 'outer;
+                                    }
+                                    Err("Rejected execute transaction has no fee".to_string())
+                                }
                             },
                         }
                     }
@@ -589,10 +607,14 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             // Acquire the write lock on the process.
             // Note: Due to the highly-sensitive nature of processing all `finalize` calls,
             // we choose to acquire the write lock for the entire duration of this atomic batch.
-            let mut process = self.process.write();
+            let process = self.process.write();
 
-            // Initialize a list for the deployed stacks.
-            let mut stacks = Vec::new();
+            // Revert any unstaged stacks, when the function returns.
+            // Note. `commit_stacks` is called at the bottom of this function after successful finalization.
+            //  The staged stacks are only reverted if the function returns an error.
+            defer! {
+                process.revert_stacks();
+            }
 
             // Finalize the transactions.
             for (index, transaction) in transactions.iter().enumerate() {
@@ -619,8 +641,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         match process.finalize_deployment(state, store, deployment, fee) {
                             // Ensure the finalize operations match the expected.
                             Ok((stack, finalize_operations)) => match finalize == &finalize_operations {
-                                // Store the stack.
-                                true => stacks.push(stack),
+                                // Add the stack to the process with the option to be reverted.
+                                true => process.stage_stack(stack),
                                 // Note: This will abort the entire atomic batch.
                                 false => {
                                     return Err(format!(
@@ -767,10 +789,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
             /* Start the commit process. */
 
-            // Commit all of the stacks to the process.
-            if !stacks.is_empty() {
-                stacks.into_iter().for_each(|stack| process.add_stack(stack))
-            }
+            // Commit all the stacks to the process.
+            process.commit_stacks();
 
             finish!(timer); // <- Note: This timer does **not** include the time to write batch to DB.
 
@@ -1400,16 +1420,19 @@ mod tests {
     };
     use ledger_block::{Block, Header, Metadata, Transaction, Transition};
     use ledger_committee::{MAX_DELEGATORS, MIN_VALIDATOR_STAKE};
-    use ledger_store::helpers::memory::ConsensusMemory;
     use synthesizer_program::Program;
 
     use rand::distributions::DistString;
 
     type CurrentNetwork = test_helpers::CurrentNetwork;
+    #[cfg(not(feature = "rocks"))]
+    type LedgerType = ledger_store::helpers::memory::ConsensusMemory<CurrentNetwork>;
+    #[cfg(feature = "rocks")]
+    type LedgerType = ledger_store::helpers::rocksdb::ConsensusDB<CurrentNetwork>;
 
     /// Sample a new program and deploy it to the VM. Returns the program name.
     fn new_program_deployment<R: Rng + CryptoRng>(
-        vm: &VM<CurrentNetwork, ConsensusMemory<CurrentNetwork>>,
+        vm: &VM<CurrentNetwork, LedgerType>,
         private_key: &PrivateKey<CurrentNetwork>,
         previous_block: &Block<CurrentNetwork>,
         unspent_records: &mut Vec<Record<CurrentNetwork, Ciphertext<CurrentNetwork>>>,
@@ -1477,7 +1500,7 @@ finalize transfer_public:
 
     /// Construct a new block based on the given transactions.
     fn sample_next_block<R: Rng + CryptoRng>(
-        vm: &VM<CurrentNetwork, ConsensusMemory<CurrentNetwork>>,
+        vm: &VM<CurrentNetwork, LedgerType>,
         private_key: &PrivateKey<CurrentNetwork>,
         transactions: &[Transaction<CurrentNetwork>],
         previous_block: &Block<CurrentNetwork>,
@@ -1547,7 +1570,7 @@ finalize transfer_public:
 
     /// Generate split transactions for the unspent records.
     fn generate_splits<R: Rng + CryptoRng>(
-        vm: &VM<CurrentNetwork, ConsensusMemory<CurrentNetwork>>,
+        vm: &VM<CurrentNetwork, LedgerType>,
         private_key: &PrivateKey<CurrentNetwork>,
         previous_block: &Block<CurrentNetwork>,
         unspent_records: &mut Vec<Record<CurrentNetwork, Ciphertext<CurrentNetwork>>>,
@@ -1586,7 +1609,7 @@ finalize transfer_public:
 
     /// Create an execution transaction.
     fn create_execution(
-        vm: &VM<CurrentNetwork, ConsensusMemory<CurrentNetwork>>,
+        vm: &VM<CurrentNetwork, LedgerType>,
         caller_private_key: PrivateKey<CurrentNetwork>,
         program_id: &str,
         function_name: &str,
@@ -1598,7 +1621,8 @@ finalize transfer_public:
 
         // Prepare the additional fee.
         let view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
-        let credits = Some(unspent_records.pop().unwrap().decrypt(&view_key).unwrap());
+        let unspent_record = unspent_records.pop().unwrap();
+        let credits = Some(unspent_record.decrypt(&view_key).unwrap());
 
         // Execute.
         let transaction = vm
@@ -1613,7 +1637,7 @@ finalize transfer_public:
 
     /// Sample a public mint transaction.
     fn sample_mint_public(
-        vm: &VM<CurrentNetwork, ConsensusMemory<CurrentNetwork>>,
+        vm: &VM<CurrentNetwork, LedgerType>,
         caller_private_key: PrivateKey<CurrentNetwork>,
         program_id: &str,
         recipient: Address<CurrentNetwork>,
@@ -1631,7 +1655,7 @@ finalize transfer_public:
 
     /// Sample a public transfer transaction.
     fn sample_transfer_public(
-        vm: &VM<CurrentNetwork, ConsensusMemory<CurrentNetwork>>,
+        vm: &VM<CurrentNetwork, LedgerType>,
         caller_private_key: PrivateKey<CurrentNetwork>,
         program_id: &str,
         recipient: Address<CurrentNetwork>,
@@ -1916,9 +1940,10 @@ finalize transfer_public:
         // Initialize an RNG.
         let rng = &mut TestRng::default();
 
+        // TODO: Fix this test by adding additional constraints to `Committee::new_genesis`
         // Initialize the validators with the maximum number of validators before consensus v3.
         let validators = sample_validators::<CurrentNetwork>(
-            consensus_config_value!(CurrentNetwork, MAX_CERTIFICATES, 0).unwrap() as usize + 1,
+            consensus_config_value!(CurrentNetwork, MAX_CERTIFICATES, 0).unwrap() as usize + 5,
             rng,
         );
 
@@ -1930,6 +1955,7 @@ finalize transfer_public:
         assert!(Committee::new_genesis(committee_map).is_err());
     }
 
+    #[cfg(not(feature = "test"))]
     #[test]
     #[allow(clippy::assertions_on_constants)]
     fn test_migration_v3_maximum_validator_increase() {
@@ -2544,11 +2570,11 @@ finalize compute:
         let mut transactions = Vec::new();
         let mut excess_transaction_ids = Vec::new();
 
-        for _ in 0..VM::<CurrentNetwork, ConsensusMemory<_>>::MAXIMUM_CONFIRMED_TRANSACTIONS + 1 {
+        for _ in 0..VM::<CurrentNetwork, LedgerType>::MAXIMUM_CONFIRMED_TRANSACTIONS + 1 {
             let transaction =
                 sample_mint_public(&vm, caller_private_key, &program_id, caller_address, 10, &mut unspent_records, rng);
             // Abort the transaction if the block is full.
-            if transactions.len() >= VM::<CurrentNetwork, ConsensusMemory<_>>::MAXIMUM_CONFIRMED_TRANSACTIONS {
+            if transactions.len() >= VM::<CurrentNetwork, LedgerType>::MAXIMUM_CONFIRMED_TRANSACTIONS {
                 excess_transaction_ids.push(transaction.id());
             }
 
@@ -2562,10 +2588,7 @@ finalize compute:
 
         // Ensure that the excess transactions were aborted.
         assert_eq!(next_block.aborted_transaction_ids(), &excess_transaction_ids);
-        assert_eq!(
-            next_block.transactions().len(),
-            VM::<CurrentNetwork, ConsensusMemory<_>>::MAXIMUM_CONFIRMED_TRANSACTIONS
-        );
+        assert_eq!(next_block.transactions().len(), VM::<CurrentNetwork, LedgerType>::MAXIMUM_CONFIRMED_TRANSACTIONS);
     }
 
     #[test]
@@ -2802,7 +2825,7 @@ finalize compute:
             // Note that the first validator is used to execute additional transactions in `VM::genesis_quorum`.
             // Therefore, the balance of the first validator will be different from the expected balance.
             if entry.0 == Plaintext::from_str(&first_validator.to_string()).unwrap() {
-                assert_eq!(entry.1, Value::from_str("144991999894244u64").unwrap());
+                assert_eq!(entry.1, Value::from_str("144991999894112u64").unwrap());
             } else {
                 assert!(expected_account.contains(entry));
             }

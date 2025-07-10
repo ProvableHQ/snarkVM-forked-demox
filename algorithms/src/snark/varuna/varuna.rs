@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -304,6 +304,11 @@ where
             bail!(SNARKError::CircuitNotFound);
         }
 
+        // Make sure certificate is not hiding
+        if certificate.pc_proof.is_hiding() {
+            bail!("Certificate should not be hiding");
+        }
+
         // Initialize sponge.
         let mut sponge = Self::init_sponge_for_certificate(fs_parameters, verifying_key)?;
 
@@ -344,7 +349,7 @@ where
 
     /// This is the main entrypoint for creating proofs.
     /// You can find a specification of the prover algorithm in:
-    /// https://github.com/ProvableHQ/protocol-docs
+    /// <https://github.com/ProvableHQ/protocol-docs>
     fn prove_batch<C: ConstraintSynthesizer<E::Fr>, R: Rng + CryptoRng>(
         universal_prover: &Self::UniversalProver,
         fs_parameters: &Self::FSParameters,
@@ -694,7 +699,7 @@ where
 
     /// This is the main entrypoint for verifying proofs.
     /// You can find a specification of the verifier algorithm in:
-    /// https://github.com/ProvableHQ/protocol-docs
+    /// <https://github.com/ProvableHQ/protocol-docs>
     fn verify_batch<B: Borrow<Self::VerifierInput>>(
         universal_verifier: &Self::UniversalVerifier,
         fs_parameters: &Self::FSParameters,

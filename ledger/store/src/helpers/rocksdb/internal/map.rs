@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,7 +21,7 @@ use crate::helpers::{Map, MapRead};
 use core::{fmt, fmt::Debug, hash::Hash, mem};
 use indexmap::IndexMap;
 use smallvec::SmallVec;
-use std::{borrow::Cow, ops::Deref, sync::atomic::Ordering};
+use std::{borrow::Cow, ops::Deref, path::Path, sync::atomic::Ordering};
 use tracing::error;
 
 #[derive(Clone)]
@@ -48,10 +48,17 @@ pub struct InnerDataMap<K: Serialize + DeserializeOwned, V: Serialize + Deserial
     pub(super) checkpoints: Mutex<Vec<usize>>,
 }
 
+impl<K: Serialize + DeserializeOwned, V: Serialize + DeserializeOwned> InnerDataMap<K, V> {
+    pub fn backup_database<P: AsRef<Path>>(&self, path: P) -> Result<(), String> {
+        let checkpoint = rocksdb::checkpoint::Checkpoint::new(&self.database)?;
+        checkpoint.create_checkpoint(path).map_err(|e| e.into_string())
+    }
+}
+
 impl<
     'a,
     K: 'a + Copy + Clone + Debug + PartialEq + Eq + Hash + Serialize + DeserializeOwned + Send + Sync,
-    V: 'a + Clone + PartialEq + Eq + Serialize + DeserializeOwned + Send + Sync,
+    V: 'a + Clone + Serialize + DeserializeOwned + Send + Sync,
 > Map<'a, K, V> for DataMap<K, V>
 {
     ///
@@ -258,7 +265,7 @@ impl<
 impl<
     'a,
     K: 'a + Copy + Clone + Debug + PartialEq + Eq + Hash + Serialize + DeserializeOwned + Send + Sync,
-    V: 'a + Clone + PartialEq + Eq + Serialize + DeserializeOwned + Send + Sync,
+    V: 'a + Clone + Serialize + DeserializeOwned + Send + Sync,
 > MapRead<'a, K, V> for DataMap<K, V>
 {
     type Iterator = Iter<'a, K, V>;
@@ -404,17 +411,14 @@ impl<
 pub struct Iter<
     'a,
     K: 'a + Debug + PartialEq + Eq + Hash + Serialize + DeserializeOwned,
-    V: 'a + PartialEq + Eq + Serialize + DeserializeOwned,
+    V: 'a + Serialize + DeserializeOwned,
 > {
     db_iter: rocksdb::DBRawIterator<'a>,
     _phantom: PhantomData<(K, V)>,
 }
 
-impl<
-    'a,
-    K: 'a + Debug + PartialEq + Eq + Hash + Serialize + DeserializeOwned,
-    V: 'a + PartialEq + Eq + Serialize + DeserializeOwned,
-> Iter<'a, K, V>
+impl<'a, K: 'a + Debug + PartialEq + Eq + Hash + Serialize + DeserializeOwned, V: 'a + Serialize + DeserializeOwned>
+    Iter<'a, K, V>
 {
     pub(super) fn new(db_iter: rocksdb::DBIterator<'a>) -> Self {
         Self { db_iter: db_iter.into(), _phantom: PhantomData }
@@ -424,7 +428,7 @@ impl<
 impl<
     'a,
     K: 'a + Clone + Debug + PartialEq + Eq + Hash + Serialize + DeserializeOwned,
-    V: 'a + Clone + PartialEq + Eq + Serialize + DeserializeOwned,
+    V: 'a + Clone + Serialize + DeserializeOwned,
 > Iterator for Iter<'a, K, V>
 {
     type Item = (Cow<'a, K>, Cow<'a, V>);
@@ -488,18 +492,18 @@ impl<'a, K: 'a + Clone + Debug + PartialEq + Eq + Hash + Serialize + Deserialize
 }
 
 /// An iterator over the values of a prefix.
-pub struct Values<'a, V: 'a + PartialEq + Eq + Serialize + DeserializeOwned> {
+pub struct Values<'a, V: 'a + Serialize + DeserializeOwned> {
     db_iter: rocksdb::DBRawIterator<'a>,
     _phantom: PhantomData<V>,
 }
 
-impl<'a, V: 'a + PartialEq + Eq + Serialize + DeserializeOwned> Values<'a, V> {
+impl<'a, V: 'a + Serialize + DeserializeOwned> Values<'a, V> {
     pub(crate) fn new(db_iter: rocksdb::DBIterator<'a>) -> Self {
         Self { db_iter: db_iter.into(), _phantom: PhantomData }
     }
 }
 
-impl<'a, V: 'a + Clone + PartialEq + Eq + Serialize + DeserializeOwned> Iterator for Values<'a, V> {
+impl<'a, V: 'a + Clone + Serialize + DeserializeOwned> Iterator for Values<'a, V> {
     type Item = Cow<'a, V>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -559,15 +563,15 @@ mod tests {
         FinalizeMode,
         atomic_batch_scope,
         atomic_finalize,
-        helpers::rocksdb::{MapID, TestMap, internal::tests::temp_dir},
+        helpers::rocksdb::{MapID, TestMap},
     };
     use console::{
         account::{Address, FromStr},
         network::MainnetV0,
     };
 
-    use anyhow::anyhow;
-    use serial_test::serial;
+    use aleo_std::StorageMode;
+    use anyhow::{anyhow, bail};
     use tracing_test::traced_test;
 
     type CurrentNetwork = MainnetV0;
@@ -601,7 +605,7 @@ mod tests {
     impl TestStorage {
         fn open() -> Self {
             // Initialize a database.
-            let database = RocksDB::open_testing(temp_dir(), None).expect("Failed to open a test database");
+            let database = RocksDB::open(0, StorageMode::new_test(None)).expect("Failed to open a test database");
 
             Self {
                 own_map: open_map_testing_from_db(database.clone(), MapID::Test(TestMap::Test)),
@@ -734,7 +738,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn test_contains_key_sanity_check() {
         // Initialize an address.
         let address =
@@ -743,73 +746,68 @@ mod tests {
 
         // Initialize a map.
         let map: DataMap<Address<CurrentNetwork>, ()> =
-            RocksDB::open_map_testing(temp_dir(), None, MapID::Test(TestMap::Test)).expect("Failed to open data map");
+            RocksDB::open_map(0, StorageMode::new_test(None), MapID::Test(TestMap::Test))
+                .expect("Failed to open data map");
         map.insert(address, ()).expect("Failed to insert into data map");
         assert!(map.contains_key_confirmed(&address).unwrap());
     }
 
     #[test]
-    #[serial]
     #[traced_test]
     fn test_insert_and_get_speculative() {
         // Initialize a map.
-        let map: DataMap<usize, String> =
-            RocksDB::open_map_testing(temp_dir(), None, MapID::Test(TestMap::Test)).expect("Failed to open data map");
+        let map: DataMap<usize, String> = RocksDB::open_map(0, StorageMode::new_test(None), MapID::Test(TestMap::Test))
+            .expect("Failed to open data map");
 
         crate::helpers::test_helpers::map::check_insert_and_get_speculative(map);
     }
 
     #[test]
-    #[serial]
     #[traced_test]
     fn test_remove_and_get_speculative() {
         // Initialize a map.
-        let map: DataMap<usize, String> =
-            RocksDB::open_map_testing(temp_dir(), None, MapID::Test(TestMap::Test)).expect("Failed to open data map");
+        let map: DataMap<usize, String> = RocksDB::open_map(0, StorageMode::new_test(None), MapID::Test(TestMap::Test))
+            .expect("Failed to open data map");
 
         crate::helpers::test_helpers::map::check_remove_and_get_speculative(map);
     }
 
     #[test]
-    #[serial]
     #[traced_test]
     fn test_contains_key() {
         // Initialize a map.
-        let map: DataMap<usize, String> =
-            RocksDB::open_map_testing(temp_dir(), None, MapID::Test(TestMap::Test)).expect("Failed to open data map");
+        let map: DataMap<usize, String> = RocksDB::open_map(0, StorageMode::new_test(None), MapID::Test(TestMap::Test))
+            .expect("Failed to open data map");
 
         crate::helpers::test_helpers::map::check_contains_key(map);
     }
 
     #[test]
-    #[serial]
     #[traced_test]
     fn test_check_iterators_match() {
         // Initialize a map.
-        let map: DataMap<usize, String> =
-            RocksDB::open_map_testing(temp_dir(), None, MapID::Test(TestMap::Test)).expect("Failed to open data map");
+        let map: DataMap<usize, String> = RocksDB::open_map(0, StorageMode::new_test(None), MapID::Test(TestMap::Test))
+            .expect("Failed to open data map");
 
         crate::helpers::test_helpers::map::check_iterators_match(map);
     }
 
     #[test]
-    #[serial]
     #[traced_test]
     fn test_atomic_writes_are_batched() {
         // Initialize a map.
-        let map: DataMap<usize, String> =
-            RocksDB::open_map_testing(temp_dir(), None, MapID::Test(TestMap::Test)).expect("Failed to open data map");
+        let map: DataMap<usize, String> = RocksDB::open_map(0, StorageMode::new_test(None), MapID::Test(TestMap::Test))
+            .expect("Failed to open data map");
 
         crate::helpers::test_helpers::map::check_atomic_writes_are_batched(map);
     }
 
     #[test]
-    #[serial]
     #[traced_test]
     fn test_atomic_writes_can_be_aborted() {
         // Initialize a map.
-        let map: DataMap<usize, String> =
-            RocksDB::open_map_testing(temp_dir(), None, MapID::Test(TestMap::Test)).expect("Failed to open data map");
+        let map: DataMap<usize, String> = RocksDB::open_map(0, StorageMode::new_test(None), MapID::Test(TestMap::Test))
+            .expect("Failed to open data map");
 
         crate::helpers::test_helpers::map::check_atomic_writes_can_be_aborted(map);
     }
@@ -820,8 +818,8 @@ mod tests {
         const NUM_ITEMS: usize = 10;
 
         // Initialize a map.
-        let map: DataMap<usize, String> =
-            RocksDB::open_map_testing(temp_dir(), None, MapID::Test(TestMap::Test)).expect("Failed to open data map");
+        let map: DataMap<usize, String> = RocksDB::open_map(0, StorageMode::new_test(None), MapID::Test(TestMap::Test))
+            .expect("Failed to open data map");
         // Sanity check.
         assert!(map.iter_confirmed().next().is_none());
         // Make sure the checkpoint index is None.
@@ -894,8 +892,8 @@ mod tests {
         const NUM_ITEMS: usize = 10;
 
         // Initialize a map.
-        let map: DataMap<usize, String> =
-            RocksDB::open_map_testing(temp_dir(), None, MapID::Test(TestMap::Test)).expect("Failed to open data map");
+        let map: DataMap<usize, String> = RocksDB::open_map(0, StorageMode::new_test(None), MapID::Test(TestMap::Test))
+            .expect("Failed to open data map");
         // Sanity check.
         assert!(map.iter_confirmed().next().is_none());
         // Make sure the checkpoint index is None.
@@ -956,8 +954,8 @@ mod tests {
         const NUM_ITEMS: usize = 10;
 
         // Initialize a map.
-        let map: DataMap<usize, String> =
-            RocksDB::open_map_testing(temp_dir(), None, MapID::Test(TestMap::Test)).expect("Failed to open data map");
+        let map: DataMap<usize, String> = RocksDB::open_map(0, StorageMode::new_test(None), MapID::Test(TestMap::Test))
+            .expect("Failed to open data map");
         // Sanity check.
         assert!(map.iter_confirmed().next().is_none());
         // Make sure the checkpoint index is None.
@@ -1010,8 +1008,8 @@ mod tests {
         const NUM_ITEMS: usize = 10;
 
         // Initialize a map.
-        let map: DataMap<usize, String> =
-            RocksDB::open_map_testing(temp_dir(), None, MapID::Test(TestMap::Test)).expect("Failed to open data map");
+        let map: DataMap<usize, String> = RocksDB::open_map(0, StorageMode::new_test(None), MapID::Test(TestMap::Test))
+            .expect("Failed to open data map");
         // Sanity check.
         assert!(map.iter_confirmed().next().is_none());
         // Make sure the checkpoint index is None.
@@ -1089,8 +1087,8 @@ mod tests {
         const NUM_ITEMS: usize = 10;
 
         // Initialize a map.
-        let map: DataMap<usize, String> =
-            RocksDB::open_map_testing(temp_dir(), None, MapID::Test(TestMap::Test)).expect("Failed to open data map");
+        let map: DataMap<usize, String> = RocksDB::open_map(0, StorageMode::new_test(None), MapID::Test(TestMap::Test))
+            .expect("Failed to open data map");
         // Sanity check.
         assert!(map.iter_confirmed().next().is_none());
         // Make sure the checkpoint index is None.
@@ -1167,8 +1165,8 @@ mod tests {
     #[test]
     fn test_atomic_finalize_fails_to_start() {
         // Initialize a map.
-        let map: DataMap<usize, String> =
-            RocksDB::open_map_testing(temp_dir(), None, MapID::Test(TestMap::Test)).expect("Failed to open data map");
+        let map: DataMap<usize, String> = RocksDB::open_map(0, StorageMode::new_test(None), MapID::Test(TestMap::Test))
+            .expect("Failed to open data map");
         // Sanity check.
         assert!(map.iter_confirmed().next().is_none());
         // Make sure the checkpoint index is None.
@@ -1200,8 +1198,8 @@ mod tests {
     #[test]
     fn test_atomic_checkpoint_truncation() {
         // Initialize a map.
-        let map: DataMap<usize, String> =
-            RocksDB::open_map_testing(temp_dir(), None, MapID::Test(TestMap::Test)).expect("Failed to open data map");
+        let map: DataMap<usize, String> = RocksDB::open_map(0, StorageMode::new_test(None), MapID::Test(TestMap::Test))
+            .expect("Failed to open data map");
         // Sanity check.
         assert!(map.iter_confirmed().next().is_none());
         // Make sure the checkpoint index is None.
@@ -1258,8 +1256,8 @@ mod tests {
     #[test]
     fn test_atomic_finalize_with_nested_batch_scope() -> Result<()> {
         // Initialize a map.
-        let map: DataMap<usize, String> =
-            RocksDB::open_map_testing(temp_dir(), None, MapID::Test(TestMap::Test)).expect("Failed to open data map");
+        let map: DataMap<usize, String> = RocksDB::open_map(0, StorageMode::new_test(None), MapID::Test(TestMap::Test))
+            .expect("Failed to open data map");
         // Sanity check.
         assert!(map.iter_confirmed().next().is_none());
         // Make sure the checkpoint index is None.
@@ -1377,7 +1375,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     #[traced_test]
     fn test_nested_atomic_write_batch_success() -> Result<()> {
         // Initialize a multi-layer test storage.
@@ -1452,7 +1449,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     #[traced_test]
     fn test_nested_atomic_write_batch_failure() {
         // We'll want to execute the atomic write batch in its own function, in order to be able to

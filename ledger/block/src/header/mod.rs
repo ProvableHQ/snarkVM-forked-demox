@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -44,7 +44,7 @@ pub struct Header<N: Network> {
     ratifications_root: Field<N>,
     /// The solutions root of the puzzle.
     solutions_root: Field<N>,
-    /// The subdag root of the authority.
+    /// The subdag Merkle root of the authority.
     subdag_root: Field<N>,
     /// The metadata of the block.
     metadata: Metadata<N>,

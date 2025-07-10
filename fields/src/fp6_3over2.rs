@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -311,7 +311,6 @@ impl<P: Fp6Parameters> Neg for Fp6<P> {
     type Output = Self;
 
     #[inline]
-    #[must_use]
     fn neg(self) -> Self {
         let mut copy = Self::zero();
         copy.c0 = self.c0.neg();

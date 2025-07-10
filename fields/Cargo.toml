@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-fields"
-version = "1.5.0"
+version = "3.8.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Fields for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -30,11 +30,11 @@ harness = false
 
 [dependencies.snarkvm-utilities]
 path = "../utilities"
-version = "=1.5.0"
+version = "=3.8.0"
 default-features = false
 
 [dependencies.aleo-std]
-version = "0.1.24"
+version = "1.0.1"
 default-features = false
 
 [dependencies.anyhow]
@@ -76,3 +76,4 @@ default-features = false
 default = [ "snarkvm-utilities/default" ]
 profiler = [ "aleo-std/profiler" ]
 serial = [ ]
+dev-print = [ "snarkvm-utilities/dev-print" ]

@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -671,7 +671,6 @@ impl<P: Fp256Parameters> Neg for Fp256<P> {
     type Output = Self;
 
     #[inline]
-    #[must_use]
     fn neg(self) -> Self {
         if !self.is_zero() {
             let mut tmp = P::MODULUS;

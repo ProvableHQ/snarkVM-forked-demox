@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -36,9 +36,7 @@ impl<N: Network> Package<N> {
         }
 
         // Build the package, if the package requires building.
-        // TODO (howardwu): We currently choose only to support local synthesis of keys due to performance.
-        // self.build::<A>(Some(endpoint.clone()))?;
-        self.build::<A>(None)?;
+        self.build::<A>()?;
 
         // Prepare the locator (even if logging is disabled, to sanity check the locator is well-formed).
         let locator = Locator::<N>::from_str(&format!("{program_id}/{function_name}"))?;
@@ -46,22 +44,35 @@ impl<N: Network> Package<N> {
         #[cfg(feature = "aleo-cli")]
         println!("🚀 Executing '{}'...\n", locator.to_string().bold());
 
+        // Prepare the query.
+        let query = Query::<_, BlockMemory<_>>::from(endpoint);
+        // Fetch the consensus version.
+        let consensus_version = N::CONSENSUS_VERSION(query.current_block_height()?)?;
+
         // Construct the process.
         let process = self.get_process()?;
         // Authorize the function call.
         let authorization = process.authorize::<A, R>(private_key, program_id, function_name, inputs.iter(), rng)?;
 
         // Retrieve the program.
-        let program = process.get_program(program_id)?;
+        let stack = process.get_stack(program_id)?;
+        let program = stack.program();
         // Retrieve the function from the program.
         let function = program.get_function(&function_name)?;
         // Save all the prover and verifier files for any function calls that are made.
         for instruction in function.instructions() {
             if let Instruction::Call(call) = instruction {
-                // Retrieve the program and resource.
-                let (program, resource) = match call.operator() {
-                    CallOperator::Locator(locator) => (process.get_program(locator.program_id())?, locator.resource()),
-                    CallOperator::Resource(resource) => (program, resource),
+                // Retrieve the external stack and resource.
+                let (external_stack, resource) = match call.operator() {
+                    CallOperator::Locator(locator) => {
+                        (Some(process.get_stack(locator.program_id())?), locator.resource())
+                    }
+                    CallOperator::Resource(resource) => (None, resource),
+                };
+                // Retrieve the program.
+                let program = match &external_stack {
+                    Some(external_stack) => external_stack.program(),
+                    None => program,
                 };
                 // If this is a function call, save its corresponding prover and verifier files.
                 if program.contains_function(resource) {
@@ -102,17 +113,13 @@ impl<N: Network> Package<N> {
         // Retrieve the call metrics.
         let call_metrics = trace.call_metrics().to_vec();
 
-        // Prepare the query.
-        let query = Query::<_, BlockMemory<_>>::from(endpoint);
         // Determine which Varuna version to use.
-        let consensus_version = N::CONSENSUS_VERSION(query.current_block_height()?)?;
-        let varuna_version = if (ConsensusVersion::V1..=ConsensusVersion::V3).contains(&consensus_version) {
-            VarunaVersion::V1
-        } else {
-            VarunaVersion::V2
+        let varuna_version = match (ConsensusVersion::V1..=ConsensusVersion::V3).contains(&consensus_version) {
+            true => VarunaVersion::V1,
+            false => VarunaVersion::V2,
         };
         // Prepare the trace.
-        trace.prepare(query)?;
+        trace.prepare(&query)?;
 
         // Prove the execution.
         let execution = trace.prove_execution::<A, R>(&locator.to_string(), varuna_version, rng)?;
@@ -138,7 +145,7 @@ mod tests {
         // Ensure the build directory does *not* exist.
         assert!(!package.build_directory().exists());
         // Build the package.
-        package.build::<CurrentAleo>(None).unwrap();
+        package.build::<CurrentAleo>().unwrap();
         // Ensure the build directory exists.
         assert!(package.build_directory().exists());
 
@@ -167,7 +174,7 @@ mod tests {
         // Ensure the build directory does *not* exist.
         assert!(!package.build_directory().exists());
         // Build the package.
-        package.build::<CurrentAleo>(None).unwrap();
+        package.build::<CurrentAleo>().unwrap();
         // Ensure the build directory exists.
         assert!(package.build_directory().exists());
 
@@ -196,7 +203,7 @@ mod tests {
         // Ensure the build directory does *not* exist.
         assert!(!package.build_directory().exists());
         // Build the package.
-        package.build::<CurrentAleo>(None).unwrap();
+        package.build::<CurrentAleo>().unwrap();
         // Ensure the build directory exists.
         assert!(package.build_directory().exists());
 
