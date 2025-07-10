@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,11 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{
-    Opcode,
-    Operand,
-    traits::{RegistersLoad, RegistersLoadCircuit, StackMatches, StackProgram},
-};
+use crate::{Opcode, Operand, RegistersCircuit, RegistersTrait, StackTrait};
 use console::{
     network::prelude::*,
     program::{Identifier, Locator, Register, RegisterType, ValueType},
@@ -145,17 +141,17 @@ impl<N: Network> Call<N> {
     pub fn destinations(&self) -> Vec<Register<N>> {
         self.destinations.clone()
     }
-}
 
-impl<N: Network> Call<N> {
     /// Returns `true` if the instruction is a function call.
     #[inline]
-    pub fn is_function_call(&self, stack: &impl StackProgram<N>) -> Result<bool> {
+    pub fn is_function_call(&self, stack: &impl StackTrait<N>) -> Result<bool> {
         match self.operator() {
             // Check if the locator is for a function.
             CallOperator::Locator(locator) => {
+                // Get the external stack.
+                let external_stack = stack.get_external_stack(locator.program_id())?;
                 // Retrieve the program.
-                let program = stack.get_external_program(locator.program_id())?;
+                let program = external_stack.program();
                 // Check if the resource is a function.
                 Ok(program.contains_function(locator.resource()))
             }
@@ -165,26 +161,22 @@ impl<N: Network> Call<N> {
     }
 
     /// Evaluates the instruction.
-    pub fn evaluate(&self, _stack: &impl StackProgram<N>, _registers: &mut impl RegistersLoad<N>) -> Result<()> {
+    pub fn evaluate(&self, _stack: &impl StackTrait<N>, _registers: &mut impl RegistersTrait<N>) -> Result<()> {
         bail!("Forbidden operation: Evaluate cannot invoke a 'call' directly. Use 'call' in 'Stack' instead.")
     }
 
     /// Executes the instruction.
     pub fn execute<A: circuit::Aleo<Network = N>>(
         &self,
-        _stack: &impl StackProgram<N>,
-        _registers: &mut impl RegistersLoadCircuit<N, A>,
+        _stack: &impl StackTrait<N>,
+        _registers: &mut impl RegistersCircuit<N, A>,
     ) -> Result<()> {
         bail!("Forbidden operation: Execute cannot invoke a 'call' directly. Use 'call' in 'Stack' instead.")
     }
 
     /// Finalizes the instruction.
     #[inline]
-    pub fn finalize(
-        &self,
-        _stack: &(impl StackMatches<N> + StackProgram<N>),
-        _registers: &mut impl RegistersLoad<N>,
-    ) -> Result<()> {
+    pub fn finalize(&self, _stack: &impl StackTrait<N>, _registers: &mut impl RegistersTrait<N>) -> Result<()> {
         bail!("Forbidden operation: Finalize cannot invoke a 'call' directly. Use 'call' in 'Stack' instead.")
     }
 
@@ -192,14 +184,13 @@ impl<N: Network> Call<N> {
     #[inline]
     pub fn output_types(
         &self,
-        stack: &impl StackProgram<N>,
+        stack: &impl StackTrait<N>,
         input_types: &[RegisterType<N>],
     ) -> Result<Vec<RegisterType<N>>> {
-        // Retrieve the program and resource.
-        let (is_external, program, resource) = match &self.operator {
-            // Retrieve the program and resource from the locator.
+        // Retrieve the external stack, if needed, and the resource.
+        let (external_stack, resource) = match &self.operator {
             CallOperator::Locator(locator) => {
-                (true, stack.get_external_program(locator.program_id())?, locator.resource())
+                (Some(stack.get_external_stack(locator.program_id())?), locator.resource())
             }
             CallOperator::Resource(resource) => {
                 // TODO (howardwu): Revisit this decision to forbid calling internal functions. A record cannot be spent again.
@@ -208,11 +199,14 @@ impl<N: Network> Call<N> {
                 if stack.program().contains_function(resource) {
                     bail!("Cannot call '{resource}'. Use a closure ('closure {resource}:') instead.")
                 }
-
-                (false, stack.program(), resource)
+                (None, resource)
             }
         };
-
+        // Retrieve the program.
+        let (is_external, program) = match &external_stack {
+            Some(external_stack) => (true, external_stack.program()),
+            None => (false, stack.program()),
+        };
         // If the operator is a closure, retrieve the closure and compute the output types.
         if let Ok(closure) = program.get_closure(resource) {
             // Ensure the number of operands matches the number of input statements.

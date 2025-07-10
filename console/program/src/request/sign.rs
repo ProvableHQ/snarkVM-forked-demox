@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -174,9 +174,17 @@ impl<N: Network> Request<N> {
                     };
                     // Ensure the record belongs to the signer.
                     ensure!(**record.owner() == signer, "Input record for '{program_id}' must belong to the signer");
-
+                    // Ensure version 0 credits.aleo Records are only allowed when calling upgrade().
+                    if program_id == ProgramID::from_str("credits.aleo")?
+                        && record.version() == &U8::zero()
+                        && function_name != Identifier::from_str("upgrade")?
+                    {
+                        bail!("Version 0 credits.aleo Records are only allowed when calling 'upgrade()'");
+                    }
+                    // Compute the record view key.
+                    let record_view_key = (*record.nonce() * *view_key).to_x_coordinate();
                     // Compute the record commitment.
-                    let commitment = record.to_commitment(&program_id, record_name)?;
+                    let commitment = record.to_commitment(&program_id, record_name, &record_view_key)?;
 
                     // Compute the generator `H` as `HashToGroup(commitment)`.
                     let h = N::hash_to_group_psd2(&[N::serial_number_domain(), commitment])?;
@@ -195,7 +203,7 @@ impl<N: Network> Request<N> {
                     message.push(tag);
 
                     // Add the input ID.
-                    input_ids.push(InputID::Record(commitment, gamma, serial_number, tag));
+                    input_ids.push(InputID::Record(commitment, gamma, record_view_key, serial_number, tag));
                 }
                 // An external record input is hashed (using `tvk`) to a field element.
                 ValueType::ExternalRecord(..) => {

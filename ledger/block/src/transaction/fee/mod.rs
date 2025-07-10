@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -207,6 +207,7 @@ pub mod test_helpers {
     use ledger_store::{BlockStore, helpers::memory::BlockMemory};
     use synthesizer_process::Process;
 
+    use aleo_std::StorageMode;
     use once_cell::sync::OnceCell;
 
     type CurrentNetwork = console::network::MainnetV0;
@@ -254,17 +255,18 @@ pub mod test_helpers {
                 rng,
             )
             .unwrap();
+
         // Construct the fee trace.
         let (_, mut trace) = process.execute::<CurrentAleo, _>(authorization, rng).unwrap();
 
         // Initialize a new block store.
-        let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(None).unwrap();
+        let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
         // Insert the block into the block store.
         // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
         block_store.insert(&FromStr::from_str(&block.to_string()).unwrap()).unwrap();
 
         // Prepare the assignments.
-        trace.prepare(Query::from(block_store)).unwrap();
+        trace.prepare(&Query::from(block_store)).unwrap();
         // Compute the proof and construct the fee.
         let fee = trace.prove_fee::<CurrentAleo, _>(VarunaVersion::V1, rng).unwrap();
 
@@ -314,13 +316,13 @@ pub mod test_helpers {
         let (_, mut trace) = process.execute::<CurrentAleo, _>(authorization, rng).unwrap();
 
         // Initialize a new block store.
-        let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(None).unwrap();
+        let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
         // Insert the block into the block store.
         // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
         block_store.insert(&FromStr::from_str(&block.to_string()).unwrap()).unwrap();
 
         // Prepare the assignments.
-        trace.prepare(Query::from(block_store)).unwrap();
+        trace.prepare(&Query::from(block_store)).unwrap();
         // Compute the proof and construct the fee.
         let fee = trace.prove_fee::<CurrentAleo, _>(VarunaVersion::V1, rng).unwrap();
 

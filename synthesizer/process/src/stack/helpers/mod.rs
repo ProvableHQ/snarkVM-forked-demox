@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,6 +16,6 @@
 use super::*;
 
 mod initialize;
-mod matches;
 mod sample;
+mod stack_trait;
 mod synthesize;

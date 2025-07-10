@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -184,9 +184,9 @@ impl<N: Network, B: BlockStorage<N>> Query<N, B> {
     /// Returns the program for the given program ID.
     pub fn get_program(&self, program_id: &ProgramID<N>) -> Result<Program<N>> {
         match self {
-            Self::VM(block_store) => {
-                block_store.get_program(program_id)?.ok_or_else(|| anyhow!("Program {program_id} not found in storage"))
-            }
+            Self::VM(block_store) => block_store
+                .get_latest_program(program_id)?
+                .ok_or_else(|| anyhow!("Program {program_id} not found in storage")),
             Self::REST(url) => match N::ID {
                 console::network::MainnetV0::ID => {
                     Ok(Self::get_request(&format!("{url}/mainnet/program/{program_id}"))?.into_json()?)
@@ -206,9 +206,9 @@ impl<N: Network, B: BlockStorage<N>> Query<N, B> {
     #[cfg(feature = "async")]
     pub async fn get_program_async(&self, program_id: &ProgramID<N>) -> Result<Program<N>> {
         match self {
-            Self::VM(block_store) => {
-                block_store.get_program(program_id)?.ok_or_else(|| anyhow!("Program {program_id} not found in storage"))
-            }
+            Self::VM(block_store) => block_store
+                .get_latest_program(program_id)?
+                .ok_or_else(|| anyhow!("Program {program_id} not found in storage")),
             Self::REST(url) => match N::ID {
                 console::network::MainnetV0::ID => {
                     Ok(Self::get_request_async(&format!("{url}/mainnet/program/{program_id}")).await?.json().await?)

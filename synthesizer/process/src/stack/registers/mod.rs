@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,28 +13,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod call;
-mod caller;
-mod load;
-mod store;
+mod registers_circuit;
+mod registers_trait;
 
-use crate::{CallStack, RegisterTypes, RegistersCall};
+use crate::{CallStack, RegisterTypes};
 use console::{
     network::prelude::*,
     program::{Entry, Literal, Plaintext, Register, Value},
     types::{Address, Field},
 };
-use synthesizer_program::{
-    Operand,
-    RegistersLoad,
-    RegistersLoadCircuit,
-    RegistersSigner,
-    RegistersSignerCircuit,
-    RegistersStore,
-    RegistersStoreCircuit,
-    StackMatches,
-    StackProgram,
-};
+use synthesizer_program::{Operand, RegistersCircuit, RegistersSigner, RegistersTrait, StackTrait};
 
 use indexmap::IndexMap;
 
@@ -67,6 +55,12 @@ pub struct Registers<N: Network, A: circuit::Aleo<Network = N>> {
 }
 
 impl<N: Network, A: circuit::Aleo<Network = N>> Registers<N, A> {
+    /// Returns the current call stack.
+    #[inline]
+    pub fn call_stack(&self) -> CallStack<N> {
+        self.call_stack.clone()
+    }
+
     /// Initializes a new set of registers, given the call stack.
     #[inline]
     pub fn new(call_stack: CallStack<N>, register_types: RegisterTypes<N>) -> Self {

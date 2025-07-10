@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,12 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{
-    CallOperator,
-    Opcode,
-    Operand,
-    traits::{FinalizeStoreTrait, RegistersLoad, RegistersStore, StackMatches, StackProgram},
-};
+use crate::{CallOperator, FinalizeStoreTrait, Opcode, Operand, RegistersTrait, StackTrait};
 use console::{
     network::prelude::*,
     program::{Literal, Register, Value},
@@ -71,12 +66,11 @@ impl<N: Network> Contains<N> {
 
 impl<N: Network> Contains<N> {
     /// Finalizes the command.
-    #[inline]
     pub fn finalize(
         &self,
-        stack: &(impl StackMatches<N> + StackProgram<N>),
+        stack: &impl StackTrait<N>,
         store: &impl FinalizeStoreTrait<N>,
-        registers: &mut (impl RegistersLoad<N> + RegistersStore<N>),
+        registers: &mut impl RegistersTrait<N>,
     ) -> Result<()> {
         // Determine the program ID and mapping name.
         let (program_id, mapping_name) = match self.mapping {
@@ -104,7 +98,6 @@ impl<N: Network> Contains<N> {
 
 impl<N: Network> Parser for Contains<N> {
     /// Parses a string into an operation.
-    #[inline]
     fn parse(string: &str) -> ParserResult<Self> {
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;

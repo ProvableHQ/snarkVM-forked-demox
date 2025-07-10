@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,10 +17,10 @@
 #![allow(clippy::too_many_arguments)]
 #![warn(clippy::cast_possible_truncation)]
 
-pub type Program<N> = crate::ProgramCore<N, Instruction<N>, Command<N>>;
-pub type Function<N> = crate::FunctionCore<N, Instruction<N>, Command<N>>;
-pub type Finalize<N> = crate::FinalizeCore<N, Command<N>>;
-pub type Closure<N> = crate::ClosureCore<N, Instruction<N>>;
+pub type Program<N> = crate::ProgramCore<N>;
+pub type Function<N> = crate::FunctionCore<N>;
+pub type Finalize<N> = crate::FinalizeCore<N>;
+pub type Closure<N> = crate::ClosureCore<N>;
 
 mod closure;
 pub use closure::*;
@@ -40,7 +40,7 @@ pub use logic::*;
 mod mapping;
 pub use mapping::*;
 
-pub mod traits;
+mod traits;
 pub use traits::*;
 
 mod bytes;
@@ -48,49 +48,58 @@ mod parse;
 mod serialize;
 
 use console::{
-    network::prelude::{
-        Debug,
-        Deserialize,
-        Deserializer,
-        Display,
-        Err,
-        Error,
-        ErrorKind,
-        Formatter,
-        FromBytes,
-        FromBytesDeserializer,
-        FromStr,
-        IoResult,
-        Network,
-        Parser,
-        ParserResult,
-        Read,
-        Result,
-        Sanitizer,
-        Serialize,
-        Serializer,
-        ToBytes,
-        ToBytesSerializer,
-        TypeName,
-        Write,
-        anyhow,
-        bail,
-        de,
-        ensure,
-        error,
-        fmt,
-        make_error,
-        many0,
-        many1,
-        map,
-        map_res,
-        tag,
-        take,
+    network::{
+        ConsensusVersion,
+        prelude::{
+            Debug,
+            Deserialize,
+            Deserializer,
+            Display,
+            Err,
+            Error,
+            ErrorKind,
+            Formatter,
+            FromBytes,
+            FromBytesDeserializer,
+            FromStr,
+            IoResult,
+            Network,
+            Parser,
+            ParserResult,
+            Read,
+            Result,
+            Sanitizer,
+            Serialize,
+            Serializer,
+            ToBytes,
+            ToBytesSerializer,
+            TypeName,
+            Write,
+            anyhow,
+            bail,
+            de,
+            ensure,
+            error,
+            fmt,
+            make_error,
+            many0,
+            many1,
+            map,
+            map_res,
+            tag,
+            take,
+        },
     },
     program::{Identifier, PlaintextType, ProgramID, RecordType, StructType},
 };
+use snarkvm_utilities::cfg_iter;
 
-use indexmap::IndexMap;
+use console::prelude::Itertools;
+use indexmap::{IndexMap, IndexSet};
+use std::collections::BTreeSet;
+
+#[cfg(not(feature = "serial"))]
+use rayon::prelude::*;
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 enum ProgramDefinition {
@@ -106,14 +115,14 @@ enum ProgramDefinition {
     Function,
 }
 
-#[derive(Clone, PartialEq, Eq)]
-pub struct ProgramCore<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> {
+#[derive(Clone)]
+pub struct ProgramCore<N: Network> {
     /// The ID of the program.
     id: ProgramID<N>,
     /// A map of the declared imports for the program.
     imports: IndexMap<ProgramID<N>, Import<N>>,
     /// A map of identifiers to their program declaration.
-    identifiers: IndexMap<Identifier<N>, ProgramDefinition>,
+    components: IndexMap<Identifier<N>, ProgramDefinition>,
     /// A map of the declared mappings for the program.
     mappings: IndexMap<Identifier<N>, Mapping<N>>,
     /// A map of the declared structs for the program.
@@ -121,454 +130,44 @@ pub struct ProgramCore<N: Network, Instruction: InstructionTrait<N>, Command: Co
     /// A map of the declared record types for the program.
     records: IndexMap<Identifier<N>, RecordType<N>>,
     /// A map of the declared closures for the program.
-    closures: IndexMap<Identifier<N>, ClosureCore<N, Instruction>>,
+    closures: IndexMap<Identifier<N>, ClosureCore<N>>,
     /// A map of the declared functions for the program.
-    functions: IndexMap<Identifier<N>, FunctionCore<N, Instruction, Command>>,
+    functions: IndexMap<Identifier<N>, FunctionCore<N>>,
 }
 
-impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ProgramCore<N, Instruction, Command> {
-    /// Initializes an empty program.
-    #[inline]
-    pub fn new(id: ProgramID<N>) -> Result<Self> {
-        // Ensure the program name is valid.
-        ensure!(!Self::is_reserved_keyword(id.name()), "Program name is invalid: {}", id.name());
-
-        Ok(Self {
-            id,
-            imports: IndexMap::new(),
-            identifiers: IndexMap::new(),
-            mappings: IndexMap::new(),
-            structs: IndexMap::new(),
-            records: IndexMap::new(),
-            closures: IndexMap::new(),
-            functions: IndexMap::new(),
-        })
-    }
-
-    /// Initializes the credits program.
-    #[inline]
-    pub fn credits() -> Result<Self> {
-        Self::from_str(include_str!("./resources/credits.aleo"))
-    }
-
-    /// Returns the ID of the program.
-    pub const fn id(&self) -> &ProgramID<N> {
-        &self.id
-    }
-
-    /// Returns the imports in the program.
-    pub const fn imports(&self) -> &IndexMap<ProgramID<N>, Import<N>> {
-        &self.imports
-    }
-
-    /// Returns the mappings in the program.
-    pub const fn mappings(&self) -> &IndexMap<Identifier<N>, Mapping<N>> {
-        &self.mappings
-    }
-
-    /// Returns the structs in the program.
-    pub const fn structs(&self) -> &IndexMap<Identifier<N>, StructType<N>> {
-        &self.structs
-    }
-
-    /// Returns the records in the program.
-    pub const fn records(&self) -> &IndexMap<Identifier<N>, RecordType<N>> {
-        &self.records
-    }
-
-    /// Returns the closures in the program.
-    pub const fn closures(&self) -> &IndexMap<Identifier<N>, ClosureCore<N, Instruction>> {
-        &self.closures
-    }
-
-    /// Returns the functions in the program.
-    pub const fn functions(&self) -> &IndexMap<Identifier<N>, FunctionCore<N, Instruction, Command>> {
-        &self.functions
-    }
-
-    /// Returns `true` if the program contains an import with the given program ID.
-    pub fn contains_import(&self, id: &ProgramID<N>) -> bool {
-        self.imports.contains_key(id)
-    }
-
-    /// Returns `true` if the program contains a mapping with the given name.
-    pub fn contains_mapping(&self, name: &Identifier<N>) -> bool {
-        self.mappings.contains_key(name)
-    }
-
-    /// Returns `true` if the program contains a struct with the given name.
-    pub fn contains_struct(&self, name: &Identifier<N>) -> bool {
-        self.structs.contains_key(name)
-    }
-
-    /// Returns `true` if the program contains a record with the given name.
-    pub fn contains_record(&self, name: &Identifier<N>) -> bool {
-        self.records.contains_key(name)
-    }
-
-    /// Returns `true` if the program contains a closure with the given name.
-    pub fn contains_closure(&self, name: &Identifier<N>) -> bool {
-        self.closures.contains_key(name)
-    }
-
-    /// Returns `true` if the program contains a function with the given name.
-    pub fn contains_function(&self, name: &Identifier<N>) -> bool {
-        self.functions.contains_key(name)
-    }
-
-    /// Returns the mapping with the given name.
-    pub fn get_mapping(&self, name: &Identifier<N>) -> Result<Mapping<N>> {
-        // Attempt to retrieve the mapping.
-        let mapping = self.mappings.get(name).cloned().ok_or_else(|| anyhow!("Mapping '{name}' is not defined."))?;
-        // Ensure the mapping name matches.
-        ensure!(mapping.name() == name, "Expected mapping '{name}', but found mapping '{}'", mapping.name());
-        // Return the mapping.
-        Ok(mapping)
-    }
-
-    /// Returns the struct with the given name.
-    pub fn get_struct(&self, name: &Identifier<N>) -> Result<&StructType<N>> {
-        // Attempt to retrieve the struct.
-        let struct_ = self.structs.get(name).ok_or_else(|| anyhow!("Struct '{name}' is not defined."))?;
-        // Ensure the struct name matches.
-        ensure!(struct_.name() == name, "Expected struct '{name}', but found struct '{}'", struct_.name());
-        // Ensure the struct contains members.
-        ensure!(!struct_.members().is_empty(), "Struct '{name}' is missing members.");
-        // Return the struct.
-        Ok(struct_)
-    }
-
-    /// Returns the record with the given name.
-    pub fn get_record(&self, name: &Identifier<N>) -> Result<&RecordType<N>> {
-        // Attempt to retrieve the record.
-        let record = self.records.get(name).ok_or_else(|| anyhow!("Record '{name}' is not defined."))?;
-        // Ensure the record name matches.
-        ensure!(record.name() == name, "Expected record '{name}', but found record '{}'", record.name());
-        // Return the record.
-        Ok(record)
-    }
-
-    /// Returns the closure with the given name.
-    pub fn get_closure(&self, name: &Identifier<N>) -> Result<ClosureCore<N, Instruction>> {
-        // Attempt to retrieve the closure.
-        let closure = self.closures.get(name).cloned().ok_or_else(|| anyhow!("Closure '{name}' is not defined."))?;
-        // Ensure the closure name matches.
-        ensure!(closure.name() == name, "Expected closure '{name}', but found closure '{}'", closure.name());
-        // Ensure there are input statements in the closure.
-        ensure!(!closure.inputs().is_empty(), "Cannot evaluate a closure without input statements");
-        // Ensure the number of inputs is within the allowed range.
-        ensure!(closure.inputs().len() <= N::MAX_INPUTS, "Closure exceeds maximum number of inputs");
-        // Ensure there are instructions in the closure.
-        ensure!(!closure.instructions().is_empty(), "Cannot evaluate a closure without instructions");
-        // Ensure the number of outputs is within the allowed range.
-        ensure!(closure.outputs().len() <= N::MAX_OUTPUTS, "Closure exceeds maximum number of outputs");
-        // Return the closure.
-        Ok(closure)
-    }
-
-    /// Returns the function with the given name.
-    pub fn get_function(&self, name: &Identifier<N>) -> Result<FunctionCore<N, Instruction, Command>> {
-        self.get_function_ref(name).cloned()
-    }
-
-    /// Returns a reference to the function with the given name.
-    pub fn get_function_ref(&self, name: &Identifier<N>) -> Result<&FunctionCore<N, Instruction, Command>> {
-        // Attempt to retrieve the function.
-        let function = self.functions.get(name).ok_or(anyhow!("Function '{}/{name}' is not defined.", self.id))?;
-        // Ensure the function name matches.
-        ensure!(function.name() == name, "Expected function '{name}', but found function '{}'", function.name());
-        // Ensure the number of inputs is within the allowed range.
-        ensure!(function.inputs().len() <= N::MAX_INPUTS, "Function exceeds maximum number of inputs");
-        // Ensure the number of instructions is within the allowed range.
-        ensure!(function.instructions().len() <= N::MAX_INSTRUCTIONS, "Function exceeds maximum instructions");
-        // Ensure the number of outputs is within the allowed range.
-        ensure!(function.outputs().len() <= N::MAX_OUTPUTS, "Function exceeds maximum number of outputs");
-        // Return the function.
-        Ok(function)
-    }
-}
-
-impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ProgramCore<N, Instruction, Command> {
-    /// Adds a new import statement to the program.
-    ///
-    /// # Errors
-    /// This method will halt if the imported program was previously added.
-    #[inline]
-    fn add_import(&mut self, import: Import<N>) -> Result<()> {
-        // Retrieve the imported program name.
-        let import_name = *import.name();
-
-        // Ensure that the number of imports is within the allowed range.
-        ensure!(self.imports.len() < N::MAX_IMPORTS, "Program exceeds the maximum number of imports");
-
-        // Ensure the import name is new.
-        ensure!(self.is_unique_name(&import_name), "'{import_name}' is already in use.");
-        // Ensure the import name is not a reserved opcode.
-        ensure!(!Self::is_reserved_opcode(&import_name.to_string()), "'{import_name}' is a reserved opcode.");
-        // Ensure the import name is not a reserved keyword.
-        ensure!(!Self::is_reserved_keyword(&import_name), "'{import_name}' is a reserved keyword.");
-
-        // Ensure the import is new.
-        ensure!(
-            !self.imports.contains_key(import.program_id()),
-            "Import '{}' is already defined.",
-            import.program_id()
-        );
-
-        // Add the import statement to the program.
-        if self.imports.insert(*import.program_id(), import.clone()).is_some() {
-            bail!("'{}' already exists in the program.", import.program_id())
+impl<N: Network> PartialEq for ProgramCore<N> {
+    /// Compares two programs for equality, verifying that the components are in the same order.
+    /// The order of the components must match to ensure that deployment tree is well-formed.
+    fn eq(&self, other: &Self) -> bool {
+        // Check that the number of components is the same.
+        if self.components.len() != other.components.len() {
+            return false;
         }
-        Ok(())
-    }
-
-    /// Adds a new mapping to the program.
-    ///
-    /// # Errors
-    /// This method will halt if the mapping name is already in use.
-    /// This method will halt if the mapping name is a reserved opcode or keyword.
-    #[inline]
-    fn add_mapping(&mut self, mapping: Mapping<N>) -> Result<()> {
-        // Retrieve the mapping name.
-        let mapping_name = *mapping.name();
-
-        // Ensure the program has not exceeded the maximum number of mappings.
-        ensure!(self.mappings.len() < N::MAX_MAPPINGS, "Program exceeds the maximum number of mappings");
-
-        // Ensure the mapping name is new.
-        ensure!(self.is_unique_name(&mapping_name), "'{mapping_name}' is already in use.");
-        // Ensure the mapping name is not a reserved keyword.
-        ensure!(!Self::is_reserved_keyword(&mapping_name), "'{mapping_name}' is a reserved keyword.");
-        // Ensure the mapping name is not a reserved opcode.
-        ensure!(!Self::is_reserved_opcode(&mapping_name.to_string()), "'{mapping_name}' is a reserved opcode.");
-
-        // Add the mapping name to the identifiers.
-        if self.identifiers.insert(mapping_name, ProgramDefinition::Mapping).is_some() {
-            bail!("'{mapping_name}' already exists in the program.")
-        }
-        // Add the mapping to the program.
-        if self.mappings.insert(mapping_name, mapping).is_some() {
-            bail!("'{mapping_name}' already exists in the program.")
-        }
-        Ok(())
-    }
-
-    /// Adds a new struct to the program.
-    ///
-    /// # Errors
-    /// This method will halt if the struct was previously added.
-    /// This method will halt if the struct name is already in use in the program.
-    /// This method will halt if the struct name is a reserved opcode or keyword.
-    /// This method will halt if any structs in the struct's members are not already defined.
-    #[inline]
-    fn add_struct(&mut self, struct_: StructType<N>) -> Result<()> {
-        // Retrieve the struct name.
-        let struct_name = *struct_.name();
-
-        // Ensure the program has not exceeded the maximum number of structs.
-        ensure!(self.structs.len() < N::MAX_STRUCTS, "Program exceeds the maximum number of structs.");
-
-        // Ensure the struct name is new.
-        ensure!(self.is_unique_name(&struct_name), "'{struct_name}' is already in use.");
-        // Ensure the struct name is not a reserved opcode.
-        ensure!(!Self::is_reserved_opcode(&struct_name.to_string()), "'{struct_name}' is a reserved opcode.");
-        // Ensure the struct name is not a reserved keyword.
-        ensure!(!Self::is_reserved_keyword(&struct_name), "'{struct_name}' is a reserved keyword.");
-
-        // Ensure the struct contains members.
-        ensure!(!struct_.members().is_empty(), "Struct '{struct_name}' is missing members.");
-
-        // Ensure all struct members are well-formed.
-        // Note: This design ensures cyclic references are not possible.
-        for (identifier, plaintext_type) in struct_.members() {
-            // Ensure the member name is not a reserved keyword.
-            ensure!(!Self::is_reserved_keyword(identifier), "'{identifier}' is a reserved keyword.");
-            // Ensure the member type is already defined in the program.
-            match plaintext_type {
-                PlaintextType::Literal(_) => continue,
-                PlaintextType::Struct(member_identifier) => {
-                    // Ensure the member struct name exists in the program.
-                    if !self.structs.contains_key(member_identifier) {
-                        bail!("'{member_identifier}' in struct '{}' is not defined.", struct_name)
-                    }
-                }
-                PlaintextType::Array(array_type) => {
-                    if let PlaintextType::Struct(struct_name) = array_type.base_element_type() {
-                        // Ensure the member struct name exists in the program.
-                        if !self.structs.contains_key(struct_name) {
-                            bail!("'{struct_name}' in array '{array_type}' is not defined.")
-                        }
-                    }
-                }
+        // Check that the components match in order.
+        for (left, right) in self.components.iter().zip_eq(other.components.iter()) {
+            if left != right {
+                return false;
             }
         }
-
-        // Add the struct name to the identifiers.
-        if self.identifiers.insert(struct_name, ProgramDefinition::Struct).is_some() {
-            bail!("'{}' already exists in the program.", struct_name)
-        }
-        // Add the struct to the program.
-        if self.structs.insert(struct_name, struct_).is_some() {
-            bail!("'{}' already exists in the program.", struct_name)
-        }
-        Ok(())
-    }
-
-    /// Adds a new record to the program.
-    ///
-    /// # Errors
-    /// This method will halt if the record was previously added.
-    /// This method will halt if the record name is already in use in the program.
-    /// This method will halt if the record name is a reserved opcode or keyword.
-    /// This method will halt if any records in the record's members are not already defined.
-    #[inline]
-    fn add_record(&mut self, record: RecordType<N>) -> Result<()> {
-        // Retrieve the record name.
-        let record_name = *record.name();
-
-        // Ensure the program has not exceeded the maximum number of records.
-        ensure!(self.records.len() < N::MAX_RECORDS, "Program exceeds the maximum number of records.");
-
-        // Ensure the record name is new.
-        ensure!(self.is_unique_name(&record_name), "'{record_name}' is already in use.");
-        // Ensure the record name is not a reserved opcode.
-        ensure!(!Self::is_reserved_opcode(&record_name.to_string()), "'{record_name}' is a reserved opcode.");
-        // Ensure the record name is not a reserved keyword.
-        ensure!(!Self::is_reserved_keyword(&record_name), "'{record_name}' is a reserved keyword.");
-
-        // Ensure all record entries are well-formed.
-        // Note: This design ensures cyclic references are not possible.
-        for (identifier, entry_type) in record.entries() {
-            // Ensure the member name is not a reserved keyword.
-            ensure!(!Self::is_reserved_keyword(identifier), "'{identifier}' is a reserved keyword.");
-            // Ensure the member type is already defined in the program.
-            match entry_type.plaintext_type() {
-                PlaintextType::Literal(_) => continue,
-                PlaintextType::Struct(identifier) => {
-                    if !self.structs.contains_key(identifier) {
-                        bail!("Struct '{identifier}' in record '{record_name}' is not defined.")
-                    }
-                }
-                PlaintextType::Array(array_type) => {
-                    if let PlaintextType::Struct(struct_name) = array_type.base_element_type() {
-                        // Ensure the member struct name exists in the program.
-                        if !self.structs.contains_key(struct_name) {
-                            bail!("'{struct_name}' in array '{array_type}' is not defined.")
-                        }
-                    }
-                }
-            }
-        }
-
-        // Add the record name to the identifiers.
-        if self.identifiers.insert(record_name, ProgramDefinition::Record).is_some() {
-            bail!("'{record_name}' already exists in the program.")
-        }
-        // Add the record to the program.
-        if self.records.insert(record_name, record).is_some() {
-            bail!("'{record_name}' already exists in the program.")
-        }
-        Ok(())
-    }
-
-    /// Adds a new closure to the program.
-    ///
-    /// # Errors
-    /// This method will halt if the closure was previously added.
-    /// This method will halt if the closure name is already in use in the program.
-    /// This method will halt if the closure name is a reserved opcode or keyword.
-    /// This method will halt if any registers are assigned more than once.
-    /// This method will halt if the registers are not incrementing monotonically.
-    /// This method will halt if an input type references a non-existent definition.
-    /// This method will halt if an operand register does not already exist in memory.
-    /// This method will halt if a destination register already exists in memory.
-    /// This method will halt if an output register does not already exist.
-    /// This method will halt if an output type references a non-existent definition.
-    #[inline]
-    fn add_closure(&mut self, closure: ClosureCore<N, Instruction>) -> Result<()> {
-        // Retrieve the closure name.
-        let closure_name = *closure.name();
-
-        // Ensure the program has not exceeded the maximum number of closures.
-        ensure!(self.closures.len() < N::MAX_CLOSURES, "Program exceeds the maximum number of closures.");
-
-        // Ensure the closure name is new.
-        ensure!(self.is_unique_name(&closure_name), "'{closure_name}' is already in use.");
-        // Ensure the closure name is not a reserved opcode.
-        ensure!(!Self::is_reserved_opcode(&closure_name.to_string()), "'{closure_name}' is a reserved opcode.");
-        // Ensure the closure name is not a reserved keyword.
-        ensure!(!Self::is_reserved_keyword(&closure_name), "'{closure_name}' is a reserved keyword.");
-
-        // Ensure there are input statements in the closure.
-        ensure!(!closure.inputs().is_empty(), "Cannot evaluate a closure without input statements");
-        // Ensure the number of inputs is within the allowed range.
-        ensure!(closure.inputs().len() <= N::MAX_INPUTS, "Closure exceeds maximum number of inputs");
-        // Ensure there are instructions in the closure.
-        ensure!(!closure.instructions().is_empty(), "Cannot evaluate a closure without instructions");
-        // Ensure the number of outputs is within the allowed range.
-        ensure!(closure.outputs().len() <= N::MAX_OUTPUTS, "Closure exceeds maximum number of outputs");
-
-        // Add the function name to the identifiers.
-        if self.identifiers.insert(closure_name, ProgramDefinition::Closure).is_some() {
-            bail!("'{closure_name}' already exists in the program.")
-        }
-        // Add the closure to the program.
-        if self.closures.insert(closure_name, closure).is_some() {
-            bail!("'{closure_name}' already exists in the program.")
-        }
-        Ok(())
-    }
-
-    /// Adds a new function to the program.
-    ///
-    /// # Errors
-    /// This method will halt if the function was previously added.
-    /// This method will halt if the function name is already in use in the program.
-    /// This method will halt if the function name is a reserved opcode or keyword.
-    /// This method will halt if any registers are assigned more than once.
-    /// This method will halt if the registers are not incrementing monotonically.
-    /// This method will halt if an input type references a non-existent definition.
-    /// This method will halt if an operand register does not already exist in memory.
-    /// This method will halt if a destination register already exists in memory.
-    /// This method will halt if an output register does not already exist.
-    /// This method will halt if an output type references a non-existent definition.
-    #[inline]
-    fn add_function(&mut self, function: FunctionCore<N, Instruction, Command>) -> Result<()> {
-        // Retrieve the function name.
-        let function_name = *function.name();
-
-        // Ensure the program has not exceeded the maximum number of functions.
-        ensure!(self.functions.len() < N::MAX_FUNCTIONS, "Program exceeds the maximum number of functions");
-
-        // Ensure the function name is new.
-        ensure!(self.is_unique_name(&function_name), "'{function_name}' is already in use.");
-        // Ensure the function name is not a reserved opcode.
-        ensure!(!Self::is_reserved_opcode(&function_name.to_string()), "'{function_name}' is a reserved opcode.");
-        // Ensure the function name is not a reserved keyword.
-        ensure!(!Self::is_reserved_keyword(&function_name), "'{function_name}' is a reserved keyword.");
-
-        // Ensure the number of inputs is within the allowed range.
-        ensure!(function.inputs().len() <= N::MAX_INPUTS, "Function exceeds maximum number of inputs");
-        // Ensure the number of instructions is within the allowed range.
-        ensure!(function.instructions().len() <= N::MAX_INSTRUCTIONS, "Function exceeds maximum instructions");
-        // Ensure the number of outputs is within the allowed range.
-        ensure!(function.outputs().len() <= N::MAX_OUTPUTS, "Function exceeds maximum number of outputs");
-
-        // Add the function name to the identifiers.
-        if self.identifiers.insert(function_name, ProgramDefinition::Function).is_some() {
-            bail!("'{function_name}' already exists in the program.")
-        }
-        // Add the function to the program.
-        if self.functions.insert(function_name, function).is_some() {
-            bail!("'{function_name}' already exists in the program.")
-        }
-        Ok(())
+        // Check that the remaining fields match.
+        self.id == other.id
+            && self.imports == other.imports
+            && self.mappings == other.mappings
+            && self.structs == other.structs
+            && self.records == other.records
+            && self.closures == other.closures
+            && self.functions == other.functions
     }
 }
 
-impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> ProgramCore<N, Instruction, Command> {
+impl<N: Network> Eq for ProgramCore<N> {}
+
+impl<N: Network> ProgramCore<N> {
+    /// A list of reserved keywords for Aleo programs, enforced at the parser level.
+    // New keywords should be enforced through `RESTRICTED_KEYWORDS` instead, if possible.
+    // Adding keywords to this list will require a backwards-compatible versioning for programs.
     #[rustfmt::skip]
-    const KEYWORDS: &'static [&'static str] = &[
+    pub const KEYWORDS: &'static [&'static str] = &[
         // Mode
         "const",
         "constant",
@@ -642,15 +241,459 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
         "type",
         "future",
     ];
+    /// A list of restricted keywords for Aleo programs, enforced at the VM-level for program hygiene.
+    /// Each entry is a tuple of the consensus version and a list of keywords.
+    /// If the current consensus version is greater than or equal to the specified version,
+    /// the keywords in the list should be restricted.
+    #[rustfmt::skip]
+    pub const RESTRICTED_KEYWORDS: &'static [(ConsensusVersion, &'static [&'static str])] = &[
+        (ConsensusVersion::V6, &["constructor"])
+    ];
+
+    /// Initializes an empty program.
+    #[inline]
+    pub fn new(id: ProgramID<N>) -> Result<Self> {
+        // Ensure the program name is valid.
+        ensure!(!Self::is_reserved_keyword(id.name()), "Program name is invalid: {}", id.name());
+
+        Ok(Self {
+            id,
+            imports: IndexMap::new(),
+            components: IndexMap::new(),
+            mappings: IndexMap::new(),
+            structs: IndexMap::new(),
+            records: IndexMap::new(),
+            closures: IndexMap::new(),
+            functions: IndexMap::new(),
+        })
+    }
+
+    /// Initializes the credits program.
+    #[inline]
+    pub fn credits() -> Result<Self> {
+        Self::from_str(include_str!("./resources/credits.aleo"))
+    }
+
+    /// Returns the ID of the program.
+    pub const fn id(&self) -> &ProgramID<N> {
+        &self.id
+    }
+
+    /// Returns the imports in the program.
+    pub const fn imports(&self) -> &IndexMap<ProgramID<N>, Import<N>> {
+        &self.imports
+    }
+
+    /// Returns the mappings in the program.
+    pub const fn mappings(&self) -> &IndexMap<Identifier<N>, Mapping<N>> {
+        &self.mappings
+    }
+
+    /// Returns the structs in the program.
+    pub const fn structs(&self) -> &IndexMap<Identifier<N>, StructType<N>> {
+        &self.structs
+    }
+
+    /// Returns the records in the program.
+    pub const fn records(&self) -> &IndexMap<Identifier<N>, RecordType<N>> {
+        &self.records
+    }
+
+    /// Returns the closures in the program.
+    pub const fn closures(&self) -> &IndexMap<Identifier<N>, ClosureCore<N>> {
+        &self.closures
+    }
+
+    /// Returns the functions in the program.
+    pub const fn functions(&self) -> &IndexMap<Identifier<N>, FunctionCore<N>> {
+        &self.functions
+    }
+
+    /// Returns `true` if the program contains an import with the given program ID.
+    pub fn contains_import(&self, id: &ProgramID<N>) -> bool {
+        self.imports.contains_key(id)
+    }
+
+    /// Returns `true` if the program contains a mapping with the given name.
+    pub fn contains_mapping(&self, name: &Identifier<N>) -> bool {
+        self.mappings.contains_key(name)
+    }
+
+    /// Returns `true` if the program contains a struct with the given name.
+    pub fn contains_struct(&self, name: &Identifier<N>) -> bool {
+        self.structs.contains_key(name)
+    }
+
+    /// Returns `true` if the program contains a record with the given name.
+    pub fn contains_record(&self, name: &Identifier<N>) -> bool {
+        self.records.contains_key(name)
+    }
+
+    /// Returns `true` if the program contains a closure with the given name.
+    pub fn contains_closure(&self, name: &Identifier<N>) -> bool {
+        self.closures.contains_key(name)
+    }
+
+    /// Returns `true` if the program contains a function with the given name.
+    pub fn contains_function(&self, name: &Identifier<N>) -> bool {
+        self.functions.contains_key(name)
+    }
+
+    /// Returns the mapping with the given name.
+    pub fn get_mapping(&self, name: &Identifier<N>) -> Result<Mapping<N>> {
+        // Attempt to retrieve the mapping.
+        let mapping = self.mappings.get(name).cloned().ok_or_else(|| anyhow!("Mapping '{name}' is not defined."))?;
+        // Ensure the mapping name matches.
+        ensure!(mapping.name() == name, "Expected mapping '{name}', but found mapping '{}'", mapping.name());
+        // Return the mapping.
+        Ok(mapping)
+    }
+
+    /// Returns the struct with the given name.
+    pub fn get_struct(&self, name: &Identifier<N>) -> Result<&StructType<N>> {
+        // Attempt to retrieve the struct.
+        let struct_ = self.structs.get(name).ok_or_else(|| anyhow!("Struct '{name}' is not defined."))?;
+        // Ensure the struct name matches.
+        ensure!(struct_.name() == name, "Expected struct '{name}', but found struct '{}'", struct_.name());
+        // Ensure the struct contains members.
+        ensure!(!struct_.members().is_empty(), "Struct '{name}' is missing members.");
+        // Return the struct.
+        Ok(struct_)
+    }
+
+    /// Returns the record with the given name.
+    pub fn get_record(&self, name: &Identifier<N>) -> Result<&RecordType<N>> {
+        // Attempt to retrieve the record.
+        let record = self.records.get(name).ok_or_else(|| anyhow!("Record '{name}' is not defined."))?;
+        // Ensure the record name matches.
+        ensure!(record.name() == name, "Expected record '{name}', but found record '{}'", record.name());
+        // Return the record.
+        Ok(record)
+    }
+
+    /// Returns the closure with the given name.
+    pub fn get_closure(&self, name: &Identifier<N>) -> Result<ClosureCore<N>> {
+        // Attempt to retrieve the closure.
+        let closure = self.closures.get(name).cloned().ok_or_else(|| anyhow!("Closure '{name}' is not defined."))?;
+        // Ensure the closure name matches.
+        ensure!(closure.name() == name, "Expected closure '{name}', but found closure '{}'", closure.name());
+        // Ensure there are input statements in the closure.
+        ensure!(!closure.inputs().is_empty(), "Cannot evaluate a closure without input statements");
+        // Ensure the number of inputs is within the allowed range.
+        ensure!(closure.inputs().len() <= N::MAX_INPUTS, "Closure exceeds maximum number of inputs");
+        // Ensure there are instructions in the closure.
+        ensure!(!closure.instructions().is_empty(), "Cannot evaluate a closure without instructions");
+        // Ensure the number of outputs is within the allowed range.
+        ensure!(closure.outputs().len() <= N::MAX_OUTPUTS, "Closure exceeds maximum number of outputs");
+        // Return the closure.
+        Ok(closure)
+    }
+
+    /// Returns the function with the given name.
+    pub fn get_function(&self, name: &Identifier<N>) -> Result<FunctionCore<N>> {
+        self.get_function_ref(name).cloned()
+    }
+
+    /// Returns a reference to the function with the given name.
+    pub fn get_function_ref(&self, name: &Identifier<N>) -> Result<&FunctionCore<N>> {
+        // Attempt to retrieve the function.
+        let function = self.functions.get(name).ok_or(anyhow!("Function '{}/{name}' is not defined.", self.id))?;
+        // Ensure the function name matches.
+        ensure!(function.name() == name, "Expected function '{name}', but found function '{}'", function.name());
+        // Ensure the number of inputs is within the allowed range.
+        ensure!(function.inputs().len() <= N::MAX_INPUTS, "Function exceeds maximum number of inputs");
+        // Ensure the number of instructions is within the allowed range.
+        ensure!(function.instructions().len() <= N::MAX_INSTRUCTIONS, "Function exceeds maximum instructions");
+        // Ensure the number of outputs is within the allowed range.
+        ensure!(function.outputs().len() <= N::MAX_OUTPUTS, "Function exceeds maximum number of outputs");
+        // Return the function.
+        Ok(function)
+    }
+
+    /// Adds a new import statement to the program.
+    ///
+    /// # Errors
+    /// This method will halt if the imported program was previously added.
+    #[inline]
+    fn add_import(&mut self, import: Import<N>) -> Result<()> {
+        // Retrieve the imported program name.
+        let import_name = *import.name();
+
+        // Ensure that the number of imports is within the allowed range.
+        ensure!(self.imports.len() < N::MAX_IMPORTS, "Program exceeds the maximum number of imports");
+
+        // Ensure the import name is new.
+        ensure!(self.is_unique_name(&import_name), "'{import_name}' is already in use.");
+        // Ensure the import name is not a reserved opcode.
+        ensure!(!Self::is_reserved_opcode(&import_name.to_string()), "'{import_name}' is a reserved opcode.");
+        // Ensure the import name is not a reserved keyword.
+        ensure!(!Self::is_reserved_keyword(&import_name), "'{import_name}' is a reserved keyword.");
+
+        // Ensure the import is new.
+        ensure!(
+            !self.imports.contains_key(import.program_id()),
+            "Import '{}' is already defined.",
+            import.program_id()
+        );
+
+        // Add the import statement to the program.
+        if self.imports.insert(*import.program_id(), import.clone()).is_some() {
+            bail!("'{}' already exists in the program.", import.program_id())
+        }
+        Ok(())
+    }
+
+    /// Adds a new mapping to the program.
+    ///
+    /// # Errors
+    /// This method will halt if the mapping name is already in use.
+    /// This method will halt if the mapping name is a reserved opcode or keyword.
+    #[inline]
+    fn add_mapping(&mut self, mapping: Mapping<N>) -> Result<()> {
+        // Retrieve the mapping name.
+        let mapping_name = *mapping.name();
+
+        // Ensure the program has not exceeded the maximum number of mappings.
+        ensure!(self.mappings.len() < N::MAX_MAPPINGS, "Program exceeds the maximum number of mappings");
+
+        // Ensure the mapping name is new.
+        ensure!(self.is_unique_name(&mapping_name), "'{mapping_name}' is already in use.");
+        // Ensure the mapping name is not a reserved keyword.
+        ensure!(!Self::is_reserved_keyword(&mapping_name), "'{mapping_name}' is a reserved keyword.");
+        // Ensure the mapping name is not a reserved opcode.
+        ensure!(!Self::is_reserved_opcode(&mapping_name.to_string()), "'{mapping_name}' is a reserved opcode.");
+
+        // Add the mapping name to the identifiers.
+        if self.components.insert(mapping_name, ProgramDefinition::Mapping).is_some() {
+            bail!("'{mapping_name}' already exists in the program.")
+        }
+        // Add the mapping to the program.
+        if self.mappings.insert(mapping_name, mapping).is_some() {
+            bail!("'{mapping_name}' already exists in the program.")
+        }
+        Ok(())
+    }
+
+    /// Adds a new struct to the program.
+    ///
+    /// # Errors
+    /// This method will halt if the struct was previously added.
+    /// This method will halt if the struct name is already in use in the program.
+    /// This method will halt if the struct name is a reserved opcode or keyword.
+    /// This method will halt if any structs in the struct's members are not already defined.
+    #[inline]
+    fn add_struct(&mut self, struct_: StructType<N>) -> Result<()> {
+        // Retrieve the struct name.
+        let struct_name = *struct_.name();
+
+        // Ensure the program has not exceeded the maximum number of structs.
+        ensure!(self.structs.len() < N::MAX_STRUCTS, "Program exceeds the maximum number of structs.");
+
+        // Ensure the struct name is new.
+        ensure!(self.is_unique_name(&struct_name), "'{struct_name}' is already in use.");
+        // Ensure the struct name is not a reserved opcode.
+        ensure!(!Self::is_reserved_opcode(&struct_name.to_string()), "'{struct_name}' is a reserved opcode.");
+        // Ensure the struct name is not a reserved keyword.
+        ensure!(!Self::is_reserved_keyword(&struct_name), "'{struct_name}' is a reserved keyword.");
+
+        // Ensure the struct contains members.
+        ensure!(!struct_.members().is_empty(), "Struct '{struct_name}' is missing members.");
+
+        // Ensure all struct members are well-formed.
+        // Note: This design ensures cyclic references are not possible.
+        for (identifier, plaintext_type) in struct_.members() {
+            // Ensure the member name is not a reserved keyword.
+            ensure!(!Self::is_reserved_keyword(identifier), "'{identifier}' is a reserved keyword.");
+            // Ensure the member type is already defined in the program.
+            match plaintext_type {
+                PlaintextType::Literal(_) => continue,
+                PlaintextType::Struct(member_identifier) => {
+                    // Ensure the member struct name exists in the program.
+                    if !self.structs.contains_key(member_identifier) {
+                        bail!("'{member_identifier}' in struct '{}' is not defined.", struct_name)
+                    }
+                }
+                PlaintextType::Array(array_type) => {
+                    if let PlaintextType::Struct(struct_name) = array_type.base_element_type() {
+                        // Ensure the member struct name exists in the program.
+                        if !self.structs.contains_key(struct_name) {
+                            bail!("'{struct_name}' in array '{array_type}' is not defined.")
+                        }
+                    }
+                }
+            }
+        }
+
+        // Add the struct name to the identifiers.
+        if self.components.insert(struct_name, ProgramDefinition::Struct).is_some() {
+            bail!("'{}' already exists in the program.", struct_name)
+        }
+        // Add the struct to the program.
+        if self.structs.insert(struct_name, struct_).is_some() {
+            bail!("'{}' already exists in the program.", struct_name)
+        }
+        Ok(())
+    }
+
+    /// Adds a new record to the program.
+    ///
+    /// # Errors
+    /// This method will halt if the record was previously added.
+    /// This method will halt if the record name is already in use in the program.
+    /// This method will halt if the record name is a reserved opcode or keyword.
+    /// This method will halt if any records in the record's members are not already defined.
+    #[inline]
+    fn add_record(&mut self, record: RecordType<N>) -> Result<()> {
+        // Retrieve the record name.
+        let record_name = *record.name();
+
+        // Ensure the program has not exceeded the maximum number of records.
+        ensure!(self.records.len() < N::MAX_RECORDS, "Program exceeds the maximum number of records.");
+
+        // Ensure the record name is new.
+        ensure!(self.is_unique_name(&record_name), "'{record_name}' is already in use.");
+        // Ensure the record name is not a reserved opcode.
+        ensure!(!Self::is_reserved_opcode(&record_name.to_string()), "'{record_name}' is a reserved opcode.");
+        // Ensure the record name is not a reserved keyword.
+        ensure!(!Self::is_reserved_keyword(&record_name), "'{record_name}' is a reserved keyword.");
+
+        // Ensure all record entries are well-formed.
+        // Note: This design ensures cyclic references are not possible.
+        for (identifier, entry_type) in record.entries() {
+            // Ensure the member name is not a reserved keyword.
+            ensure!(!Self::is_reserved_keyword(identifier), "'{identifier}' is a reserved keyword.");
+            // Ensure the member type is already defined in the program.
+            match entry_type.plaintext_type() {
+                PlaintextType::Literal(_) => continue,
+                PlaintextType::Struct(identifier) => {
+                    if !self.structs.contains_key(identifier) {
+                        bail!("Struct '{identifier}' in record '{record_name}' is not defined.")
+                    }
+                }
+                PlaintextType::Array(array_type) => {
+                    if let PlaintextType::Struct(struct_name) = array_type.base_element_type() {
+                        // Ensure the member struct name exists in the program.
+                        if !self.structs.contains_key(struct_name) {
+                            bail!("'{struct_name}' in array '{array_type}' is not defined.")
+                        }
+                    }
+                }
+            }
+        }
+
+        // Add the record name to the identifiers.
+        if self.components.insert(record_name, ProgramDefinition::Record).is_some() {
+            bail!("'{record_name}' already exists in the program.")
+        }
+        // Add the record to the program.
+        if self.records.insert(record_name, record).is_some() {
+            bail!("'{record_name}' already exists in the program.")
+        }
+        Ok(())
+    }
+
+    /// Adds a new closure to the program.
+    ///
+    /// # Errors
+    /// This method will halt if the closure was previously added.
+    /// This method will halt if the closure name is already in use in the program.
+    /// This method will halt if the closure name is a reserved opcode or keyword.
+    /// This method will halt if any registers are assigned more than once.
+    /// This method will halt if the registers are not incrementing monotonically.
+    /// This method will halt if an input type references a non-existent definition.
+    /// This method will halt if an operand register does not already exist in memory.
+    /// This method will halt if a destination register already exists in memory.
+    /// This method will halt if an output register does not already exist.
+    /// This method will halt if an output type references a non-existent definition.
+    #[inline]
+    fn add_closure(&mut self, closure: ClosureCore<N>) -> Result<()> {
+        // Retrieve the closure name.
+        let closure_name = *closure.name();
+
+        // Ensure the program has not exceeded the maximum number of closures.
+        ensure!(self.closures.len() < N::MAX_CLOSURES, "Program exceeds the maximum number of closures.");
+
+        // Ensure the closure name is new.
+        ensure!(self.is_unique_name(&closure_name), "'{closure_name}' is already in use.");
+        // Ensure the closure name is not a reserved opcode.
+        ensure!(!Self::is_reserved_opcode(&closure_name.to_string()), "'{closure_name}' is a reserved opcode.");
+        // Ensure the closure name is not a reserved keyword.
+        ensure!(!Self::is_reserved_keyword(&closure_name), "'{closure_name}' is a reserved keyword.");
+
+        // Ensure there are input statements in the closure.
+        ensure!(!closure.inputs().is_empty(), "Cannot evaluate a closure without input statements");
+        // Ensure the number of inputs is within the allowed range.
+        ensure!(closure.inputs().len() <= N::MAX_INPUTS, "Closure exceeds maximum number of inputs");
+        // Ensure there are instructions in the closure.
+        ensure!(!closure.instructions().is_empty(), "Cannot evaluate a closure without instructions");
+        // Ensure the number of outputs is within the allowed range.
+        ensure!(closure.outputs().len() <= N::MAX_OUTPUTS, "Closure exceeds maximum number of outputs");
+
+        // Add the function name to the identifiers.
+        if self.components.insert(closure_name, ProgramDefinition::Closure).is_some() {
+            bail!("'{closure_name}' already exists in the program.")
+        }
+        // Add the closure to the program.
+        if self.closures.insert(closure_name, closure).is_some() {
+            bail!("'{closure_name}' already exists in the program.")
+        }
+        Ok(())
+    }
+
+    /// Adds a new function to the program.
+    ///
+    /// # Errors
+    /// This method will halt if the function was previously added.
+    /// This method will halt if the function name is already in use in the program.
+    /// This method will halt if the function name is a reserved opcode or keyword.
+    /// This method will halt if any registers are assigned more than once.
+    /// This method will halt if the registers are not incrementing monotonically.
+    /// This method will halt if an input type references a non-existent definition.
+    /// This method will halt if an operand register does not already exist in memory.
+    /// This method will halt if a destination register already exists in memory.
+    /// This method will halt if an output register does not already exist.
+    /// This method will halt if an output type references a non-existent definition.
+    #[inline]
+    fn add_function(&mut self, function: FunctionCore<N>) -> Result<()> {
+        // Retrieve the function name.
+        let function_name = *function.name();
+
+        // Ensure the program has not exceeded the maximum number of functions.
+        ensure!(self.functions.len() < N::MAX_FUNCTIONS, "Program exceeds the maximum number of functions");
+
+        // Ensure the function name is new.
+        ensure!(self.is_unique_name(&function_name), "'{function_name}' is already in use.");
+        // Ensure the function name is not a reserved opcode.
+        ensure!(!Self::is_reserved_opcode(&function_name.to_string()), "'{function_name}' is a reserved opcode.");
+        // Ensure the function name is not a reserved keyword.
+        ensure!(!Self::is_reserved_keyword(&function_name), "'{function_name}' is a reserved keyword.");
+
+        // Ensure the number of inputs is within the allowed range.
+        ensure!(function.inputs().len() <= N::MAX_INPUTS, "Function exceeds maximum number of inputs");
+        // Ensure the number of instructions is within the allowed range.
+        ensure!(function.instructions().len() <= N::MAX_INSTRUCTIONS, "Function exceeds maximum instructions");
+        // Ensure the number of outputs is within the allowed range.
+        ensure!(function.outputs().len() <= N::MAX_OUTPUTS, "Function exceeds maximum number of outputs");
+
+        // Add the function name to the identifiers.
+        if self.components.insert(function_name, ProgramDefinition::Function).is_some() {
+            bail!("'{function_name}' already exists in the program.")
+        }
+        // Add the function to the program.
+        if self.functions.insert(function_name, function).is_some() {
+            bail!("'{function_name}' already exists in the program.")
+        }
+        Ok(())
+    }
 
     /// Returns `true` if the given name does not already exist in the program.
     fn is_unique_name(&self, name: &Identifier<N>) -> bool {
-        !self.identifiers.contains_key(name)
+        !self.components.contains_key(name)
     }
 
     /// Returns `true` if the given name is a reserved opcode.
     pub fn is_reserved_opcode(name: &str) -> bool {
-        Instruction::is_reserved_opcode(name)
+        Instruction::<N>::is_reserved_opcode(name)
     }
 
     /// Returns `true` if the given name uses a reserved keyword.
@@ -660,11 +703,130 @@ impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> Pro
         // Check if the name is a keyword.
         Self::KEYWORDS.iter().any(|keyword| *keyword == name)
     }
+
+    /// Returns an iterator over the restricted keywords for the given consensus version.
+    pub fn restricted_keywords_for_consensus_version(
+        consensus_version: ConsensusVersion,
+    ) -> impl Iterator<Item = &'static str> {
+        Self::RESTRICTED_KEYWORDS
+            .iter()
+            .filter(move |(version, _)| *version <= consensus_version)
+            .flat_map(|(_, keywords)| *keywords)
+            .copied()
+    }
+
+    /// Checks a program for restricted keywords for the given consensus version.
+    /// Returns an error if any restricted keywords are found.
+    /// Note: Restrictions are not enforced on the import names in case they were deployed before the restrictions were added.
+    pub fn check_restricted_keywords_for_consensus_version(&self, consensus_version: ConsensusVersion) -> Result<()> {
+        // Get all keywords that are restricted for the consensus version.
+        let keywords =
+            Program::<N>::restricted_keywords_for_consensus_version(consensus_version).collect::<IndexSet<_>>();
+        // Check if the program name is a restricted keywords.
+        let program_name = self.id().name().to_string();
+        if keywords.contains(&program_name.as_str()) {
+            bail!("Program name '{program_name}' is a restricted keyword for the current consensus version")
+        }
+        // Check that all top-level program components are not restricted keywords.
+        for identifier in self.components.keys() {
+            if keywords.contains(identifier.to_string().as_str()) {
+                bail!("Program component '{identifier}' is a restricted keyword for the current consensus version")
+            }
+        }
+        // Check that all record entry names are not restricted keywords.
+        for record_type in self.records().values() {
+            for entry_name in record_type.entries().keys() {
+                if keywords.contains(entry_name.to_string().as_str()) {
+                    bail!("Record entry '{entry_name}' is a restricted keyword for the current consensus version")
+                }
+            }
+        }
+        // Check that all struct member names are not restricted keywords.
+        for struct_type in self.structs().values() {
+            for member_name in struct_type.members().keys() {
+                if keywords.contains(member_name.to_string().as_str()) {
+                    bail!("Struct member '{member_name}' is a restricted keyword for the current consensus version")
+                }
+            }
+        }
+        // Check that all `finalize` positions.
+        // Note: It is sufficient to only check the positions in `FinalizeCore` since `FinalizeTypes::initialize` checks that every
+        // `Branch` instruction targets a valid position.
+        for function in self.functions().values() {
+            if let Some(finalize_logic) = function.finalize_logic() {
+                for position in finalize_logic.positions().keys() {
+                    if keywords.contains(position.to_string().as_str()) {
+                        bail!(
+                            "Finalize position '{position}' is a restricted keyword for the current consensus version"
+                        )
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Checks that the program structure is well-formed under the following rules:
+    ///  1. The program ID must not contain the keyword "aleo" in the program name.
+    ///  2. The record name must not contain the keyword "aleo".
+    ///  3. Record names must not be prefixes of other record names.
+    ///  4. Record entry names must not contain the keyword "aleo".
+    pub fn check_program_naming_structure(&self) -> Result<()> {
+        // 1. Check if the program ID contains the "aleo" substring
+        let program_id = self.id().name().to_string();
+        if program_id.contains("aleo") {
+            bail!("Program ID '{program_id}' can't contain the reserved keyword 'aleo'.");
+        }
+
+        // Fetch the record names in a sorted BTreeSet.
+        let record_names: BTreeSet<String> = self.records.keys().map(|name| name.to_string()).collect();
+
+        // 2. Check if any record name contains the "aleo" substring.
+        for record_name in &record_names {
+            if record_name.contains("aleo") {
+                bail!("Record name '{record_name}' can't contain the reserved keyword 'aleo'.");
+            }
+        }
+
+        // 3. Check if any of the record names are a prefix of another.
+        let mut record_names_iter = record_names.iter();
+        let mut previous_record_name = record_names_iter.next();
+        for record_name in record_names_iter {
+            if let Some(previous) = previous_record_name {
+                if record_name.starts_with(previous) {
+                    bail!("Record name '{previous}' can't be a prefix of record name '{record_name}'.");
+                }
+            }
+            previous_record_name = Some(record_name);
+        }
+
+        // 4. Check if any record entry names contain the "aleo" substring.
+        for record_entry_name in self.records.values().flat_map(|record_type| record_type.entries().keys()) {
+            if record_entry_name.to_string().contains("aleo") {
+                bail!("Record entry name '{record_entry_name}' can't contain the reserved keyword 'aleo'.");
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Checks that the program does not make external calls to `credits.aleo/upgrade`.
+    pub fn check_external_calls_to_credits_upgrade(&self) -> Result<()> {
+        // Check if the program makes external calls to `credits.aleo/upgrade`.
+        cfg_iter!(self.functions()).flat_map(|(_, function)| function.instructions()).try_for_each(|instruction| {
+            if let Some(CallOperator::Locator(locator)) = instruction.call_operator() {
+                // Check if the locator is restricted.
+                if locator.to_string() == "credits.aleo/upgrade" {
+                    bail!("External call to restricted locator '{}'", locator)
+                }
+            }
+            Ok(())
+        })?;
+        Ok(())
+    }
 }
 
-impl<N: Network, Instruction: InstructionTrait<N>, Command: CommandTrait<N>> TypeName
-    for ProgramCore<N, Instruction, Command>
-{
+impl<N: Network> TypeName for ProgramCore<N> {
     /// Returns the type name as a string.
     #[inline]
     fn type_name() -> &'static str {

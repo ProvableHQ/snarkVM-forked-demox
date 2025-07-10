@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,8 +25,8 @@ use console::{
     prelude::{Itertools, ToBits as TBits, Uniform, Zero},
     program::{Field, Identifier, Literal, LiteralType, Value},
 };
-use snarkvm_synthesizer_process::{CallStack, Process, Registers, Stack, StackProgramTypes};
-use snarkvm_synthesizer_program::{Instruction, Program, RegistersStoreCircuit, StackProgram};
+use snarkvm_synthesizer_process::{CallStack, Process, Registers, Stack};
+use snarkvm_synthesizer_program::{Instruction, Program, RegistersCircuit as _, StackTrait};
 
 use aleo_std::prelude::{finish, lap, timer};
 use anyhow::{Result, anyhow, bail, ensure};

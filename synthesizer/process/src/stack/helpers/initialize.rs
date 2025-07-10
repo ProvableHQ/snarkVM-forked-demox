@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,37 +19,42 @@ impl<N: Network> Stack<N> {
     /// Initializes a new stack, given the process and program.
     #[inline]
     pub(crate) fn initialize(process: &Process<N>, program: &Program<N>) -> Result<Self> {
+        // Compute the appropriate edition for the stack.
+        let edition = match process.contains_program(program.id()) {
+            // If the program does not exist in the process, use edition zero.
+            false => 0u16,
+            // If the new program matches the existing program, use the existing edition.
+            // Otherwise, increment the edition.
+            true => {
+                // Retrieve the stack for the program.
+                let stack = process.get_stack(program.id())?;
+                // Retrieve the program edition.
+                let edition = *stack.program_edition();
+                // Increment the edition.
+                edition.checked_add(1).ok_or_else(|| anyhow!("Overflow while incrementing the program edition"))?
+            }
+        };
         // Construct the stack for the program.
         let mut stack = Self {
             program: program.clone(),
-            external_stacks: Default::default(),
+            stacks: Arc::downgrade(&process.stacks),
             register_types: Default::default(),
             finalize_types: Default::default(),
             universal_srs: process.universal_srs().clone(),
             proving_keys: Default::default(),
             verifying_keys: Default::default(),
-            number_of_calls: Default::default(),
-            finalize_costs: Default::default(),
-            program_depth: 0,
             program_address: program.id().to_address()?,
+            program_edition: U16::new(edition),
         };
 
         // Add all the imports into the stack.
         for import in program.imports().keys() {
+            // Ensure that the program does not import itself.
+            ensure!(import != program.id(), "Program cannot import itself");
             // Ensure the program imports all exist in the process already.
             if !process.contains_program(import) {
                 bail!("Cannot add program '{}' because its import '{import}' must be added first", program.id())
             }
-            // Retrieve the external stack for the import program ID.
-            let external_stack = process.get_stack(import)?;
-            // Add the external stack to the stack.
-            stack.insert_external_stack(external_stack.clone())?;
-            // Update the program depth, checking that it does not exceed the maximum call depth.
-            stack.program_depth = std::cmp::max(stack.program_depth, external_stack.program_depth() + 1);
-            ensure!(
-                stack.program_depth <= N::MAX_PROGRAM_DEPTH,
-                "Program depth exceeds the maximum allowed call depth"
-            );
         }
         // Add the program closures to the stack.
         for closure in program.closures().values() {
@@ -62,29 +67,8 @@ impl<N: Network> Stack<N> {
             // Add the function to the stack.
             stack.insert_function(function)?;
             // Determine the number of calls for the function.
-            let mut num_calls = 1;
-            for instruction in function.instructions() {
-                if let Instruction::Call(call) = instruction {
-                    // Determine if this is a function call.
-                    if call.is_function_call(&stack)? {
-                        // Increment by the number of calls.
-                        num_calls += match call.operator() {
-                            CallOperator::Locator(locator) => stack
-                                .get_external_stack(locator.program_id())?
-                                .get_number_of_calls(locator.resource())?,
-                            CallOperator::Resource(resource) => stack.get_number_of_calls(resource)?,
-                        };
-                    }
-                }
-            }
-            // Check that the number of calls does not exceed the maximum.
-            // Note that one transition is reserved for the fee.
-            ensure!(
-                num_calls < ledger_block::Transaction::<N>::MAX_TRANSITIONS,
-                "Number of calls exceeds the maximum allowed number of transitions"
-            );
-            // Add the number of calls to the stack.
-            stack.number_of_calls.insert(*function.name(), num_calls);
+            // This includes a safety check for the maximum number of calls.
+            stack.get_number_of_calls(function.name())?;
 
             // Get the finalize cost.
             let finalize_cost = cost_in_microcredits_v2(&stack, function.name())?;
@@ -95,7 +79,6 @@ impl<N: Network> Stack<N> {
                 function.name(),
                 N::TRANSACTION_SPEND_LIMIT
             );
-            stack.finalize_costs.insert(*function.name(), finalize_cost);
         }
 
         // Return the stack.
@@ -104,23 +87,6 @@ impl<N: Network> Stack<N> {
 }
 
 impl<N: Network> Stack<N> {
-    /// Inserts the given external stack to the stack.
-    #[inline]
-    fn insert_external_stack(&mut self, external_stack: Arc<Stack<N>>) -> Result<()> {
-        // Retrieve the program ID.
-        let program_id = *external_stack.program_id();
-        // Ensure the external stack is not already added.
-        ensure!(!self.external_stacks.contains_key(&program_id), "Program '{program_id}' already exists");
-        // Ensure the program exists in the main program imports.
-        ensure!(self.program.contains_import(&program_id), "'{program_id}' does not exist in the main program imports");
-        // Ensure the external stack is not for the main program.
-        ensure!(self.program.id() != external_stack.program_id(), "External stack program cannot be the main program");
-        // Add the external stack to the stack.
-        self.external_stacks.insert(program_id, external_stack);
-        // Return success.
-        Ok(())
-    }
-
     /// Inserts the given closure to the stack.
     #[inline]
     fn insert_closure(&mut self, closure: &Closure<N>) -> Result<()> {

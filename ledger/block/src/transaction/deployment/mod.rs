@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -57,11 +57,10 @@ impl<N: Network> Deployment<N> {
     pub fn check_is_ordered(&self) -> Result<()> {
         let program_id = self.program.id();
 
-        // Ensure the edition matches.
+        // Ensure the edition is either zero or one.
         ensure!(
-            self.edition == N::EDITION,
-            "Deployed the wrong edition (expected '{}', found '{}').",
-            N::EDITION,
+            self.edition == 0 || self.edition == 1,
+            "Deployed the wrong edition (expected 0 or 1, found '{}').",
             self.edition
         );
         // Ensure the program contains functions.
@@ -79,6 +78,13 @@ impl<N: Network> Deployment<N> {
         if self.program.functions().len() != self.verifying_keys.len() {
             bail!("Deployment has an incorrect number of verifying keys, according to the program.");
         }
+
+        // Ensure the number of functions does not exceed the maximum.
+        ensure!(
+            self.program.functions().len() <= N::MAX_FUNCTIONS,
+            "Deployment has too many functions (maximum is '{}')",
+            N::MAX_FUNCTIONS
+        );
 
         // Ensure the function and verifying keys correspond.
         for ((function_name, function), (name, _)) in self.program.functions().iter().zip_eq(&self.verifying_keys) {
@@ -186,7 +192,7 @@ pub mod test_helpers {
     type CurrentNetwork = MainnetV0;
     type CurrentAleo = circuit::network::AleoV0;
 
-    pub(crate) fn sample_deployment(rng: &mut TestRng) -> Deployment<CurrentNetwork> {
+    pub(crate) fn sample_deployment(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
         static INSTANCE: OnceCell<Deployment<CurrentNetwork>> = OnceCell::new();
         INSTANCE
             .get_or_init(|| {
@@ -211,6 +217,13 @@ function compute:
                 let process = Process::load().unwrap();
                 // Compute the deployment.
                 let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
+                // Create a new deployment with the desired edition.
+                let deployment = Deployment::<CurrentNetwork>::new(
+                    edition,
+                    deployment.program().clone(),
+                    deployment.verifying_keys().clone(),
+                )
+                .unwrap();
                 // Return the deployment.
                 // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
                 Deployment::from_str(&deployment.to_string()).unwrap()

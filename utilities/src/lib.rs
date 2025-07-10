@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -56,6 +56,10 @@ pub use bits::*;
 pub mod bytes;
 pub use bytes::*;
 
+#[macro_use]
+pub mod defer;
+pub use defer::*;
+
 pub mod error;
 pub use error::*;
 
@@ -65,6 +69,9 @@ pub use iterator::*;
 #[macro_use]
 pub mod parallel;
 pub use parallel::*;
+
+#[macro_use]
+mod print;
 
 pub mod rand;
 pub use self::rand::*;

@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -147,8 +147,8 @@ mod tests {
         let rng = &mut TestRng::default();
 
         for expected in [
-            crate::transaction::test_helpers::sample_deployment_transaction(true, rng),
-            crate::transaction::test_helpers::sample_deployment_transaction(false, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(0, true, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(0, false, rng),
             crate::transaction::test_helpers::sample_execution_transaction_with_fee(true, rng),
             crate::transaction::test_helpers::sample_execution_transaction_with_fee(false, rng),
         ]

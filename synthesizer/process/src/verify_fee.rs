@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,7 +21,9 @@ impl<N: Network> Process<N> {
     #[inline]
     pub fn verify_fee(
         &self,
+        consensus_version: ConsensusVersion,
         varuna_version: VarunaVersion,
+        inclusion_version: InclusionVersion,
         fee: &Fee<N>,
         deployment_or_execution_id: Field<N>,
     ) -> Result<()> {
@@ -78,8 +80,8 @@ impl<N: Network> Process<N> {
 
         // Verify the fee transition is well-formed.
         match is_fee_private {
-            true => self.verify_fee_private(varuna_version, &fee)?,
-            false => self.verify_fee_public(varuna_version, &fee)?,
+            true => self.verify_fee_private(consensus_version, varuna_version, inclusion_version, &fee)?,
+            false => self.verify_fee_public(varuna_version, inclusion_version, &fee)?,
         }
         finish!(timer, "Verify the fee transition");
         Ok(())
@@ -88,7 +90,13 @@ impl<N: Network> Process<N> {
 
 impl<N: Network> Process<N> {
     /// Verifies the transition for `credits.aleo/fee_private` is well-formed.
-    fn verify_fee_private(&self, varuna_version: VarunaVersion, fee: &&Fee<N>) -> Result<()> {
+    fn verify_fee_private(
+        &self,
+        consensus_version: ConsensusVersion,
+        varuna_version: VarunaVersion,
+        inclusion_version: InclusionVersion,
+        fee: &&Fee<N>,
+    ) -> Result<()> {
         let timer = timer!("Process::verify_fee_private");
 
         // Retrieve the network ID.
@@ -117,24 +125,35 @@ impl<N: Network> Process<N> {
             fee.outputs().len()
         );
         // Ensure each output is valid.
-        if fee
-            .outputs()
-            .iter()
-            .enumerate()
-            .any(|(index, output)| !output.verify(function_id, fee.tcm(), num_inputs + index))
-        {
-            bail!("Failed to verify a fee output")
+        for (index, output) in fee.outputs().iter().enumerate() {
+            // If the consensus version are before `ConsensusVersion::V8`, ensure the output record is on Version 0.
+            // if the consensus version is on or after `ConsensusVersion::V8`, ensure the output record is on Version 1.
+            if let Some((_, record)) = output.record() {
+                if (ConsensusVersion::V1..=ConsensusVersion::V7).contains(&consensus_version) {
+                    #[cfg(not(any(test, feature = "test")))]
+                    ensure!(record.version().is_zero(), "Output record must be Version 0 before Consensus V8");
+                    #[cfg(any(test, feature = "test"))]
+                    ensure!(record.version().is_one(), "Output record must be Version 1 on or after Consensus V8");
+                } else {
+                    ensure!(record.version().is_one(), "Output record must be Version 1 on or after Consensus V8");
+                }
+            }
+            // Ensure the output is valid.
+            if !output.verify(function_id, fee.tcm(), num_inputs + index) {
+                bail!("Failed to verify a fee output")
+            }
         }
         lap!(timer, "Verify the outputs");
 
         // Compute the x- and y-coordinate of `tpk`.
         let (tpk_x, tpk_y) = fee.tpk().to_xy_coordinates();
 
-        // Retrieve the adress belonging to the program ID.
-        let program_adress = self.get_stack(fee.program_id())?.program_address();
+        // Retrieve the address belonging to the program ID.
+        let stack = self.get_stack(fee.program_id())?;
+        let program_address = stack.program_address();
 
         // Compute the x- and y-coordinate of `parent`.
-        let (parent_x, parent_y) = program_adress.to_xy_coordinates();
+        let (parent_x, parent_y) = program_address.to_xy_coordinates();
 
         // Construct the public inputs to verify the proof.
         let mut inputs = vec![N::Field::one(), *tpk_x, *tpk_y, **fee.tcm(), **fee.scm()];
@@ -150,17 +169,22 @@ impl<N: Network> Process<N> {
         println!("Fee public inputs ({} elements): {:#?}", inputs.len(), inputs);
 
         // Retrieve the verifying key.
-        let verifying_key = self.get_verifying_key(fee.program_id(), fee.function_name())?;
+        let verifying_key = stack.get_verifying_key(fee.function_name())?;
 
         // Ensure the fee proof is valid.
-        Trace::verify_fee_proof(varuna_version, (verifying_key, vec![inputs]), fee)?;
+        Trace::verify_fee_proof(varuna_version, inclusion_version, (verifying_key, vec![inputs]), fee)?;
         finish!(timer, "Verify the fee proof");
         Ok(())
     }
 
     /// Verifies the transition for `credits.aleo/fee_public` is well-formed.
     /// Attention: This method does *not* verify the account balance is sufficient.
-    fn verify_fee_public(&self, varuna_version: VarunaVersion, fee: &&Fee<N>) -> Result<()> {
+    fn verify_fee_public(
+        &self,
+        varuna_version: VarunaVersion,
+        inclusion_version: InclusionVersion,
+        fee: &&Fee<N>,
+    ) -> Result<()> {
         let timer = timer!("Process::verify_fee_public");
 
         // Retrieve the network ID.
@@ -202,11 +226,12 @@ impl<N: Network> Process<N> {
         // Compute the x- and y-coordinate of `tpk`.
         let (tpk_x, tpk_y) = fee.tpk().to_xy_coordinates();
 
-        // Retrieve the adress belonging to the program ID.
-        let program_adress = self.get_stack(fee.program_id())?.program_address();
+        // Retrieve the address belonging to the program ID.
+        let stack = self.get_stack(fee.program_id())?;
+        let program_address = stack.program_address();
 
         // Compute the x- and y-coordinate of `parent`.
-        let (parent_x, parent_y) = program_adress.to_xy_coordinates();
+        let (parent_x, parent_y) = program_address.to_xy_coordinates();
 
         // Construct the public inputs to verify the proof.
         let mut inputs = vec![N::Field::one(), *tpk_x, *tpk_y, **fee.tcm(), **fee.scm()];
@@ -222,10 +247,10 @@ impl<N: Network> Process<N> {
         println!("Fee public inputs ({} elements): {:#?}", inputs.len(), inputs);
 
         // Retrieve the verifying key.
-        let verifying_key = self.get_verifying_key(fee.program_id(), fee.function_name())?;
+        let verifying_key = stack.get_verifying_key(fee.function_name())?;
 
         // Ensure the fee proof is valid.
-        Trace::verify_fee_proof(varuna_version, (verifying_key, vec![inputs]), fee)?;
+        Trace::verify_fee_proof(varuna_version, inclusion_version, (verifying_key, vec![inputs]), fee)?;
         finish!(timer, "Verify the fee proof");
         Ok(())
     }
@@ -243,8 +268,8 @@ mod tests {
 
         // Fetch transactions.
         let transactions = [
-            ledger_test_helpers::sample_deployment_transaction(true, rng),
-            ledger_test_helpers::sample_deployment_transaction(false, rng),
+            ledger_test_helpers::sample_deployment_transaction(0, true, rng),
+            ledger_test_helpers::sample_deployment_transaction(0, false, rng),
             ledger_test_helpers::sample_execution_transaction_with_fee(true, rng),
             ledger_test_helpers::sample_execution_transaction_with_fee(false, rng),
             ledger_test_helpers::sample_fee_private_transaction(rng),
@@ -260,17 +285,29 @@ mod tests {
                     // Compute the deployment ID.
                     let deployment_id = deployment.to_deployment_id().unwrap();
                     // Verify the fee.
-                    process.verify_fee(VarunaVersion::V1, &fee, deployment_id).unwrap();
+                    process
+                        .verify_fee(ConsensusVersion::V8, VarunaVersion::V1, InclusionVersion::V0, &fee, deployment_id)
+                        .unwrap();
                 }
                 Transaction::Execute(_, _, execution, fee) => {
                     // Compute the execution ID.
                     let execution_id = execution.to_execution_id().unwrap();
                     // Verify the fee.
-                    process.verify_fee(VarunaVersion::V1, &fee.unwrap(), execution_id).unwrap();
+                    process
+                        .verify_fee(
+                            ConsensusVersion::V8,
+                            VarunaVersion::V1,
+                            InclusionVersion::V0,
+                            &fee.unwrap(),
+                            execution_id,
+                        )
+                        .unwrap();
                 }
                 Transaction::Fee(_, fee) => match fee.is_fee_private() {
-                    true => process.verify_fee_private(VarunaVersion::V1, &&fee).unwrap(),
-                    false => process.verify_fee_public(VarunaVersion::V1, &&fee).unwrap(),
+                    true => process
+                        .verify_fee_private(ConsensusVersion::V8, VarunaVersion::V1, InclusionVersion::V0, &&fee)
+                        .unwrap(),
+                    false => process.verify_fee_public(VarunaVersion::V1, InclusionVersion::V0, &&fee).unwrap(),
                 },
             }
         }

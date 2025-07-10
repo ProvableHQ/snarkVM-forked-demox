@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,11 +19,8 @@ use console::{
     prelude::*,
     program::{Identifier, Literal, Plaintext, Register, Value},
 };
-use snarkvm_synthesizer_program::{
-    FinalizeGlobalState,
-    traits::{RegistersStore, RegistersStoreCircuit},
-};
-use synthesizer_process::{Authorization, CallStack, FinalizeRegisters, Registers, Stack, StackProgramTypes};
+use snarkvm_synthesizer_program::{FinalizeGlobalState, RegistersCircuit as _, RegistersTrait as _};
+use synthesizer_process::{Authorization, CallStack, FinalizeRegisters, Registers, Stack};
 
 type CurrentNetwork = MainnetV0;
 type CurrentAleo = AleoV0;

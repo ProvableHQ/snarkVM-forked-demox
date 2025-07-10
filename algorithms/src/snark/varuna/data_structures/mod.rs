@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,10 +30,17 @@ pub(super) mod proof;
 pub use proof::*;
 
 /// A test circuit.
-#[cfg(any(test, feature = "test"))]
+#[cfg(any(test, feature = "test", feature = "test_exports"))]
 pub(super) mod test_circuit;
-#[cfg(any(test, feature = "test"))]
+#[cfg(any(test, feature = "test", feature = "test_exports"))]
 pub use test_circuit::*;
+
+/// Test exports module that provides test utilities for external crates.
+#[cfg(feature = "test_exports")]
+pub mod test_exports {
+    /// Test circuit for Varuna (for testing purposes only).
+    pub use crate::snark::varuna::TestCircuit;
+}
 
 /// The Varuna universal SRS.
 pub type UniversalSRS<E> = crate::polycommit::sonic_pc::UniversalParams<E>;

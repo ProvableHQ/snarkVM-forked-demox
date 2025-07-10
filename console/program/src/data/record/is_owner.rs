@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -117,6 +117,7 @@ mod tests {
                 (Identifier::from_str("b")?, Entry::Private(Plaintext::from(Literal::Scalar(Scalar::rand(rng))))),
             ]),
             nonce: N::g_scalar_multiply(&randomizer),
+            version: U8::rand(rng),
         };
 
         // Encrypt the record.

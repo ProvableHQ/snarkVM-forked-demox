@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -70,13 +70,25 @@ pub(crate) type VarunaProvingKey<N> = CircuitProvingKey<<N as Environment>::Pair
 pub(crate) type VarunaVerifyingKey<N> = CircuitVerifyingKey<<N as Environment>::PairingCurve>;
 
 /// The different consensus versions.
-/// Documentation for what is changed at each version can be found in `N::CONSENSUS_VERSION`
+/// If you need the version active for a specific height, see: `N::CONSENSUS_VERSION`.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Ord, PartialOrd)]
 pub enum ConsensusVersion {
+    /// V1: The initial genesis consensus version.
     V1 = 1,
+    /// V2: Update to the block reward and execution cost algorithms.
     V2 = 2,
+    /// V3: Update to the number of validators and finalize scope RNG seed.
     V3 = 3,
+    /// V4: Update to the Varuna version.
     V4 = 4,
+    /// V5: Update to the number of validators and enable batch proposal spend limits.
+    V5 = 5,
+    /// V6: Update to the number of validators.
+    V6 = 6,
+    /// V7: Update to program rules.
+    V7 = 7,
+    /// V8: Update to inclusion version, record commitment version, and introduces sender ciphertexts.
+    V8 = 8,
 }
 
 pub trait Network:
@@ -126,12 +138,12 @@ pub trait Network:
     /// The cost in microcredits per constraint for the deployment transaction.
     const SYNTHESIS_FEE_MULTIPLIER: u64 = 25; // 25 microcredits per constraint
     /// The maximum number of variables in a deployment.
-    const MAX_DEPLOYMENT_VARIABLES: u64 = 1 << 20; // 1,048,576 variables
+    const MAX_DEPLOYMENT_VARIABLES: u64 = 1 << 21; // 2,097,152 variables
     /// The maximum number of constraints in a deployment.
-    const MAX_DEPLOYMENT_CONSTRAINTS: u64 = 1 << 20; // 1,048,576 constraints
+    const MAX_DEPLOYMENT_CONSTRAINTS: u64 = 1 << 21; // 2,097,152 constraints
     /// The maximum number of microcredits that can be spent as a fee.
     const MAX_FEE: u64 = 1_000_000_000_000_000;
-    /// The maximum number of microcredits that can be spent on a finalize block.
+    /// The maximum number of microcredits that can be spent on a transaction's finalize scope.
     const TRANSACTION_SPEND_LIMIT: u64 = 100_000_000;
 
     /// The anchor height, defined as the expected number of blocks to reach the coinbase target.
@@ -194,8 +206,6 @@ pub trait Network:
     /// The maximum number of outputs per transition.
     const MAX_OUTPUTS: usize = 16;
 
-    /// The maximum program depth.
-    const MAX_PROGRAM_DEPTH: usize = 64;
     /// The maximum number of imports.
     const MAX_IMPORTS: usize = 64;
 
@@ -218,21 +228,15 @@ pub trait Network:
 
     /// A list of (consensus_version, block_height) pairs indicating when each consensus version takes effect.
     /// Documentation for what is changed at each version can be found in `N::CONSENSUS_VERSION`
-    const CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); 4];
+    const CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); 8];
     ///  A list of (consensus_version, size) pairs indicating the maximum number of validators in a committee.
     //  Note: This value must **not** decrease without considering the impact on serialization.
     //  Decreasing this value will break backwards compatibility of serialization without explicit
     //  declaration of migration based on round number rather than block height.
     //  Increasing this value will require a migration to prevent forking during network upgrades.
-    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 2];
+    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 4];
 
     /// Returns the consensus version which is active at the given height.
-    ///
-    /// V1: The initial genesis consensus version.
-    ///
-    /// V2: Update to the block reward and execution cost algorithms.
-    ///
-    /// V3: Update to the number of validators and finalize scope RNG seed.
     #[allow(non_snake_case)]
     fn CONSENSUS_VERSION(seek_height: u32) -> anyhow::Result<ConsensusVersion> {
         match Self::CONSENSUS_VERSION_HEIGHTS.binary_search_by(|(_, height)| height.cmp(&seek_height)) {
@@ -260,17 +264,33 @@ pub trait Network:
         Self::MAX_CERTIFICATES.last().map_or(Err(anyhow!("No MAX_CERTIFICATES defined.")), |(_, value)| Ok(*value))
     }
 
+    /// Returns the block height where the the inclusion proof will be updated.
+    #[allow(non_snake_case)]
+    fn INCLUSION_UPGRADE_HEIGHT() -> Result<u32>;
+
     /// Returns the genesis block bytes.
     fn genesis_bytes() -> &'static [u8];
 
     /// Returns the restrictions list as a JSON-compatible string.
     fn restrictions_list_as_str() -> &'static str;
 
+    /// Returns the proving key for the given function name in the v0 version of `credits.aleo`.
+    fn get_credits_v0_proving_key(function_name: String) -> Result<&'static Arc<VarunaProvingKey<Self>>>;
+
+    /// Returns the verifying key for the given function name in the v0 version of `credits.aleo`.
+    fn get_credits_v0_verifying_key(function_name: String) -> Result<&'static Arc<VarunaVerifyingKey<Self>>>;
+
     /// Returns the proving key for the given function name in `credits.aleo`.
     fn get_credits_proving_key(function_name: String) -> Result<&'static Arc<VarunaProvingKey<Self>>>;
 
     /// Returns the verifying key for the given function name in `credits.aleo`.
     fn get_credits_verifying_key(function_name: String) -> Result<&'static Arc<VarunaVerifyingKey<Self>>>;
+
+    /// Returns the `proving key` for the inclusion_v0 circuit.
+    fn inclusion_v0_proving_key() -> &'static Arc<VarunaProvingKey<Self>>;
+
+    /// Returns the `verifying key` for the inclusion_v0 circuit.
+    fn inclusion_v0_verifying_key() -> &'static Arc<VarunaVerifyingKey<Self>>;
 
     /// Returns the `proving key` for the inclusion circuit.
     fn inclusion_proving_key() -> &'static Arc<VarunaProvingKey<Self>>;
@@ -292,6 +312,9 @@ pub trait Network:
 
     /// Returns the sponge parameters for Varuna.
     fn varuna_fs_parameters() -> &'static FiatShamirParameters<Self>;
+
+    /// Returns the commitment domain as a constant field element.
+    fn commitment_domain() -> Field<Self>;
 
     /// Returns the encryption domain as a constant field element.
     fn encryption_domain() -> Field<Self>;

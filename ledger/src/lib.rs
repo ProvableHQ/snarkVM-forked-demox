@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -41,6 +41,7 @@ mod check_transaction_basic;
 mod contains;
 mod find;
 mod get;
+mod is_solution_limit_reached;
 mod iterators;
 
 #[cfg(test)]
@@ -56,7 +57,7 @@ use ledger_authority::Authority;
 use ledger_committee::Committee;
 use ledger_narwhal::{BatchCertificate, Subdag, Transmission, TransmissionID};
 use ledger_puzzle::{Puzzle, PuzzleSolutions, Solution, SolutionID};
-use ledger_query::Query;
+use ledger_query::QueryTrait;
 use ledger_store::{ConsensusStorage, ConsensusStore};
 use synthesizer::{
     program::{FinalizeGlobalState, Program},
@@ -70,15 +71,22 @@ use aleo_std::{
 use anyhow::Result;
 use core::ops::Range;
 use indexmap::IndexMap;
-use parking_lot::RwLock;
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::{Mutex, RwLock};
+use lru::LruCache;
+#[cfg(not(feature = "locktick"))]
+use parking_lot::{Mutex, RwLock};
 use rand::{prelude::IteratorRandom, rngs::OsRng};
-use std::{borrow::Cow, sync::Arc};
+use std::{borrow::Cow, collections::HashSet, sync::Arc};
 use time::OffsetDateTime;
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 pub type RecordMap<N> = IndexMap<Field<N>, Record<N, Plaintext<N>>>;
+
+/// The capacity of the LRU cache holding the recently queried committees.
+const COMMITTEE_CACHE_SIZE: usize = 16;
 
 #[derive(Copy, Clone, Debug)]
 pub enum RecordsFilter<N: Network> {
@@ -94,6 +102,13 @@ pub enum RecordsFilter<N: Network> {
     SlowUnspent(PrivateKey<N>),
 }
 
+/// State of the entire chain.
+///
+/// All stored state is held in the `VM`, while Ledger holds the `VM` and relevant cache data.
+///
+/// The constructor is [`Ledger::load`],
+/// which loads the ledger from storage,
+/// or initializes it with the genesis block if the storage is empty
 #[derive(Clone)]
 pub struct Ledger<N: Network, C: ConsensusStorage<N>> {
     /// The VM state.
@@ -102,10 +117,34 @@ pub struct Ledger<N: Network, C: ConsensusStorage<N>> {
     genesis_block: Block<N>,
     /// The current epoch hash.
     current_epoch_hash: Arc<RwLock<Option<N::BlockHash>>>,
-    /// The current committee.
+    /// The committee resulting from all the on-chain staking activity.
+    ///
+    /// This includes any bonding and unbonding transactions in the latest block.
+    /// The starting point, in the genesis block, is the genesis committee.
+    /// If the latest block has round `R`, `current_committee` is
+    /// the committee bonded for rounds `R+1`, `R+2`, and perhaps others
+    /// (unless a block at round `R+2` changes the committee).
+    /// Note that this committee is not active (i.e. in charge of running consensus)
+    /// until round `R + 1 + L`, where `L` is the lookback round distance.
+    ///
+    /// This committee is always well-defined
+    /// (in particular, it is the genesis committee when the `Ledger` is empty, or only has the genesis block).
+    /// So the `Option` should always be `Some`,
+    /// but there are cases in which it is `None`,
+    /// probably only temporarily when loading/initializing the ledger,
     current_committee: Arc<RwLock<Option<Committee<N>>>>,
-    /// The current block.
+    /// The latest block.
     current_block: Arc<RwLock<Block<N>>>,
+    /// The recent committees of interest paired with their applicable rounds.
+    ///
+    /// Each entry consisting of a round `R` and a committee `C`,
+    /// says that `C` is the bonded committee at round `R`,
+    /// i.e. resulting from all the bonding and unbonding transactions before `R`.
+    /// If `L` is the lookback round distance, `C` is the active committee at round `R + L`
+    /// (i.e. the committee in charge of running consensus at round `R + L`).
+    committee_cache: Arc<Mutex<LruCache<u64, Committee<N>>>>,
+    /// The cache that holds the provers and the number of solutions they have submitted for the current epoch.
+    epoch_provers_cache: Arc<RwLock<IndexMap<Address<N>, u32>>>,
 }
 
 impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
@@ -160,6 +199,9 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         // Retrieve the current committee.
         let current_committee = vm.finalize_store().committee_store().current_committee().ok();
 
+        // Create a committee cache.
+        let committee_cache = Arc::new(Mutex::new(LruCache::new(COMMITTEE_CACHE_SIZE.try_into().unwrap())));
+
         // Initialize the ledger.
         let mut ledger = Self {
             vm,
@@ -167,9 +209,11 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             current_epoch_hash: Default::default(),
             current_committee: Arc::new(RwLock::new(current_committee)),
             current_block: Arc::new(RwLock::new(genesis_block.clone())),
+            committee_cache,
+            epoch_provers_cache: Default::default(),
         };
 
-        // If the block store is empty, initialize the genesis block.
+        // If the block store is empty, add the genesis block.
         if ledger.vm.block_store().max_height().is_none() {
             // Add the genesis block.
             ledger.advance_to_next_block(&genesis_block)?;
@@ -190,9 +234,43 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         ledger.current_committee = Arc::new(RwLock::new(Some(ledger.latest_committee()?)));
         // Set the current epoch hash.
         ledger.current_epoch_hash = Arc::new(RwLock::new(Some(ledger.get_epoch_hash(latest_height)?)));
+        // Set the epoch prover cache.
+        ledger.epoch_provers_cache = Arc::new(RwLock::new(ledger.load_epoch_provers()));
 
         finish!(timer, "Initialize ledger");
         Ok(ledger)
+    }
+
+    /// Creates a rocksdb checkpoint in the specified directory, which needs to not exist at the
+    /// moment of calling. The checkpoints are based on hard links, which means they can both be
+    /// incremental (i.e. they aren't full physical copies), and used as full rollback points
+    /// (a checkpoint can be used to completely replace the original ledger).
+    #[cfg(feature = "rocks")]
+    pub fn backup_database<P: AsRef<std::path::Path>>(&self, path: P) -> Result<()> {
+        self.vm.block_store().backup_database(path).map_err(|err| anyhow!(err))
+    }
+
+    /// Loads the provers and the number of solutions they have submitted for the current epoch.
+    pub fn load_epoch_provers(&self) -> IndexMap<Address<N>, u32> {
+        // Fetch the block heights that belong to the current epoch.
+        let current_block_height = self.vm().block_store().current_block_height();
+        let start_of_epoch = current_block_height.saturating_sub(current_block_height % N::NUM_BLOCKS_PER_EPOCH);
+        let existing_epoch_blocks: Vec<_> = (start_of_epoch..=current_block_height).collect();
+
+        // Collect the addresses of the solutions submitted in the current epoch.
+        let solution_addresses = cfg_iter!(existing_epoch_blocks)
+            .flat_map(|height| match self.get_solutions(*height).as_deref() {
+                Ok(Some(solutions)) => solutions.iter().map(|(_, s)| s.address()).collect::<Vec<_>>(),
+                _ => vec![],
+            })
+            .collect::<Vec<_>>();
+
+        // Count the number of occurrences of each address in the epoch blocks.
+        let mut epoch_provers = IndexMap::new();
+        for address in solution_addresses {
+            epoch_provers.entry(address).and_modify(|e| *e += 1).or_insert(1);
+        }
+        epoch_provers
     }
 
     /// Returns the VM.
@@ -205,7 +283,13 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         self.vm.puzzle()
     }
 
-    /// Returns the latest committee.
+    /// Returns the provers and the number of solutions they have submitted for the current epoch.
+    pub fn epoch_provers(&self) -> Arc<RwLock<IndexMap<Address<N>, u32>>> {
+        self.epoch_provers_cache.clone()
+    }
+
+    /// Returns the latest committee,
+    /// i.e. the committee resulting from all the on-chain staking activity.
     pub fn latest_committee(&self) -> Result<Committee<N>> {
         match self.current_committee.read().as_ref() {
             Some(committee) => Ok(committee.clone()),
@@ -326,7 +410,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         private_key: &PrivateKey<N>,
         program: &Program<N>,
         priority_fee_in_microcredits: u64,
-        query: Option<Query<N, C::BlockStorage>>,
+        query: Option<&dyn QueryTrait<N>>,
         rng: &mut R,
     ) -> Result<Transaction<N>> {
         // Fetch the unspent records.
@@ -350,7 +434,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         to: Address<N>,
         amount_in_microcredits: u64,
         priority_fee_in_microcredits: u64,
-        query: Option<Query<N, C::BlockStorage>>,
+        query: Option<&dyn QueryTrait<N>>,
         rng: &mut R,
     ) -> Result<Transaction<N>> {
         // Fetch the unspent records.
@@ -390,7 +474,6 @@ pub(crate) mod test_helpers {
         network::MainnetV0,
         prelude::*,
     };
-    use ledger_block::Block;
     use ledger_store::ConsensusStore;
     use snarkvm_circuit::network::AleoV0;
     use synthesizer::vm::VM;
@@ -430,20 +513,16 @@ pub(crate) mod test_helpers {
         TestEnv { ledger, private_key, view_key, address }
     }
 
-    pub(crate) fn sample_genesis_block() -> Block<CurrentNetwork> {
-        Block::<CurrentNetwork>::from_bytes_le(CurrentNetwork::genesis_bytes()).unwrap()
-    }
-
     pub(crate) fn sample_ledger(
         private_key: PrivateKey<CurrentNetwork>,
         rng: &mut (impl Rng + CryptoRng),
     ) -> CurrentLedger {
         // Initialize the store.
-        let store = CurrentConsensusStore::open(None).unwrap();
+        let store = CurrentConsensusStore::open(StorageMode::new_test(None)).unwrap();
         // Create a genesis block.
         let genesis = VM::from(store).unwrap().genesis_beacon(&private_key, rng).unwrap();
         // Initialize the ledger with the genesis block.
-        let ledger = CurrentLedger::load(genesis.clone(), StorageMode::Production).unwrap();
+        let ledger = CurrentLedger::load(genesis.clone(), StorageMode::new_test(None)).unwrap();
         // Ensure the genesis block is correct.
         assert_eq!(genesis, ledger.get_block(0).unwrap());
         // Return the ledger.

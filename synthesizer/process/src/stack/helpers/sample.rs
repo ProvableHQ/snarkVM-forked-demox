@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -73,8 +73,11 @@ impl<N: Network> Stack<N> {
             })
             .collect::<Result<IndexMap<_, _>>>()?;
 
+        // Set the record version.
+        let version = U8::<N>::rand(rng);
+
         // Return the record.
-        Record::<N, Plaintext<N>>::from_plaintext(owner, data, nonce)
+        Record::<N, Plaintext<N>>::from_plaintext(owner, data, nonce, version)
     }
 
     /// Samples an entry according to the given entry type.
@@ -161,10 +164,17 @@ impl<N: Network> Stack<N> {
         depth: usize,
         rng: &mut R,
     ) -> Result<Future<N>> {
+        // Retrieve the external stack, if needed.
+        let external_stack = match locator.program_id() == self.program_id() {
+            true => None,
+            // Attention - This method must fail here and early return if the external program is missing.
+            // Otherwise, this method will proceed to look for the requested function in its own program.
+            false => Some(self.get_external_stack(locator.program_id())?),
+        };
         // Retrieve the associated function.
-        let function = match locator.program_id() == self.program_id() {
-            true => self.get_function_ref(locator.resource())?,
-            false => self.get_external_program(locator.program_id())?.get_function_ref(locator.resource())?,
+        let function = match &external_stack {
+            Some(external_stack) => external_stack.get_function_ref(locator.resource())?,
+            None => self.get_function_ref(locator.resource())?,
         };
 
         // Retrieve the finalize inputs.

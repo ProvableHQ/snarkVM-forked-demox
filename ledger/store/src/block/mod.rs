@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -48,6 +48,9 @@ use synthesizer_program::{FinalizeOperation, Program};
 
 use aleo_std_storage::StorageMode;
 use anyhow::Result;
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::RwLock;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
 use std::{borrow::Cow, sync::Arc};
 
@@ -146,7 +149,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
     type TransitionStorage: TransitionStorage<N>;
 
     /// Initializes the block storage.
-    fn open<S: Clone + Into<StorageMode>>(storage: S) -> Result<Self>;
+    fn open<S: Into<StorageMode>>(storage: S) -> Result<Self>;
 
     /// Returns the state root map.
     fn state_root_map(&self) -> &Self::StateRootMap;
@@ -769,6 +772,11 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         }
     }
 
+    /// Returns true if there is a block that contains the specified certificate.
+    fn contains_block_for_certificate(&self, certificate_id: &Field<N>) -> Result<bool> {
+        self.certificate_map().contains_key_confirmed(certificate_id)
+    }
+
     /// Returns the batch certificate for the given `certificate ID`.
     fn get_batch_certificate(&self, certificate_id: &Field<N>) -> Result<Option<BatchCertificate<N>>> {
         // Retrieve the height and round for the given certificate ID.
@@ -873,7 +881,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         }
     }
 
-    /// Returns the transaction for the given `transaction ID`.
+    /// Returns the transaction for the given `TransactionID`.
     fn get_transaction(&self, transaction_id: &N::TransactionID) -> Result<Option<Transaction<N>>> {
         // Check if the transaction was rejected or aborted.
         // Note: We can only retrieve accepted or rejected transactions. We cannot retrieve aborted transactions.
@@ -917,7 +925,11 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         to_confirmed_transaction(confirmed_type, transaction, finalize_operations).map(Some)
     }
 
-    /// Returns the unconfirmed transaction for the given `transaction ID`.
+    /// Get the unconfirmed transaction for the given `TransactionID`.
+    ///
+    /// For unconfirmed and accepted transactions, this will return original transaction issued by the client.
+    /// This function also returns the original execution/deployment for a rejected transaction,
+    /// even when the given `TransactionID` is of a fee transaction.
     fn get_unconfirmed_transaction(&self, transaction_id: &N::TransactionID) -> Result<Option<Transaction<N>>> {
         // Check if the transaction was rejected or aborted.
         // Note: We can only retrieve accepted or rejected transactions. We cannot retrieve aborted transactions.
@@ -931,7 +943,26 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
                 }
                 None => bail!("Missing transactions for block '{block_hash}' in block storage"),
             },
-            None => self.transaction_store().get_transaction(transaction_id),
+            None => {
+                let Some(txn) = self.transaction_store().get_transaction(transaction_id)? else {
+                    return Ok(None);
+                };
+
+                // If the transaction is a fee transaction, return the original execution/deployment instead.
+                if let Transaction::Fee(_, fee) = txn {
+                    // Look up the original transaction in its block.
+                    let Some(block_hash) = self.find_block_hash(transaction_id)? else {
+                        bail!("Missing fee transaction '{transaction_id}' in block storage");
+                    };
+
+                    match self.get_block_transactions(&block_hash)? {
+                        Some(transactions) => transactions.find_unconfirmed_transaction_for_transition_id(fee.id()),
+                        None => bail!("Missing transactions for block '{block_hash}' in block storage"),
+                    }
+                } else {
+                    Ok(Some(txn))
+                }
+            }
         }
     }
 
@@ -990,6 +1021,9 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
             aborted_transaction_ids,
         )?))
     }
+
+    #[cfg(feature = "rocks")]
+    fn backup_database<P: AsRef<std::path::Path>>(&self, path: P) -> Result<(), String>;
 }
 
 /// The block store.
@@ -1003,7 +1037,7 @@ pub struct BlockStore<N: Network, B: BlockStorage<N>> {
 
 impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
     /// Initializes the block store.
-    pub fn open<S: Clone + Into<StorageMode>>(storage: S) -> Result<Self> {
+    pub fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
         // Initialize the block storage.
         let storage = B::open(storage)?;
 
@@ -1162,6 +1196,11 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
     pub fn unpause_atomic_writes<const DISCARD_BATCH: bool>(&self) -> Result<()> {
         self.storage.unpause_atomic_writes::<DISCARD_BATCH>()
     }
+
+    #[cfg(feature = "rocks")]
+    pub fn backup_database<P: AsRef<std::path::Path>>(&self, path: P) -> Result<(), String> {
+        self.storage.backup_database(path)
+    }
 }
 
 impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
@@ -1189,7 +1228,7 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
 
     /// Returns the current block height.
     pub fn current_block_height(&self) -> u32 {
-        u32::try_from(self.tree.read().number_of_leaves()).unwrap() - 1
+        u32::try_from(self.tree.read().number_of_leaves()).unwrap().saturating_sub(1)
     }
 
     /// Returns the state root that contains the given `block height`.
@@ -1256,6 +1295,8 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
     }
 
     /// Returns the transaction for the given `transaction ID`.
+    ///
+    /// For a rejected transaction, this returns the fee transaction, not the original/unconfirmed one.
     pub fn get_transaction(&self, transaction_id: &N::TransactionID) -> Result<Option<Transaction<N>>> {
         self.storage.get_transaction(transaction_id)
     }
@@ -1269,6 +1310,8 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
     }
 
     /// Returns the unconfirmed transaction for the given `transaction ID`.
+    ///
+    /// For a rejected transaction, this returns the origin transaction issued by the user, not the fee transaction.
     pub fn get_unconfirmed_transaction(&self, transaction_id: &N::TransactionID) -> Result<Option<Transaction<N>>> {
         self.storage.get_unconfirmed_transaction(transaction_id)
     }
@@ -1278,9 +1321,24 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         self.storage.get_block(block_hash)
     }
 
-    /// Returns the program for the given `program ID`.
-    pub fn get_program(&self, program_id: &ProgramID<N>) -> Result<Option<Program<N>>> {
-        self.storage.transaction_store().get_program(program_id)
+    /// Returns the latest edition for the given `program ID`.
+    pub fn get_latest_edition_for_program(&self, program_id: &ProgramID<N>) -> Result<Option<u16>> {
+        self.storage.transaction_store().get_latest_edition_for_program(program_id)
+    }
+
+    /// Returns the latest program for the given `program ID`.
+    pub fn get_latest_program(&self, program_id: &ProgramID<N>) -> Result<Option<Program<N>>> {
+        self.storage.transaction_store().get_latest_program(program_id)
+    }
+
+    /// Returns the program for the given `program ID` and `edition`.
+    pub fn get_program_for_edition(&self, program_id: &ProgramID<N>, edition: u16) -> Result<Option<Program<N>>> {
+        self.storage.transaction_store().get_program_for_edition(program_id, edition)
+    }
+
+    /// Returns true if there is a block for the given certificate.
+    pub fn contains_block_for_certificate(&self, certificate_id: &Field<N>) -> Result<bool> {
+        self.storage.contains_block_for_certificate(certificate_id)
     }
 
     /// Returns the batch certificate for the given `certificate ID`.
@@ -1372,6 +1430,18 @@ mod tests {
     type CurrentNetwork = console::network::MainnetV0;
 
     #[test]
+    fn test_current_block_height_empty() {
+        // Initialize a new block store.
+        let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
+
+        // Current_block_height shouldn't panic.
+        assert_eq!(block_store.current_block_height(), 0);
+
+        // Verify the equivalence of the alternative method.
+        assert_eq!(block_store.max_height().unwrap_or_default(), 0);
+    }
+
+    #[test]
     fn test_insert_get_remove() {
         let rng = &mut TestRng::default();
 
@@ -1380,7 +1450,7 @@ mod tests {
         let block_hash = block.hash();
 
         // Initialize a new block store.
-        let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(None).unwrap();
+        let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
 
         // Ensure the block does not exist.
         let candidate = block_store.get_block(&block_hash).unwrap();
@@ -1411,7 +1481,7 @@ mod tests {
         assert!(block.transactions().num_accepted() > 0, "This test must be run with at least one transaction.");
 
         // Initialize a new block store.
-        let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(None).unwrap();
+        let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
 
         // Ensure the block does not exist.
         let candidate = block_store.get_block(&block_hash).unwrap();
@@ -1451,7 +1521,7 @@ mod tests {
         assert!(block.transactions().num_accepted() > 0, "This test must be run with at least one transaction.");
 
         // Initialize a new block store.
-        let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(None).unwrap();
+        let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
         // Insert the block.
         block_store.insert(&block).unwrap();
 
@@ -1470,7 +1540,7 @@ mod tests {
         assert!(block.transactions().num_accepted() > 0, "This test must be run with at least one transaction.");
 
         // Initialize a new block store.
-        let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(None).unwrap();
+        let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
         // Insert the block.
         block_store.insert(&block).unwrap();
 
@@ -1489,7 +1559,7 @@ mod tests {
         assert!(block.transactions().num_accepted() > 0, "This test must be run with at least one transaction.");
 
         // Initialize a new block store.
-        let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(None).unwrap();
+        let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
         // Insert the block.
         block_store.insert(&block).unwrap();
 
@@ -1500,5 +1570,60 @@ mod tests {
                 confirmed.to_unconfirmed_transaction().unwrap()
             );
         }
+    }
+
+    /// Test that we can look up a rejected transaction using the fee transaction ID.
+    #[test]
+    fn test_rejected_transaction() {
+        let rng = &mut TestRng::default();
+
+        let private_key = ledger_test_helpers::sample_genesis_private_key(rng);
+
+        let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
+
+        let fee = ledger_test_helpers::sample_fee_public_transaction(rng);
+        let rejected = ledger_test_helpers::sample_rejected_execution(false, rng);
+        let transactions =
+            Transactions::from_iter([
+                ConfirmedTransaction::rejected_execute(0, fee.clone(), rejected.clone(), vec![]).unwrap()
+            ]);
+        let ratifications = Ratifications::try_from(vec![]).unwrap();
+
+        let header = Header::genesis(&ratifications, &transactions, vec![]).unwrap();
+        let previous_hash = <CurrentNetwork as Network>::BlockHash::default();
+
+        let fee_id = fee.id();
+        let unconfirmed_id = rejected.to_unconfirmed_id(&fee.fee_transition()).unwrap().into();
+
+        // Construct the block.
+        let block = Block::new_beacon(
+            &private_key,
+            previous_hash,
+            header,
+            ratifications,
+            None.into(),
+            vec![],
+            transactions,
+            vec![unconfirmed_id],
+            rng,
+        )
+        .unwrap();
+
+        block_store.insert(&block).unwrap();
+
+        let txn1 = block_store.get_unconfirmed_transaction(&unconfirmed_id).unwrap().unwrap();
+        let txn2 = block_store.get_unconfirmed_transaction(&fee_id).unwrap().unwrap();
+
+        // Ensure the execute transaction is returned in both cases.
+        assert!(matches!(txn2, Transaction::Execute(..)));
+        assert_eq!(txn1, txn2);
+
+        let txn3 = block_store.get_transaction(&unconfirmed_id).unwrap().unwrap();
+        let txn4 = block_store.get_transaction(&fee_id).unwrap().unwrap();
+
+        // For get_transaction the Fee must be returned in both cases.
+        assert!(matches!(txn3, Transaction::Fee(..)));
+        assert_ne!(txn1, txn3);
+        assert_eq!(txn3, txn4);
     }
 }

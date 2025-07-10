@@ -1,4 +1,4 @@
-// Copyright 2024 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -37,7 +37,7 @@ mod evaluate;
 mod execute;
 mod helpers;
 
-use crate::{CallMetrics, Process, Trace, cost_in_microcredits_v2, traits::*};
+use crate::{CallMetrics, Process, Trace, cost_in_microcredits_v2};
 use console::{
     account::{Address, PrivateKey},
     network::prelude::*,
@@ -59,19 +59,36 @@ use console::{
         RegisterType,
         Request,
         Response,
+        U8,
+        U16,
         Value,
         ValueType,
     },
     types::{Field, Group},
 };
-use ledger_block::{Deployment, Transition};
-use synthesizer_program::{CallOperator, Closure, Function, Instruction, Operand, Program, traits::*};
+use ledger_block::{Deployment, Transaction, Transition};
+use synthesizer_program::{
+    CallOperator,
+    Closure,
+    Function,
+    Instruction,
+    Operand,
+    Program,
+    RegistersCircuit,
+    RegistersSigner,
+    RegistersTrait,
+    StackTrait,
+};
 use synthesizer_snark::{Certificate, ProvingKey, UniversalSRS, VerifyingKey};
 
 use aleo_std::prelude::{finish, lap, timer};
 use indexmap::IndexMap;
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::RwLock;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
-use std::sync::Arc;
+use rand::{CryptoRng, Rng};
+use std::sync::{Arc, Weak};
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
@@ -135,9 +152,18 @@ impl<N: Network> CallStack<N> {
             CallStack::Authorize(requests, ..)
             | CallStack::Synthesize(requests, ..)
             | CallStack::CheckDeployment(requests, ..)
-            | CallStack::PackageRun(requests, ..) => requests.push(request),
-            CallStack::Evaluate(authorization) => authorization.push(request),
-            CallStack::Execute(authorization, ..) => authorization.push(request),
+            | CallStack::PackageRun(requests, ..) => {
+                // Check that the number of requests does not exceed the maximum.
+                ensure!(
+                    requests.len() < Transaction::<N>::MAX_TRANSITIONS,
+                    "The number of requests in the authorization must be less than '{}'.",
+                    Transaction::<N>::MAX_TRANSITIONS
+                );
+                // Push the request to the stack.
+                requests.push(request)
+            }
+            CallStack::Evaluate(authorization) => authorization.push(request)?,
+            CallStack::Execute(authorization, ..) => authorization.push(request)?,
         }
         Ok(())
     }
@@ -175,38 +201,41 @@ impl<N: Network> CallStack<N> {
 pub struct Stack<N: Network> {
     /// The program (record types, structs, functions).
     program: Program<N>,
-    /// The mapping of external stacks as `(program ID, stack)`.
-    external_stacks: IndexMap<ProgramID<N>, Arc<Stack<N>>>,
+    /// A reference to the global stack map.
+    stacks: Weak<RwLock<IndexMap<ProgramID<N>, Arc<Stack<N>>>>>,
     /// The mapping of closure and function names to their register types.
     register_types: IndexMap<Identifier<N>, RegisterTypes<N>>,
     /// The mapping of finalize names to their register types.
     finalize_types: IndexMap<Identifier<N>, FinalizeTypes<N>>,
     /// The universal SRS.
-    universal_srs: Arc<UniversalSRS<N>>,
+    universal_srs: UniversalSRS<N>,
     /// The mapping of function name to proving key.
     proving_keys: Arc<RwLock<IndexMap<Identifier<N>, ProvingKey<N>>>>,
     /// The mapping of function name to verifying key.
     verifying_keys: Arc<RwLock<IndexMap<Identifier<N>, VerifyingKey<N>>>>,
-    /// The mapping of function names to the number of calls.
-    number_of_calls: IndexMap<Identifier<N>, usize>,
-    /// The mapping of function names to finalize cost.
-    finalize_costs: IndexMap<Identifier<N>, u64>,
-    /// The program depth.
-    program_depth: usize,
     /// The program address.
     program_address: Address<N>,
+    /// The program edition.
+    program_edition: U16<N>,
 }
 
 impl<N: Network> Stack<N> {
     /// Initializes a new stack, if it does not already exist, given the process and the program.
-    #[inline]
     pub fn new(process: &Process<N>, program: &Program<N>) -> Result<Self> {
         // Retrieve the program ID.
         let program_id = program.id();
-        // Ensure the program does not already exist in the process.
-        ensure!(!process.contains_program(program_id), "Program '{program_id}' already exists");
         // Ensure the program contains functions.
         ensure!(!program.functions().is_empty(), "No functions present in the deployment for program '{program_id}'");
+        // If the program exists in the process, check that the new program exactly matches the existing program.
+        if let Ok(existing_stack) = process.get_stack(program_id) {
+            // Ensure the program is not `credits.aleo`.
+            ensure!(program_id != &ProgramID::from_str("credits.aleo")?, "Cannot re-initialize the 'credits.aleo'.");
+            // Ensure that the new program matches the existing program.
+            ensure!(
+                existing_stack.program() == program,
+                "Program '{program_id}' already exists with different contents."
+            );
+        }
 
         // Serialize the program into bytes.
         let program_bytes = program.to_bytes_le()?;
@@ -221,252 +250,21 @@ impl<N: Network> Stack<N> {
         // Return the stack.
         Stack::initialize(process, program)
     }
-}
 
-impl<N: Network> StackKeys<N> for Stack<N> {
-    /// Returns `true` if the proving key for the given function name exists.
-    #[inline]
-    fn contains_proving_key(&self, function_name: &Identifier<N>) -> bool {
-        self.proving_keys.read().contains_key(function_name)
-    }
-
-    /// Returns the proving key for the given function name.
-    #[inline]
-    fn get_proving_key(&self, function_name: &Identifier<N>) -> Result<ProvingKey<N>> {
-        // If the program is 'credits.aleo', try to load the proving key, if it does not exist.
-        self.try_insert_credits_function_proving_key(function_name)?;
-        // Return the proving key, if it exists.
-        match self.proving_keys.read().get(function_name) {
-            Some(pk) => Ok(pk.clone()),
-            None => bail!("Proving key not found for: {}/{}", self.program.id(), function_name),
-        }
-    }
-
-    /// Inserts the given proving key for the given function name.
-    #[inline]
-    fn insert_proving_key(&self, function_name: &Identifier<N>, proving_key: ProvingKey<N>) -> Result<()> {
-        // Ensure the function name exists in the program.
-        ensure!(
-            self.program.contains_function(function_name),
-            "Function '{function_name}' does not exist in program '{}'.",
-            self.program.id()
-        );
-        // Insert the proving key.
-        self.proving_keys.write().insert(*function_name, proving_key);
-        Ok(())
-    }
-
-    /// Removes the proving key for the given function name.
-    #[inline]
-    fn remove_proving_key(&self, function_name: &Identifier<N>) {
-        self.proving_keys.write().shift_remove(function_name);
-    }
-
-    /// Returns `true` if the verifying key for the given function name exists.
-    #[inline]
-    fn contains_verifying_key(&self, function_name: &Identifier<N>) -> bool {
-        self.verifying_keys.read().contains_key(function_name)
-    }
-
-    /// Returns the verifying key for the given function name.
-    #[inline]
-    fn get_verifying_key(&self, function_name: &Identifier<N>) -> Result<VerifyingKey<N>> {
-        // Return the verifying key, if it exists.
-        match self.verifying_keys.read().get(function_name) {
-            Some(vk) => Ok(vk.clone()),
-            None => bail!("Verifying key not found for: {}/{}", self.program.id(), function_name),
-        }
-    }
-
-    /// Inserts the given verifying key for the given function name.
-    #[inline]
-    fn insert_verifying_key(&self, function_name: &Identifier<N>, verifying_key: VerifyingKey<N>) -> Result<()> {
-        // Ensure the function name exists in the program.
-        ensure!(
-            self.program.contains_function(function_name),
-            "Function '{function_name}' does not exist in program '{}'.",
-            self.program.id()
-        );
-        // Insert the verifying key.
-        self.verifying_keys.write().insert(*function_name, verifying_key);
-        Ok(())
-    }
-
-    /// Removes the verifying key for the given function name.
-    #[inline]
-    fn remove_verifying_key(&self, function_name: &Identifier<N>) {
-        self.verifying_keys.write().shift_remove(function_name);
-    }
-}
-
-impl<N: Network> StackProgram<N> for Stack<N> {
-    /// Returns the program.
-    #[inline]
-    fn program(&self) -> &Program<N> {
-        &self.program
-    }
-
-    /// Returns the program ID.
-    #[inline]
-    fn program_id(&self) -> &ProgramID<N> {
-        self.program.id()
-    }
-
-    /// Returns the program depth.
-    #[inline]
-    fn program_depth(&self) -> usize {
-        self.program_depth
-    }
-
-    /// Returns the program address.
-    #[inline]
-    fn program_address(&self) -> &Address<N> {
-        &self.program_address
-    }
-
-    /// Returns `true` if the stack contains the external record.
-    #[inline]
-    fn contains_external_record(&self, locator: &Locator<N>) -> bool {
-        // Retrieve the external program.
-        match self.get_external_program(locator.program_id()) {
-            // Return `true` if the external record exists.
-            Ok(external_program) => external_program.contains_record(locator.resource()),
-            // Return `false` otherwise.
-            Err(_) => false,
-        }
-    }
-
-    /// Returns the external stack for the given program ID.
-    #[inline]
-    fn get_external_stack(&self, program_id: &ProgramID<N>) -> Result<&Arc<Stack<N>>> {
-        // Retrieve the external stack.
-        self.external_stacks.get(program_id).ok_or_else(|| anyhow!("External program '{program_id}' does not exist."))
-    }
-
-    /// Returns the external program for the given program ID.
-    #[inline]
-    fn get_external_program(&self, program_id: &ProgramID<N>) -> Result<&Program<N>> {
-        match self.program.id() == program_id {
-            true => bail!("Attempted to get the main program '{}' as an external program", self.program.id()),
-            // Retrieve the external stack, and return the external program.
-            false => Ok(self.get_external_stack(program_id)?.program()),
-        }
-    }
-
-    /// Returns the external record if the stack contains the external record.
-    #[inline]
-    fn get_external_record(&self, locator: &Locator<N>) -> Result<&RecordType<N>> {
-        // Retrieve the external program.
-        let external_program = self.get_external_program(locator.program_id())?;
-        // Return the external record, if it exists.
-        external_program.get_record(locator.resource())
-    }
-
-    /// Returns the expected finalize cost for the given function name.
-    #[inline]
-    fn get_finalize_cost(&self, function_name: &Identifier<N>) -> Result<u64> {
-        self.finalize_costs
-            .get(function_name)
-            .copied()
-            .ok_or_else(|| anyhow!("Function '{function_name}' does not exist"))
-    }
-
-    /// Returns the function with the given function name.
-    #[inline]
-    fn get_function(&self, function_name: &Identifier<N>) -> Result<Function<N>> {
-        self.program.get_function(function_name)
-    }
-
-    /// Returns a reference to the function with the given function name.
-    #[inline]
-    fn get_function_ref(&self, function_name: &Identifier<N>) -> Result<&Function<N>> {
-        self.program.get_function_ref(function_name)
-    }
-
-    /// Returns the expected number of calls for the given function name.
-    #[inline]
-    fn get_number_of_calls(&self, function_name: &Identifier<N>) -> Result<usize> {
-        self.number_of_calls
-            .get(function_name)
-            .copied()
-            .ok_or_else(|| anyhow!("Function '{function_name}' does not exist"))
-    }
-
-    /// Returns a value for the given value type.
-    fn sample_value<R: Rng + CryptoRng>(
-        &self,
-        burner_address: &Address<N>,
-        value_type: &ValueType<N>,
-        rng: &mut R,
-    ) -> Result<Value<N>> {
-        match value_type {
-            ValueType::Constant(plaintext_type)
-            | ValueType::Public(plaintext_type)
-            | ValueType::Private(plaintext_type) => Ok(Value::Plaintext(self.sample_plaintext(plaintext_type, rng)?)),
-            ValueType::Record(record_name) => {
-                Ok(Value::Record(self.sample_record(burner_address, record_name, Group::rand(rng), rng)?))
-            }
-            ValueType::ExternalRecord(locator) => {
-                // Retrieve the external stack.
-                let stack = self.get_external_stack(locator.program_id())?;
-                // Sample the output.
-                Ok(Value::Record(stack.sample_record(burner_address, locator.resource(), Group::rand(rng), rng)?))
-            }
-            ValueType::Future(locator) => Ok(Value::Future(self.sample_future(locator, rng)?)),
-        }
-    }
-
-    /// Returns a record for the given record name, with the given burner address and nonce.
-    fn sample_record<R: Rng + CryptoRng>(
-        &self,
-        burner_address: &Address<N>,
-        record_name: &Identifier<N>,
-        nonce: Group<N>,
-        rng: &mut R,
-    ) -> Result<Record<N, Plaintext<N>>> {
-        // Sample a record.
-        let record = self.sample_record_internal(burner_address, record_name, nonce, 0, rng)?;
-        // Ensure the record matches the value type.
-        self.matches_record(&record, record_name)?;
-        // Return the record.
-        Ok(record)
-    }
-
-    /// Returns a record for the given record name, deriving the nonce from tvk and index.
-    fn sample_record_using_tvk<R: Rng + CryptoRng>(
-        &self,
-        burner_address: &Address<N>,
-        record_name: &Identifier<N>,
-        tvk: Field<N>,
-        index: Field<N>,
-        rng: &mut R,
-    ) -> Result<Record<N, Plaintext<N>>> {
-        // Compute the randomizer.
-        let randomizer = N::hash_to_scalar_psd2(&[tvk, index])?;
-        // Construct the record nonce from that randomizer.
-        let record_nonce = N::g_scalar_multiply(&randomizer);
-        // Sample the record with that nonce.
-        self.sample_record(burner_address, record_name, record_nonce, rng)
-    }
-}
-
-impl<N: Network> StackProgramTypes<N> for Stack<N> {
     /// Returns the register types for the given closure or function name.
     #[inline]
-    fn get_register_types(&self, name: &Identifier<N>) -> Result<&RegisterTypes<N>> {
+    pub fn get_register_types(&self, name: &Identifier<N>) -> Result<&RegisterTypes<N>> {
         // Retrieve the register types.
         self.register_types.get(name).ok_or_else(|| anyhow!("Register types for '{name}' do not exist"))
     }
 
     /// Returns the register types for the given finalize name.
     #[inline]
-    fn get_finalize_types(&self, name: &Identifier<N>) -> Result<&FinalizeTypes<N>> {
+    pub fn get_finalize_types(&self, name: &Identifier<N>) -> Result<&FinalizeTypes<N>> {
         // Retrieve the finalize types.
         self.finalize_types.get(name).ok_or_else(|| anyhow!("Finalize types for '{name}' do not exist"))
     }
-}
 
-impl<N: Network> Stack<N> {
     /// Inserts the proving key if the program ID is 'credits.aleo'.
     fn try_insert_credits_function_proving_key(&self, function_name: &Identifier<N>) -> Result<()> {
         // If the program is 'credits.aleo' and it does not exist yet, load the proving key directly.
@@ -485,10 +283,29 @@ impl<N: Network> Stack<N> {
 impl<N: Network> PartialEq for Stack<N> {
     fn eq(&self, other: &Self) -> bool {
         self.program == other.program
-            && self.external_stacks == other.external_stacks
             && self.register_types == other.register_types
             && self.finalize_types == other.finalize_types
     }
 }
 
 impl<N: Network> Eq for Stack<N> {}
+
+// A helper enum to avoid cloning stacks.
+#[derive(Clone)]
+pub(crate) enum StackRef<'a, N: Network> {
+    // Self's stack.
+    Internal(&'a Stack<N>),
+    // An external stack.
+    External(Arc<Stack<N>>),
+}
+
+impl<N: Network> Deref for StackRef<'_, N> {
+    type Target = Stack<N>;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            StackRef::Internal(stack) => stack,
+            StackRef::External(stack) => stack,
+        }
+    }
+}
