@@ -34,12 +34,15 @@ pub enum ParameterError {
 
     #[error("{}", _0)]
     Wasm(String),
+
+    #[error("Download error: {}", _0)]
+    DownloadError(String),
 }
 
 #[cfg(not(feature = "wasm"))]
-impl From<curl::Error> for ParameterError {
-    fn from(error: curl::Error) -> Self {
-        ParameterError::Crate("curl::error", format!("{error:?}"))
+impl From<reqwest::Error> for ParameterError {
+    fn from(error: reqwest::Error) -> Self {
+        ParameterError::Crate("reqwest::Error", format!("{error:?}"))
     }
 }
 

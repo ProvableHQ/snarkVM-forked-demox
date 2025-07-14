@@ -660,36 +660,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "curl"
-version = "0.4.48"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e2d5c8f48d9c0c23250e52b55e82a6ab4fdba6650c931f5a0a57a43abda812b"
-dependencies = [
- "curl-sys",
- "libc",
- "openssl-probe",
- "openssl-sys",
- "schannel",
- "socket2",
- "windows-sys 0.59.0",
-]
-
-[[package]]
-name = "curl-sys"
-version = "0.4.81+curl-8.14.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f40f83946e6627dac558eb9ccc799b8894f36da8ea7470334c5fd7046ddd6a43"
-dependencies = [
- "cc",
- "libc",
- "libz-sys",
- "openssl-sys",
- "pkg-config",
- "vcpkg",
- "windows-sys 0.59.0",
-]
-
-[[package]]
 name = "dashmap"
 version = "5.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1603,7 +1573,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b70e7a7df205e92a1a4cd9aaae7898dac0aa555503cc0a649494d0d60e7651d"
 dependencies = [
  "cc",
- "libc",
  "pkg-config",
  "vcpkg",
 ]
@@ -3488,7 +3457,6 @@ dependencies = [
  "anyhow",
  "cfg-if",
  "colored",
- "curl",
  "encoding",
  "hex",
  "js-sys",
@@ -3497,6 +3465,7 @@ dependencies = [
  "parking_lot",
  "paste",
  "rand",
+ "reqwest",
  "serde_json",
  "sha2",
  "snarkvm-algorithms",

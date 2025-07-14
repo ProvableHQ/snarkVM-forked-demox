@@ -70,34 +70,46 @@ macro_rules! impl_store_and_remote_fetch {
 
         #[cfg(not(feature = "wasm"))]
         fn remote_fetch(buffer: &mut Vec<u8>, url: &str) -> Result<(), $crate::errors::ParameterError> {
-            let mut easy = curl::easy::Easy::new();
-            easy.follow_location(true)?;
-            easy.url(url)?;
+            use reqwest::blocking::Client;
+            use std::io::Write;
+            use std::time::Instant;
+
+            // Create the reqwest client
+            let client = Client::new();
 
             #[cfg(not(feature = "no_std_out"))]
             {
                 use colored::*;
-
                 let output = format!("{:>15} - Downloading \"{}\"", "Installation", url);
                 println!("{}", output.dimmed());
 
-                easy.progress(true)?;
-                easy.progress_function(|total_download, current_download, _, _| {
-                    let percent = (current_download / total_download) * 100.0;
-                    let size_in_megabytes = total_download as u64 / 1_048_576;
-                    let output =
-                        format!("\r{:>15} - {:.2}% complete ({:#} MB total)", "Installation", percent, size_in_megabytes);
-                    print!("{}", output.dimmed());
-                    true
-                })?;
+                let start = Instant::now();
+                let mut total_downloaded: u64 = 0;
+                let response = client.get(url).send()?;
+
+                let total_size = response
+                    .content_length()
+                    .ok_or_else(|| $crate::errors::ParameterError::DownloadError(format!("Error occurred during download")))?;
+
+                let mut response = response;
+
+                // Read the entire response body into the buffer
+                response.copy_to(buffer)?;
+
+                // Show download progress (since we don't manually chunk, we just simulate it)
+                total_downloaded = buffer.len() as u64;
+                let percent = (total_downloaded as f64 / total_size as f64) * 100.0;
+                let size_in_megabytes = total_size / 1_048_576;
+                let output = format!("\r{:>15} - {:.2}% complete ({:#} MB total)", "Installation", percent, size_in_megabytes);
+                print!("{}", output.dimmed());
+                std::io::stdout().flush().unwrap();
+
+                // End progress
+                let duration = start.elapsed();
+                println!("\nDownload completed in {:.2?}", duration);
             }
 
-            let mut transfer = easy.transfer();
-            transfer.write_function(|data| {
-                buffer.extend_from_slice(data);
-                Ok(data.len())
-            })?;
-            Ok(transfer.perform()?)
+            Ok(())
         }
 
         #[cfg(feature = "wasm")]
