@@ -14,7 +14,7 @@
 // limitations under the License.
 
 use console::{account::Address, network::prelude::*};
-use ledger_committee::{Committee, MIN_DELEGATOR_STAKE};
+use snarkvm_ledger_committee::{Committee, MIN_DELEGATOR_STAKE};
 
 use indexmap::IndexMap;
 
@@ -26,7 +26,7 @@ use parking_lot::Mutex;
 use rayon::prelude::*;
 
 /// A safety bound (sanity-check) for the coinbase reward.
-const MAX_COINBASE_REWARD: u64 = ledger_block::MAX_COINBASE_REWARD; // Coinbase reward at block 1.
+const MAX_COINBASE_REWARD: u64 = snarkvm_ledger_block::MAX_COINBASE_REWARD; // Coinbase reward at block 1.
 
 /// Returns the updated stakers reflecting the staking rewards for the given committee, block reward,
 /// and validator commission rates.
@@ -221,7 +221,7 @@ mod tests {
     fn test_staking_rewards() {
         let rng = &mut TestRng::default();
         // Sample a random committee.
-        let committee = ledger_committee::test_helpers::sample_committee_with_commissions(rng);
+        let committee = snarkvm_ledger_committee::test_helpers::sample_committee_with_commissions(rng);
         // Sample a random block reward.
         let block_reward = rng.gen_range(0..MAX_COINBASE_REWARD);
         // Retrieve an address.
@@ -246,8 +246,8 @@ mod tests {
     fn test_staking_rewards_to_validator_not_in_committee() {
         let rng = &mut TestRng::default();
         // Sample a random committee.
-        let committee = ledger_committee::test_helpers::sample_committee(rng);
-        let fake_committee = ledger_committee::test_helpers::sample_committee(rng);
+        let committee = snarkvm_ledger_committee::test_helpers::sample_committee(rng);
+        let fake_committee = snarkvm_ledger_committee::test_helpers::sample_committee(rng);
         // Sample a random block reward.
         let block_reward = rng.gen_range(0..MAX_COINBASE_REWARD);
 
@@ -284,7 +284,7 @@ mod tests {
     fn test_staking_rewards_commission() {
         let rng = &mut TestRng::default();
         // Sample a random committee.
-        let committee = ledger_committee::test_helpers::sample_committee_with_commissions(rng);
+        let committee = snarkvm_ledger_committee::test_helpers::sample_committee_with_commissions(rng);
         // Convert the committee into stakers.
         let stakers = crate::committee::test_helpers::to_stakers(committee.members(), rng);
         // Sample a random block reward.
@@ -293,7 +293,7 @@ mod tests {
         let commissions: IndexMap<Address<CurrentNetwork>, u8> =
             committee.members().iter().map(|(address, (_, _, commission))| (*address, *commission)).collect();
         // Print the commissions from the indexmap
-        println!("commissions: {:?}", commissions);
+        println!("commissions: {commissions:?}");
         // Create a map of validators to the sum of their commissions
         let mut total_commissions: IndexMap<Address<CurrentNetwork>, u64> = Default::default();
 
@@ -362,7 +362,7 @@ mod tests {
         // Sample a random block reward.
         let block_reward = rng.gen_range(0..MAX_COINBASE_REWARD);
         // Sample a committee.
-        let committee = ledger_committee::test_helpers::sample_committee_for_round_and_size(1, 25, rng);
+        let committee = snarkvm_ledger_committee::test_helpers::sample_committee_for_round_and_size(1, 25, rng);
         // Convert the committee into stakers.
         let stakers = crate::committee::test_helpers::to_stakers(committee.members(), rng);
 
@@ -386,7 +386,7 @@ mod tests {
     fn test_staking_rewards_when_delegator_is_under_min_yields_no_reward() {
         let rng = &mut TestRng::default();
         // Sample a random committee.
-        let committee = ledger_committee::test_helpers::sample_committee(rng);
+        let committee = snarkvm_ledger_committee::test_helpers::sample_committee(rng);
         // Convert the committee into stakers.
         let stakers = crate::committee::test_helpers::to_stakers(committee.members(), rng);
         // Sample a random block reward.
@@ -412,7 +412,7 @@ mod tests {
     fn test_staking_rewards_cannot_exceed_coinbase_reward() {
         let rng = &mut TestRng::default();
         // Sample a random committee.
-        let committee = ledger_committee::test_helpers::sample_committee(rng);
+        let committee = snarkvm_ledger_committee::test_helpers::sample_committee(rng);
         // Retrieve an address.
         let address = *committee.members().iter().next().unwrap().0;
 
@@ -440,10 +440,10 @@ mod tests {
     fn test_staking_rewards_is_empty() {
         let rng = &mut TestRng::default();
         // Sample a random committee.
-        let committee = ledger_committee::test_helpers::sample_committee(rng);
+        let committee = snarkvm_ledger_committee::test_helpers::sample_committee(rng);
 
         // Compute the staking rewards (empty).
-        let rewards = staking_rewards::<CurrentNetwork>(&indexmap![], &committee, rng.gen());
+        let rewards = staking_rewards::<CurrentNetwork>(&indexmap![], &committee, rng.r#gen());
         assert!(rewards.is_empty());
     }
 
@@ -490,7 +490,7 @@ mod tests {
         let address = Address::rand(rng);
 
         // Compute the proving rewards (empty).
-        let rewards = proving_rewards::<CurrentNetwork>(vec![], rng.gen());
+        let rewards = proving_rewards::<CurrentNetwork>(vec![], rng.r#gen());
         assert!(rewards.is_empty());
 
         // Check that a maxed out coinbase reward, returns empty.

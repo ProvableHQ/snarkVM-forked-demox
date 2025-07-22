@@ -14,7 +14,6 @@
 // limitations under the License.
 
 use crate::{CallStack, InclusionVersion, Process, Stack, Trace};
-use algorithms::snark::varuna::VarunaVersion;
 use circuit::{Aleo, network::AleoV0};
 use console::{
     account::{Address, PrivateKey, ViewKey},
@@ -22,17 +21,18 @@ use console::{
     program::{Identifier, Literal, Plaintext, ProgramID, Record, Value},
     types::{Field, U64},
 };
-use ledger_block::{Fee, Output, Transaction, Transition};
-use ledger_query::Query;
-use ledger_store::{
+use snarkvm_algorithms::snark::varuna::VarunaVersion;
+use snarkvm_ledger_block::{Fee, Output, Transaction, Transition};
+use snarkvm_ledger_query::Query;
+use snarkvm_ledger_store::{
     BlockStorage,
     BlockStore,
     FinalizeStorage,
     FinalizeStore,
     helpers::memory::{BlockMemory, FinalizeMemory},
 };
-use synthesizer_program::{FinalizeGlobalState, FinalizeStoreTrait, Program, StackTrait};
-use synthesizer_snark::UniversalSRS;
+use snarkvm_synthesizer_program::{FinalizeGlobalState, FinalizeStoreTrait, Program, StackTrait};
+use snarkvm_synthesizer_snark::UniversalSRS;
 
 use aleo_std::StorageMode;
 #[cfg(feature = "locktick")]
@@ -118,11 +118,11 @@ function foo:
     // Construct the process.
     let process = crate::test_helpers::sample_process(&program);
 
+    // Initialize an RNG.
+    let rng = &mut TestRng::default();
+
     // Compute the authorization.
     let authorization = {
-        // Initialize an RNG.
-        let rng = &mut TestRng::default();
-
         // Initialize caller private key.
         let caller_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
 
@@ -141,14 +141,17 @@ function foo:
     let expected = Value::Plaintext(Plaintext::<CurrentNetwork>::from_str("5field").unwrap());
 
     // Run the function.
-    let response =
-        stack.evaluate_function::<CurrentAleo>(CallStack::evaluate(authorization.replicate()).unwrap(), None).unwrap();
+    let response = stack
+        .evaluate_function::<CurrentAleo, _>(CallStack::evaluate(authorization.replicate()).unwrap(), None, None, rng)
+        .unwrap();
     let candidate = response.outputs();
     assert_eq!(1, candidate.len());
     assert_eq!(expected, candidate[0]);
 
     // Re-run to ensure state continues to work.
-    let response = stack.evaluate_function::<CurrentAleo>(CallStack::evaluate(authorization).unwrap(), None).unwrap();
+    let response = stack
+        .evaluate_function::<CurrentAleo, _>(CallStack::evaluate(authorization).unwrap(), None, None, rng)
+        .unwrap();
     let candidate = response.outputs();
     assert_eq!(1, candidate.len());
     assert_eq!(expected, candidate[0]);
@@ -183,11 +186,11 @@ output r1 as field.private;",
     // Construct the process.
     let process = crate::test_helpers::sample_process(&program);
 
+    // Initialize an RNG.
+    let rng = &mut TestRng::default();
+
     // Compute the authorization.
     let authorization = {
-        // Initialize an RNG.
-        let rng = &mut TestRng::default();
-
         // Initialize caller private key.
         let caller_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
 
@@ -203,14 +206,17 @@ output r1 as field.private;",
     let stack = process.get_stack(program.id()).unwrap();
 
     // Compute the output value.
-    let response =
-        stack.evaluate_function::<CurrentAleo>(CallStack::evaluate(authorization.replicate()).unwrap(), None).unwrap();
+    let response = stack
+        .evaluate_function::<CurrentAleo, _>(CallStack::evaluate(authorization.replicate()).unwrap(), None, None, rng)
+        .unwrap();
     let candidate = response.outputs();
     assert_eq!(1, candidate.len());
     assert_eq!(expected, candidate[0]);
 
     // Re-run to ensure state continues to work.
-    let response = stack.evaluate_function::<CurrentAleo>(CallStack::evaluate(authorization).unwrap(), None).unwrap();
+    let response = stack
+        .evaluate_function::<CurrentAleo, _>(CallStack::evaluate(authorization).unwrap(), None, None, rng)
+        .unwrap();
     let candidate = response.outputs();
     assert_eq!(1, candidate.len());
     assert_eq!(expected, candidate[0]);
@@ -268,14 +274,17 @@ output r1 as u64.private;",
     let stack = process.get_stack(program.id()).unwrap();
 
     // Compute the output value.
-    let response =
-        stack.evaluate_function::<CurrentAleo>(CallStack::evaluate(authorization.replicate()).unwrap(), None).unwrap();
+    let response = stack
+        .evaluate_function::<CurrentAleo, _>(CallStack::evaluate(authorization.replicate()).unwrap(), None, None, rng)
+        .unwrap();
     let candidate = response.outputs();
     assert_eq!(1, candidate.len());
     assert_eq!(expected, candidate[0]);
 
     // Re-run to ensure state continues to work.
-    let response = stack.evaluate_function::<CurrentAleo>(CallStack::evaluate(authorization).unwrap(), None).unwrap();
+    let response = stack
+        .evaluate_function::<CurrentAleo, _>(CallStack::evaluate(authorization).unwrap(), None, None, rng)
+        .unwrap();
     let candidate = response.outputs();
     assert_eq!(1, candidate.len());
     assert_eq!(expected, candidate[0]);
@@ -332,11 +341,11 @@ output r4 as field.private;",
     // Construct the process.
     let process = crate::test_helpers::sample_process(&program);
 
+    // Initialize an RNG.
+    let rng = &mut TestRng::default();
+
     // Compute the authorization.
     let authorization = {
-        // Initialize an RNG.
-        let rng = &mut TestRng::default();
-
         // Initialize caller private key.
         let caller_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
 
@@ -358,8 +367,9 @@ output r4 as field.private;",
     let stack = process.get_stack(program.id()).unwrap();
 
     // Compute the output value.
-    let response =
-        stack.evaluate_function::<CurrentAleo>(CallStack::evaluate(authorization.replicate()).unwrap(), None).unwrap();
+    let response = stack
+        .evaluate_function::<CurrentAleo, _>(CallStack::evaluate(authorization.replicate()).unwrap(), None, None, rng)
+        .unwrap();
     let candidate = response.outputs();
     assert_eq!(3, candidate.len());
     assert_eq!(r2, candidate[0]);
@@ -367,7 +377,9 @@ output r4 as field.private;",
     assert_eq!(r4, candidate[2]);
 
     // Re-run to ensure state continues to work.
-    let response = stack.evaluate_function::<CurrentAleo>(CallStack::evaluate(authorization).unwrap(), None).unwrap();
+    let response = stack
+        .evaluate_function::<CurrentAleo, _>(CallStack::evaluate(authorization).unwrap(), None, None, rng)
+        .unwrap();
     let candidate = response.outputs();
     assert_eq!(3, candidate.len());
     assert_eq!(r2, candidate[0]);
@@ -463,14 +475,17 @@ output r1 as token.record;",
     let stack = process.get_stack(program.id()).unwrap();
 
     // Compute the output value.
-    let response =
-        stack.evaluate_function::<CurrentAleo>(CallStack::evaluate(authorization.replicate()).unwrap(), None).unwrap();
+    let response = stack
+        .evaluate_function::<CurrentAleo, _>(CallStack::evaluate(authorization.replicate()).unwrap(), None, None, rng)
+        .unwrap();
     let candidate = response.outputs();
     assert_eq!(1, candidate.len());
     assert_eq!(expected, candidate[0]);
 
     // Re-run to ensure state continues to work.
-    let response = stack.evaluate_function::<CurrentAleo>(CallStack::evaluate(authorization).unwrap(), None).unwrap();
+    let response = stack
+        .evaluate_function::<CurrentAleo, _>(CallStack::evaluate(authorization).unwrap(), None, None, rng)
+        .unwrap();
     let candidate = response.outputs();
     assert_eq!(1, candidate.len());
     assert_eq!(expected, candidate[0]);
@@ -2595,7 +2610,7 @@ fn test_long_import_chain_with_calls() {
 
     // Check that the number of calls, up to `Transaction::MAX_TRANSITIONS - 1`, is correct.
     for i in 1..(Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 1) {
-        println!("Adding program {}", i);
+        println!("Adding program {i}");
         // Initialize a new program.
         let program = Program::from_str(&format!(
             "
@@ -2648,7 +2663,7 @@ fn test_max_imports() {
 
     // Add a program importing all `MAX_IMPORTS` programs, which should pass.
     let import_string =
-        (0..CurrentNetwork::MAX_IMPORTS).map(|i| format!("import test{}.aleo;", i)).collect::<Vec<_>>().join(" ");
+        (0..CurrentNetwork::MAX_IMPORTS).map(|i| format!("import test{i}.aleo;")).collect::<Vec<_>>().join(" ");
     let program =
         Program::from_str(&format!("{import_string}program test{}.aleo; function c:", CurrentNetwork::MAX_IMPORTS))
             .unwrap();
@@ -2656,7 +2671,7 @@ fn test_max_imports() {
 
     // Attempt to construct a program importing `MAX_IMPORTS + 1` programs, which should fail.
     let import_string =
-        (0..CurrentNetwork::MAX_IMPORTS + 1).map(|i| format!("import test{}.aleo;", i)).collect::<Vec<_>>().join(" ");
+        (0..CurrentNetwork::MAX_IMPORTS + 1).map(|i| format!("import test{i}.aleo;")).collect::<Vec<_>>().join(" ");
     let result = Program::<CurrentNetwork>::from_str(&format!(
         "{import_string}program test{}.aleo; function c:",
         CurrentNetwork::MAX_IMPORTS + 1

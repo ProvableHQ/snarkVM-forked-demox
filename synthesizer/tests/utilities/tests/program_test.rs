@@ -15,7 +15,7 @@
 
 use crate::{CurrentNetwork, ExpectedTest, get_expectation_path, print_difference};
 
-use console::{account::PrivateKey, program::Identifier};
+use snarkvm_console::{account::PrivateKey, program::Identifier};
 use snarkvm_synthesizer::program::Program;
 
 use anyhow::{Result, bail};
@@ -67,6 +67,11 @@ impl ProgramTest {
     /// Returns the additional keys for the test.
     pub fn keys(&self) -> &[PrivateKey<CurrentNetwork>] {
         &self.keys
+    }
+
+    /// Returns the path to the expectation file.
+    pub fn path(&self) -> &PathBuf {
+        &self.path
     }
 }
 

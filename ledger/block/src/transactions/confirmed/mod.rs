@@ -19,7 +19,7 @@ mod string;
 
 use crate::{Transaction, rejected::Rejected};
 use console::{network::prelude::*, program::FINALIZE_ID_DEPTH, types::Field};
-use synthesizer_program::FinalizeOperation;
+use snarkvm_synthesizer_program::FinalizeOperation;
 
 pub type NumFinalizeSize = u16;
 
@@ -204,7 +204,7 @@ impl<N: Network> ConfirmedTransaction<N> {
 
     /// Returns `true` if the confirmed transaction represents the given unconfirmed transaction ID.
     pub fn contains_unconfirmed_transaction_id(&self, unconfirmed_transaction_id: &N::TransactionID) -> bool {
-        self.to_unconfirmed_transaction_id().map_or(false, |id| &id == unconfirmed_transaction_id)
+        self.to_unconfirmed_transaction_id().is_ok_and(|id| &id == unconfirmed_transaction_id)
     }
 }
 

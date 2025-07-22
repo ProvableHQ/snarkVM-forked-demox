@@ -113,7 +113,10 @@ impl<N: Network> Process<N> {
                         #[cfg(not(any(test, feature = "test")))]
                         ensure!(record.version().is_zero(), "Output record must be Version 0 before Consensus V8");
                         #[cfg(any(test, feature = "test"))]
-                        ensure!(record.version().is_one(), "Output record must be Version 1 on or after Consensus V8");
+                        ensure!(
+                            record.version().is_one(),
+                            "Output record must be Version 1 before Consensus V8 in tests."
+                        );
                     } else {
                         ensure!(record.version().is_one(), "Output record must be Version 1 on or after Consensus V8");
                     }
@@ -369,10 +372,10 @@ impl<N: Network> Process<N> {
                 for instruction in function.instructions() {
                     if let Instruction::Call(call) = instruction {
                         let (pid, fname) = match call.operator() {
-                            synthesizer_program::CallOperator::Locator(locator) => {
+                            snarkvm_synthesizer_program::CallOperator::Locator(locator) => {
                                 (locator.program_id(), locator.resource())
                             }
-                            synthesizer_program::CallOperator::Resource(fname) => (&top.pid, fname),
+                            snarkvm_synthesizer_program::CallOperator::Resource(fname) => (&top.pid, fname),
                         };
                         // Add the child to the traversal stack, only if it is a call to a transition.
                         if self.get_stack(pid)?.get_function(fname).is_ok() {

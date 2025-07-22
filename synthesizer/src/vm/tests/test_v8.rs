@@ -18,13 +18,13 @@ use super::*;
 use crate::vm::test_helpers::*;
 
 use console::{account::ViewKey, network::ConsensusVersion};
-use ledger_store::ConsensusStore;
-use synthesizer_program::{Program, StackTrait as _};
+use snarkvm_ledger_store::ConsensusStore;
+use snarkvm_synthesizer_program::{Program, StackTrait as _};
 
 use crate::vm::test_helpers::sample_vm_at_height;
 use aleo_std::StorageMode;
 use console::program::ProgramOwner;
-use ledger_block::{Deployment, Transaction};
+use snarkvm_ledger_block::{Deployment, Transaction};
 
 // This test checks that:
 //  - an existing program cannot be redeployed before `ConsensusVersion::V8`

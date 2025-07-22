@@ -26,16 +26,15 @@ use crate::{
     TransitionStorage,
     TransitionStore,
     atomic_batch_scope,
-    cow_to_copied,
     helpers::{Map, MapRead},
 };
 use console::{
     network::prelude::*,
     program::{Identifier, ProgramID},
 };
-use ledger_block::{Deployment, Execution, Transaction};
-use synthesizer_program::Program;
-use synthesizer_snark::{Certificate, VerifyingKey};
+use snarkvm_ledger_block::{Deployment, Execution, Transaction};
+use snarkvm_synthesizer_program::Program;
+use snarkvm_synthesizer_snark::{Certificate, VerifyingKey};
 
 use aleo_std_storage::StorageMode;
 use anyhow::Result;
@@ -174,9 +173,8 @@ pub trait TransactionStorage<N: Network>: Clone + Send + Sync {
     /// Removes the transaction for the given `transaction ID`.
     fn remove(&self, transaction_id: &N::TransactionID) -> Result<()> {
         // Retrieve the transaction type.
-        let transaction_type = match self.id_map().get_confirmed(transaction_id)? {
-            Some(transaction_type) => cow_to_copied!(transaction_type),
-            None => bail!("Failed to get the type for transaction '{transaction_id}'"),
+        let Some(transaction_type) = self.id_map().get_confirmed(transaction_id)?.map(|x| *x) else {
+            bail!("Failed to get the type for transaction '{transaction_id}'");
         };
 
         atomic_batch_scope!(self, {
@@ -223,9 +221,8 @@ pub trait TransactionStorage<N: Network>: Clone + Send + Sync {
     /// Returns the transaction for the given `transaction ID`.
     fn get_transaction(&self, transaction_id: &N::TransactionID) -> Result<Option<Transaction<N>>> {
         // Retrieve the transaction type.
-        let transaction_type = match self.id_map().get_confirmed(transaction_id)? {
-            Some(transaction_type) => cow_to_copied!(transaction_type),
-            None => return Ok(None),
+        let Some(transaction_type) = self.id_map().get_confirmed(transaction_id)?.map(|x| *x) else {
+            return Ok(None);
         };
         // Retrieve the transaction.
         match transaction_type {
@@ -335,9 +332,8 @@ impl<N: Network, T: TransactionStorage<N>> TransactionStore<N, T> {
     /// Returns the deployment for the given `transaction ID`.
     pub fn get_deployment(&self, transaction_id: &N::TransactionID) -> Result<Option<Deployment<N>>> {
         // Retrieve the transaction type.
-        let transaction_type = match self.transaction_ids.get_confirmed(transaction_id)? {
-            Some(transaction_type) => cow_to_copied!(transaction_type),
-            None => bail!("Failed to get the type for transaction '{transaction_id}'"),
+        let Some(transaction_type) = self.transaction_ids.get_confirmed(transaction_id)?.map(|x| *x) else {
+            bail!("Failed to get the type for transaction '{transaction_id}'");
         };
         // Retrieve the deployment.
         match transaction_type {
@@ -353,9 +349,8 @@ impl<N: Network, T: TransactionStorage<N>> TransactionStore<N, T> {
     /// Returns the execution for the given `transaction ID`.
     pub fn get_execution(&self, transaction_id: &N::TransactionID) -> Result<Option<Execution<N>>> {
         // Retrieve the transaction type.
-        let transaction_type = match self.transaction_ids.get_confirmed(transaction_id)? {
-            Some(transaction_type) => cow_to_copied!(transaction_type),
-            None => bail!("Failed to get the type for transaction '{transaction_id}'"),
+        let Some(transaction_type) = self.transaction_ids.get_confirmed(transaction_id)?.map(|x| *x) else {
+            bail!("Failed to get the type for transaction '{transaction_id}'");
         };
         // Retrieve the execution.
         match transaction_type {
@@ -376,9 +371,8 @@ impl<N: Network, T: TransactionStorage<N>> TransactionStore<N, T> {
     /// Returns the edition for the given `transaction ID`.
     pub fn get_edition(&self, transaction_id: &N::TransactionID) -> Result<Option<u16>> {
         // Retrieve the transaction type.
-        let transaction_type = match self.transaction_ids.get_confirmed(transaction_id)? {
-            Some(transaction_type) => cow_to_copied!(transaction_type),
-            None => bail!("Failed to get the type for transaction '{transaction_id}'"),
+        let Some(transaction_type) = self.transaction_ids.get_confirmed(transaction_id)?.map(|x| *x) else {
+            bail!("Failed to get the type for transaction '{transaction_id}'");
         };
         // Retrieve the edition.
         match transaction_type {
@@ -553,12 +547,12 @@ mod tests {
 
         // Sample the transactions.
         for transaction in [
-            ledger_test_helpers::sample_deployment_transaction(0, true, rng),
-            ledger_test_helpers::sample_deployment_transaction(0, false, rng),
-            ledger_test_helpers::sample_execution_transaction_with_fee(true, rng),
-            ledger_test_helpers::sample_execution_transaction_with_fee(false, rng),
-            ledger_test_helpers::sample_fee_private_transaction(rng),
-            ledger_test_helpers::sample_fee_public_transaction(rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(0, true, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(0, false, rng),
+            snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(true, rng),
+            snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(false, rng),
+            snarkvm_ledger_test_helpers::sample_fee_private_transaction(rng),
+            snarkvm_ledger_test_helpers::sample_fee_public_transaction(rng),
         ] {
             let transaction_id = transaction.id();
 
@@ -594,12 +588,12 @@ mod tests {
 
         // Sample the transactions.
         for transaction in [
-            ledger_test_helpers::sample_deployment_transaction(0, true, rng),
-            ledger_test_helpers::sample_deployment_transaction(0, false, rng),
-            ledger_test_helpers::sample_execution_transaction_with_fee(true, rng),
-            ledger_test_helpers::sample_execution_transaction_with_fee(false, rng),
-            ledger_test_helpers::sample_fee_private_transaction(rng),
-            ledger_test_helpers::sample_fee_public_transaction(rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(0, true, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(0, false, rng),
+            snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(true, rng),
+            snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(false, rng),
+            snarkvm_ledger_test_helpers::sample_fee_private_transaction(rng),
+            snarkvm_ledger_test_helpers::sample_fee_public_transaction(rng),
         ] {
             let transaction_id = transaction.id();
             let transition_ids = transaction.transition_ids();

@@ -26,14 +26,14 @@ mod verify;
 mod tests;
 
 use crate::{Restrictions, cast_mut_ref, cast_ref, convert, process};
-use algorithms::snark::varuna::VarunaVersion;
 use console::{
     account::{Address, PrivateKey},
     network::prelude::*,
     program::{Argument, Identifier, Literal, Locator, Plaintext, ProgramID, ProgramOwner, Record, Response, Value},
     types::{Field, Group, U64},
 };
-use ledger_block::{
+use snarkvm_algorithms::snark::varuna::VarunaVersion;
+use snarkvm_ledger_block::{
     Block,
     ConfirmedTransaction,
     Deployment,
@@ -48,11 +48,11 @@ use ledger_block::{
     Transaction,
     Transactions,
 };
-use ledger_committee::Committee;
-use ledger_narwhal_data::Data;
-use ledger_puzzle::Puzzle;
-use ledger_query::{Query, QueryTrait};
-use ledger_store::{
+use snarkvm_ledger_committee::Committee;
+use snarkvm_ledger_narwhal_data::Data;
+use snarkvm_ledger_puzzle::Puzzle;
+use snarkvm_ledger_query::{Query, QueryTrait};
+use snarkvm_ledger_store::{
     BlockStore,
     ConsensusStorage,
     ConsensusStore,
@@ -62,7 +62,7 @@ use ledger_store::{
     TransitionStore,
     atomic_finalize,
 };
-use synthesizer_process::{
+use snarkvm_synthesizer_process::{
     Authorization,
     InclusionVersion,
     Process,
@@ -71,9 +71,15 @@ use synthesizer_process::{
     execution_cost_v1,
     execution_cost_v2,
 };
-use synthesizer_program::{FinalizeGlobalState, FinalizeOperation, FinalizeStoreTrait, Program, StackTrait as _};
-use synthesizer_snark::VerifyingKey;
-use utilities::try_vm_runtime;
+use snarkvm_synthesizer_program::{
+    FinalizeGlobalState,
+    FinalizeOperation,
+    FinalizeStoreTrait,
+    Program,
+    StackTrait as _,
+};
+use snarkvm_synthesizer_snark::VerifyingKey;
+use snarkvm_utilities::try_vm_runtime;
 
 use aleo_std::prelude::{finish, lap, timer};
 use indexmap::{IndexMap, IndexSet};
@@ -270,7 +276,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Initialize a new instance of the puzzle.
         macro_rules! logic {
             ($network:path, $aleo:path) => {{
-                let puzzle = Puzzle::new::<ledger_puzzle_epoch::SynthesisPuzzle<$network, $aleo>>();
+                let puzzle = Puzzle::new::<snarkvm_ledger_puzzle_epoch::SynthesisPuzzle<$network, $aleo>>();
                 Ok(cast_ref!(puzzle as Puzzle<N>).clone())
             }};
         }
@@ -286,16 +292,16 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         // Construct the committee members.
         let members = indexmap::indexmap! {
-            Address::try_from(private_keys[0])? => (ledger_committee::MIN_VALIDATOR_STAKE, true, 0u8),
-            Address::try_from(private_keys[1])? => (ledger_committee::MIN_VALIDATOR_STAKE, true, 0u8),
-            Address::try_from(private_keys[2])? => (ledger_committee::MIN_VALIDATOR_STAKE, true, 0u8),
-            Address::try_from(private_keys[3])? => (ledger_committee::MIN_VALIDATOR_STAKE, true, 0u8),
+            Address::try_from(private_keys[0])? => (snarkvm_ledger_committee::MIN_VALIDATOR_STAKE, true, 0u8),
+            Address::try_from(private_keys[1])? => (snarkvm_ledger_committee::MIN_VALIDATOR_STAKE, true, 0u8),
+            Address::try_from(private_keys[2])? => (snarkvm_ledger_committee::MIN_VALIDATOR_STAKE, true, 0u8),
+            Address::try_from(private_keys[3])? => (snarkvm_ledger_committee::MIN_VALIDATOR_STAKE, true, 0u8),
         };
         // Construct the committee.
         let committee = Committee::<N>::new_genesis(members)?;
 
         // Compute the remaining supply.
-        let remaining_supply = N::STARTING_SUPPLY - (ledger_committee::MIN_VALIDATOR_STAKE * 4);
+        let remaining_supply = N::STARTING_SUPPLY - (snarkvm_ledger_committee::MIN_VALIDATOR_STAKE * 4);
         // Construct the public balances.
         let public_balances = indexmap::indexmap! {
             Address::try_from(private_keys[0])? => remaining_supply / 4,
@@ -519,23 +525,23 @@ pub(crate) mod test_helpers {
         program::{Entry, Value},
         types::Field,
     };
-    use ledger_block::{Block, Header, Input, Metadata, Transition};
-    use ledger_test_helpers::{large_transaction_program, small_transaction_program};
-    use synthesizer_program::Program;
+    use snarkvm_ledger_block::{Block, Header, Input, Metadata, Transition};
+    use snarkvm_ledger_test_helpers::{large_transaction_program, small_transaction_program};
+    use snarkvm_synthesizer_program::Program;
 
     use aleo_std::StorageMode;
     use indexmap::IndexMap;
-    use once_cell::sync::OnceCell;
     use serde_json::json;
-    use synthesizer_snark::{Proof, VerifyingKey};
+    use snarkvm_synthesizer_snark::{Proof, VerifyingKey};
+    use std::sync::OnceLock;
 
     pub(crate) type CurrentNetwork = MainnetV0;
     type CurrentAleo = AleoV0;
 
     #[cfg(not(feature = "rocks"))]
-    pub(crate) type LedgerType = ledger_store::helpers::memory::ConsensusMemory<CurrentNetwork>;
+    pub(crate) type LedgerType = snarkvm_ledger_store::helpers::memory::ConsensusMemory<CurrentNetwork>;
     #[cfg(feature = "rocks")]
-    pub(crate) type LedgerType = ledger_store::helpers::rocksdb::ConsensusDB<CurrentNetwork>;
+    pub(crate) type LedgerType = snarkvm_ledger_store::helpers::rocksdb::ConsensusDB<CurrentNetwork>;
 
     /// Samples a new finalize state.
     pub(crate) fn sample_finalize_state(block_height: u32) -> FinalizeGlobalState {
@@ -563,7 +569,7 @@ pub(crate) mod test_helpers {
     }
 
     pub(crate) fn sample_genesis_private_key(rng: &mut TestRng) -> PrivateKey<CurrentNetwork> {
-        static INSTANCE: OnceCell<PrivateKey<CurrentNetwork>> = OnceCell::new();
+        static INSTANCE: OnceLock<PrivateKey<CurrentNetwork>> = OnceLock::new();
         *INSTANCE.get_or_init(|| {
             // Initialize a new caller.
             PrivateKey::<CurrentNetwork>::new(rng).unwrap()
@@ -571,7 +577,7 @@ pub(crate) mod test_helpers {
     }
 
     pub(crate) fn sample_genesis_block(rng: &mut TestRng) -> Block<CurrentNetwork> {
-        static INSTANCE: OnceCell<Block<CurrentNetwork>> = OnceCell::new();
+        static INSTANCE: OnceLock<Block<CurrentNetwork>> = OnceLock::new();
         INSTANCE
             .get_or_init(|| {
                 // Initialize the VM.
@@ -596,7 +602,7 @@ pub(crate) mod test_helpers {
     }
 
     pub(crate) fn sample_program() -> Program<CurrentNetwork> {
-        static INSTANCE: OnceCell<Program<CurrentNetwork>> = OnceCell::new();
+        static INSTANCE: OnceLock<Program<CurrentNetwork>> = OnceLock::new();
         INSTANCE
             .get_or_init(|| {
                 // Initialize a new program.
@@ -637,7 +643,7 @@ function compute:
     }
 
     pub(crate) fn sample_deployment_transaction(rng: &mut TestRng) -> Transaction<CurrentNetwork> {
-        static INSTANCE: OnceCell<Transaction<CurrentNetwork>> = OnceCell::new();
+        static INSTANCE: OnceLock<Transaction<CurrentNetwork>> = OnceLock::new();
         INSTANCE
             .get_or_init(|| {
                 // Initialize the program.
@@ -674,7 +680,7 @@ function compute:
     }
 
     pub(crate) fn sample_execution_transaction_without_fee(rng: &mut TestRng) -> Transaction<CurrentNetwork> {
-        static INSTANCE: OnceCell<Transaction<CurrentNetwork>> = OnceCell::new();
+        static INSTANCE: OnceLock<Transaction<CurrentNetwork>> = OnceLock::new();
         INSTANCE
             .get_or_init(|| {
                 // Initialize a new caller.
@@ -717,7 +723,7 @@ function compute:
     }
 
     pub(crate) fn sample_execution_transaction_with_private_fee(rng: &mut TestRng) -> Transaction<CurrentNetwork> {
-        static INSTANCE: OnceCell<Transaction<CurrentNetwork>> = OnceCell::new();
+        static INSTANCE: OnceLock<Transaction<CurrentNetwork>> = OnceLock::new();
         INSTANCE
             .get_or_init(|| {
                 // Initialize a new caller.
@@ -761,7 +767,7 @@ function compute:
     }
 
     pub(crate) fn sample_execution_transaction_with_public_fee(rng: &mut TestRng) -> Transaction<CurrentNetwork> {
-        static INSTANCE: OnceCell<Transaction<CurrentNetwork>> = OnceCell::new();
+        static INSTANCE: OnceLock<Transaction<CurrentNetwork>> = OnceLock::new();
         INSTANCE
             .get_or_init(|| {
                 // Initialize a new caller.
@@ -1392,8 +1398,8 @@ function call_fee_private:
 
         // Ensure that the transaction that calls `fee_public` internally cannot be generated.
         let inputs = [
-            Value::<MainnetV0>::from_str(&format!("{}u64", internal_base_fee_amount)).unwrap(),
-            Value::<MainnetV0>::from_str(&format!("{}u64", internal_priority_fee_amount)).unwrap(),
+            Value::<MainnetV0>::from_str(&format!("{internal_base_fee_amount}u64")).unwrap(),
+            Value::<MainnetV0>::from_str(&format!("{internal_priority_fee_amount}u64")).unwrap(),
             Value::<MainnetV0>::from_str("1field").unwrap(),
         ];
         assert!(
@@ -1404,8 +1410,8 @@ function call_fee_private:
         // Ensure that the transaction that calls `fee_private` internally cannot be generated.
         let inputs = [
             Value::<MainnetV0>::Record(record_0),
-            Value::<MainnetV0>::from_str(&format!("{}u64", internal_base_fee_amount)).unwrap(),
-            Value::<MainnetV0>::from_str(&format!("{}u64", internal_priority_fee_amount)).unwrap(),
+            Value::<MainnetV0>::from_str(&format!("{internal_base_fee_amount}u64")).unwrap(),
+            Value::<MainnetV0>::from_str(&format!("{internal_priority_fee_amount}u64")).unwrap(),
             Value::<MainnetV0>::from_str("1field").unwrap(),
         ];
         assert!(
@@ -1759,7 +1765,7 @@ finalize do:
             let mut program_string = String::new();
             // Add the import statements.
             for j in 0..i {
-                program_string.push_str(&format!("import program_layer_{}.aleo;\n", j));
+                program_string.push_str(&format!("import program_layer_{j}.aleo;\n"));
             }
             // Add the program body.
             program_string.push_str(&format!(
@@ -2996,7 +3002,7 @@ function add_thrice:
         let vm = sample_vm();
 
         // Ensure this call succeeds.
-        vm.puzzle.prove(rng.gen(), rng.gen(), rng.gen(), None).unwrap();
+        vm.puzzle.prove(rng.r#gen(), rng.r#gen(), rng.r#gen(), None).unwrap();
     }
 
     #[test]
@@ -3109,7 +3115,8 @@ function check:
         let function_name = Identifier::<CurrentNetwork>::from_str("check").unwrap();
 
         // Generate a random Field for input
-        let input = Value::<CurrentNetwork>::from_str(&Field::<CurrentNetwork>::rand(rng).to_string()).unwrap();
+        let input =
+            Value::<CurrentNetwork>::from_str("123456789123456789123456789123456789123456789123456789field").unwrap();
 
         // Generate the authorization that will contain multiple transitions
         let authorization = process
@@ -3292,8 +3299,8 @@ function adder:
         // Deploy a test program for each of the invalid program bodies.
         // They should all be accepted by the VM, because the restriction is not yet in place.
         for (i, body) in invalid_program_bodies.iter().enumerate() {
-            println!("Deploying 'valid' test program {}: {}", i, body);
-            let program = Program::from_str(&format!("program test_valid_{}.aleo;\n{}", i, body)).unwrap();
+            println!("Deploying 'valid' test program {i}: {body}");
+            let program = Program::from_str(&format!("program test_valid_{i}.aleo;\n{body}")).unwrap();
             let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
             let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
             assert_eq!(block.transactions().num_accepted(), 1);
@@ -3307,11 +3314,11 @@ function adder:
         // Deploy a test program for each of the invalid program bodies.
         // Verify that `check_transaction` fails for each of them.
         for (i, body) in invalid_program_bodies.iter().enumerate() {
-            println!("Deploying 'invalid' test program {}: {}", i, body);
-            let program = Program::from_str(&format!("program test_invalid_{}.aleo;\n{}", i, body)).unwrap();
+            println!("Deploying 'invalid' test program {i}: {body}");
+            let program = Program::from_str(&format!("program test_invalid_{i}.aleo;\n{body}")).unwrap();
             let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
             if let Err(e) = vm.check_transaction(&deployment, None, rng) {
-                println!("Error: {}", e);
+                println!("Error: {e}");
             } else {
                 panic!("Expected an error, but the deployment was accepted.")
             }
@@ -3322,7 +3329,7 @@ function adder:
         let program = Program::from_str(r"program constructor.aleo; function dummy:").unwrap();
         let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
         if let Err(e) = vm.check_transaction(&deployment, None, rng) {
-            println!("Error: {}", e);
+            println!("Error: {e}");
         } else {
             panic!("Expected an error, but the deployment was accepted.")
         }

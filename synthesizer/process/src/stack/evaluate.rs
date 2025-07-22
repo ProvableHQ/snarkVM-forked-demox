@@ -97,15 +97,18 @@ impl<N: Network> Stack<N> {
     ///
     /// # Errors
     /// This method will halt if the given inputs are not the same length as the input statements.
-    pub fn evaluate_function<A: circuit::Aleo<Network = N>>(
+    pub fn evaluate_function<A: circuit::Aleo<Network = N>, R: CryptoRng + Rng>(
         &self,
-        call_stack: CallStack<N>,
+        mut call_stack: CallStack<N>,
         caller: Option<ProgramID<N>>,
+        root_tvk: Option<Field<N>>,
+        rng: &mut R,
     ) -> Result<Response<N>> {
         let timer = timer!("Stack::evaluate_function");
 
         // Retrieve the next request, based on the call stack mode.
-        let (request, call_stack) = match &call_stack {
+        let (request, call_stack) = match &mut call_stack {
+            CallStack::Authorize(..) => (call_stack.pop()?, call_stack),
             CallStack::Evaluate(authorization) => (authorization.next()?, call_stack),
             // If the evaluation is performed in the `Execute` mode, create a new `Evaluate` mode.
             // This is done to ensure that evaluation during execution is performed consistently.
@@ -117,7 +120,9 @@ impl<N: Network> Stack<N> {
                 let call_stack = CallStack::Evaluate(authorization);
                 (request, call_stack)
             }
-            _ => bail!("Illegal operation: call stack must be `Evaluate` or `Execute` in `evaluate_function`."),
+            _ => bail!(
+                "Illegal operation: call stack must be `Authorize`, `Evaluate` or `Execute` in `evaluate_function`."
+            ),
         };
         lap!(timer, "Retrieve the next request");
 
@@ -161,10 +166,16 @@ impl<N: Network> Stack<N> {
         registers.set_caller(caller);
         // Set the transition view key.
         registers.set_tvk(tvk);
+        // Set the root tvk.
+        if let Some(root_tvk) = root_tvk {
+            registers.set_root_tvk(root_tvk);
+        } else {
+            registers.set_root_tvk(tvk);
+        }
         lap!(timer, "Initialize the registers");
 
         // Ensure the request is well-formed.
-        ensure!(request.verify(&function.input_types(), is_root), "Request is invalid");
+        ensure!(request.verify(&function.input_types(), is_root), "[Evaluate] Request is invalid");
         lap!(timer, "Verify the request");
 
         // Store the inputs.
@@ -180,7 +191,7 @@ impl<N: Network> Stack<N> {
             // Evaluate the instruction.
             let result = match instruction {
                 // If the instruction is a `call` instruction, we need to handle it separately.
-                Instruction::Call(call) => CallTrait::evaluate(call, self, &mut registers),
+                Instruction::Call(call) => CallTrait::evaluate(call, self, &mut registers, rng),
                 // Otherwise, evaluate the instruction normally.
                 _ => instruction.evaluate(self, &mut registers),
             };
@@ -243,9 +254,18 @@ impl<N: Network> Stack<N> {
             outputs,
             &function.output_types(),
             &output_registers,
-        );
+        )?;
         finish!(timer);
 
-        response
+        // If the circuit is in `Authorize` mode, then save the transition.
+        if let CallStack::Authorize(_, _, authorization) = registers.call_stack_ref() {
+            // Construct the transition.
+            let transition = Transition::from(&request, &response, &function.output_types(), &output_registers)?;
+            // Add the transition to the authorization.
+            authorization.insert_transition(transition)?;
+            lap!(timer, "Save the transition");
+        }
+
+        Ok(response)
     }
 }

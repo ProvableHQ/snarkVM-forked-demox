@@ -146,7 +146,7 @@ impl Network for MainnetV0 {
         (ConsensusVersion::V5, 7_060_000),
         (ConsensusVersion::V6, 7_560_000),
         (ConsensusVersion::V7, 7_570_000),
-        (ConsensusVersion::V8, 9_417_000),
+        (ConsensusVersion::V8, 9_430_000),
     ];
     /// A list of (consensus_version, block_height) pairs indicating when each consensus version takes effect.
     /// Documentation for what is changed at each version can be found in `ConsensusVersion`.
@@ -248,7 +248,7 @@ impl Network for MainnetV0 {
 
     /// Returns the `proving key` for the inclusion_v0 circuit.
     fn inclusion_v0_proving_key() -> &'static Arc<VarunaProvingKey<Self>> {
-        static INSTANCE: OnceCell<Arc<VarunaProvingKey<Console>>> = OnceCell::new();
+        static INSTANCE: OnceLock<Arc<VarunaProvingKey<Console>>> = OnceLock::new();
         INSTANCE.get_or_init(|| {
             // Skipping the first byte, which is the encoded version.
             Arc::new(
@@ -260,7 +260,7 @@ impl Network for MainnetV0 {
 
     /// Returns the `verifying key` for the inclusion_v0 circuit.
     fn inclusion_v0_verifying_key() -> &'static Arc<VarunaVerifyingKey<Self>> {
-        static INSTANCE: OnceCell<Arc<VarunaVerifyingKey<Console>>> = OnceCell::new();
+        static INSTANCE: OnceLock<Arc<VarunaVerifyingKey<Console>>> = OnceLock::new();
         INSTANCE.get_or_init(|| {
             // Skipping the first byte, which is the encoded version.
             Arc::new(
@@ -272,7 +272,7 @@ impl Network for MainnetV0 {
 
     /// Returns the `proving key` for the inclusion circuit.
     fn inclusion_proving_key() -> &'static Arc<VarunaProvingKey<Self>> {
-        static INSTANCE: OnceCell<Arc<VarunaProvingKey<Console>>> = OnceCell::new();
+        static INSTANCE: OnceLock<Arc<VarunaProvingKey<Console>>> = OnceLock::new();
         INSTANCE.get_or_init(|| {
             // Skipping the first byte, which is the encoded version.
             Arc::new(
@@ -284,7 +284,7 @@ impl Network for MainnetV0 {
 
     /// Returns the `verifying key` for the inclusion circuit.
     fn inclusion_verifying_key() -> &'static Arc<VarunaVerifyingKey<Self>> {
-        static INSTANCE: OnceCell<Arc<VarunaVerifyingKey<Console>>> = OnceCell::new();
+        static INSTANCE: OnceLock<Arc<VarunaVerifyingKey<Console>>> = OnceLock::new();
         INSTANCE.get_or_init(|| {
             // Skipping the first byte, which is the encoded version.
             Arc::new(
@@ -313,7 +313,7 @@ impl Network for MainnetV0 {
 
     /// Returns the Varuna universal prover.
     fn varuna_universal_prover() -> &'static UniversalProver<Self::PairingCurve> {
-        static INSTANCE: OnceCell<UniversalProver<<Console as Environment>::PairingCurve>> = OnceCell::new();
+        static INSTANCE: OnceLock<UniversalProver<<Console as Environment>::PairingCurve>> = OnceLock::new();
         INSTANCE.get_or_init(|| {
             snarkvm_algorithms::polycommit::kzg10::UniversalParams::load()
                 .expect("Failed to load universal SRS (KZG10).")
@@ -324,7 +324,7 @@ impl Network for MainnetV0 {
 
     /// Returns the Varuna universal verifier.
     fn varuna_universal_verifier() -> &'static UniversalVerifier<Self::PairingCurve> {
-        static INSTANCE: OnceCell<UniversalVerifier<<Console as Environment>::PairingCurve>> = OnceCell::new();
+        static INSTANCE: OnceLock<UniversalVerifier<<Console as Environment>::PairingCurve>> = OnceLock::new();
         INSTANCE.get_or_init(|| {
             snarkvm_algorithms::polycommit::kzg10::UniversalParams::load()
                 .expect("Failed to load universal SRS (KZG10).")

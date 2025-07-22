@@ -115,7 +115,7 @@ impl<N: Network, A: circuit::Aleo<Network = N>> RegistersCircuit<N, A> for Regis
             // If the register is a locator, then return the stack value.
             Register::Locator(..) => circuit_value.clone(),
             // If the register is a register access, then load the specific stack value.
-            Register::Access(_, ref path) => {
+            Register::Access(_, path) => {
                 // Inject the path.
                 let path = path.iter().map(|access| circuit::Access::constant(*access)).collect::<Vec<_>>();
 

@@ -156,7 +156,7 @@ function main:
 
         let expected = Function::<CurrentNetwork>::from_str(function_string)?;
         let expected_bytes = expected.to_bytes_le()?;
-        println!("String size: {:?}, Bytecode size: {:?}", function_string.as_bytes().len(), expected_bytes.len());
+        println!("String size: {:?}, Bytecode size: {:?}", function_string.len(), expected_bytes.len());
 
         let candidate = Function::<CurrentNetwork>::from_bytes_le(&expected_bytes)?;
         assert_eq!(expected.to_string(), candidate.to_string());

@@ -55,7 +55,7 @@ impl<N: Network> RegistersTrait<N> for FinalizeRegisters<N> {
             // If the register is a locator, then return the plaintext value.
             Register::Locator(..) => value.clone(),
             // If the register is a register access, then load the specific plaintext value.
-            Register::Access(_, ref path) => value.find(path)?,
+            Register::Access(_, path) => value.find(path)?,
         };
 
         // Retrieve the type of the register.

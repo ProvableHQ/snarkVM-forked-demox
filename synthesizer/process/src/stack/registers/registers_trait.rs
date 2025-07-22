@@ -101,7 +101,7 @@ impl<N: Network, A: circuit::Aleo<Network = N>> RegistersTrait<N> for Registers<
             // If the register is a locator, then return the stack value.
             Register::Locator(..) => stack_value.clone(),
             // If the register is a register access, then load the specific stack value.
-            Register::Access(_, ref path) => {
+            Register::Access(_, path) => {
                 match stack_value {
                     // Retrieve the plaintext member from the path.
                     Value::Plaintext(plaintext) => Value::Plaintext(plaintext.find(path)?),

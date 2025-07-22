@@ -19,8 +19,8 @@ use console::{
     program::{ProgramID, StatePath},
     types::Field,
 };
-use ledger_store::{BlockStorage, BlockStore};
-use synthesizer_program::Program;
+use snarkvm_ledger_store::{BlockStorage, BlockStore};
+use snarkvm_synthesizer_program::Program;
 
 #[derive(Clone)]
 pub enum Query<N: Network, B: BlockStorage<N>> {

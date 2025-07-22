@@ -15,8 +15,8 @@
 
 use super::*;
 
-use ledger_committee::{MAX_DELEGATORS, MIN_DELEGATOR_STAKE, MIN_VALIDATOR_SELF_STAKE};
-use utilities::{cfg_sort_by_cached_key, defer, dev_eprintln};
+use snarkvm_ledger_committee::{MAX_DELEGATORS, MIN_DELEGATOR_STAKE, MIN_VALIDATOR_SELF_STAKE};
+use snarkvm_utilities::{cfg_sort_by_cached_key, defer, dev_eprintln};
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Speculates on the given list of transactions in the VM.
@@ -511,7 +511,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     };
 
                     // Compute the block reward.
-                    let block_reward = ledger_block::block_reward::<N>(
+                    let block_reward = snarkvm_ledger_block::block_reward::<N>(
                         state.block_height(),
                         N::STARTING_SUPPLY,
                         N::BLOCK_TIME,
@@ -521,7 +521,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     )
                     .map_err(|e| format!("Failed to compute the block reward - {e}"))?;
                     // Compute the puzzle reward.
-                    let puzzle_reward = ledger_block::puzzle_reward(coinbase_reward);
+                    let puzzle_reward = snarkvm_ledger_block::puzzle_reward(coinbase_reward);
 
                     // Output the reward ratifications.
                     vec![Ratify::BlockReward(block_reward), Ratify::PuzzleReward(puzzle_reward)]
@@ -941,7 +941,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         // Verify the transactions in batches and separate the valid and invalid transactions.
         for transactions in deployments_for_verification.chain(executions_for_verification) {
-            let rngs = (0..transactions.len()).map(|_| StdRng::from_seed(rng.gen())).collect::<Vec<_>>();
+            let rngs = (0..transactions.len()).map(|_| StdRng::from_seed(rng.r#gen())).collect::<Vec<_>>();
             // Verify the transactions and collect the error message if there is one.
             let (valid, invalid): (Vec<_>, Vec<_>) =
                 cfg_into_iter!(transactions).zip(rngs).partition_map(|(transaction, mut rng)| {
@@ -1418,17 +1418,17 @@ mod tests {
         program::{Ciphertext, Entry, Record},
         types::Field,
     };
-    use ledger_block::{Block, Header, Metadata, Transaction, Transition};
-    use ledger_committee::{MAX_DELEGATORS, MIN_VALIDATOR_STAKE};
-    use synthesizer_program::Program;
+    use snarkvm_ledger_block::{Block, Header, Metadata, Transaction, Transition};
+    use snarkvm_ledger_committee::{MAX_DELEGATORS, MIN_VALIDATOR_STAKE};
+    use snarkvm_synthesizer_program::Program;
 
     use rand::distributions::DistString;
 
     type CurrentNetwork = test_helpers::CurrentNetwork;
     #[cfg(not(feature = "rocks"))]
-    type LedgerType = ledger_store::helpers::memory::ConsensusMemory<CurrentNetwork>;
+    type LedgerType = snarkvm_ledger_store::helpers::memory::ConsensusMemory<CurrentNetwork>;
     #[cfg(feature = "rocks")]
-    type LedgerType = ledger_store::helpers::rocksdb::ConsensusDB<CurrentNetwork>;
+    type LedgerType = snarkvm_ledger_store::helpers::rocksdb::ConsensusDB<CurrentNetwork>;
 
     /// Sample a new program and deploy it to the VM. Returns the program name.
     fn new_program_deployment<R: Rng + CryptoRng>(

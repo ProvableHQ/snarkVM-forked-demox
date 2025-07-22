@@ -13,8 +13,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-fn main() {
-    if cfg!(feature = "enable_console") {
-        println!("cargo:rustc-cfg=console");
+use super::*;
+
+impl<N: Network, A: circuit::Aleo<Network = N>> RegistersCall<N> for Registers<N, A> {
+    /// Returns the current call stack.
+    #[inline]
+    fn call_stack(&self) -> CallStack<N> {
+        self.call_stack.clone()
+    }
+
+    /// Returns a reference to the current call stack.
+    #[inline]
+    fn call_stack_ref(&self) -> &CallStack<N> {
+        &self.call_stack
     }
 }

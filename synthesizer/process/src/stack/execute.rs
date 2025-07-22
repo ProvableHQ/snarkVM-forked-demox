@@ -56,7 +56,7 @@ impl<N: Network> Stack<N> {
         // Store the inputs.
         closure.inputs().iter().map(|i| i.register()).zip_eq(inputs).try_for_each(|(register, input)| {
             // If the circuit is in execute mode, then store the console input.
-            if let CallStack::Execute(..) = registers.call_stack() {
+            if let CallStack::Execute(..) = registers.call_stack_ref() {
                 use circuit::Eject;
                 // Assign the console input to the register.
                 registers.store(self, register, input.eject_value())?;
@@ -69,7 +69,7 @@ impl<N: Network> Stack<N> {
         // Execute the instructions.
         for instruction in closure.instructions() {
             // If the circuit is in execute mode, then evaluate the instructions.
-            if let CallStack::Execute(..) = registers.call_stack() {
+            if let CallStack::Execute(..) = registers.call_stack_ref() {
                 // If the evaluation fails, bail and return the error.
                 if let Err(error) = instruction.evaluate(self, &mut registers) {
                     bail!("Failed to evaluate instruction ({instruction}): {error}");
@@ -267,7 +267,7 @@ impl<N: Network> Stack<N> {
         // Store the inputs.
         function.inputs().iter().map(|i| i.register()).zip_eq(request.inputs()).try_for_each(|(register, input)| {
             // If the circuit is in execute mode, then store the console input.
-            if let CallStack::Execute(..) = registers.call_stack() {
+            if let CallStack::Execute(..) = registers.call_stack_ref() {
                 // Assign the console input to the register.
                 registers.store(self, register, input.eject_value())?;
             }
@@ -282,11 +282,11 @@ impl<N: Network> Stack<N> {
         // Execute the instructions.
         for instruction in function.instructions() {
             // If the circuit is in execute mode, then evaluate the instructions.
-            if let CallStack::Execute(..) = registers.call_stack() {
+            if let CallStack::Execute(..) = registers.call_stack_ref() {
                 // Evaluate the instruction.
                 let result = match instruction {
                     // If the instruction is a `call` instruction, we need to handle it separately.
-                    Instruction::Call(call) => CallTrait::evaluate(call, self, &mut registers),
+                    Instruction::Call(call) => CallTrait::evaluate(call, self, &mut registers, rng),
                     // Otherwise, evaluate the instruction normally.
                     _ => instruction.evaluate(self, &mut registers),
                 };
@@ -410,7 +410,7 @@ impl<N: Network> Stack<N> {
         })?;
 
         // If the circuit is in `Execute` or `PackageRun` mode, then ensure the circuit is satisfied.
-        if matches!(registers.call_stack(), CallStack::Execute(..) | CallStack::PackageRun(..)) {
+        if matches!(registers.call_stack_ref(), CallStack::Execute(..) | CallStack::PackageRun(..)) {
             // If the circuit is empty or not satisfied, then throw an error.
             ensure!(
                 A::num_constraints() > 0 && A::is_satisfied(),
@@ -425,7 +425,7 @@ impl<N: Network> Stack<N> {
         let assignment = A::eject_assignment_and_reset();
 
         // If the circuit is in `Synthesize` or `Execute` mode, synthesize the circuit key, if it does not exist.
-        if matches!(registers.call_stack(), CallStack::Synthesize(..) | CallStack::Execute(..)) {
+        if matches!(registers.call_stack_ref(), CallStack::Synthesize(..) | CallStack::Execute(..)) {
             // If the proving key does not exist, then synthesize it.
             if !self.contains_proving_key(function.name()) {
                 // Add the circuit key to the mapping.
@@ -434,7 +434,7 @@ impl<N: Network> Stack<N> {
             }
         }
         // If the circuit is in `Authorize` mode, then save the transition.
-        if let CallStack::Authorize(_, _, authorization) = registers.call_stack() {
+        if let CallStack::Authorize(_, _, authorization) = registers.call_stack_ref() {
             // Construct the transition.
             let transition = Transition::from(&console_request, &response, &output_types, &output_registers)?;
             // Add the transition to the authorization.
@@ -442,7 +442,7 @@ impl<N: Network> Stack<N> {
             lap!(timer, "Save the transition");
         }
         // If the circuit is in `CheckDeployment` mode, then save the assignment.
-        else if let CallStack::CheckDeployment(_, _, ref assignments, _, _) = registers.call_stack() {
+        else if let CallStack::CheckDeployment(_, _, assignments, _, _) = registers.call_stack_ref() {
             // Construct the call metrics.
             let metrics = CallMetrics {
                 program_id: *self.program_id(),
@@ -457,7 +457,7 @@ impl<N: Network> Stack<N> {
             lap!(timer, "Save the circuit assignment");
         }
         // If the circuit is in `Execute` mode, then execute the circuit into a transition.
-        else if let CallStack::Execute(_, ref trace) = registers.call_stack() {
+        else if let CallStack::Execute(_, trace) = registers.call_stack_ref() {
             registers.ensure_console_and_circuit_registers_match()?;
 
             // Construct the transition.
@@ -484,7 +484,7 @@ impl<N: Network> Stack<N> {
             )?;
         }
         // If the circuit is in `PackageRun` mode, then save the assignment.
-        else if let CallStack::PackageRun(_, _, ref assignments) = registers.call_stack() {
+        else if let CallStack::PackageRun(_, _, assignments) = registers.call_stack_ref() {
             // Construct the call metrics.
             let metrics = CallMetrics {
                 program_id: *self.program_id(),
@@ -512,7 +512,7 @@ impl<N: Network> Stack<N> {
     pub(crate) fn log_circuit<A: circuit::Aleo<Network = N>>(scope: impl std::fmt::Display) {
         #[cfg(debug_assertions)]
         {
-            use utilities::dev_println;
+            use snarkvm_utilities::dev_println;
 
             use colored::Colorize as _;
 
