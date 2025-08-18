@@ -34,9 +34,12 @@ pub enum ParameterError {
 
     #[error("{}", _0)]
     Wasm(String),
+
+    #[error("Filesystem access is disabled, enable compiler flag for feature")]
+    FilesystemDisabled,
 }
 
-#[cfg(not(feature = "wasm"))]
+#[cfg(all(not(feature = "wasm"), not(target_env = "sgx")))]
 impl From<curl::Error> for ParameterError {
     fn from(error: curl::Error) -> Self {
         ParameterError::Crate("curl::error", format!("{error:?}"))
@@ -57,6 +60,6 @@ impl From<std::path::StripPrefixError> for ParameterError {
 
 impl From<ParameterError> for std::io::Error {
     fn from(error: ParameterError) -> Self {
-        std::io::Error::new(std::io::ErrorKind::Other, format!("{error:?}"))
+        std::io::Error::other(format!("{error:?}"))
     }
 }

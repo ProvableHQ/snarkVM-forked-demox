@@ -15,8 +15,8 @@
 
 use super::*;
 
-use ledger_committee::{MAX_DELEGATORS, MIN_DELEGATOR_STAKE, MIN_VALIDATOR_SELF_STAKE};
-use utilities::{cfg_sort_by_cached_key, defer, dev_eprintln};
+use snarkvm_ledger_committee::{MAX_DELEGATORS, MIN_DELEGATOR_STAKE, MIN_VALIDATOR_SELF_STAKE};
+use snarkvm_utilities::{cfg_sort_by_cached_key, defer, dev_eprintln};
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Speculates on the given list of transactions in the VM.
@@ -291,8 +291,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             let mut confirmed = Vec::with_capacity(num_transactions);
             // Initialize a list of the aborted transactions.
             let mut aborted = Vec::new();
-            // Initialize a list of the successful deployments.
-            let mut deployments = IndexSet::new();
             // Initialize a counter for the confirmed transaction index.
             let mut counter = 0u32;
             // Initialize a list of created transition IDs.
@@ -305,6 +303,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             let mut tpks: IndexSet<Group<N>> = IndexSet::new();
             // Initialize the list of deployment payers.
             let mut deployment_payers: IndexSet<Address<N>> = IndexSet::new();
+            // Initialize a list of the successful deployments.
+            let mut deployments = IndexSet::new();
 
             // Finalize the transactions.
             'outer: for transaction in transactions {
@@ -325,6 +325,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     &output_ids,
                     &tpks,
                     &deployment_payers,
+                    &deployments,
                 ) {
                     // Store the aborted transaction.
                     aborted.push((transaction.clone(), reason));
@@ -376,8 +377,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                 Ok((stack, finalize)) => {
                                     // Add the stack to the process with the option to be reverted.
                                     process.stage_stack(stack);
-                                    // Add the program id to the list of deployments.
-                                    deployments.insert(*deployment.program_id());
                                     ConfirmedTransaction::accepted_deploy(counter, transaction.clone(), finalize)
                                         .map_err(|e| e.to_string())
                                 }
@@ -470,9 +469,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         output_ids.extend(confirmed_transaction.transaction().output_ids());
                         // Add the transition public keys to the set of produced transition public keys.
                         tpks.extend(confirmed_transaction.transaction().transition_public_keys());
-                        // Add any public deployment payer to the set of deployment payers.
-                        if let Transaction::Deploy(_, _, _, _, fee) = confirmed_transaction.transaction() {
+                        // Add the program owner to the set of deployment payers and the program ID to the set of deployments.
+                        if let Transaction::Deploy(_, _, _, deployment, fee) = confirmed_transaction.transaction() {
                             fee.payer().map(|payer| deployment_payers.insert(payer));
+                            deployments.insert(*deployment.program_id());
                         }
                         // Store the confirmed transaction.
                         confirmed.push(confirmed_transaction);
@@ -511,7 +511,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     };
 
                     // Compute the block reward.
-                    let block_reward = ledger_block::block_reward::<N>(
+                    let block_reward = snarkvm_ledger_block::block_reward::<N>(
                         state.block_height(),
                         N::STARTING_SUPPLY,
                         N::BLOCK_TIME,
@@ -521,7 +521,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     )
                     .map_err(|e| format!("Failed to compute the block reward - {e}"))?;
                     // Compute the puzzle reward.
-                    let puzzle_reward = ledger_block::puzzle_reward(coinbase_reward);
+                    let puzzle_reward = snarkvm_ledger_block::puzzle_reward(coinbase_reward);
 
                     // Output the reward ratifications.
                     vec![Ratify::BlockReward(block_reward), Ratify::PuzzleReward(puzzle_reward)]
@@ -806,6 +806,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// - The transaction is producing a duplicate output
     /// - The transaction is producing a duplicate transition public key
     /// - The transaction is another deployment in the block from the same public fee payer.
+    /// - The transaction contains a transition that has been deployed or upgraded in this block.
+    ///
+    /// - Note: If a transaction is a deployment for a program following its deployment or redeployment in this block,
+    ///   it is not aborted. Instead, it will be rejected and its fee will be consumed.
+    #[allow(clippy::too_many_arguments)]
     fn should_abort_transaction(
         &self,
         transaction: &Transaction<N>,
@@ -814,14 +819,26 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         output_ids: &IndexSet<Field<N>>,
         tpks: &IndexSet<Group<N>>,
         deployment_payers: &IndexSet<Address<N>>,
+        deployments: &IndexSet<ProgramID<N>>,
     ) -> Option<String> {
-        // Ensure that the transaction is not producing a duplicate transition.
-        for transition_id in transaction.transition_ids() {
+        // Ensure that:
+        //  - the transaction is not producing a duplicate transition.
+        //  - the programs in the component transitions haven't been deployed or upgraded in this block.
+        for transition in transaction.transitions() {
+            // Get the transition ID.
+            let transition_id = transition.id();
             // If the transition ID is already produced in this block or previous blocks, abort the transaction.
             if transition_ids.contains(transition_id)
                 || self.transition_store().contains_transition_id(transition_id).unwrap_or(true)
             {
                 return Some(format!("Duplicate transition {transition_id}"));
+            }
+            // If the transition's program is being deployed or redeployed in this block, abort the transaction.
+            if deployments.contains(transition.program_id()) {
+                return Some(format!(
+                    "Program {} is being deployed or redeployed in this block",
+                    transition.program_id()
+                ));
             }
         }
 
@@ -890,6 +907,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let mut tpks: IndexSet<Group<N>> = Default::default();
         // Initialize the list of deployment payers.
         let mut deployment_payers: IndexSet<Address<N>> = Default::default();
+        // Initialize a list of the successful deployments.
+        let mut deployments = IndexSet::new();
 
         // Abort the transactions that are have duplicates or are invalid. This will prevent the VM from performing
         // verification on transactions that would have been aborted in `VM::atomic_speculate`.
@@ -908,6 +927,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 &output_ids,
                 &tpks,
                 &deployment_payers,
+                &deployments,
             ) {
                 // Store the aborted transaction.
                 Some(reason) => aborted_transactions.push((*transaction, reason.to_string())),
@@ -921,9 +941,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     output_ids.extend(transaction.output_ids());
                     // Add the transition public keys to the set of produced transition public keys.
                     tpks.extend(transaction.transition_public_keys());
-                    // Add any public deployment payer to the set of deployment payers.
-                    if let Transaction::Deploy(_, _, _, _, fee) = transaction {
+                    // Add the program owner to the set of deployment payers and the program ID to the set of deployments.
+                    if let Transaction::Deploy(_, _, _, deployment, fee) = transaction {
                         fee.payer().map(|payer| deployment_payers.insert(payer));
+                        deployments.insert(*deployment.program_id());
                     }
 
                     // Add the transaction to the list of transactions to verify.
@@ -941,7 +962,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         // Verify the transactions in batches and separate the valid and invalid transactions.
         for transactions in deployments_for_verification.chain(executions_for_verification) {
-            let rngs = (0..transactions.len()).map(|_| StdRng::from_seed(rng.gen())).collect::<Vec<_>>();
+            let rngs = (0..transactions.len()).map(|_| StdRng::from_seed(rng.r#gen())).collect::<Vec<_>>();
             // Verify the transactions and collect the error message if there is one.
             let (valid, invalid): (Vec<_>, Vec<_>) =
                 cfg_into_iter!(transactions).zip(rngs).partition_map(|(transaction, mut rng)| {
@@ -1418,17 +1439,17 @@ mod tests {
         program::{Ciphertext, Entry, Record},
         types::Field,
     };
-    use ledger_block::{Block, Header, Metadata, Transaction, Transition};
-    use ledger_committee::{MAX_DELEGATORS, MIN_VALIDATOR_STAKE};
-    use synthesizer_program::Program;
+    use snarkvm_ledger_block::{Block, Header, Metadata, Transaction, Transition};
+    use snarkvm_ledger_committee::{MAX_DELEGATORS, MIN_VALIDATOR_STAKE};
+    use snarkvm_synthesizer_program::Program;
 
     use rand::distributions::DistString;
 
     type CurrentNetwork = test_helpers::CurrentNetwork;
     #[cfg(not(feature = "rocks"))]
-    type LedgerType = ledger_store::helpers::memory::ConsensusMemory<CurrentNetwork>;
+    type LedgerType = snarkvm_ledger_store::helpers::memory::ConsensusMemory<CurrentNetwork>;
     #[cfg(feature = "rocks")]
-    type LedgerType = ledger_store::helpers::rocksdb::ConsensusDB<CurrentNetwork>;
+    type LedgerType = snarkvm_ledger_store::helpers::rocksdb::ConsensusDB<CurrentNetwork>;
 
     /// Sample a new program and deploy it to the VM. Returns the program name.
     fn new_program_deployment<R: Rng + CryptoRng>(

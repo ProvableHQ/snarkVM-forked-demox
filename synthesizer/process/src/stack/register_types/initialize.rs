@@ -268,7 +268,7 @@ impl<N: Network> RegisterTypes<N> {
                 let external_stack = stack.get_external_stack(locator.program_id())?;
                 // Ensure the external record type is defined in the program.
                 if !external_stack.program().contains_record(locator.resource()) {
-                    bail!("External record '{locator}' in '{}' is not defined.", stack.program_id())
+                    bail!("External record '{locator}' in '{}' is not defined.", external_stack.program_id())
                 }
             }
             RegisterType::Future(..) => bail!("Input '{register}' cannot be a future."),
@@ -317,7 +317,7 @@ impl<N: Network> RegisterTypes<N> {
                 let external_stack = stack.get_external_stack(locator.program_id())?;
                 // Ensure the external record type is defined in the program.
                 if !external_stack.program().contains_record(locator.resource()) {
-                    bail!("External record '{locator}' in '{}' is not defined.", stack.program_id())
+                    bail!("External record '{locator}' in '{}' is not defined.", external_stack.program_id())
                 }
             }
             RegisterType::Future(locator) => {

@@ -56,7 +56,7 @@ impl<N: Network> Stack<N> {
         // Store the inputs.
         closure.inputs().iter().map(|i| i.register()).zip_eq(inputs).try_for_each(|(register, input)| {
             // If the circuit is in execute mode, then store the console input.
-            if let CallStack::Execute(..) = registers.call_stack() {
+            if let CallStack::Execute(..) = registers.call_stack_ref() {
                 use circuit::Eject;
                 // Assign the console input to the register.
                 registers.store(self, register, input.eject_value())?;
@@ -69,7 +69,7 @@ impl<N: Network> Stack<N> {
         // Execute the instructions.
         for instruction in closure.instructions() {
             // If the circuit is in execute mode, then evaluate the instructions.
-            if let CallStack::Execute(..) = registers.call_stack() {
+            if let CallStack::Execute(..) = registers.call_stack_ref() {
                 // If the evaluation fails, bail and return the error.
                 if let Err(error) = instruction.evaluate(self, &mut registers) {
                     bail!("Failed to evaluate instruction ({instruction}): {error}");
@@ -119,6 +119,14 @@ impl<N: Network> Stack<N> {
                     Operand::NetworkID => {
                         bail!("Illegal operation: cannot retrieve the network id in a closure scope")
                     }
+                    // If the operand is the checksum, throw an error.
+                    Operand::Checksum(_) => bail!("Illegal operation: cannot retrieve the checksum in a closure scope"),
+                    // If the operand is the edition, throw an error.
+                    Operand::Edition(_) => bail!("Illegal operation: cannot retrieve the edition in a closure scope"),
+                    // If the operand is the program owner, throw an error.
+                    Operand::ProgramOwner(_) => {
+                        bail!("Illegal operation: cannot retrieve the program owner in a closure scope")
+                    }
                 }
             })
             .collect();
@@ -138,7 +146,7 @@ impl<N: Network> Stack<N> {
         &self,
         mut call_stack: CallStack<N>,
         console_caller: Option<ProgramID<N>>,
-        root_tvk: Option<Field<N>>,
+        console_root_tvk: Option<Field<N>>,
         rng: &mut R,
     ) -> Result<Response<N>> {
         let timer = timer!("Stack::execute_function");
@@ -167,7 +175,7 @@ impl<N: Network> Stack<N> {
         );
 
         // We can only have a root_tvk if this request was called by another request
-        ensure!(console_caller.is_some() == root_tvk.is_some());
+        ensure!(console_caller.is_some() == console_root_tvk.is_some());
         // Determine if this is the top-level caller.
         let console_is_root = console_caller.is_none();
 
@@ -202,24 +210,33 @@ impl<N: Network> Stack<N> {
         })?;
         lap!(timer, "Verify the input types");
 
+        // Retrieve the program checksum, if the program has a constructor.
+        let program_checksum = match self.program().contains_constructor() {
+            true => Some(self.program_checksum_as_field()?),
+            false => None,
+        };
+
         // Ensure the request is well-formed.
-        ensure!(console_request.verify(&input_types, console_is_root), "Request is invalid");
+        ensure!(
+            console_request.verify(&input_types, console_is_root, program_checksum),
+            "[Execute] Request is invalid"
+        );
         lap!(timer, "Verify the console request");
 
         // Initialize the registers.
         let mut registers = Registers::new(call_stack, self.get_register_types(function.name())?.clone());
 
         // Set the root tvk, from a parent request or the current request.
-        // inject the `root_tvk` as `Mode::Private`.
-        if let Some(root_tvk) = root_tvk {
-            registers.set_root_tvk(root_tvk);
-            registers.set_root_tvk_circuit(circuit::Field::<A>::new(circuit::Mode::Private, root_tvk));
-        } else {
-            registers.set_root_tvk(*console_request.tvk());
-            registers.set_root_tvk_circuit(circuit::Field::<A>::new(circuit::Mode::Private, *console_request.tvk()));
-        }
+        let console_root_tvk = console_root_tvk.unwrap_or(*console_request.tvk());
+        // Inject the `root_tvk` as `Mode::Private`.
+        let root_tvk = circuit::Field::<A>::new(circuit::Mode::Private, console_root_tvk);
+        // Set the root tvk.
+        registers.set_root_tvk(console_root_tvk);
+        // Set the root tvk, as a circuit.
+        registers.set_root_tvk_circuit(root_tvk.clone());
 
-        let root_tvk = Some(registers.root_tvk_circuit()?);
+        // If a program checksum was passed in, Inject it as `Mode::Public`.
+        let program_checksum = program_checksum.map(|c| circuit::Field::<A>::new(circuit::Mode::Public, c));
 
         use circuit::{Eject, Inject};
 
@@ -236,7 +253,7 @@ impl<N: Network> Stack<N> {
         let caller = Ternary::ternary(&is_root, request.signer(), &parent);
 
         // Ensure the request has a valid signature, inputs, and transition view key.
-        A::assert(request.verify(&input_types, &tpk, root_tvk, is_root));
+        A::assert(request.verify(&input_types, &tpk, Some(root_tvk), is_root, program_checksum));
         lap!(timer, "Verify the circuit request");
 
         // Set the transition signer.
@@ -267,7 +284,7 @@ impl<N: Network> Stack<N> {
         // Store the inputs.
         function.inputs().iter().map(|i| i.register()).zip_eq(request.inputs()).try_for_each(|(register, input)| {
             // If the circuit is in execute mode, then store the console input.
-            if let CallStack::Execute(..) = registers.call_stack() {
+            if let CallStack::Execute(..) = registers.call_stack_ref() {
                 // Assign the console input to the register.
                 registers.store(self, register, input.eject_value())?;
             }
@@ -282,11 +299,11 @@ impl<N: Network> Stack<N> {
         // Execute the instructions.
         for instruction in function.instructions() {
             // If the circuit is in execute mode, then evaluate the instructions.
-            if let CallStack::Execute(..) = registers.call_stack() {
+            if let CallStack::Execute(..) = registers.call_stack_ref() {
                 // Evaluate the instruction.
                 let result = match instruction {
                     // If the instruction is a `call` instruction, we need to handle it separately.
-                    Instruction::Call(call) => CallTrait::evaluate(call, self, &mut registers),
+                    Instruction::Call(call) => CallTrait::evaluate(call, self, &mut registers, rng),
                     // Otherwise, evaluate the instruction normally.
                     _ => instruction.evaluate(self, &mut registers),
                 };
@@ -352,6 +369,18 @@ impl<N: Network> Stack<N> {
                     Operand::NetworkID => {
                         bail!("Illegal operation: cannot retrieve the network id in a function scope")
                     }
+                    // If the operand is the checksum, throw an error.
+                    Operand::Checksum(_) => {
+                        bail!("Illegal operation: cannot retrieve the checksum in a function scope")
+                    }
+                    // If the operand is the edition, throw an error.
+                    Operand::Edition(_) => {
+                        bail!("Illegal operation: cannot retrieve the edition in a function scope")
+                    }
+                    // If the operand is the program owner, throw an error.
+                    Operand::ProgramOwner(_) => {
+                        bail!("Illegal operation: cannot retrieve the program owner in a function scope")
+                    }
                 }
             })
             .collect::<Result<Vec<_>>>()?;
@@ -410,7 +439,7 @@ impl<N: Network> Stack<N> {
         })?;
 
         // If the circuit is in `Execute` or `PackageRun` mode, then ensure the circuit is satisfied.
-        if matches!(registers.call_stack(), CallStack::Execute(..) | CallStack::PackageRun(..)) {
+        if matches!(registers.call_stack_ref(), CallStack::Execute(..) | CallStack::PackageRun(..)) {
             // If the circuit is empty or not satisfied, then throw an error.
             ensure!(
                 A::num_constraints() > 0 && A::is_satisfied(),
@@ -425,7 +454,7 @@ impl<N: Network> Stack<N> {
         let assignment = A::eject_assignment_and_reset();
 
         // If the circuit is in `Synthesize` or `Execute` mode, synthesize the circuit key, if it does not exist.
-        if matches!(registers.call_stack(), CallStack::Synthesize(..) | CallStack::Execute(..)) {
+        if matches!(registers.call_stack_ref(), CallStack::Synthesize(..) | CallStack::Execute(..)) {
             // If the proving key does not exist, then synthesize it.
             if !self.contains_proving_key(function.name()) {
                 // Add the circuit key to the mapping.
@@ -434,7 +463,7 @@ impl<N: Network> Stack<N> {
             }
         }
         // If the circuit is in `Authorize` mode, then save the transition.
-        if let CallStack::Authorize(_, _, authorization) = registers.call_stack() {
+        if let CallStack::Authorize(_, _, authorization) = registers.call_stack_ref() {
             // Construct the transition.
             let transition = Transition::from(&console_request, &response, &output_types, &output_registers)?;
             // Add the transition to the authorization.
@@ -442,7 +471,7 @@ impl<N: Network> Stack<N> {
             lap!(timer, "Save the transition");
         }
         // If the circuit is in `CheckDeployment` mode, then save the assignment.
-        else if let CallStack::CheckDeployment(_, _, ref assignments, _, _) = registers.call_stack() {
+        else if let CallStack::CheckDeployment(_, _, assignments, _, _) = registers.call_stack_ref() {
             // Construct the call metrics.
             let metrics = CallMetrics {
                 program_id: *self.program_id(),
@@ -457,7 +486,7 @@ impl<N: Network> Stack<N> {
             lap!(timer, "Save the circuit assignment");
         }
         // If the circuit is in `Execute` mode, then execute the circuit into a transition.
-        else if let CallStack::Execute(_, ref trace) = registers.call_stack() {
+        else if let CallStack::Execute(_, trace) = registers.call_stack_ref() {
             registers.ensure_console_and_circuit_registers_match()?;
 
             // Construct the transition.
@@ -484,7 +513,7 @@ impl<N: Network> Stack<N> {
             )?;
         }
         // If the circuit is in `PackageRun` mode, then save the assignment.
-        else if let CallStack::PackageRun(_, _, ref assignments) = registers.call_stack() {
+        else if let CallStack::PackageRun(_, _, assignments) = registers.call_stack_ref() {
             // Construct the call metrics.
             let metrics = CallMetrics {
                 program_id: *self.program_id(),
@@ -512,7 +541,7 @@ impl<N: Network> Stack<N> {
     pub(crate) fn log_circuit<A: circuit::Aleo<Network = N>>(scope: impl std::fmt::Display) {
         #[cfg(debug_assertions)]
         {
-            use utilities::dev_println;
+            use snarkvm_utilities::dev_println;
 
             use colored::Colorize as _;
 

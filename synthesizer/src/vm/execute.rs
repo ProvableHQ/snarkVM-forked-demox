@@ -190,6 +190,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         // Determine the consensus version.
         let consensus_version = N::CONSENSUS_VERSION(query.current_block_height()?)?;
+        // Check whether the authorization is for a valid program edition.
+        authorization.check_valid_edition(&self.process.read(), consensus_version)?;
+        // Check whether the authorization is creating valid records.
+        authorization.check_valid_records(consensus_version)?;
         // Determine which Varuna version to use.
         let varuna_version = match (ConsensusVersion::V1..=ConsensusVersion::V3).contains(&consensus_version) {
             true => VarunaVersion::V1,
@@ -235,6 +239,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         // Determine the consensus version.
         let consensus_version = N::CONSENSUS_VERSION(query.current_block_height()?)?;
+        // Check whether the authorization is for a valid program edition.
+        authorization.check_valid_edition(&self.process.read(), consensus_version)?;
+        // Check whether the authorization is creating valid records.
+        authorization.check_valid_records(consensus_version)?;
         // Determine which Varuna version to use.
         let varuna_version = match (ConsensusVersion::V1..=ConsensusVersion::V3).contains(&consensus_version) {
             true => VarunaVersion::V1,
@@ -278,17 +286,17 @@ mod tests {
         program::{Ciphertext, Value},
         types::Field,
     };
-    use ledger_block::Transition;
-    use synthesizer_process::{ConsensusFeeVersion, cost_per_command, execution_cost_v2};
-    use synthesizer_program::StackTrait;
+    use snarkvm_ledger_block::Transition;
+    use snarkvm_synthesizer_process::{ConsensusFeeVersion, cost_per_command, execution_cost_v2};
+    use snarkvm_synthesizer_program::StackTrait;
 
     use indexmap::IndexMap;
 
     type CurrentNetwork = MainnetV0;
     #[cfg(not(feature = "rocks"))]
-    type LedgerType = ledger_store::helpers::memory::ConsensusMemory<CurrentNetwork>;
+    type LedgerType = snarkvm_ledger_store::helpers::memory::ConsensusMemory<CurrentNetwork>;
     #[cfg(feature = "rocks")]
-    type LedgerType = ledger_store::helpers::rocksdb::ConsensusDB<CurrentNetwork>;
+    type LedgerType = snarkvm_ledger_store::helpers::rocksdb::ConsensusDB<CurrentNetwork>;
 
     fn prepare_vm(
         rng: &mut TestRng,
@@ -555,7 +563,7 @@ finalize test:
         let query = Query::VM(vm.block_store().clone());
         let (execution, _) = vm.execute_authorization_raw(authorization, &query, rng).unwrap();
         let (cost, _) = execution_cost_v1(&vm.process().read(), &execution).unwrap();
-        println!("Cost: {}", cost);
+        println!("Cost: {cost}");
     }
 
     #[test]
@@ -781,7 +789,7 @@ finalize test:
         let rng = &mut TestRng::default();
 
         // Retrieve a fee transaction.
-        let transaction = ledger_test_helpers::sample_fee_private_transaction(rng);
+        let transaction = snarkvm_ledger_test_helpers::sample_fee_private_transaction(rng);
         // Retrieve the fee.
         let fee = match transaction {
             Transaction::Fee(_, fee) => fee,
@@ -801,7 +809,7 @@ finalize test:
         let rng = &mut TestRng::default();
 
         // Retrieve a fee transaction.
-        let transaction = ledger_test_helpers::sample_fee_public_transaction(rng);
+        let transaction = snarkvm_ledger_test_helpers::sample_fee_public_transaction(rng);
         // Retrieve the fee.
         let fee = match transaction {
             Transaction::Fee(_, fee) => fee,
@@ -949,6 +957,8 @@ finalize test:
             let function_name = transition.function_name();
             // Get the stack.
             let stack = vm.process().read().get_stack(program_id).unwrap().clone();
+            // Get the finalize types.
+            let finalize_types = stack.get_finalize_types(function_name).unwrap();
             // Get the finalize block of the transition and sum the cost of each command.
             let cost = match stack.get_function(function_name).unwrap().finalize_logic() {
                 None => 0,
@@ -957,7 +967,7 @@ finalize test:
                     finalize_logic
                         .commands()
                         .iter()
-                        .map(|command| cost_per_command(&stack, finalize_logic, command, ConsensusFeeVersion::V2))
+                        .map(|command| cost_per_command(&stack, &finalize_types, command, ConsensusFeeVersion::V2))
                         .try_fold(0u64, |acc, res| {
                             res.and_then(|x| acc.checked_add(x).ok_or(anyhow!("Finalize cost overflowed")))
                         })
@@ -1085,6 +1095,8 @@ finalize test:
             let function_name = transition.function_name();
             // Get the stack.
             let stack = vm.process().read().get_stack(program_id).unwrap().clone();
+            // Get the finalize types.
+            let finalize_types = stack.get_finalize_types(function_name).unwrap();
             // Get the finalize block of the transition and sum the cost of each command.
             let cost = match stack.get_function(function_name).unwrap().finalize_logic() {
                 None => 0,
@@ -1093,7 +1105,7 @@ finalize test:
                     finalize_logic
                         .commands()
                         .iter()
-                        .map(|command| cost_per_command(&stack, finalize_logic, command, ConsensusFeeVersion::V2))
+                        .map(|command| cost_per_command(&stack, &finalize_types, command, ConsensusFeeVersion::V2))
                         .try_fold(0u64, |acc, res| {
                             res.and_then(|x| acc.checked_add(x).ok_or(anyhow!("Finalize cost overflowed")))
                         })

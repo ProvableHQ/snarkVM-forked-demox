@@ -90,6 +90,12 @@ impl<N: Network, A: circuit::Aleo<Network = N>> RegistersTrait<N> for Registers<
             Operand::BlockHeight => bail!("Cannot load the block height in a non-finalize context"),
             // If the operand is the network ID, throw an error.
             Operand::NetworkID => bail!("Cannot load the network ID in a non-finalize context"),
+            // If the operand is the checksum, throw an error.
+            Operand::Checksum(_) => bail!("Cannot load the checksum in a non-finalize context."),
+            // If the operand is the edition, throw an error.
+            Operand::Edition(_) => bail!("Cannot load the edition in a non-finalize context"),
+            // If the operand is the program owner, throw an error.
+            Operand::ProgramOwner(_) => bail!("Cannot load the program owner in a non-finalize context"),
         };
 
         // Retrieve the stack value.
@@ -101,7 +107,7 @@ impl<N: Network, A: circuit::Aleo<Network = N>> RegistersTrait<N> for Registers<
             // If the register is a locator, then return the stack value.
             Register::Locator(..) => stack_value.clone(),
             // If the register is a register access, then load the specific stack value.
-            Register::Access(_, ref path) => {
+            Register::Access(_, path) => {
                 match stack_value {
                     // Retrieve the plaintext member from the path.
                     Value::Plaintext(plaintext) => Value::Plaintext(plaintext.find(path)?),

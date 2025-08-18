@@ -13,8 +13,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-fn main() {
-    if cfg!(feature = "enable_console") {
-        println!("cargo:rustc-cfg=console");
+use super::*;
+
+impl<N: Network> ProgramCore<N> {
+    /// Returns the checksum of the program.
+    ///
+    /// The checksum is a 32-byte hash of the program's source code in string format.
+    /// This ensures a strict definition of program equivalence, useful for program upgradability.
+    pub fn to_checksum(&self) -> [U8<N>; 32] {
+        let mut keccak = TinySha3::v256();
+        keccak.update(self.to_string().as_bytes());
+
+        let mut hash = [0u8; 32];
+        keccak.finalize(&mut hash);
+        hash.map(U8::new)
     }
 }

@@ -24,8 +24,10 @@ use console::{
         Access,
         ArrayType,
         EntryType,
+        FinalizeType,
         Identifier,
         LiteralType,
+        Locator,
         PlaintextType,
         RecordType,
         Register,
@@ -34,7 +36,7 @@ use console::{
         ValueType,
     },
 };
-use synthesizer_program::{
+use snarkvm_synthesizer_program::{
     CallOperator,
     CastType,
     Closure,
@@ -46,7 +48,6 @@ use synthesizer_program::{
     StackTrait,
 };
 
-use console::program::{FinalizeType, Locator};
 use indexmap::{IndexMap, IndexSet};
 
 #[derive(Clone, Default, PartialEq, Eq)]
@@ -96,6 +97,9 @@ impl<N: Network> RegisterTypes<N> {
             }
             Operand::BlockHeight => bail!("'block.height' is not a valid operand in a non-finalize context."),
             Operand::NetworkID => bail!("'network.id' is not a valid operand in a non-finalize context."),
+            Operand::Checksum(_) => bail!("'checksum' is not a valid operand in a non-finalize context."),
+            Operand::Edition(_) => bail!("'edition' is not a valid operand in a non-finalize context."),
+            Operand::ProgramOwner(_) => bail!("'program_owner' is not a valid operand in a non-finalize context."),
         })
     }
 
