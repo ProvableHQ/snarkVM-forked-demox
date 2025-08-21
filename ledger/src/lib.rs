@@ -37,8 +37,10 @@ pub use snarkvm_ledger_test_helpers;
 mod helpers;
 pub use helpers::*;
 
-mod advance;
 mod check_next_block;
+pub use check_next_block::PendingBlock;
+
+mod advance;
 mod check_transaction_basic;
 mod contains;
 mod find;
@@ -496,6 +498,11 @@ pub(crate) mod test_helpers {
     #[cfg(feature = "rocks")]
     pub(crate) type CurrentConsensusStore =
         ConsensusStore<CurrentNetwork, snarkvm_ledger_store::helpers::rocksdb::ConsensusDB<CurrentNetwork>>;
+
+    #[cfg(not(feature = "rocks"))]
+    pub(crate) type CurrentConsensusStorage = snarkvm_ledger_store::helpers::memory::ConsensusMemory<CurrentNetwork>;
+    #[cfg(feature = "rocks")]
+    pub(crate) type CurrentConsensusStorage = snarkvm_ledger_store::helpers::rocksdb::ConsensusDB<CurrentNetwork>;
 
     #[allow(dead_code)]
     pub(crate) struct TestEnv {

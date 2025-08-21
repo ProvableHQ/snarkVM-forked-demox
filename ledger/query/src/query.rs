@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::QueryTrait;
+use crate::{QueryTrait, StaticQuery};
 use console::{
     network::prelude::*,
     program::{ProgramID, StatePath},
@@ -28,6 +28,7 @@ pub enum Query<N: Network, B: BlockStorage<N>> {
     VM(BlockStore<N, B>),
     /// The base URL of the node.
     REST(String),
+    STATIC(StaticQuery<N>),
 }
 
 impl<N: Network, B: BlockStorage<N>> From<BlockStore<N, B>> for Query<N, B> {
@@ -43,20 +44,31 @@ impl<N: Network, B: BlockStorage<N>> From<&BlockStore<N, B>> for Query<N, B> {
 }
 
 impl<N: Network, B: BlockStorage<N>> From<String> for Query<N, B> {
-    fn from(url: String) -> Self {
-        Self::REST(url)
+    fn from(string_representation: String) -> Self {
+        match string_representation.parse::<StaticQuery<N>>() {
+            Ok(query) => Self::STATIC(query),
+            Err(_) => Self::REST(string_representation),
+        }
     }
 }
 
 impl<N: Network, B: BlockStorage<N>> From<&String> for Query<N, B> {
-    fn from(url: &String) -> Self {
-        Self::REST(url.to_string())
+    fn from(string_representation_ref: &String) -> Self {
+        let string_representation = string_representation_ref.to_string();
+        match string_representation.parse::<StaticQuery<N>>() {
+            Ok(query) => Self::STATIC(query),
+            Err(_) => Self::REST(string_representation),
+        }
     }
 }
 
 impl<N: Network, B: BlockStorage<N>> From<&str> for Query<N, B> {
-    fn from(url: &str) -> Self {
-        Self::REST(url.to_string())
+    fn from(str_representation_ref: &str) -> Self {
+        let string_representation = str_representation_ref.to_string();
+        match string_representation.parse::<StaticQuery<N>>() {
+            Ok(query) => Self::STATIC(query),
+            Err(_) => Self::REST(string_representation),
+        }
     }
 }
 
@@ -78,6 +90,7 @@ impl<N: Network, B: BlockStorage<N>> QueryTrait<N> for Query<N, B> {
                 }
                 _ => bail!("Unsupported network ID in inclusion query"),
             },
+            Self::STATIC(query) => query.current_state_root(),
         }
     }
 
@@ -98,6 +111,7 @@ impl<N: Network, B: BlockStorage<N>> QueryTrait<N> for Query<N, B> {
                 }
                 _ => bail!("Unsupported network ID in inclusion query"),
             },
+            Self::STATIC(_query) => bail!("Async calls are not supported by StaticQuery"),
         }
     }
 
@@ -117,6 +131,7 @@ impl<N: Network, B: BlockStorage<N>> QueryTrait<N> for Query<N, B> {
                 }
                 _ => bail!("Unsupported network ID in inclusion query"),
             },
+            Self::STATIC(query) => query.get_state_path_for_commitment(commitment),
         }
     }
 
@@ -137,6 +152,7 @@ impl<N: Network, B: BlockStorage<N>> QueryTrait<N> for Query<N, B> {
                 }
                 _ => bail!("Unsupported network ID in inclusion query"),
             },
+            Self::STATIC(_query) => bail!("Async calls are not supported by StaticQuery"),
         }
     }
 
@@ -156,6 +172,7 @@ impl<N: Network, B: BlockStorage<N>> QueryTrait<N> for Query<N, B> {
                 }
                 _ => bail!("Unsupported network ID in inclusion query"),
             },
+            Self::STATIC(query) => query.current_block_height(),
         }
     }
 
@@ -176,6 +193,7 @@ impl<N: Network, B: BlockStorage<N>> QueryTrait<N> for Query<N, B> {
                 }
                 _ => bail!("Unsupported network ID in inclusion query"),
             },
+            Self::STATIC(_query) => bail!("Async calls are not supported by StaticQuery"),
         }
     }
 }
@@ -199,6 +217,7 @@ impl<N: Network, B: BlockStorage<N>> Query<N, B> {
                 }
                 _ => bail!("Unsupported network ID in inclusion query"),
             },
+            Self::STATIC(_query) => unimplemented!("get_program is not supported by StaticQuery"),
         }
     }
 
@@ -221,6 +240,7 @@ impl<N: Network, B: BlockStorage<N>> Query<N, B> {
                 }
                 _ => bail!("Unsupported network ID in inclusion query"),
             },
+            Self::STATIC(_query) => unimplemented!("get_program_async is not supported by StaticQuery"),
         }
     }
 

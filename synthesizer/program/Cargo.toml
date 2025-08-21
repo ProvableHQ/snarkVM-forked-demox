@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-synthesizer-program"
-version = "4.0.0"
+version = "4.1.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Program for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -38,7 +38,7 @@ features = [ "account", "network", "program", "types" ]
 
 [dependencies.snarkvm-utilities]
 path = "../../utilities"
-version = "=4.0.0"
+version = "=4.1.0"
 default-features = false
 
 [dependencies.indexmap]
@@ -64,6 +64,10 @@ features = [ "preserve_order" ]
 [dependencies.snarkvm-synthesizer-snark]
 workspace = true
 
+[dependencies.tiny-keccak]
+version = "2"
+features = [ "sha3" ]
+
 [dev-dependencies.bincode]
 workspace = true
 
@@ -75,5 +79,5 @@ features = [ "test", "default" ]
 workspace = true
 
 [dev-dependencies.snarkvm-synthesizer-process]
-workspace = true
+path = "../process"
 features = [ "test" ]

@@ -118,6 +118,15 @@ impl<N: Network> CallTrait<N> for Call<N> {
             if let CallStack::Authorize(requests, private_key, authorization) = &mut call_stack {
                 // Set 'is_root'.
                 let is_root = false;
+                // Ensure that we have a private key to sign the new request.
+                let Some(private_key) = private_key else {
+                    bail!("Cannot authorize a new function call without a private key.")
+                };
+                // Retrieve the program checksum, if the program has a constructor.
+                let program_checksum = match substack.program().contains_constructor() {
+                    true => Some(substack.program_checksum_as_field()?),
+                    false => None,
+                };
                 // Compute the request.
                 let request = Request::sign(
                     private_key,
@@ -127,6 +136,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                     &function.input_types(),
                     root_tvk,
                     is_root,
+                    program_checksum,
                     rng,
                 )?;
                 // Add the request to the requests.
@@ -209,6 +219,12 @@ impl<N: Network> CallTrait<N> for Call<N> {
         // If we are not handling the root request, retrieve the root request's tvk
         let root_tvk = registers.root_tvk().ok();
 
+        // Retrieve the program checksum, if the program has a constructor.
+        let program_checksum = match substack.program().contains_constructor() {
+            true => Some(substack.program_checksum_as_field()?),
+            false => None,
+        };
+
         // If the operator is a closure, retrieve the closure and compute the output.
         let outputs = if let Ok(closure) = substack.program().get_closure(resource) {
             lap!(timer, "Execute the closure");
@@ -253,6 +269,10 @@ impl<N: Network> CallTrait<N> for Call<N> {
                 match registers.call_stack_ref() {
                     // If the circuit is in authorize mode, then add any external calls to the stack.
                     CallStack::Authorize(_, private_key, authorization) => {
+                        // Ensure that we have a private key to sign the new request.
+                        let Some(private_key) = private_key else {
+                            bail!("Cannot authorize a new function call without a private key.")
+                        };
                         // Compute the request.
                         let request = Request::sign(
                             private_key,
@@ -262,6 +282,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                             &function.input_types(),
                             root_tvk,
                             is_root,
+                            program_checksum,
                             rng,
                         )?;
 
@@ -290,6 +311,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                             &function.input_types(),
                             root_tvk,
                             is_root,
+                            program_checksum,
                             rng,
                         )?;
 
@@ -306,7 +328,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                         (request, response)
                     }
                     // In Synthesize mode (with an existing proving key) or CheckDeployment mode, we generate dummy outputs to avoid building a full sub-circuit.
-                    CallStack::Synthesize(_, private_key, _) | CallStack::CheckDeployment(_, private_key, ..) => {
+                    CallStack::Synthesize(_, private_key, ..) | CallStack::CheckDeployment(_, private_key, ..) => {
                         // Compute the request.
                         let request = Request::sign(
                             private_key,
@@ -316,6 +338,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                             &function.input_types(),
                             root_tvk,
                             is_root,
+                            program_checksum,
                             rng,
                         )?;
 
@@ -384,6 +407,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                             &function.input_types(),
                             root_tvk,
                             is_root,
+                            program_checksum,
                             rng,
                         )?;
 
