@@ -36,7 +36,7 @@ pub enum Input<N: Network> {
     Private(Field<N>, Option<Ciphertext<N>>),
     /// The serial number and tag of the record.
     Record(Field<N>, Field<N>),
-    /// The input commitment to the external record. Note: This is **not** the record commitment.
+    /// The hash of the external record's (function_id, record, tvk, input index).
     ExternalRecord(Field<N>),
 }
 
@@ -190,7 +190,7 @@ pub(crate) mod test_helpers {
         let rng = &mut TestRng::default();
 
         // Sample a transition.
-        let transaction = crate::transaction::test_helpers::sample_execution_transaction_with_fee(true, rng);
+        let transaction = crate::transaction::test_helpers::sample_execution_transaction_with_fee(true, rng, 0);
         let transition = transaction.transitions().next().unwrap();
 
         // Retrieve the transition ID and input.

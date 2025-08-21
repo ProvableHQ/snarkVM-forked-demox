@@ -135,34 +135,6 @@ impl Network for MainnetV0 {
     /// The transmission checksum type.
     type TransmissionChecksum = u128;
 
-    /// A list of (consensus_version, block_height) pairs indicating when each consensus version takes effect.
-    /// Documentation for what is changed at each version can be found in `ConsensusVersion`.
-    #[cfg(not(any(test, feature = "test")))]
-    const CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); 8] = [
-        (ConsensusVersion::V1, 0),
-        (ConsensusVersion::V2, 2_800_000),
-        (ConsensusVersion::V3, 4_900_000),
-        (ConsensusVersion::V4, 6_135_000),
-        (ConsensusVersion::V5, 7_060_000),
-        (ConsensusVersion::V6, 7_560_000),
-        (ConsensusVersion::V7, 7_570_000),
-        (ConsensusVersion::V8, 9_417_000),
-    ];
-    /// A list of (consensus_version, block_height) pairs indicating when each consensus version takes effect.
-    /// Documentation for what is changed at each version can be found in `ConsensusVersion`.
-    #[cfg(any(test, feature = "test"))]
-    const CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); 8] = [
-        (ConsensusVersion::V1, 0),
-        (ConsensusVersion::V2, 10),
-        (ConsensusVersion::V3, 11),
-        (ConsensusVersion::V4, 12),
-        (ConsensusVersion::V5, 13),
-        (ConsensusVersion::V6, 14),
-        (ConsensusVersion::V7, 15),
-        (ConsensusVersion::V8, 16),
-    ];
-    /// The network edition.
-    const EDITION: u16 = 0;
     /// The genesis block coinbase target.
     #[cfg(not(feature = "test"))]
     const GENESIS_COINBASE_TARGET: u64 = (1u64 << 29).saturating_sub(1);
@@ -185,22 +157,29 @@ impl Network for MainnetV0 {
     const INCLUSION_FUNCTION_NAME: &'static str = snarkvm_parameters::mainnet::NETWORK_INCLUSION_FUNCTION_NAME;
     /// A list of (consensus_version, size) pairs indicating the maximum number of certificates in a batch.
     #[cfg(not(any(test, feature = "test")))]
-    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 4] = [
+    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 5] = [
         (ConsensusVersion::V1, 16),
         (ConsensusVersion::V3, 25),
         (ConsensusVersion::V5, 30),
         (ConsensusVersion::V6, 35),
+        (ConsensusVersion::V9, 40),
     ];
     /// A list of (consensus_version, size) pairs indicating the maximum number of certificates in a batch.
     #[cfg(any(test, feature = "test"))]
-    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 4] = [
+    const MAX_CERTIFICATES: [(ConsensusVersion, u16); 5] = [
         (ConsensusVersion::V1, 100),
         (ConsensusVersion::V3, 101),
         (ConsensusVersion::V5, 102),
         (ConsensusVersion::V6, 103),
+        (ConsensusVersion::V9, 104),
     ];
     /// The network name.
     const NAME: &'static str = "Aleo Mainnet (v0)";
+    /// A list of (consensus_version, block_height) pairs indicating when each consensus version takes effect.
+    /// Documentation for what is changed at each version can be found in `ConsensusVersion`.
+    /// Do not read this directly outside of tests, use `N::CONSENSUS_VERSION_HEIGHTS()` instead.
+    const _CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CONSENSUS_VERSIONS] =
+        MAINNET_V0_CONSENSUS_VERSION_HEIGHTS;
 
     /// Returns the block height where the the inclusion proof will be updated.
     #[allow(non_snake_case)]
@@ -248,7 +227,7 @@ impl Network for MainnetV0 {
 
     /// Returns the `proving key` for the inclusion_v0 circuit.
     fn inclusion_v0_proving_key() -> &'static Arc<VarunaProvingKey<Self>> {
-        static INSTANCE: OnceCell<Arc<VarunaProvingKey<Console>>> = OnceCell::new();
+        static INSTANCE: OnceLock<Arc<VarunaProvingKey<Console>>> = OnceLock::new();
         INSTANCE.get_or_init(|| {
             // Skipping the first byte, which is the encoded version.
             Arc::new(
@@ -260,7 +239,7 @@ impl Network for MainnetV0 {
 
     /// Returns the `verifying key` for the inclusion_v0 circuit.
     fn inclusion_v0_verifying_key() -> &'static Arc<VarunaVerifyingKey<Self>> {
-        static INSTANCE: OnceCell<Arc<VarunaVerifyingKey<Console>>> = OnceCell::new();
+        static INSTANCE: OnceLock<Arc<VarunaVerifyingKey<Console>>> = OnceLock::new();
         INSTANCE.get_or_init(|| {
             // Skipping the first byte, which is the encoded version.
             Arc::new(
@@ -272,7 +251,7 @@ impl Network for MainnetV0 {
 
     /// Returns the `proving key` for the inclusion circuit.
     fn inclusion_proving_key() -> &'static Arc<VarunaProvingKey<Self>> {
-        static INSTANCE: OnceCell<Arc<VarunaProvingKey<Console>>> = OnceCell::new();
+        static INSTANCE: OnceLock<Arc<VarunaProvingKey<Console>>> = OnceLock::new();
         INSTANCE.get_or_init(|| {
             // Skipping the first byte, which is the encoded version.
             Arc::new(
@@ -284,7 +263,7 @@ impl Network for MainnetV0 {
 
     /// Returns the `verifying key` for the inclusion circuit.
     fn inclusion_verifying_key() -> &'static Arc<VarunaVerifyingKey<Self>> {
-        static INSTANCE: OnceCell<Arc<VarunaVerifyingKey<Console>>> = OnceCell::new();
+        static INSTANCE: OnceLock<Arc<VarunaVerifyingKey<Console>>> = OnceLock::new();
         INSTANCE.get_or_init(|| {
             // Skipping the first byte, which is the encoded version.
             Arc::new(
@@ -313,7 +292,7 @@ impl Network for MainnetV0 {
 
     /// Returns the Varuna universal prover.
     fn varuna_universal_prover() -> &'static UniversalProver<Self::PairingCurve> {
-        static INSTANCE: OnceCell<UniversalProver<<Console as Environment>::PairingCurve>> = OnceCell::new();
+        static INSTANCE: OnceLock<UniversalProver<<Console as Environment>::PairingCurve>> = OnceLock::new();
         INSTANCE.get_or_init(|| {
             snarkvm_algorithms::polycommit::kzg10::UniversalParams::load()
                 .expect("Failed to load universal SRS (KZG10).")
@@ -324,7 +303,7 @@ impl Network for MainnetV0 {
 
     /// Returns the Varuna universal verifier.
     fn varuna_universal_verifier() -> &'static UniversalVerifier<Self::PairingCurve> {
-        static INSTANCE: OnceCell<UniversalVerifier<<Console as Environment>::PairingCurve>> = OnceCell::new();
+        static INSTANCE: OnceLock<UniversalVerifier<<Console as Environment>::PairingCurve>> = OnceLock::new();
         INSTANCE.get_or_init(|| {
             snarkvm_algorithms::polycommit::kzg10::UniversalParams::load()
                 .expect("Failed to load universal SRS (KZG10).")

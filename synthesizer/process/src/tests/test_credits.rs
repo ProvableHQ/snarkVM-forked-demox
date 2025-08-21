@@ -14,7 +14,6 @@
 // limitations under the License.
 
 use crate::Process;
-use algorithms::snark::varuna::VarunaVersion;
 use circuit::network::AleoV0;
 use console::{
     account::{Address, PrivateKey},
@@ -22,9 +21,10 @@ use console::{
     program::{Identifier, Literal, Plaintext, ProgramID, Value},
     types::U64,
 };
-use ledger_committee::{MIN_DELEGATOR_STAKE, MIN_VALIDATOR_SELF_STAKE, MIN_VALIDATOR_STAKE};
-use ledger_query::Query;
-use ledger_store::{
+use snarkvm_algorithms::snark::varuna::VarunaVersion;
+use snarkvm_ledger_committee::{MIN_DELEGATOR_STAKE, MIN_VALIDATOR_SELF_STAKE, MIN_VALIDATOR_STAKE};
+use snarkvm_ledger_query::Query;
+use snarkvm_ledger_store::{
     BlockStore,
     FinalizeMode,
     FinalizeStorage,
@@ -32,7 +32,7 @@ use ledger_store::{
     atomic_finalize,
     helpers::memory::{BlockMemory, FinalizeMemory},
 };
-use synthesizer_program::{FinalizeGlobalState, FinalizeStoreTrait, Program};
+use snarkvm_synthesizer_program::{FinalizeGlobalState, FinalizeStoreTrait, Program};
 
 use aleo_std::StorageMode;
 use indexmap::IndexMap;
@@ -47,7 +47,7 @@ const TEST_COMMISSION: u8 = 5;
 macro_rules! sample_finalize_store {
     () => {{
         #[cfg(feature = "rocks")]
-        let store = FinalizeStore::<CurrentNetwork, ledger_store::helpers::rocksdb::FinalizeDB<_>>::open(
+        let store = FinalizeStore::<CurrentNetwork, snarkvm_ledger_store::helpers::rocksdb::FinalizeDB<_>>::open(
             std::sync::Arc::new(tempfile::tempdir().expect("Failed to open temporary directory")),
         )
         .unwrap();
@@ -2827,7 +2827,7 @@ mod sanity_checks {
     use crate::{Assignments, CallStack, Stack};
     use circuit::Assignment;
     use console::{program::Request, types::Field};
-    use synthesizer_program::StackTrait;
+    use snarkvm_synthesizer_program::StackTrait;
 
     fn get_assignment<N: Network, A: circuit::Aleo<Network = N>>(
         stack: &Stack<N>,
@@ -2842,14 +2842,28 @@ mod sanity_checks {
         let program_id = *program.id();
         // Retrieve the input types.
         let input_types = program.get_function(&function_name).unwrap().input_types();
+        // Retrieve the program checksum, if the program has a constructor.
+        let program_checksum = match stack.program().contains_constructor() {
+            true => Some(stack.program_checksum_as_field().unwrap()),
+            false => None,
+        };
         // Sample 'root_tvk'.
         let root_tvk = None;
         // Sample 'is_root'.
         let is_root = true;
         // Compute the request.
-        let request =
-            Request::sign(private_key, program_id, function_name, inputs.iter(), &input_types, root_tvk, is_root, rng)
-                .unwrap();
+        let request = Request::sign(
+            private_key,
+            program_id,
+            function_name,
+            inputs.iter(),
+            &input_types,
+            root_tvk,
+            is_root,
+            program_checksum,
+            rng,
+        )
+        .unwrap();
         // Initialize the assignments.
         let assignments = Assignments::<N>::default();
         // Initialize the call stack.
@@ -2857,8 +2871,7 @@ mod sanity_checks {
         // Synthesize the circuit.
         let _response = stack.execute_function::<A, _>(call_stack, None, None, rng).unwrap();
         // Retrieve the assignment.
-        let assignment = assignments.read().last().unwrap().0.clone();
-        assignment
+        assignments.read().last().unwrap().0.clone()
     }
 
     #[test]

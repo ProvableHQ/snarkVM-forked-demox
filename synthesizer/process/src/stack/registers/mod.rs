@@ -22,7 +22,7 @@ use console::{
     program::{Entry, Literal, Plaintext, Register, Value},
     types::{Address, Field},
 };
-use synthesizer_program::{Operand, RegistersCircuit, RegistersSigner, RegistersTrait, StackTrait};
+use snarkvm_synthesizer_program::{Operand, RegistersCircuit, RegistersSigner, RegistersTrait, StackTrait};
 
 use indexmap::IndexMap;
 
@@ -59,6 +59,12 @@ impl<N: Network, A: circuit::Aleo<Network = N>> Registers<N, A> {
     #[inline]
     pub fn call_stack(&self) -> CallStack<N> {
         self.call_stack.clone()
+    }
+
+    /// Returns a reference to the current call stack.
+    #[inline]
+    pub fn call_stack_ref(&self) -> &CallStack<N> {
+        &self.call_stack
     }
 
     /// Initializes a new set of registers, given the call stack.
