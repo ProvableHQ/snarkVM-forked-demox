@@ -239,25 +239,11 @@ impl<A: Aleo> Inject for Request<A> {
             Err(error) => A::halt(format!("{error}")),
         };
 
-        // TODO (@d0cd): Verify correctness.
-        // Initialize the program ID depending on the `dynamic` flag.
-        let program_id = match request.is_dynamic() {
-            true => ProgramID::public(*request.program_id()),
-            false => ProgramID::constant(*request.program_id()),
-        };
-
-        // TODO (@d0cd): Verify correctness.
-        // Initialize the function name depending on the `dynamic` flag.
-        let function_name = match request.is_dynamic() {
-            true => Identifier::public(*request.function_name()),
-            false => Identifier::constant(*request.function_name()),
-        };
-
         Self {
             signer: Address::new(mode, *request.signer()),
             network_id: U16::new(Mode::Constant, *request.network_id()),
-            program_id,
-            function_name,
+            program_id: ProgramID::constant(*request.program_id()),
+            function_name: Identifier::constant(*request.function_name()),
             input_ids: request.input_ids().iter().map(|input_id| InputID::new(Mode::Public, *input_id)).collect(),
             inputs,
             signature: Signature::new(mode, *request.signature()),
