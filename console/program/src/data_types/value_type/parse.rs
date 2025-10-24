@@ -66,6 +66,8 @@ impl<N: Network> Display for ValueType<N> {
             Self::Record(identifier) => write!(f, "{identifier}.record"),
             Self::ExternalRecord(locator) => write!(f, "{locator}.record"),
             Self::Future(locator) => write!(f, "{locator}.future"),
+            Self::DynamicRecord => write!(f, "dynamic.record"),
+            Self::DynamicFuture => write!(f, "dynamic.future"),
         }
     }
 }
@@ -141,6 +143,18 @@ mod tests {
             ValueType::<CurrentNetwork>::parse("credits.aleo/mint_public.future")?.1
         );
 
+        // DynamicRecord type
+        assert_eq!(
+            Ok(("", ValueType::<CurrentNetwork>::from_str("dynamic.record")?)),
+            ValueType::<CurrentNetwork>::parse("dynamic.record")
+        );
+
+        // DynamicFuture type
+        assert_eq!(
+            Ok(("", ValueType::<CurrentNetwork>::from_str("dynamic.future")?)),
+            ValueType::<CurrentNetwork>::parse("dynamic.future")
+        );
+
         Ok(())
     }
 
@@ -201,6 +215,9 @@ mod tests {
             ValueType::<CurrentNetwork>::from_str("howard.aleo/message.record")?.to_string(),
             "howard.aleo/message.record"
         );
+
+        assert_eq!(ValueType::<CurrentNetwork>::from_str("dynamic.record")?.to_string(), "dynamic.record");
+        assert_eq!(ValueType::<CurrentNetwork>::from_str("dynamic.future")?.to_string(), "dynamic.future");
 
         Ok(())
     }

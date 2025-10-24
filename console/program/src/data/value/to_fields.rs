@@ -18,6 +18,8 @@ use super::*;
 impl<N: Network> ToFields for Value<N> {
     type Field = Field<N>;
 
+    // TODO: Confirm that each variant's encoding is unambiguous.
+
     /// Returns the stack value as a list of fields.
     #[inline]
     fn to_fields(&self) -> Result<Vec<Self::Field>> {
@@ -56,6 +58,9 @@ impl<N: Network> ToFields for Value<N> {
             Self::Plaintext(plaintext) => plaintext.to_fields(),
             Self::Record(record) => record.to_fields(),
             Self::Future(future) => future.to_fields(),
+            // Note: Although dynamic records and futures are internal types, `ToFields` is supported for internal operations.
+            Self::DynamicRecord(dynamic_record) => dynamic_record.to_fields(),
+            Self::DynamicFuture(dynamic_future) => dynamic_future.to_fields(),
         }
     }
 }

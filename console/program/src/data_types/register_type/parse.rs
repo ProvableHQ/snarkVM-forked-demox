@@ -65,6 +65,10 @@ impl<N: Network> Display for RegisterType<N> {
             Self::ExternalRecord(locator) => write!(f, "{locator}.record"),
             // Prints the future type, i.e. future
             Self::Future(locator) => write!(f, "{locator}.future"),
+            // Prints the dynamic record type.
+            Self::DynamicRecord => write!(f, "dynamic.record"),
+            // Prints the dynamic future type.
+            Self::DynamicFuture => write!(f, "dynamic.future"),
         }
     }
 }
@@ -104,6 +108,27 @@ mod tests {
         assert_eq!(
             Ok(("", RegisterType::<CurrentNetwork>::ExternalRecord(Locator::from_str("token.aleo/token")?))),
             RegisterType::<CurrentNetwork>::parse("token.aleo/token.record")
+        );
+
+        // Future type.
+        assert_eq!(
+            Ok((
+                "",
+                RegisterType::<CurrentNetwork>::Future(Locator::from_str("credits.aleo/transfer_public_to_private")?)
+            )),
+            RegisterType::<CurrentNetwork>::parse("credits.aleo/transfer_public_to_private.future")
+        );
+
+        // DynamicRecord type.
+        assert_eq!(
+            Ok(("", RegisterType::<CurrentNetwork>::DynamicRecord)),
+            RegisterType::<CurrentNetwork>::parse("dynamic.record")
+        );
+
+        // DynamicFuture type.
+        assert_eq!(
+            Ok(("", RegisterType::<CurrentNetwork>::DynamicFuture)),
+            RegisterType::<CurrentNetwork>::parse("dynamic.future")
         );
 
         Ok(())
@@ -152,6 +177,8 @@ mod tests {
             RegisterType::<CurrentNetwork>::from_str("token.aleo/token.record")?.to_string(),
             "token.aleo/token.record"
         );
+        assert_eq!(RegisterType::<CurrentNetwork>::from_str("dynamic.record")?.to_string(), "dynamic.record");
+        assert_eq!(RegisterType::<CurrentNetwork>::from_str("dynamic.future")?.to_string(), "dynamic.future");
         Ok(())
     }
 }

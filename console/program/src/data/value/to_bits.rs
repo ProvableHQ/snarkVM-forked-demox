@@ -15,6 +15,8 @@
 
 use super::*;
 
+// TODO: Confirm that each variant's encoding is unambiguous.
+
 impl<N: Network> ToBits for Value<N> {
     /// Returns the stack value as a list of **little-endian** bits.
     #[inline]
@@ -23,6 +25,9 @@ impl<N: Network> ToBits for Value<N> {
             Self::Plaintext(plaintext) => plaintext.write_bits_le(vec),
             Self::Record(record) => record.write_bits_le(vec),
             Self::Future(future) => future.write_bits_le(vec),
+            // Note: Although dynamic records and futures are internal types, `ToBits` is supported for internal operations.
+            Self::DynamicRecord(dynamic_record) => dynamic_record.write_bits_le(vec),
+            Self::DynamicFuture(dynamic_future) => dynamic_future.write_bits_le(vec),
         };
     }
 
@@ -33,6 +38,9 @@ impl<N: Network> ToBits for Value<N> {
             Self::Plaintext(plaintext) => plaintext.write_bits_be(vec),
             Self::Record(record) => record.write_bits_be(vec),
             Self::Future(future) => future.write_bits_be(vec),
+            // Note: Although dynamic records and futures are internal types, `ToBits` is supported for internal operations.
+            Self::DynamicRecord(dynamic_record) => dynamic_record.write_bits_le(vec),
+            Self::DynamicFuture(dynamic_future) => dynamic_future.write_bits_le(vec),
         };
     }
 }

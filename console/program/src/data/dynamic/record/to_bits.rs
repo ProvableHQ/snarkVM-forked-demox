@@ -107,11 +107,37 @@ impl<N: Network> ToBits for DynamicRecord<N, Ciphertext<N>> {
         };
 
         // Construct the root bits.
+        self.root.write_bits_be(vec);
 
         // Construct the nonce bits.
         self.nonce.write_bits_be(vec);
 
         // Construct the version bits.
         self.version.write_bits_be(vec);
+    }
+}
+
+impl<N: Network, Private: Visibility> DynamicRecord<N, Private> {
+    /// Returns the number of bits in a dynamic record.
+    #[inline]
+    pub fn size_in_bits() -> Result<usize> {
+        // Account for the visibility bit.
+        let mut size = 1usize;
+        // Account for the owner bits.
+        size = size.checked_add(Address::<N>::size_in_bits()).ok_or_else(|| anyhow!("`size_in_bits` overflowed"))?;
+        // Account for the root bits.
+        size = size.checked_add(Field::<N>::size_in_bits()).ok_or_else(|| anyhow!("`size_in_bits` overflowed"))?;
+        // Account for the nonce bits.
+        size = size.checked_add(Group::<N>::size_in_bits()).ok_or_else(|| anyhow!("`size_in_bits` overflowed"))?;
+        // Account for the version bits.
+        size = size.checked_add(U8::<N>::size_in_bits()).ok_or_else(|| anyhow!("`size_in_bits` overflowed"))?;
+
+        Ok(size)
+    }
+
+    /// Returns the number of raw bits in a dynamic future.
+    #[inline]
+    pub fn size_in_bits_raw() -> Result<usize> {
+        Self::size_in_bits()
     }
 }

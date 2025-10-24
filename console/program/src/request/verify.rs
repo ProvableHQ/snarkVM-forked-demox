@@ -128,6 +128,12 @@ impl<N: Network> Request<N> {
                             // Ensure the input is a plaintext.
                             Value::Record(..) => bail!("Expected a plaintext input, found a record input"),
                             Value::Future(..) => bail!("Expected a plaintext input, found a future input"),
+                            Value::DynamicRecord(..) => {
+                                bail!("Expected a plaintext input, found a dynamic record input")
+                            }
+                            Value::DynamicFuture(..) => {
+                                bail!("Expected a plaintext input, found a dynamic future input")
+                            }
                         };
                         // Hash the ciphertext to a field element.
                         let candidate_hash = N::hash_psd8(&ciphertext.to_fields()?)?;
@@ -145,6 +151,8 @@ impl<N: Network> Request<N> {
                             // Ensure the input is a record.
                             Value::Plaintext(..) => bail!("Expected a record input, found a plaintext input"),
                             Value::Future(..) => bail!("Expected a record input, found a future input"),
+                            Value::DynamicRecord(..) => bail!("Expected a record input, found a dynamic record input"),
+                            Value::DynamicFuture(..) => bail!("Expected a record input, found a dynamic future input"),
                         };
                         // Retrieve the record name.
                         let record_name = match input_type {
@@ -187,6 +195,27 @@ impl<N: Network> Request<N> {
                     InputID::ExternalRecord(input_hash) => {
                         // Ensure the input is a record.
                         ensure!(matches!(input, Value::Record(..)), "Expected a record input");
+
+                        // Construct the (console) input index as a field element.
+                        let index = Field::from_u16(u16::try_from(index).or_halt_with::<N>("Input index exceeds u16"));
+                        // Construct the preimage as `(function ID || input || tvk || index)`.
+                        let mut preimage = Vec::new();
+                        preimage.push(function_id);
+                        preimage.extend(input.to_fields()?);
+                        preimage.push(self.tvk);
+                        preimage.push(index);
+                        // Hash the input to a field element.
+                        let candidate_hash = N::hash_psd8(&preimage)?;
+                        // Ensure the input hash matches.
+                        ensure!(*input_hash == candidate_hash, "Expected a locator input with the same hash");
+
+                        // Add the input hash to the message.
+                        message.push(candidate_hash);
+                    }
+                    // A dynamic record input is hashed (using `tvk`) to a field element.
+                    InputID::DynamicRecord(input_hash) => {
+                        // Ensure the input is a record.
+                        ensure!(matches!(input, Value::DynamicRecord(..)), "Expected a dynamic record input");
 
                         // Construct the (console) input index as a field element.
                         let index = Field::from_u16(u16::try_from(index).or_halt_with::<N>("Input index exceeds u16"));

@@ -32,6 +32,8 @@ pub enum InputID<N: Network> {
     Record(Field<N>, Group<N>, Field<N>, Field<N>, Field<N>),
     /// The hash of the external record's (function_id, record, tvk, input index).
     ExternalRecord(Field<N>),
+    /// The hash of the dynamic record's (function_id, record, tvk, input index).
+    DynamicRecord(Field<N>),
 }
 
 impl<N: Network> InputID<N> {
@@ -43,6 +45,7 @@ impl<N: Network> InputID<N> {
             InputID::Private(id) => id,
             InputID::Record(id, ..) => id,
             InputID::ExternalRecord(id) => id,
+            InputID::DynamicRecord(id) => id,
         }
     }
 }

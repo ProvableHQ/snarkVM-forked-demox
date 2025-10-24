@@ -18,6 +18,7 @@ mod to_bits;
 mod to_fields;
 
 use crate::{
+    Address,
     Boolean,
     Ciphertext,
     Entry,

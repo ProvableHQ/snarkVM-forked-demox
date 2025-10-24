@@ -33,6 +33,10 @@ pub enum RegisterType<N: Network> {
     ExternalRecord(Locator<N>),
     /// A future.
     Future(Locator<N>),
+    /// A dynamic record.
+    DynamicRecord,
+    /// A dynamic future.
+    DynamicFuture,
 }
 
 impl<N: Network> From<ValueType<N>> for RegisterType<N> {
@@ -45,6 +49,8 @@ impl<N: Network> From<ValueType<N>> for RegisterType<N> {
             ValueType::Record(record_name) => Self::Record(record_name),
             ValueType::ExternalRecord(locator) => Self::ExternalRecord(locator),
             ValueType::Future(locator) => Self::Future(locator),
+            ValueType::DynamicRecord => Self::DynamicRecord,
+            ValueType::DynamicFuture => Self::DynamicFuture,
         }
     }
 }

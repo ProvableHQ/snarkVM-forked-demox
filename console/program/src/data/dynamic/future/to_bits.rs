@@ -48,3 +48,17 @@ impl<N: Network> ToBits for DynamicFuture<N> {
         vec.extend_from_slice(&self.root.to_bits_be());
     }
 }
+
+impl<N: Network> DynamicFuture<N> {
+    /// Returns the number of bits in a dynamic future.
+    #[inline]
+    pub fn size_in_bits() -> Result<usize> {
+        Field::<N>::size_in_bits().checked_mul(4).ok_or_else(|| anyhow!("`size_in_bits` overflowed"))
+    }
+
+    /// Returns the number of raw bits in a dynamic future.
+    #[inline]
+    pub fn size_in_bits_raw() -> Result<usize> {
+        Self::size_in_bits()
+    }
+}
