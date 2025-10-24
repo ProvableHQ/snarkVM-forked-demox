@@ -13,100 +13,187 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod merkle;
-use merkle::*;
+mod equal;
+mod to_bits;
+mod to_fields;
 
-use crate::{Field, Group, Network, Owner, Plaintext, Record, Result, ToField, ToFields, U8, Visibility};
+use crate::{
+    Boolean,
+    Ciphertext,
+    Entry,
+    Field,
+    Group,
+    Identifier,
+    Literal,
+    Network,
+    Owner,
+    Plaintext,
+    Record,
+    Result,
+    ToField,
+    ToFields,
+    U8,
+    Visibility,
+};
 
 use snarkvm_console_algorithms::{Poseidon2, Poseidon8};
 use snarkvm_console_collections::merkle_tree::{MerklePath, MerkleTree};
+use snarkvm_console_network::*;
 
-// A dynamic record is a fixed-size representation of a record.
-// Like static `Record`s, a dynamic record contains an owner, nonce, and a version.
-// However, instead of storing the full data, it only stores the Merkle root of the data.
-// This ensures that all dynamic records have a constant size, regardless of the amount of data they contain.
-//
-// Suppose we have the following record:
-//
-// record foo:
-//     owner as address.private;
-//     microcredits as u64.private;
-//     memo as [u8; 32u32].public;
-//
-// It's merkle-ization is as follows:
-//
-//        R
-//        |
-//       P_0
-//        |
-//       P_1
-//        |
-//       P_2
-//        |
-//       P_3
-//      /  \
-//   L_0    L_1
-//
-// L_0 := HashPSD8(microcredits || ToFields(entry_0))
-// L_1 := HashPSD8(memo || ToFields(entry_1))
-// P_0 := HashPSD2(L_0, L_1)
-// P_1 := HashPSD2(P_0, ZERO)
-// P_2 := HashPSD2(P_1, ZERO)
-// P_3 := HashPSD2(P_2, ZERO)
-//   R := HashPSD2(P_3, ZERO)
-//
-// Note that:
-//  - `ZERO` is defined by the `PathHash` implementation for `HashPSD2`.
-//  - `ToFields` encodes the entry's mode and plaintext variant.
+use indexmap::IndexMap;
+
+/// The depth of the record data tree.
+pub const RECORD_DATA_TREE_DEPTH: u8 = 5;
+
+/// The record data tree.
+pub type RecordDataTree<E> = MerkleTree<E, Poseidon8<E>, Poseidon2<E>, RECORD_DATA_TREE_DEPTH>;
+/// The record data path.
+pub type RecordDataPath<E> = MerklePath<E, RECORD_DATA_TREE_DEPTH>;
+
+/// A dynamic record is a fixed-size representation of a record.
+/// Like static `Record`s, a dynamic record contains an owner, nonce, and a version.
+//// However, instead of storing the full data, it only stores the Merkle root of the data.
+/// This ensures that all dynamic records have a constant size, regardless of the amount of data they contain.
+///
+/// Suppose we have the following record:
+///
+/// record foo:
+///     owner as address.private;
+///     microcredits as u64.private;
+///     memo as [u8; 32u32].public;
+///
+/// It's merkle-ization is as follows:
+///
+///        R
+///        |
+///       P_0
+///        |
+///       P_1
+///        |
+///       P_2
+///        |
+///       P_3
+///      /  \
+///   L_0    L_1
+///
+/// L_0 := HashPSD8(microcredits || ToFields(entry_0))
+/// L_1 := HashPSD8(memo || ToFields(entry_1))
+/// P_0 := HashPSD2(L_0, L_1)
+/// P_1 := HashPSD2(P_0, ZERO)
+/// P_2 := HashPSD2(P_1, ZERO)
+/// P_3 := HashPSD2(P_2, ZERO)
+///   R := HashPSD2(P_3, ZERO)
+///
+/// Note that:
+///  - `ZERO` is defined by the `PathHash` implementation for `HashPSD2`.
+///  - `ToFields` encodes the entry's mode and plaintext variant.
+#[derive(Clone)]
 pub struct DynamicRecord<N: Network, Private: Visibility> {
-    /// The owner of the program record.
+    /// The owner of the record.
     owner: Owner<N, Private>,
-    /// The Merkle root of the program data.
+    /// The Merkle root of the record data.
     root: Field<N>,
-    /// The nonce of the program record.
+    /// The nonce of the record.
     nonce: Group<N>,
-    /// The version of the program record.
+    /// The version of the record.
     version: U8<N>,
-    /// The Merkle tree of the program data, if it has been provided.
-    tree: Option<RecordDataTree<N>>,
-}
-
-impl<N: Network, Private: Visibility> DynamicRecord<N, Private> {
-    /// Creates a new dynamic record.
-    pub fn new(
-        owner: Owner<N, Private>,
-        root: Field<N>,
-        nonce: Group<N>,
-        version: U8<N>,
-        tree: Option<RecordDataTree<N>>,
-    ) -> Self {
-        Self { owner, root, nonce, version, tree }
-    }
+    /// The Merkle tree of the record data.
+    tree: RecordDataTree<N>,
+    /// The program data.
+    data: IndexMap<Identifier<N>, Entry<N, Private>>,
 }
 
 impl<N: Network, Private: Visibility> DynamicRecord<N, Private> {
     /// Returns the owner of the record.
-    pub fn owner(&self) -> &Owner<N, Private> {
+    pub const fn owner(&self) -> &Owner<N, Private> {
         &self.owner
     }
 
     /// Returns the Merkle root of the record data.
-    pub fn data(&self) -> &Field<N> {
+    pub const fn root(&self) -> &Field<N> {
         &self.root
     }
 
     /// Returns the nonce of the record.
-    pub fn nonce(&self) -> &Group<N> {
+    pub const fn nonce(&self) -> &Group<N> {
         &self.nonce
     }
 
     /// Returns the version of the record.
-    pub fn version(&self) -> &U8<N> {
+    pub const fn version(&self) -> &U8<N> {
         &self.version
     }
 
     /// Returns the Merkle tree of the record data.
-    pub fn tree(&self) -> Option<&RecordDataTree<N>> {
-        self.tree.as_ref()
+    pub const fn tree(&self) -> &RecordDataTree<N> {
+        &self.tree
     }
+
+    /// Returns the record data.
+    pub const fn data(&self) -> &IndexMap<Identifier<N>, Entry<N, Private>> {
+        &self.data
+    }
+}
+
+impl<N: Network> DynamicRecord<N, Plaintext<N>> {
+    /// Creates a dynamic record from a static record.
+    pub fn from_record(record: &Record<N, Plaintext<N>>) -> Result<Self> {
+        // Get the owner.
+        let owner = record.owner().clone();
+        // Get the program data.
+        let data = record.data().clone();
+        // Get the nonce.
+        let nonce = *record.nonce();
+        // Get the version.
+        let version = *record.version();
+
+        // Prepare the leaves.
+        let leaves = data
+            .iter()
+            .map(|(name, entry)| {
+                // Initialize the leaf.
+                let mut leaf = vec![];
+                // Add the entry name.
+                leaf.push(name.to_field()?);
+                // Add the entry data.
+                leaf.extend(entry.to_fields()?);
+
+                Ok(leaf)
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        // Initalize the hashers.
+        let leaf_hasher = Poseidon8::setup("DynamicRecordLeafHasher")?;
+        let path_hasher = Poseidon2::setup("DynamicRecordPathHasher")?;
+
+        // Construct the merkle tree.
+        let tree = RecordDataTree::new(&leaf_hasher, &path_hasher, &leaves)?;
+
+        // Get the root.
+        let root = *tree.root();
+
+        Ok(Self { owner, root, nonce, version, tree, data })
+    }
+
+    /// Creates a static record from this dynamic record.
+    pub fn to_record(&self) -> Result<Record<N, Plaintext<N>>> {
+        Record::<N, Plaintext<N>>::from_plaintext(self.owner.clone(), self.data.clone(), self.nonce, self.version)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use snarkvm_console_network::MainnetV0;
+
+    type CurrentNetwork = MainnetV0;
+
+    #[test]
+    fn test_data_depth() {
+        assert_eq!(CurrentNetwork::MAX_DATA_ENTRIES.ilog2(), RECORD_DATA_TREE_DEPTH as u32);
+    }
+
+    // TODO: Test different record formats.
+    // TODO: Test that you can correctly prove membership of an entry.
+    // TODO: Benchmark merkleization performance for records of various sizes.
 }
