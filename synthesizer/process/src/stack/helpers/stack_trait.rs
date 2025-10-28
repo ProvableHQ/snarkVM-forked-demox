@@ -317,6 +317,9 @@ impl<N: Network> StackTrait<N> for Stack<N> {
                 Ok(Value::Record(stack.sample_record(burner_address, locator.resource(), Group::rand(rng), rng)?))
             }
             RegisterType::Future(locator) => Ok(Value::Future(self.sample_future(locator, rng)?)),
+            // TODO (@d0cd)
+            RegisterType::DynamicRecord => todo!(),
+            RegisterType::DynamicFuture => todo!(),
         }
     }
 

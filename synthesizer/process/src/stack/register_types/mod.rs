@@ -199,6 +199,10 @@ impl<N: Network> RegisterTypes<N> {
                 }
             }
             RegisterType::Future(locator) => RegisterAccessType::Future(*locator),
+            // A dynamic record/future cannot be accessed directly.
+            RegisterType::DynamicRecord => bail!("Cannot access a dynamic record value directly"),
+            // A dynamic record/future cannot be accessed directly.
+            RegisterType::DynamicFuture => bail!("Cannot access a dynamic future value directly"),
         };
 
         // Traverse the path to find the register type.

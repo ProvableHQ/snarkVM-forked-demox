@@ -16,7 +16,7 @@
 use super::*;
 
 impl<N: Network> ToBits for DynamicFuture<N> {
-    /// Returns the future as a list of **little-endian** bits.
+    /// Returns the dynamic future as a list of **little-endian** bits.
     #[inline]
     fn write_bits_le(&self, vec: &mut Vec<bool>) {
         // Write the bits for the program name.
@@ -32,7 +32,7 @@ impl<N: Network> ToBits for DynamicFuture<N> {
         vec.extend_from_slice(&self.root.to_bits_le());
     }
 
-    /// Returns the future as a list of **big-endian** bits.
+    /// Returns the dynamic future as a list of **big-endian** bits.
     #[inline]
     fn write_bits_be(&self, vec: &mut Vec<bool>) {
         // Write the bits for the program name.

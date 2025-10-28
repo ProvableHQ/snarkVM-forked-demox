@@ -272,6 +272,9 @@ impl<N: Network> RegisterTypes<N> {
                 }
             }
             RegisterType::Future(..) => bail!("Input '{register}' cannot be a future."),
+            // TODO (@d0cd)
+            RegisterType::DynamicRecord => todo!(),
+            RegisterType::DynamicFuture => bail!("Input '{register}' cannot be a dynamic future."),
         };
 
         // Insert the input register.
@@ -331,6 +334,9 @@ impl<N: Network> RegisterTypes<N> {
                     }
                 };
             }
+            // TODO (@d0cd) Verify that this is correct.
+            RegisterType::DynamicRecord => (),
+            RegisterType::DynamicFuture => (),
         };
 
         // Ensure the operand type and the output type match.

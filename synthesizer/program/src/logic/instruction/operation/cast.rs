@@ -293,6 +293,12 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                         Value::Record(..) => bail!("Casting a record into a record entry is illegal"),
                         // Ensure the record entry is not a future.
                         Value::Future(..) => bail!("Casting a future into a record entry is illegal"),
+                        // Ensure the record entry is not a dynamic record.
+                        Value::DynamicRecord(..) => {
+                            bail!("Casting a dynamic record into a record entry is illegal")
+                        }
+                        // Ensure the record entry is not a dynamic future.
+                        Value::DynamicFuture(..) => bail!("Casting a dynamic future into a record entry is illegal"),
                     };
                     // Append the entry to the record entries.
                     match entry_type {
@@ -431,6 +437,14 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                         circuit::Value::Future(..) => {
                             bail!("Casting a future into a struct member is illegal")
                         }
+                        // Ensure the struct member is not a dynamic record.
+                        circuit::Value::DynamicRecord(..) => {
+                            bail!("Casting a dynamic record into a struct member is illegal")
+                        }
+                        // Ensure the struct member is not a dynamic future.
+                        circuit::Value::DynamicFuture(..) => {
+                            bail!("Casting a dynamic future into a struct member is illegal")
+                        }
                     };
                     // Append the member to the struct members.
                     members.insert(circuit::Identifier::constant(*member_name), plaintext);
@@ -476,6 +490,14 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                         circuit::Value::Record(..) => bail!("Casting a record into an array element is illegal"),
                         // Ensure the element is not a future.
                         circuit::Value::Future(..) => bail!("Casting a future into an array element is illegal"),
+                        // Ensure the element is not a dynamic record.
+                        circuit::Value::DynamicRecord(..) => {
+                            bail!("Casting a dynamic record into an array element is illegal")
+                        }
+                        // Ensure the element is not a dynamic future.
+                        circuit::Value::DynamicFuture(..) => {
+                            bail!("Casting a dynamic future into an array element is illegal")
+                        }
                     };
                     // Store the element.
                     elements.push(plaintext);
@@ -546,6 +568,14 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                         circuit::Value::Record(..) => bail!("Casting a record into a record entry is illegal"),
                         // Ensure the record entry is not a future.
                         circuit::Value::Future(..) => bail!("Casting a future into a record entry is illegal"),
+                        // Ensure the record entry is not a dynamic record.
+                        circuit::Value::DynamicRecord(..) => {
+                            bail!("Casting a dynamic record into a record entry is illegal")
+                        }
+                        // Ensure the record entry is not a dynamic future.
+                        circuit::Value::DynamicFuture(..) => {
+                            bail!("Casting a dynamic future into a record entry is illegal")
+                        }
                     };
                     // Construct the entry name constant circuit.
                     let entry_name = circuit::Identifier::constant(*entry_name);
@@ -719,6 +749,18 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                         RegisterType::Future(..) => {
                             bail!("Struct '{struct_name}' member type mismatch: expected '{member_type}', found future")
                         }
+                        // Ensure the input type cannot be a dyanmic record (this is unsupported behavior).
+                        RegisterType::DynamicRecord => {
+                            bail!(
+                                "Struct '{struct_name}' member type mismatch: expected '{member_type}', found dynamic record"
+                            )
+                        }
+                        // Ensure the input type cannot be a dynamic future (this is unsupported behavior).
+                        RegisterType::DynamicFuture => {
+                            bail!(
+                                "Struct '{struct_name}' member type mismatch: expected '{member_type}', found dynamic future"
+                            )
+                        }
                     }
                 }
             }
@@ -766,6 +808,16 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                         // Ensure the input type cannot be a future (this is unsupported behavior).
                         RegisterType::Future(..) => bail!(
                             "Array element type mismatch: expected '{}', found future",
+                            array_type.next_element_type()
+                        ),
+                        // Ensure the input type cannot be a dyanmic record (this is unsupported behavior).
+                        RegisterType::DynamicRecord => bail!(
+                            "Array element type mismatch: expected '{}', found dynamic record",
+                            array_type.next_element_type()
+                        ),
+                        // Ensure the input type cannot be a dynamic future (this is unsupported behavior).
+                        RegisterType::DynamicFuture => bail!(
+                            "Array element type mismatch: expected '{}', found dynamic future",
                             array_type.next_element_type()
                         ),
                     }
@@ -824,7 +876,19 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                         ),
                         // Ensure the input type cannot be a future (this is unsupported behavior).
                         RegisterType::Future(..) => {
-                            bail!("Record '{record_name}' entry type mismatch: expected '{entry_type}', found future",)
+                            bail!("Record '{record_name}' entry type mismatch: expected '{entry_type}', found future")
+                        }
+                        // Ensure the input type cannot be a dynamic record (this is unsupported behavior).
+                        RegisterType::DynamicRecord => {
+                            bail!(
+                                "Record '{record_name}' entry type mismatch: expected '{entry_type}', found dynamic record"
+                            )
+                        }
+                        // Ensure the input type cannot be a dynamic future (this is unsupported behavior).
+                        RegisterType::DynamicFuture => {
+                            bail!(
+                                "Record '{record_name}' entry type mismatch: expected '{entry_type}', found dynamic future"
+                            )
                         }
                     }
                 }
@@ -886,6 +950,10 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                 Value::Record(..) => bail!("Casting a record into a struct member is illegal"),
                 // Ensure the struct member is not a future.
                 Value::Future(..) => bail!("Casting a future into a struct member is illegal"),
+                // Ensure the struct member is not a dynamic record.
+                Value::DynamicRecord(..) => bail!("Casting a dynamic record into a struct member is illegal"),
+                // Ensure the struct member is not a dynamic future.
+                Value::DynamicFuture(..) => bail!("Casting a dynamic future into a struct member is illegal"),
             };
             // Append the member to the struct members.
             members.insert(*member_name, plaintext);
@@ -935,6 +1003,10 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                 Value::Record(..) => bail!("Casting a record into an array element is illegal"),
                 // Ensure the element is not a future.
                 Value::Future(..) => bail!("Casting a future into an array element is illegal"),
+                // Ensure the element is not a dynamic record.
+                Value::DynamicRecord(..) => bail!("Casting a dynamic record into an array element is illegal"),
+                // Ensure the element is not a dynamic future.
+                Value::DynamicFuture(..) => bail!("Casting a dynamic future into an array element is illegal"),
             };
             // Store the element.
             elements.push(plaintext);

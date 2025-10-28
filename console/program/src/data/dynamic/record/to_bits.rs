@@ -15,8 +15,8 @@
 
 use super::*;
 
-impl<N: Network> ToBits for DynamicRecord<N, Plaintext<N>> {
-    /// Returns this data as a list of **little-endian** bits.
+impl<N: Network> ToBits for DynamicRecord<N> {
+    /// Returns the dynamic record as a list of **little-endian** bits.
     fn write_bits_le(&self, vec: &mut Vec<bool>) {
         // Construct the owner visibility bit.
         vec.push(self.owner.is_private());
@@ -38,7 +38,7 @@ impl<N: Network> ToBits for DynamicRecord<N, Plaintext<N>> {
         self.version.write_bits_le(vec);
     }
 
-    /// Returns this data as a list of **big-endian** bits.
+    /// Returns the dynamic record as a list of **big-endian** bits.
     fn write_bits_be(&self, vec: &mut Vec<bool>) {
         // Construct the owner visibility bit.
         vec.push(self.owner.is_private());
@@ -61,63 +61,7 @@ impl<N: Network> ToBits for DynamicRecord<N, Plaintext<N>> {
     }
 }
 
-impl<N: Network> ToBits for DynamicRecord<N, Ciphertext<N>> {
-    /// Returns this data as a list of **little-endian** bits.
-    fn write_bits_le(&self, vec: &mut Vec<bool>) {
-        // Construct the owner visibility bit.
-        vec.push(self.owner.is_private());
-
-        // Construct the owner bits.
-        match &self.owner {
-            Owner::Public(public) => public.write_bits_le(vec),
-            Owner::Private(ciphertext) => {
-                // Ensure there is exactly one field element in the ciphertext.
-                match ciphertext.len() == 1 {
-                    true => ciphertext[0].write_bits_le(vec),
-                    false => N::halt("Internal error: ciphertext to_bits_le corrupted in record owner"),
-                }
-            }
-        };
-
-        // Construct the root bits.
-        self.root.write_bits_le(vec);
-
-        // Construct the nonce bits.
-        self.nonce.write_bits_le(vec);
-
-        // Construct the version bits.
-        self.version.write_bits_le(vec);
-    }
-
-    /// Returns this data as a list of **big-endian** bits.
-    fn write_bits_be(&self, vec: &mut Vec<bool>) {
-        // Construct the owner visibility bit.
-        vec.push(self.owner.is_private());
-
-        // Construct the owner bits.
-        match &self.owner {
-            Owner::Public(public) => public.write_bits_be(vec),
-            Owner::Private(ciphertext) => {
-                // Ensure there is exactly one field element in the ciphertext.
-                match ciphertext.len() == 1 {
-                    true => ciphertext[0].write_bits_be(vec),
-                    false => N::halt("Internal error: ciphertext to_bits_be corrupted in record owner"),
-                }
-            }
-        };
-
-        // Construct the root bits.
-        self.root.write_bits_be(vec);
-
-        // Construct the nonce bits.
-        self.nonce.write_bits_be(vec);
-
-        // Construct the version bits.
-        self.version.write_bits_be(vec);
-    }
-}
-
-impl<N: Network, Private: Visibility> DynamicRecord<N, Private> {
+impl<N: Network> DynamicRecord<N> {
     /// Returns the number of bits in a dynamic record.
     #[inline]
     pub fn size_in_bits() -> Result<usize> {

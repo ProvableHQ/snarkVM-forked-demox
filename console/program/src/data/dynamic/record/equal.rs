@@ -15,16 +15,16 @@
 
 use super::*;
 
-impl<N: Network, Private: Visibility<Boolean = Boolean<N>>> Eq for DynamicRecord<N, Private> {}
+impl<N: Network> Eq for DynamicRecord<N> {}
 
-impl<N: Network, Private: Visibility<Boolean = Boolean<N>>> PartialEq for DynamicRecord<N, Private> {
+impl<N: Network> PartialEq for DynamicRecord<N> {
     /// Returns `true` if `self` and `other` are equal.
     fn eq(&self, other: &Self) -> bool {
         *self.is_equal(other)
     }
 }
 
-impl<N: Network, Private: Visibility<Boolean = Boolean<N>>> Equal<Self> for DynamicRecord<N, Private> {
+impl<N: Network> Equal<Self> for DynamicRecord<N> {
     type Output = Boolean<N>;
 
     /// Returns `true` if `self` and `other` are equal.
@@ -51,7 +51,7 @@ mod tests {
 
     type CurrentNetwork = MainnetV0;
 
-    fn sample_record() -> DynamicRecord<CurrentNetwork, Plaintext<CurrentNetwork>> {
+    fn sample_record() -> DynamicRecord<CurrentNetwork> {
         DynamicRecord::from_record(
             &Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_str(
                 r"{
@@ -73,7 +73,7 @@ mod tests {
         .unwrap()
     }
 
-    fn sample_mismatched_record() -> DynamicRecord<CurrentNetwork, Plaintext<CurrentNetwork>> {
+    fn sample_mismatched_record() -> DynamicRecord<CurrentNetwork> {
         DynamicRecord::from_record(
             &Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_str(
                 r"{

@@ -85,6 +85,20 @@ pub struct DynamicFuture<N: Network> {
 }
 
 impl<N: Network> DynamicFuture<N> {
+    /// Initializes a dynamic future without checking that the root, tree, and arguments are consistent.
+    pub fn new_unchecked(
+        program_name: Field<N>,
+        program_network: Field<N>,
+        function_name: Field<N>,
+        root: Field<N>,
+        tree: FutureArgumentTree<N>,
+        arguments: Vec<Argument<N>>,
+    ) -> Self {
+        Self { program_name, program_network, function_name, root, tree, arguments }
+    }
+}
+
+impl<N: Network> DynamicFuture<N> {
     /// Returns the program name.
     pub const fn program_name(&self) -> &Field<N> {
         &self.program_name
@@ -141,7 +155,7 @@ impl<N: Network> DynamicFuture<N> {
         // Get the root.
         let root = *tree.root();
 
-        Ok(Self { program_name, program_network, function_name, root, tree, arguments })
+        Ok(Self::new_unchecked(program_name, program_network, function_name, root, tree, arguments))
     }
 
     /// Creates a static record from a dynamic record.

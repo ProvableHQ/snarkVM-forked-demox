@@ -14,7 +14,7 @@
 // limitations under the License.
 
 mod future;
-pub use future::DynamicFuture;
+pub use future::{DynamicFuture, FutureArgumentTree};
 
 mod record;
-pub use record::DynamicRecord;
+pub use record::{DynamicRecord, RecordDataTree};

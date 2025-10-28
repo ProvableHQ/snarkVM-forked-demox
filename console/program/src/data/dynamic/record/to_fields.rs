@@ -15,10 +15,10 @@
 
 use super::*;
 
-impl<N: Network> ToFields for DynamicRecord<N, Plaintext<N>> {
+impl<N: Network> ToFields for DynamicRecord<N> {
     type Field = Field<N>;
 
-    /// Returns this record as a list of field elements.
+    /// Returns the dynamic record as a list of field elements.
     fn to_fields(&self) -> Result<Vec<Self::Field>> {
         // Encode the data as little-endian bits.
         let mut bits_le = self.to_bits_le();
@@ -34,29 +34,6 @@ impl<N: Network> ToFields for DynamicRecord<N, Plaintext<N>> {
         match fields.len() <= N::MAX_DATA_SIZE_IN_FIELDS as usize {
             true => Ok(fields),
             false => bail!("DynamicRecord<Plaintext> exceeds maximum allowed size"),
-        }
-    }
-}
-
-impl<N: Network> ToFields for DynamicRecord<N, Ciphertext<N>> {
-    type Field = Field<N>;
-
-    /// Returns this record as a list of field elements.
-    fn to_fields(&self) -> Result<Vec<Self::Field>> {
-        // Encode the data as little-endian bits.
-        let mut bits_le = self.to_bits_le();
-        // Adds one final bit to the data, to serve as a terminus indicator.
-        // During decryption, this final bit ensures we've reached the end.
-        bits_le.push(true);
-        // Pack the bits into field elements.
-        let fields = bits_le
-            .chunks(Field::<N>::size_in_data_bits())
-            .map(Field::<N>::from_bits_le)
-            .collect::<Result<Vec<_>>>()?;
-        // Ensure the number of field elements does not exceed the maximum allowed size.
-        match fields.len() <= N::MAX_DATA_SIZE_IN_FIELDS as usize {
-            true => Ok(fields),
-            false => bail!("DynamicRecord<Ciphertext> exceeds maximum allowed size"),
         }
     }
 }

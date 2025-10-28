@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{DynamicFuture, DynamicRecord, Plaintext, RecordType, StructType};
+use crate::{DynamicFuture, DynamicRecord, RecordType, StructType};
 
 use super::*;
 
@@ -37,7 +37,7 @@ impl<N: Network> RegisterType<N> {
             RegisterType::Record(identifier) => get_record(identifier)?.size_in_bits(get_struct),
             RegisterType::ExternalRecord(locator) => get_external_record(locator)?.size_in_bits(get_struct),
             RegisterType::Future(locator) => FinalizeType::future_size_in_bits(locator, get_struct, get_future),
-            RegisterType::DynamicRecord => DynamicRecord::<N, Plaintext<N>>::size_in_bits(),
+            RegisterType::DynamicRecord => DynamicRecord::<N>::size_in_bits(),
             RegisterType::DynamicFuture => DynamicFuture::<N>::size_in_bits(),
         }
     }
@@ -61,7 +61,7 @@ impl<N: Network> RegisterType<N> {
             RegisterType::Record(identifier) => get_record(identifier)?.size_in_bits_raw(get_struct),
             RegisterType::ExternalRecord(locator) => get_external_record(locator)?.size_in_bits_raw(get_struct),
             RegisterType::Future(locator) => FinalizeType::future_size_in_bits_raw(locator, get_struct, get_future),
-            RegisterType::DynamicRecord => DynamicRecord::<N, Plaintext<N>>::size_in_bits_raw(),
+            RegisterType::DynamicRecord => DynamicRecord::<N>::size_in_bits_raw(),
             RegisterType::DynamicFuture => DynamicFuture::<N>::size_in_bits_raw(),
         }
     }

@@ -91,6 +91,8 @@ impl<N: Network> Get<N> {
             Some(Value::Plaintext(plaintext)) => Value::Plaintext(plaintext),
             Some(Value::Record(..)) => bail!("Cannot 'get' a 'record'"),
             Some(Value::Future(..)) => bail!("Cannot 'get' a 'future'",),
+            Some(Value::DynamicRecord(..)) => bail!("Cannot 'get' a 'dynamic.record'"),
+            Some(Value::DynamicFuture(..)) => bail!("Cannot 'get' a 'dynamic.future'"),
             // If a key does not exist, then bail.
             None => bail!("Key '{key}' does not exist in mapping '{program_id}/{mapping_name}'"),
         };

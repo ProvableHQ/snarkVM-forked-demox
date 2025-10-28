@@ -210,7 +210,9 @@ pub trait RegistersTrait<N: Network> {
             Value::Plaintext(Plaintext::Struct(..))
             | Value::Plaintext(Plaintext::Array(..))
             | Value::Record(..)
-            | Value::Future(..) => {
+            | Value::Future(..)
+            | Value::DynamicRecord(..)
+            | Value::DynamicFuture(..) => {
                 bail!("Operand must be a literal")
             }
         }
@@ -225,7 +227,9 @@ pub trait RegistersTrait<N: Network> {
     fn load_plaintext(&self, stack: &impl StackTrait<N>, operand: &Operand<N>) -> Result<Plaintext<N>> {
         match self.load(stack, operand)? {
             Value::Plaintext(plaintext) => Ok(plaintext),
-            Value::Record(..) | Value::Future(..) => bail!("Operand must be a plaintext"),
+            Value::Record(..) | Value::Future(..) | Value::DynamicRecord(..) | Value::DynamicFuture(..) => {
+                bail!("Operand must be a plaintext")
+            }
         }
     }
 
@@ -295,7 +299,9 @@ pub trait RegistersCircuit<N: Network, A: circuit::Aleo<Network = N>> {
             circuit::Value::Plaintext(circuit::Plaintext::Struct(..))
             | circuit::Value::Plaintext(circuit::Plaintext::Array(..))
             | circuit::Value::Record(..)
-            | circuit::Value::Future(..) => bail!("Operand must be a literal"),
+            | circuit::Value::Future(..)
+            | circuit::Value::DynamicRecord(..)
+            | circuit::Value::DynamicFuture(..) => bail!("Operand must be a literal"),
         }
     }
 
@@ -312,7 +318,10 @@ pub trait RegistersCircuit<N: Network, A: circuit::Aleo<Network = N>> {
     ) -> Result<circuit::Plaintext<A>> {
         match self.load_circuit(stack, operand)? {
             circuit::Value::Plaintext(plaintext) => Ok(plaintext),
-            circuit::Value::Record(..) | circuit::Value::Future(..) => bail!("Operand must be a plaintext"),
+            circuit::Value::Record(..)
+            | circuit::Value::Future(..)
+            | circuit::Value::DynamicRecord(..)
+            | circuit::Value::DynamicFuture(..) => bail!("Operand must be a plaintext"),
         }
     }
 

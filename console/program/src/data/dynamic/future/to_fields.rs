@@ -18,7 +18,7 @@ use super::*;
 impl<N: Network> ToFields for DynamicFuture<N> {
     type Field = Field<N>;
 
-    /// Returns the future as a list of fields.
+    /// Returns the dynamic future as a list of fields.
     #[inline]
     fn to_fields(&self) -> Result<Vec<Self::Field>> {
         // Encode the data as little-endian bits.

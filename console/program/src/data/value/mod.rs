@@ -36,7 +36,7 @@ pub enum Value<N: Network> {
     /// A future.
     Future(Future<N>),
     /// A dynamic record.
-    DynamicRecord(DynamicRecord<N, Plaintext<N>>),
+    DynamicRecord(DynamicRecord<N>),
     /// A dynamic future.
     DynamicFuture(DynamicFuture<N>),
 }
@@ -97,16 +97,16 @@ impl<N: Network> From<&Future<N>> for Value<N> {
     }
 }
 
-impl<N: Network> From<DynamicRecord<N, Plaintext<N>>> for Value<N> {
+impl<N: Network> From<DynamicRecord<N>> for Value<N> {
     /// Initializes the value from a dynamic record.
-    fn from(dynamic_record: DynamicRecord<N, Plaintext<N>>) -> Self {
+    fn from(dynamic_record: DynamicRecord<N>) -> Self {
         Self::DynamicRecord(dynamic_record)
     }
 }
 
-impl<N: Network> From<&DynamicRecord<N, Plaintext<N>>> for Value<N> {
+impl<N: Network> From<&DynamicRecord<N>> for Value<N> {
     /// Initializes the value from a dynamic record.
-    fn from(dynamic_record: &DynamicRecord<N, Plaintext<N>>) -> Self {
+    fn from(dynamic_record: &DynamicRecord<N>) -> Self {
         Self::from(dynamic_record.clone())
     }
 }

@@ -20,7 +20,6 @@ mod to_fields;
 use crate::{
     Address,
     Boolean,
-    Ciphertext,
     Entry,
     Field,
     Group,
@@ -34,7 +33,6 @@ use crate::{
     ToField,
     ToFields,
     U8,
-    Visibility,
 };
 
 use snarkvm_console_algorithms::{Poseidon2, Poseidon8};
@@ -53,7 +51,7 @@ pub type RecordDataPath<E> = MerklePath<E, RECORD_DATA_TREE_DEPTH>;
 
 /// A dynamic record is a fixed-size representation of a record.
 /// Like static `Record`s, a dynamic record contains an owner, nonce, and a version.
-//// However, instead of storing the full data, it only stores the Merkle root of the data.
+/// However, instead of storing the full data, it only stores the Merkle root of the data.
 /// This ensures that all dynamic records have a constant size, regardless of the amount of data they contain.
 ///
 /// Suppose we have the following record:
@@ -89,9 +87,9 @@ pub type RecordDataPath<E> = MerklePath<E, RECORD_DATA_TREE_DEPTH>;
 ///  - `ZERO` is defined by the `PathHash` implementation for `HashPSD2`.
 ///  - `ToFields` encodes the entry's mode and plaintext variant.
 #[derive(Clone)]
-pub struct DynamicRecord<N: Network, Private: Visibility> {
+pub struct DynamicRecord<N: Network> {
     /// The owner of the record.
-    owner: Owner<N, Private>,
+    owner: Owner<N, Plaintext<N>>,
     /// The Merkle root of the record data.
     root: Field<N>,
     /// The nonce of the record.
@@ -101,12 +99,26 @@ pub struct DynamicRecord<N: Network, Private: Visibility> {
     /// The Merkle tree of the record data.
     tree: RecordDataTree<N>,
     /// The program data.
-    data: IndexMap<Identifier<N>, Entry<N, Private>>,
+    data: IndexMap<Identifier<N>, Entry<N, Plaintext<N>>>,
 }
 
-impl<N: Network, Private: Visibility> DynamicRecord<N, Private> {
+impl<N: Network> DynamicRecord<N> {
+    /// Initializes a dynamic record without checking that the root, tree, and data are consistent.
+    pub const fn new_unchecked(
+        owner: Owner<N, Plaintext<N>>,
+        root: Field<N>,
+        nonce: Group<N>,
+        version: U8<N>,
+        tree: RecordDataTree<N>,
+        data: IndexMap<Identifier<N>, Entry<N, Plaintext<N>>>,
+    ) -> Self {
+        Self { owner, root, nonce, version, tree, data }
+    }
+}
+
+impl<N: Network> DynamicRecord<N> {
     /// Returns the owner of the record.
-    pub const fn owner(&self) -> &Owner<N, Private> {
+    pub const fn owner(&self) -> &Owner<N, Plaintext<N>> {
         &self.owner
     }
 
@@ -131,12 +143,12 @@ impl<N: Network, Private: Visibility> DynamicRecord<N, Private> {
     }
 
     /// Returns the record data.
-    pub const fn data(&self) -> &IndexMap<Identifier<N>, Entry<N, Private>> {
+    pub const fn data(&self) -> &IndexMap<Identifier<N>, Entry<N, Plaintext<N>>> {
         &self.data
     }
 }
 
-impl<N: Network> DynamicRecord<N, Plaintext<N>> {
+impl<N: Network> DynamicRecord<N> {
     /// Creates a dynamic record from a static record.
     pub fn from_record(record: &Record<N, Plaintext<N>>) -> Result<Self> {
         // Get the owner.
@@ -173,7 +185,7 @@ impl<N: Network> DynamicRecord<N, Plaintext<N>> {
         // Get the root.
         let root = *tree.root();
 
-        Ok(Self { owner, root, nonce, version, tree, data })
+        Ok(Self::new_unchecked(owner, root, nonce, version, tree, data))
     }
 
     /// Creates a static record from this dynamic record.
