@@ -35,6 +35,9 @@ pub enum InputID<A: Aleo> {
     Record(Field<A>, Box<Group<A>>, Field<A>, Field<A>, Field<A>),
     /// The hash of the external record's (function_id, record, tvk, input index).
     ExternalRecord(Field<A>),
+    // TODO (@d0cd). Is function id correct?
+    /// The hash of a dynamic record's (function_id, record, tvk, input index).
+    DynamicRecord(Field<A>),
 }
 
 impl<A: Aleo> Inject for InputID<A> {
@@ -57,8 +60,11 @@ impl<A: Aleo> Inject for InputID<A> {
                 Field::new(Mode::Public, serial_number),
                 Field::new(Mode::Public, tag),
             ),
-            // Inject the commitment as `Mode::Public`.
+            // Inject the commitment of the external record as `Mode::Public`.
             console::InputID::ExternalRecord(field) => Self::ExternalRecord(Field::new(Mode::Public, field)),
+            // Inject the commitment of the dynamic record as `Mode::Public`.
+            // TODO (@d0cd). Check that this is safe.
+            console::InputID::DynamicRecord(field) => Self::DynamicRecord(Field::new(Mode::Public, field)),
         }
     }
 }
@@ -81,6 +87,7 @@ impl<A: Aleo> Eject for InputID<A> {
                 ])
             }
             Self::ExternalRecord(field) => field.eject_mode(),
+            Self::DynamicRecord(field) => field.eject_mode(),
         }
     }
 
@@ -98,6 +105,7 @@ impl<A: Aleo> Eject for InputID<A> {
                 tag.eject_value(),
             ),
             Self::ExternalRecord(field) => console::InputID::ExternalRecord(field.eject_value()),
+            Self::DynamicRecord(field) => console::InputID::DynamicRecord(field.eject_value()),
         }
     }
 }
@@ -121,6 +129,7 @@ impl<A: Aleo> ToFields for InputID<A> {
                 ]
             }
             InputID::ExternalRecord(field) => vec![field.clone()],
+            InputID::DynamicRecord(field) => vec![field.clone()],
         }
     }
 }
@@ -210,6 +219,15 @@ impl<A: Aleo> Inject for Request<A> {
                         let input = Value::new(Mode::Private, input.clone());
                         // Ensure the input is a record.
                         ensure!(matches!(input, Value::Record(..)), "Expected an external record input");
+                        // Return the input.
+                        Ok(input)
+                    }
+                    // A dynamic record input is injected as `Mode::Private`.
+                    console::InputID::DynamicRecord(..) => {
+                        // Inject the input as `Mode::Private`.
+                        let input = Value::new(Mode::Private, input.clone());
+                        // Ensure the input is a dynamic record.
+                        ensure!(matches!(input, Value::DynamicRecord(..)), "Expected a dynamic record input");
                         // Return the input.
                         Ok(input)
                     }

@@ -23,7 +23,7 @@ use snarkvm_circuit_types::{Boolean, Field, Group, U8, environment::prelude::*};
 
 /// A dynamic record is a fixed-size representation of a record.
 /// Like static `Record`s, a dynamic record contains an owner, nonce, and a version.
-//// However, instead of storing the full data, it only stores the Merkle root of the data.
+/// However, instead of storing the full data, it only stores the Merkle root of the data.
 /// This ensures that all dynamic records have a constant size, regardless of the amount of data they contain.
 ///
 /// Suppose we have the following record:

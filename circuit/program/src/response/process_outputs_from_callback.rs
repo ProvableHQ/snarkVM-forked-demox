@@ -61,6 +61,12 @@ impl<A: Aleo> Response<A> {
                             // Ensure the output is a plaintext.
                             Value::Record(..) => A::halt("Expected a plaintext output, found a record output"),
                             Value::Future(..) => A::halt("Expected a plaintext output, found a future output"),
+                            Value::DynamicRecord(..) => {
+                                A::halt("Expected a plaintext output, found a dynamic record output")
+                            }
+                            Value::DynamicFuture(..) => {
+                                A::halt("Expected a plaintext output, found a dynamic future output")
+                            }
                         }
                     }
                     // For a public output, compute the hash (using `tcm`) of the output.
@@ -86,6 +92,12 @@ impl<A: Aleo> Response<A> {
                             // Ensure the output is a plaintext.
                             Value::Record(..) => A::halt("Expected a plaintext output, found a record output"),
                             Value::Future(..) => A::halt("Expected a plaintext output, found a future output"),
+                            Value::DynamicRecord(..) => {
+                                A::halt("Expected a plaintext output, found a dynamic record output")
+                            }
+                            Value::DynamicFuture(..) => {
+                                A::halt("Expected a plaintext output, found a dynamic future output")
+                            }
                         }
                     }
                     // For a private output, compute the ciphertext (using `tvk`) and hash the ciphertext.
@@ -105,6 +117,12 @@ impl<A: Aleo> Response<A> {
                             // Ensure the output is a plaintext.
                             Value::Record(..) => A::halt("Expected a plaintext output, found a record output"),
                             Value::Future(..) => A::halt("Expected a plaintext output, found a future output"),
+                            Value::DynamicFuture(..) => {
+                                A::halt("Expected a plaintext output, found a dynamic future output")
+                            }
+                            Value::DynamicRecord(..) => {
+                                A::halt("Expected a plaintext output, found a dynamic record output")
+                            }
                         };
                         // Return the output ID.
                         Ok((OutputID::private(A::hash_psd8(&ciphertext.to_fields())), output))
@@ -120,6 +138,12 @@ impl<A: Aleo> Response<A> {
                             // Ensure the output is a record.
                             Value::Plaintext(..) => A::halt("Expected a record output, found a plaintext output"),
                             Value::Future(..) => A::halt("Expected a record output, found a future output"),
+                            Value::DynamicRecord(..) => {
+                                A::halt("Expected a record output, found a dynamic record output")
+                            }
+                            Value::DynamicFuture(..) => {
+                                A::halt("Expected a record output, found a dynamic future output")
+                            }
                         };
 
                         // Retrieve the output register.
@@ -165,6 +189,12 @@ impl<A: Aleo> Response<A> {
                             // Ensure the output is a record.
                             Value::Plaintext(..) => A::halt("Expected a record output, found a plaintext output"),
                             Value::Future(..) => A::halt("Expected a record output, found a future output"),
+                            Value::DynamicRecord(..) => {
+                                A::halt("Expected a record output, found a dynamic record output")
+                            }
+                            Value::DynamicFuture(..) => {
+                                A::halt("Expected a record output, found a dynamic future output")
+                            }
                         }
                     }
                     // For a future output, compute the hash (using `tcm`) of the output.
@@ -190,8 +220,17 @@ impl<A: Aleo> Response<A> {
                             // Ensure the output is a future.
                             Value::Plaintext(..) => A::halt("Expected a future output, found a plaintext output"),
                             Value::Record(..) => A::halt("Expected a future output, found a record output"),
+                            Value::DynamicRecord(..) => {
+                                A::halt("Expected a future output, found a dynamic record output")
+                            }
+                            Value::DynamicFuture(..) => {
+                                A::halt("Expected a future output, found a dynamic future output")
+                            }
                         }
                     }
+                    // TODO (@d0cd)
+                    console::ValueType::DynamicRecord => todo!(),
+                    console::ValueType::DynamicFuture => todo!(),
                 }
             })
             .collect::<Result<Vec<_>>>()

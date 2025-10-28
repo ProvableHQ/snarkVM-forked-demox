@@ -19,6 +19,9 @@ pub use access::Access;
 mod ciphertext;
 pub use ciphertext::Ciphertext;
 
+mod dynamic;
+pub use dynamic::{DynamicFuture, DynamicRecord};
+
 mod future;
 pub use future::{Argument, Future};
 
