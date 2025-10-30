@@ -41,6 +41,9 @@ pub enum Output<N: Network> {
     ExternalRecord(Field<N>),
     /// The future hash and (optional) future.
     Future(Field<N>, Option<Future<N>>),
+    /// The hash of the dynamic record's (function id, record, tvk, output index).
+    // TODO (@d0cd): Verify that this is correct.
+    DynamicRecord(Field<N>),
 }
 
 impl<N: Network> Output<N> {
@@ -53,6 +56,7 @@ impl<N: Network> Output<N> {
             Output::Record(_, _, _, _) => 3,
             Output::ExternalRecord(_) => 4,
             Output::Future(_, _) => 5,
+            Output::DynamicRecord(_) => 6,
         }
     }
 
@@ -65,6 +69,7 @@ impl<N: Network> Output<N> {
             Output::Record(commitment, ..) => commitment,
             Output::ExternalRecord(id) => id,
             Output::Future(id, ..) => id,
+            Output::DynamicRecord(id) => id,
         }
     }
 
@@ -333,6 +338,7 @@ impl<N: Network> Output<N> {
                 bail!("A transition output value is missing")
             }
             Output::ExternalRecord(_) => Ok(true),
+            Output::DynamicRecord(_) => Ok(true),
         };
 
         match result() {

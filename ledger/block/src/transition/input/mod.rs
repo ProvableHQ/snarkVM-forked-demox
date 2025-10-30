@@ -38,6 +38,9 @@ pub enum Input<N: Network> {
     Record(Field<N>, Field<N>),
     /// The hash of the external record's (function_id, record, tvk, input index).
     ExternalRecord(Field<N>),
+    /// The hash of the dynamic record's (function_id, record, tvk, input index).
+    // TODO (@d0cd) check that this is correct. Particularly `function_id`
+    DynamicRecord(Field<N>),
 }
 
 impl<N: Network> Input<N> {
@@ -49,6 +52,7 @@ impl<N: Network> Input<N> {
             Input::Private(..) => 2,
             Input::Record(..) => 3, // <- Changing this will invalidate 'console::StatePath' and 'circuit::StatePath'.
             Input::ExternalRecord(..) => 4,
+            Input::DynamicRecord(..) => 5,
         }
     }
 
@@ -60,6 +64,7 @@ impl<N: Network> Input<N> {
             Input::Private(id, ..) => id,
             Input::Record(serial_number, ..) => serial_number,
             Input::ExternalRecord(id) => id,
+            Input::DynamicRecord(id) => id,
         }
     }
 
@@ -165,7 +170,7 @@ impl<N: Network> Input<N> {
                 // A similar rule is enforced for the transition output.
                 bail!("A transition input value is missing")
             }
-            Input::Record(_, _) | Input::ExternalRecord(_) => Ok(true),
+            Input::Record(_, _) | Input::ExternalRecord(_) | Input::DynamicRecord(_) => Ok(true),
         };
 
         match result() {

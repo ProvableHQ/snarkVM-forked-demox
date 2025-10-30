@@ -20,8 +20,6 @@ mod to_fields;
 use snarkvm_circuit_network::Aleo;
 use snarkvm_circuit_types::{Boolean, Field, environment::prelude::*};
 
-use snarkvm_console_program::{Argument as ConsoleArgument, FutureArgumentTree as ConsoleFutureArgumentTree};
-
 /// A dynamic future is a fixed-size representation of a future.
 /// Like static `Future`s, a dynamic future contains a program ID and function name.
 /// These are however represented as `Field` elements as opposed to `Identifier`s to ensure a fixed size.
@@ -69,12 +67,12 @@ pub struct DynamicFuture<A: Aleo> {
     function_name: Field<A>,
     /// The Merkle root of the arguments.
     root: Field<A>,
-    /// The console Merkle tree of the arguments.
+    /// The optional console Merkle tree of the arguments.
     /// Note: This is NOT part of the circuit representation.
-    tree: ConsoleFutureArgumentTree<A::Network>,
-    /// The console arguments.
+    tree: Option<console::FutureArgumentTree<A::Network>>,
+    /// The optional console arguments.
     /// Note: This is NOT part of the circuit representation.
-    arguments: Vec<ConsoleArgument<A::Network>>,
+    arguments: Option<Vec<console::Argument<A::Network>>>,
 }
 
 impl<A: Aleo> Inject for DynamicFuture<A> {
@@ -114,13 +112,13 @@ impl<A: Aleo> DynamicFuture<A> {
         &self.root
     }
 
-    /// Returns the console Merkle tree of the arguments.
-    pub const fn tree(&self) -> &ConsoleFutureArgumentTree<A::Network> {
+    /// Returns the optional console Merkle tree of the arguments.
+    pub const fn tree(&self) -> &Option<console::FutureArgumentTree<A::Network>> {
         &self.tree
     }
 
     /// Returns the console arguments.
-    pub const fn arguments(&self) -> &Vec<ConsoleArgument<A::Network>> {
+    pub const fn arguments(&self) -> &Option<Vec<console::Argument<A::Network>>> {
         &self.arguments
     }
 }

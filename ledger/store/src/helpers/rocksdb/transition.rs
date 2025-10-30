@@ -134,8 +134,10 @@ pub struct InputDB<N: Network> {
     record: DataMap<Field<N>, Field<N>>,
     /// The mapping of `record tag` to `serial number`.
     record_tag: DataMap<Field<N>, Field<N>>,
-    /// The mapping of `external commitment` to `()`. Note: This is **not** the record commitment.
+    /// The mapping of `external hash` to `()`. Note: This is **not** the record commitment.
     external_record: DataMap<Field<N>, ()>,
+    /// The mapping of `dynamic hash` to `()`. Note: This is **not** the record commitment.
+    dynamic_record: DataMap<Field<N>, ()>,
     /// The storage mode.
     storage_mode: StorageMode,
 }
@@ -150,6 +152,7 @@ impl<N: Network> InputStorage<N> for InputDB<N> {
     type RecordMap = DataMap<Field<N>, Field<N>>;
     type RecordTagMap = DataMap<Field<N>, Field<N>>;
     type ExternalRecordMap = DataMap<Field<N>, ()>;
+    type DynamicRecordMap = DataMap<Field<N>, ()>;
 
     /// Initializes the transition input storage.
     fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
@@ -163,6 +166,7 @@ impl<N: Network> InputStorage<N> for InputDB<N> {
             record: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::TransitionInput(TransitionInputMap::Record))?,
             record_tag: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::TransitionInput(TransitionInputMap::RecordTag))?,
             external_record: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::TransitionInput(TransitionInputMap::ExternalRecord))?,
+            dynamic_record: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::TransitionInput(TransitionInputMap::DynamicRecord))?,
             storage_mode: storage,
         })
     }
@@ -207,6 +211,11 @@ impl<N: Network> InputStorage<N> for InputDB<N> {
         &self.external_record
     }
 
+    /// Returns the dynamic record map.
+    fn dynamic_record_map(&self) -> &Self::DynamicRecordMap {
+        &self.dynamic_record
+    }
+
     /// Returns the storage mode.
     fn storage_mode(&self) -> &StorageMode {
         &self.storage_mode
@@ -233,10 +242,12 @@ pub struct OutputDB<N: Network> {
     record_nonce: DataMap<Group<N>, Field<N>>,
     /// The mapping of `record nonce` to `sender ciphertext`.
     record_sender: DataMap<Group<N>, Option<Field<N>>>,
-    /// The mapping of `external commitment` to `()`. Note: This is **not** the record commitment.
+    /// The mapping of `external hash` to `()`. Note: This is **not** the record commitment.
     external_record: DataMap<Field<N>, ()>,
     /// The mapping of `future hash` to `(optional) future`.
     future: DataMap<Field<N>, Option<Future<N>>>,
+    /// The mapping of `dynamic hash` to `()`. Note: This is **not** the record commitment.
+    dynamic_record: DataMap<Field<N>, ()>,
     /// The storage mode.
     storage_mode: StorageMode,
 }
@@ -253,6 +264,7 @@ impl<N: Network> OutputStorage<N> for OutputDB<N> {
     type RecordNonceMap = DataMap<Group<N>, Field<N>>;
     type ExternalRecordMap = DataMap<Field<N>, ()>;
     type FutureMap = DataMap<Field<N>, Option<Future<N>>>;
+    type DynamicRecordMap = DataMap<Field<N>, ()>;
 
     /// Initializes the transition output storage.
     fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
@@ -268,6 +280,7 @@ impl<N: Network> OutputStorage<N> for OutputDB<N> {
             record_sender: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::TransitionOutput(TransitionOutputMap::RecordSender))?,
             external_record: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::TransitionOutput(TransitionOutputMap::ExternalRecord))?,
             future: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::TransitionOutput(TransitionOutputMap::Future))?,
+            dynamic_record: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::TransitionOutput(TransitionOutputMap::DynamicRecord))?,
             storage_mode: storage,
         })
     }
@@ -320,6 +333,10 @@ impl<N: Network> OutputStorage<N> for OutputDB<N> {
     /// Returns the future map.
     fn future_map(&self) -> &Self::FutureMap {
         &self.future
+    }
+
+    fn dynamic_record_map(&self) -> &Self::ExternalRecordMap {
+        &self.dynamic_record
     }
 
     /// Returns the storage mode.

@@ -13,7 +13,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod bytes;
 mod equal;
+mod parse;
 mod to_bits;
 mod to_fields;
 
@@ -96,10 +98,10 @@ pub struct DynamicRecord<N: Network> {
     nonce: Group<N>,
     /// The version of the record.
     version: U8<N>,
-    /// The Merkle tree of the record data.
-    tree: RecordDataTree<N>,
-    /// The program data.
-    data: IndexMap<Identifier<N>, Entry<N, Plaintext<N>>>,
+    /// The optional Merkle tree of the record data.
+    tree: Option<RecordDataTree<N>>,
+    /// The optional program data.
+    data: Option<IndexMap<Identifier<N>, Entry<N, Plaintext<N>>>>,
 }
 
 impl<N: Network> DynamicRecord<N> {
@@ -109,8 +111,8 @@ impl<N: Network> DynamicRecord<N> {
         root: Field<N>,
         nonce: Group<N>,
         version: U8<N>,
-        tree: RecordDataTree<N>,
-        data: IndexMap<Identifier<N>, Entry<N, Plaintext<N>>>,
+        tree: Option<RecordDataTree<N>>,
+        data: Option<IndexMap<Identifier<N>, Entry<N, Plaintext<N>>>>,
     ) -> Self {
         Self { owner, root, nonce, version, tree, data }
     }
@@ -137,14 +139,19 @@ impl<N: Network> DynamicRecord<N> {
         &self.version
     }
 
-    /// Returns the Merkle tree of the record data.
-    pub const fn tree(&self) -> &RecordDataTree<N> {
+    /// Returns the optional Merkle tree of the record data.
+    pub const fn tree(&self) -> &Option<RecordDataTree<N>> {
         &self.tree
     }
 
-    /// Returns the record data.
-    pub const fn data(&self) -> &IndexMap<Identifier<N>, Entry<N, Plaintext<N>>> {
+    /// Returns the optional record data.
+    pub const fn data(&self) -> &Option<IndexMap<Identifier<N>, Entry<N, Plaintext<N>>>> {
         &self.data
+    }
+
+    /// Returns `true` if the program record is a hiding variant.
+    pub fn is_hiding(&self) -> bool {
+        !self.version.is_zero()
     }
 }
 
@@ -185,12 +192,16 @@ impl<N: Network> DynamicRecord<N> {
         // Get the root.
         let root = *tree.root();
 
-        Ok(Self::new_unchecked(owner, root, nonce, version, tree, data))
+        Ok(Self::new_unchecked(owner, root, nonce, version, Some(tree), Some(data)))
     }
 
     /// Creates a static record from this dynamic record.
     pub fn to_record(&self) -> Result<Record<N, Plaintext<N>>> {
-        Record::<N, Plaintext<N>>::from_plaintext(self.owner.clone(), self.data.clone(), self.nonce, self.version)
+        // Ensure that the data is present.
+        let Some(data) = &self.data else {
+            bail!("Cannot convert a dynamic record to static record without the underlying data");
+        };
+        Record::<N, Plaintext<N>>::from_plaintext(self.owner.clone(), data.clone(), self.nonce, self.version)
     }
 }
 

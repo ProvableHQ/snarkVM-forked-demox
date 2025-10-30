@@ -24,7 +24,7 @@ mod serialize;
 mod to_bits;
 mod to_fields;
 
-use crate::{Access, Identifier, Plaintext, ProgramID, Value};
+use crate::{Access, DynamicFuture, Identifier, Plaintext, ProgramID, Value};
 use snarkvm_console_network::Network;
 use snarkvm_console_types::prelude::*;
 

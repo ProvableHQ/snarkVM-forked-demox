@@ -46,6 +46,8 @@ pub trait InputStorage<N: Network>: Clone + Send + Sync {
     type RecordTagMap: for<'a> Map<'a, Field<N>, Field<N>>;
     /// The mapping of `external hash` to `()`. Note: This is **not** the record commitment.
     type ExternalRecordMap: for<'a> Map<'a, Field<N>, ()>;
+    /// The mapping of `dynamic hash` to `()`. Note: This is **not** the record commitment.
+    type DynamicRecordMap: for<'a> Map<'a, Field<N>, ()>;
 
     /// Initializes the transition input storage.
     fn open<S: Into<StorageMode>>(storage: S) -> Result<Self>;
@@ -66,6 +68,8 @@ pub trait InputStorage<N: Network>: Clone + Send + Sync {
     fn record_tag_map(&self) -> &Self::RecordTagMap;
     /// Returns the external record map.
     fn external_record_map(&self) -> &Self::ExternalRecordMap;
+    /// Returns the dynamic record map.
+    fn dynamic_record_map(&self) -> &Self::DynamicRecordMap;
 
     /// Returns the storage mode.
     fn storage_mode(&self) -> &StorageMode;
@@ -80,6 +84,7 @@ pub trait InputStorage<N: Network>: Clone + Send + Sync {
         self.record_map().start_atomic();
         self.record_tag_map().start_atomic();
         self.external_record_map().start_atomic();
+        self.dynamic_record_map().start_atomic();
     }
 
     /// Checks if an atomic batch is in progress.
@@ -92,6 +97,7 @@ pub trait InputStorage<N: Network>: Clone + Send + Sync {
             || self.record_map().is_atomic_in_progress()
             || self.record_tag_map().is_atomic_in_progress()
             || self.external_record_map().is_atomic_in_progress()
+            || self.dynamic_record_map().is_atomic_in_progress()
     }
 
     /// Checkpoints the atomic batch.
@@ -104,6 +110,7 @@ pub trait InputStorage<N: Network>: Clone + Send + Sync {
         self.record_map().atomic_checkpoint();
         self.record_tag_map().atomic_checkpoint();
         self.external_record_map().atomic_checkpoint();
+        self.dynamic_record_map().atomic_checkpoint();
     }
 
     /// Clears the latest atomic batch checkpoint.
@@ -116,6 +123,7 @@ pub trait InputStorage<N: Network>: Clone + Send + Sync {
         self.record_map().clear_latest_checkpoint();
         self.record_tag_map().clear_latest_checkpoint();
         self.external_record_map().clear_latest_checkpoint();
+        self.dynamic_record_map().clear_latest_checkpoint();
     }
 
     /// Rewinds the atomic batch to the previous checkpoint.
@@ -128,6 +136,7 @@ pub trait InputStorage<N: Network>: Clone + Send + Sync {
         self.record_map().atomic_rewind();
         self.record_tag_map().atomic_rewind();
         self.external_record_map().atomic_rewind();
+        self.dynamic_record_map().atomic_rewind();
     }
 
     /// Aborts an atomic batch write operation.
@@ -140,6 +149,7 @@ pub trait InputStorage<N: Network>: Clone + Send + Sync {
         self.record_map().abort_atomic();
         self.record_tag_map().abort_atomic();
         self.external_record_map().abort_atomic();
+        self.dynamic_record_map().abort_atomic();
     }
 
     /// Finishes an atomic batch write operation.
@@ -151,7 +161,8 @@ pub trait InputStorage<N: Network>: Clone + Send + Sync {
         self.private_map().finish_atomic()?;
         self.record_map().finish_atomic()?;
         self.record_tag_map().finish_atomic()?;
-        self.external_record_map().finish_atomic()
+        self.external_record_map().finish_atomic()?;
+        self.dynamic_record_map().finish_atomic()
     }
 
     /// Stores the given `(transition ID, input)` pair into storage.
@@ -176,6 +187,7 @@ pub trait InputStorage<N: Network>: Clone + Send + Sync {
                         self.record_map().insert(serial_number, tag)?
                     }
                     Input::ExternalRecord(input_id) => self.external_record_map().insert(input_id, ())?,
+                    Input::DynamicRecord(input_id) => self.dynamic_record_map().insert(input_id, ())?,
                 }
             }
 
@@ -212,6 +224,7 @@ pub trait InputStorage<N: Network>: Clone + Send + Sync {
                 self.private_map().remove(&input_id)?;
                 self.record_map().remove(&input_id)?;
                 self.external_record_map().remove(&input_id)?;
+                self.dynamic_record_map().remove(&input_id)?;
             }
 
             Ok(())
@@ -262,15 +275,19 @@ pub trait InputStorage<N: Network>: Clone + Send + Sync {
             let private = self.private_map().get_confirmed(&input_id)?;
             let record = self.record_map().get_confirmed(&input_id)?;
             let external_record = self.external_record_map().get_confirmed(&input_id)?;
+            let dynamic_record = self.dynamic_record_map().get_confirmed(&input_id)?;
 
             // Retrieve the input.
-            let input = match (constant, public, private, record, external_record) {
-                (Some(constant), None, None, None, None) => into_input!(Input::Constant(input_id, constant)),
-                (None, Some(public), None, None, None) => into_input!(Input::Public(input_id, public)),
-                (None, None, Some(private), None, None) => into_input!(Input::Private(input_id, private)),
-                (None, None, None, Some(record), None) => into_input!(Input::Record(input_id, record)),
-                (None, None, None, None, Some(_)) => Input::ExternalRecord(input_id),
-                (None, None, None, None, None) => bail!("Missing input '{input_id}' in transition '{transition_id}'"),
+            let input = match (constant, public, private, record, external_record, dynamic_record) {
+                (Some(constant), None, None, None, None, None) => into_input!(Input::Constant(input_id, constant)),
+                (None, Some(public), None, None, None, None) => into_input!(Input::Public(input_id, public)),
+                (None, None, Some(private), None, None, None) => into_input!(Input::Private(input_id, private)),
+                (None, None, None, Some(record), None, None) => into_input!(Input::Record(input_id, record)),
+                (None, None, None, None, Some(_), None) => Input::ExternalRecord(input_id),
+                (None, None, None, None, None, Some(_)) => Input::DynamicRecord(input_id),
+                (None, None, None, None, None, None) => {
+                    bail!("Missing input '{input_id}' in transition '{transition_id}'")
+                }
                 _ => bail!("Found multiple inputs for the input ID '{input_id}' in transition '{transition_id}'"),
             };
 
@@ -301,6 +318,8 @@ pub struct InputStore<N: Network, I: InputStorage<N>> {
     record_tag: I::RecordTagMap,
     /// The map of external record inputs.
     external_record: I::ExternalRecordMap,
+    /// The map of dynamic record inputs.
+    dynamic_record: I::DynamicRecordMap,
     /// The input storage.
     storage: I,
 }
@@ -318,6 +337,7 @@ impl<N: Network, I: InputStorage<N>> InputStore<N, I> {
             record: storage.record_map().clone(),
             record_tag: storage.record_tag_map().clone(),
             external_record: storage.external_record_map().clone(),
+            dynamic_record: storage.dynamic_record_map().clone(),
             storage,
         })
     }
@@ -331,6 +351,7 @@ impl<N: Network, I: InputStorage<N>> InputStore<N, I> {
             record: storage.record_map().clone(),
             record_tag: storage.record_tag_map().clone(),
             external_record: storage.external_record_map().clone(),
+            dynamic_record: storage.dynamic_record_map().clone(),
             storage,
         }
     }
@@ -451,6 +472,11 @@ impl<N: Network, I: InputStorage<N>> InputStore<N, I> {
     /// Returns an iterator over the external record input IDs, for all transition inputs that are external records.
     pub fn external_input_ids(&self) -> impl '_ + Iterator<Item = Cow<'_, Field<N>>> {
         self.external_record.keys_confirmed()
+    }
+
+    /// Returns an iterator over the dynamic record input IDs, for all transition inputs that are dynamic records.
+    pub fn dynamic_input_ids(&self) -> impl '_ + Iterator<Item = Cow<'_, Field<N>>> {
+        self.dynamic_record.keys_confirmed()
     }
 }
 

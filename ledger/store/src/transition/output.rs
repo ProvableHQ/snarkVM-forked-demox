@@ -50,6 +50,8 @@ pub trait OutputStorage<N: Network>: Clone + Send + Sync {
     type ExternalRecordMap: for<'a> Map<'a, Field<N>, ()>;
     /// The mapping of `future hash` to `(optional) future`.
     type FutureMap: for<'a> Map<'a, Field<N>, Option<Future<N>>>;
+    /// The mapping of `dynamic hash` to `()`. Note: This is **not** the record commitment.
+    type DynamicRecordMap: for<'a> Map<'a, Field<N>, ()>;
 
     /// Initializes the transition output storage.
     fn open<S: Into<StorageMode>>(storage: S) -> Result<Self>;
@@ -74,6 +76,8 @@ pub trait OutputStorage<N: Network>: Clone + Send + Sync {
     fn external_record_map(&self) -> &Self::ExternalRecordMap;
     /// Returns the future map.
     fn future_map(&self) -> &Self::FutureMap;
+    /// Returns the dynamic record map.
+    fn dynamic_record_map(&self) -> &Self::DynamicRecordMap;
 
     /// Returns the storage mode.
     fn storage_mode(&self) -> &StorageMode;
@@ -90,6 +94,7 @@ pub trait OutputStorage<N: Network>: Clone + Send + Sync {
         self.record_sender_map().start_atomic();
         self.external_record_map().start_atomic();
         self.future_map().start_atomic();
+        self.dynamic_record_map().start_atomic();
     }
 
     /// Checks if an atomic batch is in progress.
@@ -132,6 +137,7 @@ pub trait OutputStorage<N: Network>: Clone + Send + Sync {
         self.record_sender_map().clear_latest_checkpoint();
         self.external_record_map().clear_latest_checkpoint();
         self.future_map().clear_latest_checkpoint();
+        self.dynamic_record_map().clear_latest_checkpoint();
     }
 
     /// Rewinds the atomic batch to the previous checkpoint.
@@ -146,6 +152,7 @@ pub trait OutputStorage<N: Network>: Clone + Send + Sync {
         self.record_sender_map().atomic_rewind();
         self.external_record_map().atomic_rewind();
         self.future_map().atomic_rewind();
+        self.dynamic_record_map().atomic_rewind();
     }
 
     /// Aborts an atomic batch write operation.
@@ -204,6 +211,7 @@ pub trait OutputStorage<N: Network>: Clone + Send + Sync {
                     }
                     Output::ExternalRecord(output_id) => self.external_record_map().insert(output_id, ())?,
                     Output::Future(output_id, future) => self.future_map().insert(output_id, future)?,
+                    Output::DynamicRecord(output_id) => self.dynamic_record_map().insert(output_id, ())?,
                 }
             }
 
@@ -246,6 +254,7 @@ pub trait OutputStorage<N: Network>: Clone + Send + Sync {
                 self.record_map().remove(&output_id)?;
                 self.external_record_map().remove(&output_id)?;
                 self.future_map().remove(&output_id)?;
+                self.dynamic_record_map().remove(&output_id)?;
             }
 
             Ok(())
@@ -320,6 +329,9 @@ pub trait OutputStorage<N: Network>: Clone + Send + Sync {
             if let Some(future) = self.future_map().get_confirmed(&output_id)? {
                 return Ok(into_output!(Output::Future(output_id, future)));
             }
+            if self.dynamic_record_map().get_confirmed(&output_id)?.is_some() {
+                return Ok(Output::DynamicRecord(output_id));
+            }
 
             bail!("Missing output '{output_id}' in transition '{transition_id}'")
         };
@@ -352,6 +364,8 @@ pub struct OutputStore<N: Network, O: OutputStorage<N>> {
     external_record: O::ExternalRecordMap,
     /// The map of future outputs.
     future: O::FutureMap,
+    /// The map of dynamic record outputs.
+    dynamic_record: O::DynamicRecordMap,
     /// The output storage.
     storage: O,
 }
@@ -371,6 +385,7 @@ impl<N: Network, O: OutputStorage<N>> OutputStore<N, O> {
             record_sender: storage.record_sender_map().clone(),
             external_record: storage.external_record_map().clone(),
             future: storage.future_map().clone(),
+            dynamic_record: storage.dynamic_record_map().clone(),
             storage,
         })
     }
@@ -386,6 +401,7 @@ impl<N: Network, O: OutputStorage<N>> OutputStore<N, O> {
             record_sender: storage.record_sender_map().clone(),
             external_record: storage.external_record_map().clone(),
             future: storage.future_map().clone(),
+            dynamic_record: storage.dynamic_record_map().clone(),
             storage,
         }
     }
@@ -541,6 +557,11 @@ impl<N: Network, O: OutputStorage<N>> OutputStore<N, O> {
     /// Returns an iterator over the future output IDs, for all transition outputs that are future outputs.
     pub fn future_output_ids(&self) -> impl '_ + Iterator<Item = Cow<'_, Field<N>>> {
         self.future.keys_confirmed()
+    }
+
+    /// Returns an iterator of the dynamic record output IDs, for all transition outputs that are dynamic records.
+    pub fn dynamic_output_ids(&self) -> impl '_ + Iterator<Item = Cow<'_, Field<N>>> {
+        self.dynamic_record.keys_confirmed()
     }
 }
 

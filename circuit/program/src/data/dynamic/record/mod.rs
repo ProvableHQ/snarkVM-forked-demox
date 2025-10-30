@@ -68,12 +68,12 @@ pub struct DynamicRecord<A: Aleo> {
     nonce: Group<A>,
     /// The version of the record.
     version: U8<A>,
-    /// The console Merkle tree of the record data.
+    /// The optional console Merkle tree of the record data.
     /// Note: This is NOT part of the circuit representation.
-    tree: console::RecordDataTree<A::Network>,
-    /// The console program data.
+    tree: Option<console::RecordDataTree<A::Network>>,
+    /// The optional console program data.
     /// Note: This is NOT part of the circuit representation.
-    data: IndexMap<console::Identifier<A::Network>, console::Entry<A::Network, console::Plaintext<A::Network>>>,
+    data: Option<IndexMap<console::Identifier<A::Network>, console::Entry<A::Network, console::Plaintext<A::Network>>>>,
 }
 
 impl<A: Aleo> Inject for DynamicRecord<A> {
@@ -83,7 +83,7 @@ impl<A: Aleo> Inject for DynamicRecord<A> {
     fn new(_: Mode, record: Self::Primitive) -> Self {
         Self {
             owner: Owner::new(Mode::Private, record.owner().clone()),
-            root: Inject::new(Mode::Private, record.root().clone()),
+            root: Inject::new(Mode::Private, *record.root()),
             nonce: Group::new(Mode::Private, *record.nonce()),
             version: U8::new(Mode::Private, *record.version()),
             tree: record.tree().clone(),
@@ -114,15 +114,16 @@ impl<A: Aleo> DynamicRecord<A> {
     }
 
     /// Returns the console Merkle tree of the record data.
-    pub const fn tree(&self) -> &console::RecordDataTree<A::Network> {
+    pub const fn tree(&self) -> &Option<console::RecordDataTree<A::Network>> {
         &self.tree
     }
 
     /// Returns console the record data.
     pub const fn data(
         &self,
-    ) -> &IndexMap<console::Identifier<A::Network>, console::Entry<A::Network, console::Plaintext<A::Network>>> {
-        &self.data
+    ) -> Option<&IndexMap<console::Identifier<A::Network>, console::Entry<A::Network, console::Plaintext<A::Network>>>>
+    {
+        self.data.as_ref()
     }
 }
 

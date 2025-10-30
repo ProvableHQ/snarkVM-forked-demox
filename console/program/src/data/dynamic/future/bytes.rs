@@ -1,0 +1,49 @@
+// Copyright (c) 2019-2025 Provable Inc.
+// This file is part of the snarkVM library.
+
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at:
+
+// http://www.apache.org/licenses/LICENSE-2.0
+
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use super::*;
+
+impl<N: Network> FromBytes for DynamicFuture<N> {
+    /// Reads in a dynamic future from a buffer.
+    // TODO (@d0cd) check this that encoding is differentiated from static futures.
+    fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
+        // Read the program name.
+        let program_name = Field::read_le(&mut reader)?;
+        // Read the program network.
+        let program_network = Field::read_le(&mut reader)?;
+        // Read the function name.
+        let function_name = Field::read_le(&mut reader)?;
+        // Read the argument root.
+        let root = Field::read_le(&mut reader)?;
+        // Return the dynamic future.
+        Ok(Self::new_unchecked(program_name, program_network, function_name, root, None, None))
+    }
+}
+
+impl<N: Network> ToBytes for DynamicFuture<N> {
+    /// Writes a dynamic future to a buffer.
+    fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
+        // Write the program name.
+        self.program_name.write_le(&mut writer)?;
+        // Write the program network.
+        self.program_network.write_le(&mut writer)?;
+        // Write the function name.
+        self.function_name.write_le(&mut writer)?;
+        // Write the argument root.
+        self.root.write_le(&mut writer)?;
+
+        Ok(())
+    }
+}

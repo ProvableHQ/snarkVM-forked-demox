@@ -60,6 +60,12 @@ impl<N: Network> Serialize for Input<N> {
                     input.serialize_field("id", &id)?;
                     input.end()
                 }
+                Self::DynamicRecord(id) => {
+                    let mut input = serializer.serialize_struct("Input", 2)?;
+                    input.serialize_field("type", "external_record")?;
+                    input.serialize_field("id", &id)?;
+                    input.end()
+                }
             },
             false => ToBytesSerializer::serialize_with_size_encoding(self, serializer),
         }

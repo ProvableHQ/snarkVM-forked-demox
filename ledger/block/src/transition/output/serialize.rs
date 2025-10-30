@@ -78,6 +78,12 @@ impl<N: Network> Serialize for Output<N> {
                     }
                     output.end()
                 }
+                Self::DynamicRecord(id) => {
+                    let mut output = serializer.serialize_struct("Output", 2)?;
+                    output.serialize_field("type", "dynamic_record")?;
+                    output.serialize_field("id", &id)?;
+                    output.end()
+                }
             },
             false => ToBytesSerializer::serialize_with_size_encoding(self, serializer),
         }
@@ -132,6 +138,7 @@ impl<'de, N: Network> Deserialize<'de> for Output<N> {
                         Some(value) => Some(Future::<N>::from_str(value).map_err(de::Error::custom)?),
                         None => None,
                     }),
+                    Some("dynamic_record") => Output::DynamicRecord(id),
                     _ => return Err(de::Error::custom("Invalid output type")),
                 };
 

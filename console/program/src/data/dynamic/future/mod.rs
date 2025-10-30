@@ -13,7 +13,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod bytes;
 mod equal;
+mod parse;
 mod to_bits;
 mod to_fields;
 
@@ -78,10 +80,10 @@ pub struct DynamicFuture<N: Network> {
     function_name: Field<N>,
     /// The Merkle root of the arguments.
     root: Field<N>,
-    /// The Merkle tree of the arguments.
-    tree: FutureArgumentTree<N>,
-    /// The arguments.
-    arguments: Vec<Argument<N>>,
+    /// The optional Merkle tree of the arguments.
+    tree: Option<FutureArgumentTree<N>>,
+    /// The optional arguments.
+    arguments: Option<Vec<Argument<N>>>,
 }
 
 impl<N: Network> DynamicFuture<N> {
@@ -91,8 +93,8 @@ impl<N: Network> DynamicFuture<N> {
         program_network: Field<N>,
         function_name: Field<N>,
         root: Field<N>,
-        tree: FutureArgumentTree<N>,
-        arguments: Vec<Argument<N>>,
+        tree: Option<FutureArgumentTree<N>>,
+        arguments: Option<Vec<Argument<N>>>,
     ) -> Self {
         Self { program_name, program_network, function_name, root, tree, arguments }
     }
@@ -119,13 +121,13 @@ impl<N: Network> DynamicFuture<N> {
         &self.root
     }
 
-    /// Returns the Merkle tree of the arguments.
-    pub const fn tree(&self) -> &FutureArgumentTree<N> {
+    /// Returns the optional Merkle tree of the arguments.
+    pub const fn tree(&self) -> &Option<FutureArgumentTree<N>> {
         &self.tree
     }
 
-    /// Returns the arguments.
-    pub const fn arguments(&self) -> &Vec<Argument<N>> {
+    /// Returns the optional arguments.
+    pub const fn arguments(&self) -> &Option<Vec<Argument<N>>> {
         &self.arguments
     }
 }
@@ -155,18 +157,23 @@ impl<N: Network> DynamicFuture<N> {
         // Get the root.
         let root = *tree.root();
 
-        Ok(Self::new_unchecked(program_name, program_network, function_name, root, tree, arguments))
+        Ok(Self::new_unchecked(program_name, program_network, function_name, root, Some(tree), Some(arguments)))
     }
 
     /// Creates a static record from a dynamic record.
     pub fn to_future(&self) -> Result<Future<N>> {
+        // Ensure that the arguments are present.
+        let Some(arguments) = &self.arguments else {
+            bail!("Cannot convert dynamic future to a static future without the arguments being present");
+        };
+
         Ok(Future::new(
             ProgramID::try_from((
                 Identifier::from_field(&self.program_name)?,
                 Identifier::from_field(&self.program_network)?,
             ))?,
             Identifier::from_field(&self.function_name)?,
-            self.arguments.clone(),
+            arguments.clone(),
         ))
     }
 }

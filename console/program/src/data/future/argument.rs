@@ -22,6 +22,8 @@ pub enum Argument<N: Network> {
     Plaintext(Plaintext<N>),
     /// A future.
     Future(Future<N>),
+    /// A dynamic future.
+    DynamicFuture(DynamicFuture<N>),
 }
 
 impl<N: Network> Equal<Self> for Argument<N> {
@@ -30,18 +32,20 @@ impl<N: Network> Equal<Self> for Argument<N> {
     /// Returns `true` if `self` and `other` are equal.
     fn is_equal(&self, other: &Self) -> Self::Output {
         match (self, other) {
-            (Self::Plaintext(plaintext_a), Self::Plaintext(plaintext_b)) => plaintext_a.is_equal(plaintext_b),
-            (Self::Future(future_a), Self::Future(future_b)) => future_a.is_equal(future_b),
-            (Self::Plaintext(..), _) | (Self::Future(..), _) => Boolean::new(false),
+            (Self::Plaintext(a), Self::Plaintext(b)) => a.is_equal(b),
+            (Self::Future(a), Self::Future(b)) => a.is_equal(b),
+            (Self::DynamicFuture(a), Self::DynamicFuture(b)) => a.is_equal(b),
+            (Self::Plaintext(..), _) | (Self::Future(..), _) | (Self::DynamicFuture(..), _) => Boolean::new(false),
         }
     }
 
     /// Returns `true` if `self` and `other` are *not* equal.
     fn is_not_equal(&self, other: &Self) -> Self::Output {
         match (self, other) {
-            (Self::Plaintext(plaintext_a), Self::Plaintext(plaintext_b)) => plaintext_a.is_not_equal(plaintext_b),
-            (Self::Future(future_a), Self::Future(future_b)) => future_a.is_not_equal(future_b),
-            (Self::Plaintext(..), _) | (Self::Future(..), _) => Boolean::new(true),
+            (Self::Plaintext(a), Self::Plaintext(b)) => a.is_not_equal(b),
+            (Self::Future(a), Self::Future(b)) => a.is_not_equal(b),
+            (Self::DynamicFuture(a), Self::DynamicFuture(b)) => a.is_not_equal(b),
+            (Self::Plaintext(..), _) | (Self::Future(..), _) | (Self::DynamicFuture(..), _) => Boolean::new(true),
         }
     }
 }
@@ -59,6 +63,16 @@ impl<N: Network> ToBits for Argument<N> {
                 vec.push(true);
                 future.write_bits_le(vec);
             }
+            Self::DynamicFuture(dynamic_future) => {
+                vec.push(true);
+                // Note. This encoding is needed to uniquely disambiguate dynamic futures from static futures.
+                // This is sound because:
+                //  - a static future expects the program ID bits after the initial tag bit
+                //  - a program ID contains two `Identifier`s
+                //  - an `Identifier` cannot lead with a zero byte, since a leading zero byte implies an empty string.
+                vec.extend(0u8.to_bits_le());
+                dynamic_future.write_bits_le(vec);
+            }
         }
     }
 
@@ -73,6 +87,16 @@ impl<N: Network> ToBits for Argument<N> {
             Self::Future(future) => {
                 vec.push(true);
                 future.write_bits_be(vec);
+            }
+            Self::DynamicFuture(dynamic_future) => {
+                vec.push(true);
+                // Note. This encoding is needed to uniquely disambiguate dynamic futures from static futures.
+                // This is sound because:
+                //  - a static future expects the program ID bits after the initial tag bit
+                //  - a program ID contains two `Identifier`s
+                //  - an `Identifier` cannot lead with a zero byte, since a leading zero byte implies an empty string.
+                vec.extend(0u8.to_bits_be());
+                dynamic_future.write_bits_be(vec);
             }
         }
     }

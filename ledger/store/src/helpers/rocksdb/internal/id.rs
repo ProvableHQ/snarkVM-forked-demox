@@ -151,6 +151,7 @@ pub enum TransitionInputMap {
     Record = DataID::InputRecordMap as u16,
     RecordTag = DataID::InputRecordTagMap as u16,
     ExternalRecord = DataID::InputExternalRecordMap as u16,
+    DynamicRecord = DataID::InputDynamicRecordMap as u16,
 }
 
 /// The RocksDB map prefix for transition output entries.
@@ -169,6 +170,7 @@ pub enum TransitionOutputMap {
     RecordSender = DataID::OutputRecordSenderMap as u16,
     ExternalRecord = DataID::OutputExternalRecordMap as u16,
     Future = DataID::OutputFutureMap as u16,
+    DynamicRecord = DataID::OutputDynamicRecordMap as u16,
 }
 
 /// The RocksDB map prefix for transaction-related entries.
@@ -303,6 +305,11 @@ enum DataID {
     IDEditionMap,
     // Track deployments that contain an optional checksum
     DeploymentChecksumMap,
+
+    // Track dynmaic record inputs.
+    InputDynamicRecordMap,
+    // Track dynamic record outputs.
+    OutputDynamicRecordMap,
 
     // Testing
     #[cfg(test)]

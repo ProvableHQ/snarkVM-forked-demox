@@ -263,6 +263,22 @@ impl<N: Network> Transition<N> {
                             false => bail!("Malformed future transition output: '{output}'"),
                         }
                     }
+                    (OutputID::DynamicRecord(hash), Value::DynamicRecord(dynamic_record)) => {
+                        // Construct the (console) output index as a field element.
+                        let index = Field::from_u16(u16::try_from(num_inputs + index)?);
+                        // Construct the preimage as `(function ID || output || tvk || index)`.
+                        let mut preimage = Vec::new();
+                        preimage.push(function_id);
+                        preimage.extend(dynamic_record.to_fields()?);
+                        preimage.push(*request.tvk());
+                        preimage.push(index);
+                        // Hash the output to a field element.
+                        let candidate_hash = N::hash_psd8(&preimage)?;
+                        // Ensure the hash matches.
+                        ensure!(*hash == candidate_hash, "The output external hash is incorrect");
+                        // Return the dynamic record output.
+                        Ok(Output::DynamicRecord(*hash))
+                    }
                     _ => bail!("Malformed response output: {output_id:?}, {output}"),
                 }
             })
@@ -401,6 +417,7 @@ impl<N: Network> Transition<N> {
             Input::Private(_, _) => false,
             Input::Record(input_sn, _) => input_sn == serial_number,
             Input::ExternalRecord(_) => false,
+            Input::DynamicRecord(_) => false,
         })
     }
 
@@ -413,6 +430,7 @@ impl<N: Network> Transition<N> {
             Output::Record(output_cm, _, _, _) => output_cm == commitment,
             Output::ExternalRecord(_) => false,
             Output::Future(_, _) => false,
+            Output::DynamicRecord(_) => false,
         })
     }
 }
@@ -428,6 +446,7 @@ impl<N: Network> Transition<N> {
             Output::Record(_, _, _, _) => None,
             Output::ExternalRecord(_) => None,
             Output::Future(_, _) => None,
+            Output::DynamicRecord(_) => None,
         })
     }
 }

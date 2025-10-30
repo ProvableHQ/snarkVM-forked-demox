@@ -176,6 +176,10 @@ impl<N: Network> ToBytes for Output<N> {
                     None => false.write_le(&mut writer),
                 }
             }
+            Self::DynamicRecord(commitment) => {
+                (6 as Variant).write_le(&mut writer)?;
+                commitment.write_le(&mut writer)
+            }
         }
     }
 }

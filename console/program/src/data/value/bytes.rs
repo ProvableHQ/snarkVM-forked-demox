@@ -25,8 +25,9 @@ impl<N: Network> FromBytes for Value<N> {
             0 => Self::Plaintext(Plaintext::read_le(&mut reader)?),
             1 => Self::Record(Record::read_le(&mut reader)?),
             2 => Self::Future(Future::read_le(&mut reader)?),
-            // Note the `DynamicRecord` and `DynamicFuture` do not implement `FromBytes` as they are an internal data type.
-            3.. => return Err(error(format!("Failed to decode value variant {index}"))),
+            3 => Self::DynamicRecord(DynamicRecord::read_le(&mut reader)?),
+            4 => Self::DynamicFuture(DynamicFuture::read_le(&mut reader)?),
+            5.. => return Err(error(format!("Failed to decode value variant {index}"))),
         };
         Ok(entry)
     }
@@ -48,9 +49,14 @@ impl<N: Network> ToBytes for Value<N> {
                 2u8.write_le(&mut writer)?;
                 future.write_le(&mut writer)
             }
-            // Note that the `DynamicRecord` and `DynamicFuture` do not implement `ToBytes` as they are an internal data type.
-            Self::DynamicRecord(..) => Err(error("Cannot serialize a dynamic record".to_string())),
-            Self::DynamicFuture(..) => Err(error("Cannot serialize a dynamic future".to_string())),
+            Self::DynamicRecord(dynamic_record) => {
+                3u8.write_le(&mut writer)?;
+                dynamic_record.write_le(&mut writer)
+            }
+            Self::DynamicFuture(dynamic_future) => {
+                4u8.write_le(&mut writer)?;
+                dynamic_future.write_le(&mut writer)
+            }
         }
     }
 }

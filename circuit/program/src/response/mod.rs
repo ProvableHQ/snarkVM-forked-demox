@@ -39,8 +39,6 @@ pub enum OutputID<A: Aleo> {
     /// The hash of the external record's (function_id, record, tvk, output index).
     // TODO (@d0cd): Verify that `function_id` is correct.
     DynamicRecord(Field<A>),
-    /// The hash of the dynamic future output.
-    DynamicFuture(Field<A>),
 }
 
 impl<A: Aleo> Inject for OutputID<A> {
@@ -68,8 +66,6 @@ impl<A: Aleo> Inject for OutputID<A> {
             // Inject the expected hash as `Mode::Public`.
             // TODO (@d0cd): Verify that the hash is hiding.
             console::OutputID::DynamicRecord(hash) => Self::DynamicRecord(Field::new(Mode::Public, hash)),
-            // Inject the expected hash as `Mode::Public`.
-            console::OutputID::DynamicFuture(hash) => Self::DynamicFuture(Field::new(Mode::Public, hash)),
         }
     }
 }
@@ -157,16 +153,6 @@ impl<A: Aleo> OutputID<A> {
         // Return the output ID.
         Self::DynamicRecord(output_hash)
     }
-
-    /// Initializes a dynamic future output ID.
-    fn dynamic_future(expected_hash: Field<A>) -> Self {
-        // Inject the expected hash as `Mode::Public`.
-        let output_hash = Field::new(Mode::Public, expected_hash.eject_value());
-        // Ensure the injected hash matches the given hash.
-        A::assert_eq(&output_hash, expected_hash);
-        // Return the output ID.
-        Self::DynamicFuture(output_hash)
-    }
 }
 
 impl<A: Aleo> Eject for OutputID<A> {
@@ -184,7 +170,6 @@ impl<A: Aleo> Eject for OutputID<A> {
             Self::ExternalRecord(hash) => hash.eject_mode(),
             Self::Future(hash) => hash.eject_mode(),
             Self::DynamicRecord(hash) => hash.eject_mode(),
-            Self::DynamicFuture(hash) => hash.eject_mode(),
         }
     }
 
@@ -202,7 +187,6 @@ impl<A: Aleo> Eject for OutputID<A> {
             Self::ExternalRecord(hash) => console::OutputID::ExternalRecord(hash.eject_value()),
             Self::Future(hash) => console::OutputID::Future(hash.eject_value()),
             Self::DynamicRecord(hash) => console::OutputID::DynamicRecord(hash.eject_value()),
-            Self::DynamicFuture(hash) => console::OutputID::DynamicFuture(hash.eject_value()),
         }
     }
 }

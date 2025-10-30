@@ -57,7 +57,8 @@ impl<N: Network> FromBytes for Input<N> {
                 Self::Record(serial_number, tag)
             }
             4 => Self::ExternalRecord(FromBytes::read_le(&mut reader)?),
-            5.. => return Err(error(format!("Failed to decode transition input variant {variant}"))),
+            5 => Self::DynamicRecord(FromBytes::read_le(&mut reader)?),
+            6.. => return Err(error(format!("Failed to decode transition input variant {variant}"))),
         };
         Ok(literal)
     }
@@ -108,6 +109,10 @@ impl<N: Network> ToBytes for Input<N> {
             Self::ExternalRecord(input_commitment) => {
                 (4 as Variant).write_le(&mut writer)?;
                 input_commitment.write_le(&mut writer)
+            }
+            Self::DynamicRecord(hash) => {
+                (5 as Variant).write_le(&mut writer)?;
+                hash.write_le(&mut writer)
             }
         }
     }

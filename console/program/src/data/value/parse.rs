@@ -60,14 +60,8 @@ impl<N: Network> Display for Value<N> {
             Value::Plaintext(plaintext) => Display::fmt(plaintext, f),
             Value::Record(record) => Display::fmt(record, f),
             Value::Future(future) => Display::fmt(future, f),
-            Value::DynamicRecord(dynamic_record) => {
-                let record = dynamic_record.to_record().map_err(|_| fmt::Error)?;
-                Display::fmt(&record, f)
-            }
-            Value::DynamicFuture(dynamic_future) => {
-                let future = dynamic_future.to_future().map_err(|_| fmt::Error)?;
-                Display::fmt(&future, f)
-            }
+            Value::DynamicRecord(dynamic_record) => Display::fmt(dynamic_record, f),
+            Value::DynamicFuture(dynamic_future) => Display::fmt(dynamic_future, f),
         }
     }
 }

@@ -131,6 +131,7 @@ impl<N: Network> From<Argument<N>> for Value<N> {
         match argument {
             Argument::Plaintext(plaintext) => Self::Plaintext(plaintext),
             Argument::Future(future) => Self::Future(future),
+            Argument::DynamicFuture(future) => Self::DynamicFuture(future),
         }
     }
 }
