@@ -23,7 +23,7 @@ pub enum Opcode {
     /// The opcode is for an async call operation (i.e. `async`).
     Async,
     /// The opcode is for a call operation (i.e. `call`).
-    Call,
+    Call(&'static str),
     /// The opcode is for a cast operation (i.e. `cast`).
     Cast(&'static str),
     /// The opcode is for a finalize command (i.e. `increment`).
@@ -54,7 +54,7 @@ impl Deref for Opcode {
         match self {
             Opcode::Assert(opcode) => opcode,
             Opcode::Async => &"async",
-            Opcode::Call => &"call",
+            Opcode::Call(opcode) => opcode,
             Opcode::Cast(opcode) => opcode,
             Opcode::Command(opcode) => opcode,
             Opcode::Commit(opcode) => opcode,
@@ -82,7 +82,7 @@ impl Display for Opcode {
         match self {
             Self::Assert(opcode) => write!(f, "{opcode}"),
             Self::Async => write!(f, "{}", self.deref()),
-            Self::Call => write!(f, "{}", self.deref()),
+            Self::Call(opcode) => write!(f, "{opcode}"),
             Self::Cast(opcode) => write!(f, "{opcode}"),
             Self::Command(opcode) => write!(f, "{opcode}"),
             Self::Commit(opcode) => write!(f, "{opcode}"),

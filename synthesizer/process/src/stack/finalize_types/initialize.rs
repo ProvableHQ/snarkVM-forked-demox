@@ -642,7 +642,7 @@ impl<N: Network> FinalizeTypes<N> {
             Opcode::Async => {
                 bail!("Instruction 'async' is not allowed in 'finalize' or 'constructor'.");
             }
-            Opcode::Call => {
+            Opcode::Call(_) => {
                 bail!("Instruction 'call' is not allowed in 'finalize' or 'constructor'.");
             }
             Opcode::Cast(opcode) => match opcode {

@@ -34,7 +34,10 @@ impl<N: Network> RegisterTypes<N> {
             // Ensure the closure contains no async instructions.
             ensure!(instruction.opcode() != Opcode::Async, "An 'async' instruction is not allowed in closures");
             // Ensure the closure contains no call instructions.
-            ensure!(instruction.opcode() != Opcode::Call, "A 'call' instruction is not allowed in closures");
+            ensure!(
+                !matches!(instruction.opcode(), Opcode::Call(_)),
+                "A 'call' instruction is not allowed in closures"
+            );
             // Check the instruction opcode, operands, and destinations.
             register_types.check_instruction(stack, closure.name(), instruction)?;
         }
@@ -98,7 +101,7 @@ impl<N: Network> RegisterTypes<N> {
                         _ => bail!("Expected 'async' instruction"),
                     };
                 }
-                Opcode::Call => {
+                Opcode::Call(_) => {
                     // Ensure the `call` instruction precedes any `async` instruction.
                     ensure!(async_.is_none(), "The 'call' can only be invoked before an 'async' instruction")
                 }
@@ -429,7 +432,8 @@ impl<N: Network> RegisterTypes<N> {
                     "Instruction '{instruction}' does not match the function name '{closure_or_function_name}'."
                 );
             }
-            Opcode::Call => {
+            Opcode::Call(_) => {
+                // TODO (@d0cd) Fix logic to handle dcall
                 // Retrieve the call operation.
                 let call = match instruction {
                     Instruction::Call(call) => call,
