@@ -29,6 +29,7 @@ impl<N: Network> Request<N> {
         root_tvk: Option<Field<N>>,
         is_root: bool,
         program_checksum: Option<Field<N>>,
+        is_dynamic: bool,
         rng: &mut R,
     ) -> Result<Self> {
         // Ensure the number of inputs matches the number of input types.

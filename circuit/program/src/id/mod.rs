@@ -40,8 +40,8 @@ impl<A: Aleo> Inject for ProgramID<A> {
     /// Injects a program ID with the given primitive.
     fn new(_: Mode, id: Self::Primitive) -> Self {
         Self {
-            name: Identifier::new(Mode::Constant, *id.name()),
-            network: Identifier::new(Mode::Constant, *id.network()),
+            name: Identifier::constant(*id.name()),
+            network: Identifier::constant(*id.network()),
         }
     }
 }

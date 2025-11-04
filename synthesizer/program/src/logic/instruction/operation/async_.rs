@@ -119,8 +119,8 @@ impl<N: Network> Async<N> {
 
         // Initialize a future.
         let future = circuit::Value::Future(circuit::Future::from(
-            circuit::ProgramID::new(Mode::Constant, *stack.program_id()),
-            circuit::Identifier::new(Mode::Constant, *self.function_name()),
+            circuit::ProgramID::constant(*stack.program_id()),
+            circuit::Identifier::constant(*self.function_name()),
             arguments,
         ));
         // Store the future in the destination register.

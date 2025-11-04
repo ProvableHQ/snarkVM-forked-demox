@@ -29,17 +29,71 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
         // Load the operands values.
         let inputs: Vec<_> = self.operands().iter().map(|operand| registers.load(stack, operand)).try_collect()?;
 
-        // TODO (@d0cd): Resolve the first three operands to the appopriate stack.
-        let (substack, resource) = todo!();
-        lap!(timer, "Retrieved the substack and resource");
+        // Get the program name.
+        let Value::Plaintext(Plaintext::Literal(Literal::Field(program_name_as_field), _)) = &inputs[0] else {
+            bail!("Expected the first operand of `call.dynamic` to be a 'Field' literal.")
+        };
+        let program_name = Identifier::from_field(program_name_as_field)?;
+
+        // Get the program network.
+        let Value::Plaintext(Plaintext::Literal(Literal::Field(program_network_id), _)) = &inputs[1] else {
+            bail!("Expected the second operand of `call.dynamic` to be a 'Field' literal.")
+        };
+        let program_network = Identifier::from_field(program_network_id)?;
+
+        // Construct the program ID.
+        let program_id = ProgramID::try_from((program_name, program_network))?;
+
+        // Get the function name.
+        let Value::Plaintext(Plaintext::Literal(Literal::Field(function_name_as_field), _)) = &inputs[2] else {
+            bail!("Expected the third operand of `call.dynamic` to be a 'Field' literal.")
+        };
+        let function_name = Identifier::from_field(function_name_as_field)?;
+
+        // Separate the remaining inputs as the function inputs.
+        let inputs = &inputs[3..];
+
+        // Retrieve the optional external stack and resource.
+        let external_stack = match stack.program().id() == &program_id {
+            // Retrieve the call stack and resource from the locator.
+            false => {
+                // Check the external call locator.
+                let is_credits_program = &program_id.to_string() == "credits.aleo";
+                let is_fee_private = function_name.to_string() == "fee_private";
+                let is_fee_public = &function_name.to_string() == "fee_public";
+
+                // Ensure the external call is not to 'credits.aleo/fee_private' or 'credits.aleo/fee_public'.
+                if is_credits_program && (is_fee_private || is_fee_public) {
+                    bail!("Cannot perform an external call to 'credits.aleo/fee_private' or 'credits.aleo/fee_public'.")
+                } else {
+                    Some(stack.get_external_stack(&program_id)?))
+                }
+            }
+            true => {
+                // TODO (howardwu): Revisit this decision to forbid calling internal functions. A record cannot be spent again.
+                //  But there are legitimate uses for passing a record through to an internal function.
+                //  We could invoke the internal function without a state transition, but need to match visibility.
+                // TODO (@d0cd): Resolve recursion with records.
+                if stack.program().contains_function(&function_name) {
+                    bail!("Cannot dynamically evaluate a local '{function_name}' ")
+                }
+                None
+            }
+        };
+        // Retrieve the substack.
+        let substack = match &external_stack {
+            Some(external_stack) => external_stack.as_ref(),
+            None => stack,
+        };
+        lap!(timer, "Retrieved the substack");
 
         // If the operator is a closure, retrieve the closure and compute the output.
-        let outputs = if let Ok(closure) = substack.program().get_closure(resource) {
+        let outputs = if substack.program().get_closure(&function_name).is_ok() {
             // A closure cannot be dynamically called.
-            bail!("Cannot dynamically call a closure.")
+            bail!("Cannot dynamically evaluate a closure: {function_name}")
         }
         // If the operator is a function, retrieve the function and compute the output.
-        else if let Ok(function) = substack.program().get_function(resource) {
+        else if let Ok(function) = substack.program().get_function(&function_name) {
             // Ensure the number of inputs matches the number of input statements.
             if function.inputs().len() != inputs.len() {
                 bail!("Expected {} inputs, found {}", function.inputs().len(), inputs.len())
@@ -91,7 +145,7 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
         }
         // Else, throw an error.
         else {
-            bail!("Call operator '{}' is invalid or unsupported.", self.operator())
+            bail!("Dynamic call to '{program_id}/{function_name}' is invalid or unsupported.")
         };
         lap!(timer, "Computed outputs");
 
@@ -113,15 +167,77 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
         registers: &mut Registers<N, A>,
         rng: &mut R,
     ) -> Result<()> {
+        use circuit::Eject;
+
         let timer = timer!("Call::execute");
 
         // Load the operands values.
         let inputs: Vec<_> =
             self.operands().iter().map(|operand| registers.load_circuit(stack, operand)).try_collect()?;
 
-        // TODO (@d0cd): Resolve the first three operands to the appopriate stack.
-        let (substack, resource) = todo!();
-        lap!(timer, "Retrieved the substack and resource");
+        // Get the program name.
+        let circuit::Value::Plaintext(circuit::Plaintext::Literal(circuit::Literal::Field(program_name_as_field), _)) =
+            &inputs[0]
+        else {
+            bail!("Expected the first operand of `call.dynamic` to be a 'Field' literal.")
+        };
+        let console_program_name = Identifier::from_field(&program_name_as_field.eject_value())?;
+
+        // Get the program network.
+        let circuit::Value::Plaintext(circuit::Plaintext::Literal(circuit::Literal::Field(program_network_id), _)) =
+            &inputs[1]
+        else {
+            bail!("Expected the second operand of `call.dynamic` to be a 'Field' literal.")
+        };
+        let console_program_network = Identifier::from_field(&program_network_id.eject_value())?;
+
+        // Construct the program ID.
+        let console_program_id = ProgramID::try_from((console_program_name, console_program_network))?;
+
+        // Get the function name.
+        let circuit::Value::Plaintext(circuit::Plaintext::Literal(circuit::Literal::Field(function_name_as_field), _)) =
+            &inputs[2]
+        else {
+            bail!("Expected the third operand of `call.dynamic` to be a 'Field' literal.")
+        };
+        let console_function_name = Identifier::from_field(&function_name_as_field.eject_value())?;
+
+        // Separate the remaining inputs as the function inputs.
+        let inputs = &inputs[3..];
+
+        // Retrieve the optional external stack and resource.
+        let (external_stack, resource) = match stack.program().id() == &console_program_id {
+            // Retrieve the call stack and resource from the locator.
+            false => {
+                // Check the external call locator.
+                let is_credits_program = &console_program_id.to_string() == "credits.aleo";
+                let is_fee_private = &console_function_name.to_string() == "fee_private";
+                let is_fee_public = &console_function_name.to_string() == "fee_public";
+
+                // Ensure the external call is not to 'credits.aleo/fee_private' or 'credits.aleo/fee_public'.
+                if is_credits_program && (is_fee_private || is_fee_public) {
+                    bail!("Cannot perform an external call to 'credits.aleo/fee_private' or 'credits.aleo/fee_public'.")
+                } else {
+                    (Some(stack.get_external_stack(&console_program_id)?), console_function_name)
+                }
+            }
+            true => {
+                // TODO (howardwu): Revisit this decision to forbid calling internal functions. A record cannot be spent again.
+                //  But there are legitimate uses for passing a record through to an internal function.
+                //  We could invoke the internal function without a state transition, but need to match visibility.
+                // TODO (@d0cd): Resolve recursion with records.
+                if stack.program().contains_function(&console_function_name) {
+                    bail!("Cannot dynamically execute a local '{console_function_name}' ")
+                }
+                (None, console_function_name)
+            }
+        };
+        // Retrieve the substack.
+        let substack = match &external_stack {
+            Some(external_stack) => external_stack.as_ref(),
+            None => stack,
+        };
+        lap!(timer, "Retrieved the substack");
 
         // If we are not handling the root request, retrieve the root request's tvk
         let root_tvk = registers.root_tvk().ok();
@@ -133,20 +249,11 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
         };
 
         // If the operator is a closure, retrieve the closure and compute the output.
-        let outputs = if let Ok(closure) = substack.program().get_closure(resource) {
-            lap!(timer, "Execute the closure");
-            // Execute the closure, and load the outputs.
-            substack.execute_closure(
-                &closure,
-                &inputs,
-                registers.call_stack(),
-                registers.signer_circuit()?,
-                registers.caller_circuit()?,
-                registers.tvk_circuit()?,
-            )?
+        let outputs = if let Ok(closure) = substack.program().get_closure(&console_function_name) {
+            bail!("Cannot dynamically execute a closure.")
         }
         // If the operator is a function, retrieve the function and compute the output.
-        else if let Ok(function) = substack.program().get_function(resource) {
+        else if let Ok(function) = substack.program().get_function(&console_function_name) {
             lap!(timer, "Execute the function");
             // Retrieve the number of inputs.
             let num_inputs = function.inputs().len();
@@ -161,7 +268,6 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
             // Indicate that external calls are never a root request.
             let is_root = false;
 
-            use circuit::Eject;
             // Eject the existing circuit.
             let r1cs = A::eject_r1cs_and_reset();
             let (request, response) = {
@@ -372,10 +478,10 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
 
             // Inject the network ID as `Mode::Constant`.
             let network_id = circuit::U16::constant(*request.network_id());
-            // Inject the program ID as `Mode::Constant`.
-            let program_id = circuit::ProgramID::constant(*substack.program_id());
-            // Inject the function name as `Mode::Constant`.
-            let function_name = circuit::Identifier::constant(*function.name());
+            // Inject the program ID name as `Mode::Public`.
+            let program_id = circuit::ProgramID::new_public(console_program_id);
+            // Inject the function name as `Mode::Public`.
+            let function_name = circuit::Identifier::new_public(console_function_name);
 
             // Ensure the number of public variables remains the same.
             ensure!(A::num_public() == num_public, "Forbidden: 'call' injected excess public variables");
