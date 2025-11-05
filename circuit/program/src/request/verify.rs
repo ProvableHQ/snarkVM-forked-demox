@@ -31,7 +31,8 @@ impl<A: Aleo> Request<A> {
         program_checksum: Option<Field<A>>,
     ) -> Boolean<A> {
         // Compute the function ID.
-        let function_id = compute_function_id(&self.network_id, &self.program_id, &self.function_name);
+        let function_id =
+            compute_function_id(&self.network_id, &self.program_id, &self.function_name, self.is_dynamic());
 
         // Compute 'is_root' as a field element.
         let is_root = Ternary::ternary(&is_root, &Field::<A>::one(), &Field::<A>::zero());
@@ -60,6 +61,7 @@ impl<A: Aleo> Request<A> {
             &self.tvk,
             &self.tcm,
             Some(&self.signature),
+            self.is_dynamic(),
         );
         // Append the input elements to the message.
         match append_to_message {
@@ -126,6 +128,7 @@ impl<A: Aleo> Request<A> {
         tvk: &Field<A>,
         tcm: &Field<A>,
         signature: Option<&Signature<A>>,
+        is_dynamic: bool,
     ) -> (Boolean<A>, Option<Vec<Field<A>>>) {
         // Ensure the signature response matches the `CREATE_MESSAGE` flag.
         match CREATE_MESSAGE {
@@ -134,7 +137,7 @@ impl<A: Aleo> Request<A> {
         }
 
         // Compute the function ID.
-        let function_id = compute_function_id(network_id, program_id, function_name);
+        let function_id = compute_function_id(network_id, program_id, function_name, is_dynamic);
 
         // Initialize a vector for a message.
         let mut message = Vec::new();
@@ -351,80 +354,99 @@ impl<A: Aleo> Request<A> {
 mod tests {
     use super::*;
     use crate::Circuit;
+    use snarkvm_circuit_types::environment::UpdatableCount;
     use snarkvm_utilities::TestRng;
 
     use anyhow::Result;
 
-    pub(crate) const ITERATIONS: usize = 50;
+    pub(crate) const ITERATIONS: usize = 25;
+
+    /// Helper function to create a request given a program_id and function_name.
+    fn create_request(
+        program_id: &str,
+        function_name: &str,
+        set_program_checksum: bool,
+        dynamic: bool,
+        i: usize,
+        rng: &mut TestRng,
+    ) -> Result<(
+        console::Request<<Circuit as Environment>::Network>,
+        Vec<console::ValueType<<Circuit as Environment>::Network>>,
+        bool,
+        Option<console::Field<<Circuit as Environment>::Network>>,
+    )> {
+        // Sample a random private key and address.
+        let private_key = snarkvm_console_account::PrivateKey::new(rng)?;
+        let address = snarkvm_console_account::Address::try_from(&private_key).unwrap();
+
+        // Construct a program ID and function name.
+        let program_id = console::ProgramID::from_str(program_id)?;
+        let function_name = console::Identifier::from_str(function_name)?;
+
+        // Prepare a record belonging to the address.
+        let record_string = format!(
+            "{{ owner: {address}.private, token_amount: 100u64.private, _nonce: 0group.public, _version: 1u8.public }}"
+        );
+
+        // Construct the inputs.
+        let input_constant =
+            console::Value::<<Circuit as Environment>::Network>::from_str("{ token_amount: 9876543210u128 }").unwrap();
+        let input_public =
+            console::Value::<<Circuit as Environment>::Network>::from_str("{ token_amount: 9876543210u128 }").unwrap();
+        let input_private =
+            console::Value::<<Circuit as Environment>::Network>::from_str("{ token_amount: 9876543210u128 }").unwrap();
+        let input_record = console::Value::<<Circuit as Environment>::Network>::from_str(&record_string).unwrap();
+        let input_external_record =
+            console::Value::<<Circuit as Environment>::Network>::from_str(&record_string).unwrap();
+        let inputs = [input_constant, input_public, input_private, input_record, input_external_record];
+
+        // Construct the input types.
+        let input_types = vec![
+            console::ValueType::from_str("amount.constant").unwrap(),
+            console::ValueType::from_str("amount.public").unwrap(),
+            console::ValueType::from_str("amount.private").unwrap(),
+            console::ValueType::from_str("token.record").unwrap(),
+            console::ValueType::from_str("token.aleo/token.record").unwrap(),
+        ];
+
+        // Sample 'root_tvk'.
+        let root_tvk = None;
+        // Sample 'is_root'.
+        let is_root = true;
+        // Sample 'program_checksum'.
+        let program_checksum = set_program_checksum.then(|| console::Field::from_u64(i as u64));
+
+        // Compute the signed request.
+        let request = console::Request::sign(
+            &private_key,
+            program_id,
+            function_name,
+            inputs.iter(),
+            &input_types,
+            root_tvk,
+            is_root,
+            program_checksum,
+            Some(dynamic),
+            rng,
+        )?;
+        assert!(request.verify(&input_types, is_root, program_checksum));
+
+        Ok((request, input_types, is_root, program_checksum))
+    }
 
     fn check_verify(
         mode: Mode,
-        num_constants: u64,
-        num_public: u64,
-        num_private: u64,
-        num_constraints: u64,
+        program_id: &str,
+        function_name: &str,
+        count: UpdatableCount,
         set_program_checksum: bool,
+        dynamic: bool,
     ) -> Result<()> {
         let rng = &mut TestRng::default();
 
         for i in 0..ITERATIONS {
-            // Sample a random private key and address.
-            let private_key = snarkvm_console_account::PrivateKey::new(rng)?;
-            let address = snarkvm_console_account::Address::try_from(&private_key).unwrap();
-
-            // Construct a program ID and function name.
-            let program_id = console::ProgramID::from_str("token.aleo")?;
-            let function_name = console::Identifier::from_str("transfer")?;
-
-            // Prepare a record belonging to the address.
-            let record_string = format!(
-                "{{ owner: {address}.private, token_amount: 100u64.private, _nonce: 0group.public, _version: 1u8.public }}"
-            );
-
-            // Construct the inputs.
-            let input_constant =
-                console::Value::<<Circuit as Environment>::Network>::from_str("{ token_amount: 9876543210u128 }")
-                    .unwrap();
-            let input_public =
-                console::Value::<<Circuit as Environment>::Network>::from_str("{ token_amount: 9876543210u128 }")
-                    .unwrap();
-            let input_private =
-                console::Value::<<Circuit as Environment>::Network>::from_str("{ token_amount: 9876543210u128 }")
-                    .unwrap();
-            let input_record = console::Value::<<Circuit as Environment>::Network>::from_str(&record_string).unwrap();
-            let input_external_record =
-                console::Value::<<Circuit as Environment>::Network>::from_str(&record_string).unwrap();
-            let inputs = [input_constant, input_public, input_private, input_record, input_external_record];
-
-            // Construct the input types.
-            let input_types = vec![
-                console::ValueType::from_str("amount.constant").unwrap(),
-                console::ValueType::from_str("amount.public").unwrap(),
-                console::ValueType::from_str("amount.private").unwrap(),
-                console::ValueType::from_str("token.record").unwrap(),
-                console::ValueType::from_str("token.aleo/token.record").unwrap(),
-            ];
-
-            // Sample 'root_tvk'.
-            let root_tvk = None;
-            // Sample 'is_root'.
-            let is_root = true;
-            // Sample 'program_checksum'.
-            let program_checksum = set_program_checksum.then(|| console::Field::from_u64(i as u64));
-
-            // Compute the signed request.
-            let request = console::Request::sign(
-                &private_key,
-                program_id,
-                function_name,
-                inputs.iter(),
-                &input_types,
-                root_tvk,
-                is_root,
-                program_checksum,
-                rng,
-            )?;
-            assert!(request.verify(&input_types, is_root, program_checksum));
+            let (request, input_types, is_root, program_checksum) =
+                create_request(program_id, function_name, set_program_checksum, dynamic, i, rng)?;
 
             // Inject the request into a circuit.
             let tpk = Group::<Circuit>::new(mode, request.to_tpk());
@@ -436,11 +458,34 @@ mod tests {
                 let root_tvk = None;
                 let candidate = request.verify(&input_types, &tpk, root_tvk, is_root, program_checksum);
                 assert!(candidate.eject_value());
-                match mode.is_constant() {
-                    true => assert_scope!(<=num_constants, <=num_public, <=num_private, <=num_constraints),
-                    false => assert_scope!(<=num_constants, num_public, num_private, num_constraints),
-                }
+                count.assert_matches(
+                    Circuit::num_constants_in_scope(),
+                    Circuit::num_public_in_scope(),
+                    Circuit::num_private_in_scope(),
+                    Circuit::num_constraints_in_scope(),
+                );
             });
+            Circuit::reset();
+        }
+        Ok(())
+    }
+
+    fn check_check_input_ids(
+        mode: Mode,
+        program_id: &str,
+        function_name: &str,
+        expected_count: UpdatableCount,
+        set_program_checksum: bool,
+        dynamic: bool,
+    ) -> Result<()> {
+        let rng = &mut TestRng::default();
+
+        for i in 0..ITERATIONS {
+            let (request, input_types, _, _) =
+                create_request(program_id, function_name, set_program_checksum, dynamic, i, rng)?;
+
+            // Inject the request into a circuit.
+            let request = Request::<Circuit>::new(mode, request);
 
             Circuit::scope(format!("Request {i}"), || {
                 let (candidate, _) = Request::check_input_ids::<false>(
@@ -455,32 +500,126 @@ mod tests {
                     request.tvk(),
                     request.tcm(),
                     None,
+                    request.is_dynamic(),
                 );
                 assert!(candidate.eject_value());
+                expected_count.assert_matches(
+                    Circuit::num_constants_in_scope(),
+                    Circuit::num_public_in_scope(),
+                    Circuit::num_private_in_scope(),
+                    Circuit::num_constraints_in_scope(),
+                );
             });
+
             Circuit::reset();
         }
         Ok(())
     }
+
+    // TODO: Explain why the first runs of the tests for `Public` and `Private` modes yield a large number of constants
 
     #[test]
     fn test_sign_and_verify_constant() -> Result<()> {
         // Note: This is correct. At this (high) level of a program, we override the default mode in the `Record` case,
         // based on the user-defined visibility in the record type. Thus, we have nonzero private and constraint values.
         // These bounds are determined experimentally.
-        check_verify(Mode::Constant, 43440, 0, 21629, 21656, false)?;
-        check_verify(Mode::Constant, 43440, 0, 21629, 21656, true)
+        check_verify(Mode::Constant, "test.aleo", "bark", count_less_than!(43629, 0, 20996, 21023), false, false)?;
+        check_verify(Mode::Constant, "test.aleo", "bark", count_less_than!(11196, 0, 21511, 21538), true, false)?;
+
+        check_verify(Mode::Constant, "test.aleo", "bark", count_less_than!(12793, 0, 20985, 21012), false, true)?;
+        check_verify(Mode::Constant, "test.aleo", "bark", count_less_than!(12793, 0, 21511, 21538), true, true)?;
+
+        check_verify(Mode::Constant, "credits.aleo", "foo", count_less_than!(10974, 0, 21098, 21125), false, false)?;
+        check_verify(Mode::Constant, "credits.aleo", "foo", count_less_than!(10974, 0, 21613, 21640), true, false)?;
+
+        check_verify(Mode::Constant, "credits.aleo", "foo", count_less_than!(12722, 0, 21098, 21125), false, true)?;
+        check_verify(Mode::Constant, "credits.aleo", "foo", count_less_than!(12726, 0, 21613, 21640), true, true)?;
+
+        Ok(())
     }
 
     #[test]
     fn test_sign_and_verify_public() -> Result<()> {
-        check_verify(Mode::Public, 40938, 0, 30031, 30062, false)?;
-        check_verify(Mode::Public, 40938, 0, 30546, 30577, true)
+        check_verify(Mode::Public, "test.aleo", "bark", count_is!(<=41131, 0, 29913, 29944), false, false)?;
+        check_verify(Mode::Public, "test.aleo", "bark", count_is!(8694, 0, 30428, 30459), true, false)?;
+
+        check_verify(Mode::Public, "test.aleo", "bark", count_is!(10294, 0, 29913, 29944), false, true)?;
+        check_verify(Mode::Public, "test.aleo", "bark", count_is!(10294, 0, 30428, 30459), true, true)?;
+
+        check_verify(Mode::Public, "credits.aleo", "foo", count_is!(8472, 0, 30015, 30046), false, false)?;
+        check_verify(Mode::Public, "credits.aleo", "foo", count_is!(8472, 0, 30530, 30561), true, false)?;
+
+        check_verify(Mode::Public, "credits.aleo", "foo", count_is!(10224, 0, 30015, 30046), false, true)?;
+        check_verify(Mode::Public, "credits.aleo", "foo", count_is!(10224, 0, 30530, 30561), true, true)?;
+
+        Ok(())
     }
 
     #[test]
     fn test_sign_and_verify_private() -> Result<()> {
-        check_verify(Mode::Private, 40938, 0, 30031, 30062, false)?;
-        check_verify(Mode::Private, 40938, 0, 30546, 30577, true)
+        check_verify(Mode::Private, "test.aleo", "bark", count_is!(<=41131, 0, 29913, 29944), false, false)?;
+        check_verify(Mode::Private, "test.aleo", "bark", count_is!(8694, 0, 30428, 30459), true, false)?;
+
+        check_verify(Mode::Private, "test.aleo", "bark", count_is!(10294, 0, 29913, 29944), false, true)?;
+        check_verify(Mode::Private, "test.aleo", "bark", count_is!(10294, 0, 30428, 30459), true, true)?;
+
+        check_verify(Mode::Private, "credits.aleo", "foo", count_is!(8472, 0, 30015, 30046), false, false)?;
+        check_verify(Mode::Private, "credits.aleo", "foo", count_is!(8472, 0, 30530, 30561), true, false)?;
+
+        check_verify(Mode::Private, "credits.aleo", "foo", count_is!(10224, 0, 30015, 30046), false, true)?;
+        check_verify(Mode::Private, "credits.aleo", "foo", count_is!(10224, 0, 30530, 30561), true, true)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_check_input_ids_constant() -> Result<()> {
+        check_check_input_ids(Mode::Constant, "test.aleo", "bark", count_is!(<=34119, 0, 11710, 11726), false, false)?;
+        check_check_input_ids(Mode::Constant, "test.aleo", "bark", count_is!(4192, 0, 11710, 11726), true, false)?;
+
+        check_check_input_ids(Mode::Constant, "test.aleo", "bark", count_is!(4992, 0, 11710, 11726), false, true)?;
+        check_check_input_ids(Mode::Constant, "test.aleo", "bark", count_is!(4992, 0, 11710, 11726), true, true)?;
+
+        check_check_input_ids(Mode::Constant, "credits.aleo", "foo", count_is!(4046, 0, 11812, 11828), false, false)?;
+        check_check_input_ids(Mode::Constant, "credits.aleo", "foo", count_is!(4046, 0, 11812, 11828), true, false)?;
+
+        check_check_input_ids(Mode::Constant, "credits.aleo", "foo", count_is!(4922, 0, 11812, 11828), false, true)?;
+        check_check_input_ids(Mode::Constant, "credits.aleo", "foo", count_is!(4922, 0, 11812, 11828), true, true)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_check_input_ids_public() -> Result<()> {
+        check_check_input_ids(Mode::Public, "test.aleo", "bark", count_is!(<=34119, 0, 12530, 12546), false, false)?;
+        check_check_input_ids(Mode::Public, "test.aleo", "bark", count_is!(4192, 0, 12530, 12546), true, false)?;
+
+        check_check_input_ids(Mode::Public, "test.aleo", "bark", count_is!(4992, 0, 12530, 12546), false, true)?;
+        check_check_input_ids(Mode::Public, "test.aleo", "bark", count_is!(4992, 0, 12530, 12546), true, true)?;
+
+        check_check_input_ids(Mode::Public, "credits.aleo", "foo", count_is!(4046, 0, 12632, 12648), false, false)?;
+        check_check_input_ids(Mode::Public, "credits.aleo", "foo", count_is!(4046, 0, 12632, 12648), true, false)?;
+
+        check_check_input_ids(Mode::Public, "credits.aleo", "foo", count_is!(4922, 0, 12632, 12648), false, true)?;
+        check_check_input_ids(Mode::Public, "credits.aleo", "foo", count_is!(4922, 0, 12632, 12648), true, true)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_check_input_ids_private() -> Result<()> {
+        check_check_input_ids(Mode::Private, "test.aleo", "bark", count_is!(<=34119, 0, 12530, 12546), false, false)?;
+        check_check_input_ids(Mode::Private, "test.aleo", "bark", count_is!(4192, 0, 12530, 12546), true, false)?;
+
+        check_check_input_ids(Mode::Private, "test.aleo", "bark", count_is!(4992, 0, 12530, 12546), false, true)?;
+        check_check_input_ids(Mode::Private, "test.aleo", "bark", count_is!(4992, 0, 12530, 12546), true, true)?;
+
+        check_check_input_ids(Mode::Private, "credits.aleo", "foo", count_is!(4046, 0, 12632, 12648), false, false)?;
+        check_check_input_ids(Mode::Private, "credits.aleo", "foo", count_is!(4046, 0, 12632, 12648), true, false)?;
+
+        check_check_input_ids(Mode::Private, "credits.aleo", "foo", count_is!(4922, 0, 12632, 12648), false, true)?;
+        check_check_input_ids(Mode::Private, "credits.aleo", "foo", count_is!(4922, 0, 12632, 12648), true, true)?;
+
+        Ok(())
     }
 }

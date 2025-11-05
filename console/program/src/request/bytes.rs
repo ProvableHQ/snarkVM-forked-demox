@@ -18,13 +18,11 @@ use super::*;
 impl<N: Network> FromBytes for Request<N> {
     /// Reads the request from a buffer.
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
-        // Read the version.
-        let version = u8::read_le(&mut reader)?;
-        // Ensure the version is valid.
-        if version != 1 {
-            return Err(error("Invalid request version"));
-        }
-
+        // Read the version and ensure that it is valid.
+        let version = match u8::read_le(&mut reader)? {
+            version @ (1 | 2) => version,
+            _ => return Err(error("Invalid request version")),
+        };
         // Read the signer.
         let signer = FromBytes::read_le(&mut reader)?;
         // Read the network ID.
@@ -60,6 +58,13 @@ impl<N: Network> FromBytes for Request<N> {
         // Read the signer commitment.
         let scm = FromBytes::read_le(&mut reader)?;
 
+        // Read the `dynamic` flag.
+        let dynamic = match version {
+            0 => None,
+            1 => Some(FromBytes::read_le(&mut reader)?),
+            _ => return Err(error("Invalid request version")),
+        };
+
         Ok(Self::from((
             signer,
             network_id,
@@ -72,6 +77,7 @@ impl<N: Network> FromBytes for Request<N> {
             tvk,
             tcm,
             scm,
+            dynamic,
         )))
     }
 }
@@ -80,8 +86,10 @@ impl<N: Network> ToBytes for Request<N> {
     /// Writes the request to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         // Write the version.
-        1u8.write_le(&mut writer)?;
-
+        match self.dynamic.is_some() {
+            false => 1u8.write_le(&mut writer)?,
+            true => 2u8.write_le(&mut writer)?,
+        }
         // Write the signer.
         self.signer.write_le(&mut writer)?;
         // Write the network ID.
@@ -118,7 +126,13 @@ impl<N: Network> ToBytes for Request<N> {
         // Write the transition commitment.
         self.tcm.write_le(&mut writer)?;
         // Write the signer commitment.
-        self.scm.write_le(&mut writer)
+        self.scm.write_le(&mut writer)?;
+        // Write the `dynamic` flag, if it exists.
+        if let Some(dynamic) = &self.dynamic {
+            dynamic.write_le(&mut writer)?;
+        }
+
+        Ok(())
     }
 }
 

@@ -66,7 +66,7 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
                 if is_credits_program && (is_fee_private || is_fee_public) {
                     bail!("Cannot perform an external call to 'credits.aleo/fee_private' or 'credits.aleo/fee_public'.")
                 } else {
-                    Some(stack.get_external_stack(&program_id)?))
+                    Some(stack.get_external_stack(&program_id)?)
                 }
             }
             true => {
@@ -128,6 +128,7 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
                     root_tvk,
                     is_root,
                     program_checksum,
+                    Some(true),
                     rng,
                 )?;
                 // Add the request to the requests.
@@ -296,6 +297,7 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
                             root_tvk,
                             is_root,
                             program_checksum,
+                            Some(true),
                             rng,
                         )?;
 
@@ -325,6 +327,7 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
                             root_tvk,
                             is_root,
                             program_checksum,
+                            Some(true),
                             rng,
                         )?;
 
@@ -352,6 +355,7 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
                             root_tvk,
                             is_root,
                             program_checksum,
+                            Some(true),
                             rng,
                         )?;
 
@@ -421,6 +425,7 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
                             root_tvk,
                             is_root,
                             program_checksum,
+                            Some(true),
                             rng,
                         )?;
 
@@ -518,6 +523,7 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
                 &tvk,
                 &tcm,
                 None,
+                true,
             );
             A::assert(check_input_ids);
             lap!(timer, "Checked the input ids");

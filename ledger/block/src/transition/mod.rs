@@ -27,22 +27,8 @@ mod string;
 use console::{
     network::prelude::*,
     program::{
-        Ciphertext,
-        Identifier,
-        InputID,
-        OutputID,
-        ProgramID,
-        Record,
-        Register,
-        Request,
-        Response,
-        TRANSITION_DEPTH,
-        TransitionLeaf,
-        TransitionPath,
-        TransitionTree,
-        Value,
-        ValueType,
-        compute_function_id,
+        Ciphertext, Identifier, InputID, OutputID, ProgramID, Record, Register, Request, Response, TRANSITION_DEPTH,
+        TransitionLeaf, TransitionPath, TransitionTree, Value, ValueType, compute_function_id,
     },
     types::{Field, Group},
 };
@@ -99,7 +85,8 @@ impl<N: Network> Transition<N> {
         let num_inputs = request.inputs().len();
 
         // Compute the function ID.
-        let function_id = compute_function_id(&network_id, &program_id, &function_name)?;
+        let function_id =
+            compute_function_id(&network_id, &program_id, &function_name, false /* TODO (@d0cd) Fix */)?;
 
         let inputs = request
             .input_ids()

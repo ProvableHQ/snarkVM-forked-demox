@@ -56,6 +56,7 @@ impl<N: Network> Stack<N> {
             root_tvk,
             is_root,
             program_checksum,
+            Some(false), // `dynamic` is false because this is a root request.
             rng,
         )?;
         lap!(timer, "Compute the request");
@@ -112,6 +113,7 @@ impl<N: Network> Stack<N> {
             root_tvk,
             is_root,
             program_checksum,
+            Some(false), // `dynamic` is false because this is a root request.
             rng,
         )?;
         lap!(timer, "Compute the request");

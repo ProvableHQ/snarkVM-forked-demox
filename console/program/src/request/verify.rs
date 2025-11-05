@@ -46,13 +46,14 @@ impl<N: Network> Request<N> {
         let response = self.signature.response();
 
         // Compute the function ID.
-        let function_id = match compute_function_id(&self.network_id, &self.program_id, &self.function_name) {
-            Ok(function_id) => function_id,
-            Err(error) => {
-                eprintln!("Failed to construct the function ID: {error}");
-                return false;
-            }
-        };
+        let function_id =
+            match compute_function_id(&self.network_id, &self.program_id, &self.function_name, self.is_dynamic()) {
+                Ok(function_id) => function_id,
+                Err(error) => {
+                    eprintln!("Failed to construct the function ID: {error}");
+                    return false;
+                }
+            };
 
         // Compute the 'is_root' field.
         let is_root = if is_root { Field::<N>::one() } else { Field::<N>::zero() };
@@ -300,6 +301,13 @@ mod tests {
                 true => Some(Field::rand(rng)),
                 false => None,
             };
+            // Sample the `dynamic` flag.
+            let dynamic = match i % 3 {
+                0 => None,
+                1 => Some(false),
+                2 => Some(true),
+                _ => unreachable!(),
+            };
 
             // Compute the signed request.
             let request = Request::sign(
@@ -311,6 +319,7 @@ mod tests {
                 root_tvk,
                 is_root,
                 program_checksum,
+                dynamic,
                 rng,
             )
             .unwrap();

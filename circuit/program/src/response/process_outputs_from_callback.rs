@@ -29,7 +29,7 @@ impl<A: Aleo> Response<A> {
         output_registers: &[Option<console::Register<A::Network>>], // Note: Console type
     ) -> Vec<Value<A>> {
         // Compute the function ID.
-        let function_id = compute_function_id(network_id, program_id, function_name);
+        let function_id = compute_function_id(network_id, program_id, function_name, false /* TODO (@d0cd) fix */);
 
         match outputs
             .iter()

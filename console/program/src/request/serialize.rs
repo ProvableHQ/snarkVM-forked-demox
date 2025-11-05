@@ -34,6 +34,9 @@ impl<N: Network> Serialize for Request<N> {
                 transition.serialize_field("tvk", &self.tvk)?;
                 transition.serialize_field("tcm", &self.tcm)?;
                 transition.serialize_field("scm", &self.scm)?;
+                if let Some(dynamic) = &self.dynamic {
+                    transition.serialize_field("dynamic", dynamic)?;
+                }
                 transition.end()
             }
             false => ToBytesSerializer::serialize_with_size_encoding(self, serializer),
@@ -72,6 +75,9 @@ impl<'de, N: Network> Deserialize<'de> for Request<N> {
                     DeserializeExt::take_from_value::<D>(&mut request, "tcm")?,
                     // Retrieve the `scm`.
                     DeserializeExt::take_from_value::<D>(&mut request, "scm")?,
+                    // Retrieve the `dynamic` flag, if it exists.
+                    serde_json::from_value(request.get_mut("dynamic").unwrap_or(&mut serde_json::Value::Null).take())
+                        .map_err(de::Error::custom)?,
                 )))
             }
             false => FromBytesDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "request"),

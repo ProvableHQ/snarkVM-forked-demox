@@ -65,7 +65,8 @@ impl<N: Network> Response<N> {
         output_operands: &[Option<Register<N>>],
     ) -> Result<Self> {
         // Compute the function ID.
-        let function_id = compute_function_id(network_id, program_id, function_name)?;
+        let function_id =
+            compute_function_id(network_id, program_id, function_name, false /* TODO (@d0cd) fix */)?;
 
         // Compute the output IDs.
         let output_ids = outputs

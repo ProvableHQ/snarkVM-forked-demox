@@ -30,7 +30,8 @@ impl<A: Aleo> Response<A> {
         output_registers: &[Option<console::Register<A::Network>>], // Note: Console type
     ) -> Self {
         // Compute the function ID.
-        let function_id = compute_function_id(network_id, program_id, function_name);
+        let function_id =
+            compute_function_id(network_id, program_id, function_name, false /* TODO (@d0cd): Fix */);
 
         // Compute the output IDs.
         let output_ids = outputs

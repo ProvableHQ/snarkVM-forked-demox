@@ -14,7 +14,7 @@
 // limitations under the License.
 
 use crate::{Identifier, ProgramID};
-use snarkvm_console_account::ToBits;
+use snarkvm_console_account::{ToBits, ToField};
 use snarkvm_console_algorithms::Result;
 use snarkvm_console_network::Network;
 use snarkvm_console_types::{Field, U8, U16};
@@ -47,8 +47,28 @@ pub fn compute_function_id<N: Network>(
                 .to_bits_le(),
         ),
         true => N::hash_bhp1024(
-            &(*network_id, program_id.name().to_field(), program_id.network().to_field(), function_name.to_field())
+            &(
+                *network_id,
+                U8::<N>::new(u8::try_from(Field::<N>::SIZE_IN_BITS)?),
+                program_id.name().to_field()?,
+                U8::<N>::new(u8::try_from(Field::<N>::SIZE_IN_BITS)?),
+                program_id.network().to_field()?,
+                U8::<N>::new(u8::try_from(Field::<N>::SIZE_IN_BITS)?),
+                function_name.to_field()?,
+            )
                 .to_bits_le(),
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn check_field_size_in_bits() {
+        // Ensure that the field size in bits is less than or equal to `u8::MAX`.
+        // This is a sanity check for the above encoding.
+        assert!(Field::<snarkvm_console_network::MainnetV0>::SIZE_IN_BITS <= u8::MAX as usize);
     }
 }
