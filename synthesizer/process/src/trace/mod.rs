@@ -19,6 +19,9 @@ pub use call_metrics::*;
 mod inclusion;
 pub use inclusion::*;
 
+mod translation;
+pub use translation::*;
+
 use circuit::Assignment;
 use console::{
     network::prelude::*,

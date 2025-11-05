@@ -18,6 +18,7 @@ mod equal;
 mod parse;
 mod to_bits;
 mod to_fields;
+mod to_id;
 
 use crate::{
     Address,
@@ -35,6 +36,7 @@ use crate::{
     ToField,
     ToFields,
     U8,
+    U16,
 };
 
 use snarkvm_console_algorithms::{Poseidon2, Poseidon8};
@@ -181,6 +183,13 @@ impl<N: Network> DynamicRecord<N> {
                 Ok(leaf)
             })
             .collect::<Result<Vec<_>>>()?;
+
+        // TODO (Antonio) remove
+        for (i, e) in leaves.iter().enumerate() {
+            println!("   hash_input {}: {:?}", i, e);
+        }
+        println!("    Hash first leave: {:?}", N::hash_psd8(leaves[0].as_slice()));
+        
 
         // Initalize the hashers.
         let leaf_hasher = Poseidon8::setup("DynamicRecordLeafHasher")?;

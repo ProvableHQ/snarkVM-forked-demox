@@ -91,6 +91,13 @@ impl<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>
         tree[num_nodes..num_nodes + leaves.len()].copy_from_slice(&leaf_hasher.hash_leaves(leaves)?);
         lap!(timer, "Hashed {} leaves", leaves.len());
 
+        // TODO (Antonio) Print the leaves
+        println!("\n**** In DynamicRecord::new");
+        for (i, e) in tree[num_nodes..num_nodes + leaves.len()].iter().enumerate() {
+            println!("   leaf {}: {:?}", i, e);
+        }
+        println!("****\n");
+
         // Compute and store the hashes for each level, iterating from the penultimate level to the root level.
         let mut start_index = num_nodes;
         // Compute the start index of the current level.
