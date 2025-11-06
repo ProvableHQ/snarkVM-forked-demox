@@ -184,13 +184,6 @@ impl<N: Network> DynamicRecord<N> {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        // TODO (Antonio) remove
-        for (i, e) in leaves.iter().enumerate() {
-            println!("   hash_input {i}: {e:?}");
-        }
-        println!("    Hash first leave: {:?}", N::hash_psd8(leaves[0].as_slice()));
-        
-
         // Initalize the hashers.
         let leaf_hasher = Poseidon8::setup("DynamicRecordLeafHasher")?;
         let path_hasher = Poseidon2::setup("DynamicRecordPathHasher")?;

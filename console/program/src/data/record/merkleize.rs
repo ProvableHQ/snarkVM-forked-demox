@@ -40,17 +40,8 @@ impl<N: Network> Record<N, Plaintext<N>> {
         let mut level = self.data.iter().map(|(identifier, entry)| {
             let mut hash_input = vec![identifier.to_field()?];
             hash_input.extend(entry.to_fields()?);
-            // TODO (Antonio) Print the hash input
-            println!("   hash_input: {hash_input:?}");
             N::hash_psd8(hash_input.as_slice())
         }).collect::<Result<Vec<Field<N>>>>()?;
-        
-        // TODO (Antonio) Print the leaves
-        println!("\n**** In Record::merkleize");
-        for (i, e) in level.iter().enumerate() {
-            println!("   leaf {i}: {e:?}");
-        }
-        println!("****\n");        
 
         for _ in 0..depth {
             //Padding the level to even length
