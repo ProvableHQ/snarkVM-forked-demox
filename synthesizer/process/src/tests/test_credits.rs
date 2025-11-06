@@ -2861,6 +2861,7 @@ mod sanity_checks {
             root_tvk,
             is_root,
             program_checksum,
+            Some(false),
             rng,
         )
         .unwrap();

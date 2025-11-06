@@ -22,8 +22,8 @@ use console::{
     network::ConsensusVersion,
     program::{Identifier, Value},
 };
-use synthesizer_program::Program;
-use utilities::TestRng;
+use snarkvm_synthesizer_program::Program;
+use snarkvm_utilities::TestRng;
 
 // This test verifiers that a dynamic call to the `credits.transfer_public` function works as expected.
 #[test]

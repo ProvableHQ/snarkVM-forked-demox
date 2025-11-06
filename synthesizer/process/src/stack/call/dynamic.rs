@@ -207,7 +207,7 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
         let inputs = &inputs[3..];
 
         // Retrieve the optional external stack and resource.
-        let (external_stack, resource) = match stack.program().id() == &console_program_id {
+        let external_stack = match stack.program().id() == &console_program_id {
             // Retrieve the call stack and resource from the locator.
             false => {
                 // Check the external call locator.
@@ -219,7 +219,7 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
                 if is_credits_program && (is_fee_private || is_fee_public) {
                     bail!("Cannot perform an external call to 'credits.aleo/fee_private' or 'credits.aleo/fee_public'.")
                 } else {
-                    (Some(stack.get_external_stack(&console_program_id)?), console_function_name)
+                    Some(stack.get_external_stack(&console_program_id)?)
                 }
             }
             true => {
@@ -230,7 +230,7 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
                 if stack.program().contains_function(&console_function_name) {
                     bail!("Cannot dynamically execute a local '{console_function_name}' ")
                 }
-                (None, console_function_name)
+                None
             }
         };
         // Retrieve the substack.
@@ -250,7 +250,7 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
         };
 
         // If the operator is a closure, retrieve the closure and compute the output.
-        let outputs = if let Ok(closure) = substack.program().get_closure(&console_function_name) {
+        let outputs = if substack.program().get_closure(&console_function_name).is_ok() {
             bail!("Cannot dynamically execute a closure.")
         }
         // If the operator is a function, retrieve the function and compute the output.
@@ -484,9 +484,9 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
             // Inject the network ID as `Mode::Constant`.
             let network_id = circuit::U16::constant(*request.network_id());
             // Inject the program ID name as `Mode::Public`.
-            let program_id = circuit::ProgramID::new_public(console_program_id);
+            let program_id = circuit::ProgramID::public(console_program_id);
             // Inject the function name as `Mode::Public`.
-            let function_name = circuit::Identifier::new_public(console_function_name);
+            let function_name = circuit::Identifier::public(console_function_name);
 
             // Ensure the number of public variables remains the same.
             ensure!(A::num_public() == num_public, "Forbidden: 'call' injected excess public variables");
@@ -516,7 +516,7 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
                 &program_id,
                 &function_name,
                 &input_ids,
-                &inputs,
+                inputs,
                 &function.input_types(),
                 &signer,
                 &sk_tag,
@@ -556,7 +556,7 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
         }
         // Else, throw an error.
         else {
-            bail!("Call operator '{}' is invalid or unsupported.", self.operator())
+            bail!("Dynamic call to '{console_program_id}/{console_function_name}' is invalid or unsupported.")
         };
 
         // Assign the outputs to the destination registers.

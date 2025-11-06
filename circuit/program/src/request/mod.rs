@@ -13,9 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(test)]
-use snarkvm_circuit_types::environment::assert_scope;
-
 mod to_tpk;
 mod verify;
 
@@ -78,10 +75,14 @@ impl<A: Aleo> Eject for InputID<A> {
             Self::Constant(field) => field.eject_mode(),
             Self::Public(field) => field.eject_mode(),
             Self::Private(field) => field.eject_mode(),
-            Self::Record(commitment, gamma, record_view_key, serial_number, tag) => Mode::combine(
-                commitment.eject_mode(),
-                [gamma.eject_mode(), record_view_key.eject_mode(), serial_number.eject_mode(), tag.eject_mode()],
-            ),
+            Self::Record(commitment, gamma, record_view_key, serial_number, tag) => {
+                Mode::combine(commitment.eject_mode(), [
+                    gamma.eject_mode(),
+                    record_view_key.eject_mode(),
+                    serial_number.eject_mode(),
+                    tag.eject_mode(),
+                ])
+            }
             Self::ExternalRecord(field) => field.eject_mode(),
             Self::DynamicRecord(field) => field.eject_mode(),
         }
@@ -238,11 +239,25 @@ impl<A: Aleo> Inject for Request<A> {
             Err(error) => A::halt(format!("{error}")),
         };
 
+        // TODO (@d0cd): Verify correctness.
+        // Initialize the program ID depending on the `dynamic` flag.
+        let program_id = match request.dynamic() {
+            Some(true) => ProgramID::public(*request.program_id()),
+            Some(false) | None => ProgramID::constant(*request.program_id()),
+        };
+
+        // TODO (@d0cd): Verify correctness.
+        // Initialize the function name depending on the `dynamic` flag.
+        let function_name = match request.dynamic() {
+            Some(true) => Identifier::public(*request.function_name()),
+            Some(false) | None => Identifier::constant(*request.function_name()),
+        };
+
         Self {
             signer: Address::new(mode, *request.signer()),
             network_id: U16::new(Mode::Constant, *request.network_id()),
-            program_id: ProgramID::constant(*request.program_id()),
-            function_name: Identifier::constant(*request.function_name()),
+            program_id,
+            function_name,
             input_ids: request.input_ids().iter().map(|input_id| InputID::new(Mode::Public, *input_id)).collect(),
             inputs,
             signature: Signature::new(mode, *request.signature()),
@@ -327,21 +342,18 @@ impl<A: Aleo> Eject for Request<A> {
 
     /// Ejects the mode of the request.
     fn eject_mode(&self) -> Mode {
-        Mode::combine(
-            self.signer.eject_mode(),
-            [
-                self.network_id.eject_mode(),
-                self.program_id.eject_mode(),
-                self.function_name.eject_mode(),
-                self.input_ids.eject_mode(),
-                self.inputs.eject_mode(),
-                self.signature.eject_mode(),
-                self.sk_tag.eject_mode(),
-                self.tvk.eject_mode(),
-                self.tcm.eject_mode(),
-                self.scm.eject_mode(),
-            ],
-        )
+        Mode::combine(self.signer.eject_mode(), [
+            self.network_id.eject_mode(),
+            self.program_id.eject_mode(),
+            self.function_name.eject_mode(),
+            self.input_ids.eject_mode(),
+            self.inputs.eject_mode(),
+            self.signature.eject_mode(),
+            self.sk_tag.eject_mode(),
+            self.tvk.eject_mode(),
+            self.tcm.eject_mode(),
+            self.scm.eject_mode(),
+        ])
     }
 
     /// Ejects the request as a primitive.

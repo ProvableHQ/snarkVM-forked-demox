@@ -34,12 +34,16 @@ pub struct ProgramID<A: Aleo> {
     network: Identifier<A>,
 }
 
-impl<A: Aleo> Inject for ProgramID<A> {
-    type Primitive = console::ProgramID<A::Network>;
-
-    /// Injects a program ID with the given primitive.
-    fn new(_: Mode, id: Self::Primitive) -> Self {
+impl<A: Aleo> ProgramID<A> {
+    /// Returns a constant program ID.
+    pub fn constant(id: console::ProgramID<A::Network>) -> Self {
         Self { name: Identifier::constant(*id.name()), network: Identifier::constant(*id.network()) }
+    }
+
+    /// Returns a public program ID.
+    /// Note: This method should be used cautiously since program IDs typically should be constant.
+    pub fn public(id: console::ProgramID<A::Network>) -> Self {
+        Self { name: Identifier::public(*id.name()), network: Identifier::public(*id.network()) }
     }
 }
 

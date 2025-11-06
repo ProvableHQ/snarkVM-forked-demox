@@ -22,10 +22,10 @@ use snarkvm_console_types::{Field, U8, U16};
 /// Compute the function ID.
 ///
 /// If the `is_dynamic` flag is set to `false`, then the hash is computed as:
-///   - `Hash(network_id, program_id.len(), program_id, function_name.len(), function_name)`.
+/// `Hash(network_id, program_id.len(), program_id, function_name.len(), function_name)`.
 ///
 /// If the `is_dynamic` flag is set to `true``, the function ID is computed as:
-///   - `Hash(network_id, program_name.to_field(), program_network.to_field(), function_name.to_field()`.
+/// `Hash(network_id, program_name.to_field(), program_network.to_field(), function_name.to_field()`.
 /// This ensures that the function ID is not dependent on the lengths of the program ID and function name,
 pub fn compute_function_id<N: Network>(
     network_id: &U16<N>,

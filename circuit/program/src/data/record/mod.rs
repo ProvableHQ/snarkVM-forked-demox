@@ -59,7 +59,14 @@ impl<A: Aleo> Inject for Record<A, Plaintext<A>> {
     fn new(_: Mode, record: Self::Primitive) -> Self {
         Self {
             owner: Owner::new(Mode::Private, record.owner().clone()),
-            data: Inject::new(Mode::Private, record.data().clone()),
+            data: record
+                .data()
+                .clone()
+                .into_iter()
+                .map(|(identifier, entry)| {
+                    (Identifier::constant(identifier), Inject::new(Mode::Private, entry.clone()))
+                })
+                .collect(),
             nonce: Group::new(Mode::Private, *record.nonce()),
             version: U8::new(Mode::Private, *record.version()),
         }
@@ -73,7 +80,14 @@ impl<A: Aleo> Inject for Record<A, Ciphertext<A>> {
     fn new(_: Mode, record: Self::Primitive) -> Self {
         Self {
             owner: Owner::new(Mode::Private, record.owner().clone()),
-            data: Inject::new(Mode::Private, record.data().clone()),
+            data: record
+                .data()
+                .clone()
+                .into_iter()
+                .map(|(identifier, entry)| {
+                    (Identifier::constant(identifier), Inject::new(Mode::Private, entry.clone()))
+                })
+                .collect(),
             nonce: Group::new(Mode::Private, *record.nonce()),
             version: U8::new(Mode::Private, *record.version()),
         }

@@ -25,6 +25,7 @@ mod to_field;
 
 use snarkvm_circuit_network::Aleo;
 use snarkvm_circuit_types::{Boolean, Field, U8, environment::prelude::*};
+use snarkvm_console_program::ToField as TF;
 use snarkvm_utilities::ToBits as TB;
 
 /// An identifier is an **immutable** UTF-8 string,
@@ -39,21 +40,35 @@ use snarkvm_utilities::ToBits as TB;
 #[derive(Clone)]
 pub struct Identifier<A: Aleo>(Field<A>, u8); // Number of bytes in the identifier.
 
-impl<A: Aleo> Inject for Identifier<A> {
-    type Primitive = console::Identifier<A::Network>;
-
-    /// Initializes a new identifier from a string.
-    /// Note: Identifiers are always `Mode::Constant`.
-    fn new(_: Mode, identifier: Self::Primitive) -> Self {
+impl<A: Aleo> Identifier<A> {
+    /// Returns a constant identifier.
+    pub fn constant(identifier: console::Identifier<A::Network>) -> Self {
         // Convert the identifier to a string to check its validity.
-        let identifier = identifier.to_string();
+        // TODO (@d0cd): This fails silently.
+        let identifier_string = identifier.to_string();
 
         // Note: The string bytes themselves are **not** little-endian. Rather, they are order-preserving
         // for reconstructing the string when recovering the field element back into bytes.
-        let field = Field::from_bits_le(&Vec::<Boolean<_>>::constant(identifier.to_bits_le()));
+        let field = Field::from_bits_le(&Vec::<Boolean<_>>::constant(identifier_string.to_bits_le()));
 
         // Return the identifier.
-        Self(field, identifier.len() as u8)
+        Self(field, identifier_string.len() as u8)
+    }
+
+    /// Returns a public identifier.
+    /// Note: This method should be used cautiously since identifiers typically should be constant.
+    pub fn public(identifier: console::Identifier<A::Network>) -> Self {
+        // Convert the identifier to a string to check its validity.
+        // TODO (@d0cd): This fails silently.
+        let identifier_string = identifier.to_string();
+
+        // Initialize the field as public variable.
+        let field = match identifier.to_field() {
+            Ok(field) => Field::new(Mode::Public, field),
+            Err(error) => A::halt(format!("Failed to convert an identifier to a field: {error}")),
+        };
+
+        Self(field, identifier_string.len() as u8)
     }
 }
 
@@ -62,8 +77,11 @@ impl<A: Aleo> Eject for Identifier<A> {
 
     /// Ejects the mode of the identifier.
     fn eject_mode(&self) -> Mode {
-        debug_assert!(self.0.eject_mode() == Mode::Constant, "Identifier::eject_mode - Mode must be 'Constant'");
-        Mode::Constant
+        // Eject the mode.
+        let mode = self.0.eject_mode();
+
+        debug_assert!(mode != Mode::Private, "Identifier::eject_mode - Mode cannot be 'Private'");
+        mode
     }
 
     /// Ejects the identifier as a string.

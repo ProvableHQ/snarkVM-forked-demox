@@ -64,15 +64,12 @@ pub fn compute_function_id<A: Aleo>(
 mod tests {
     use super::*;
     use crate::Circuit;
-    use snarkvm_circuit_types::environment::{UpdatableCount, assert_scope};
+    use snarkvm_circuit_types::environment::UpdatableCount;
 
-    use snarkvm_console::network::MainnetV0;
     use snarkvm_console::types::U16 as ConsoleU16;
     use snarkvm_console_program::{Identifier as ConsoleIdentifier, ProgramID as ConsoleProgramID};
 
     use anyhow::Result;
-
-    type CurrentNetwork = MainnetV0;
 
     fn check(
         mode: Mode,
@@ -99,12 +96,20 @@ mod tests {
         let network_id = U16::<Circuit>::constant(console_network_id);
 
         // Initialize the program ID.
-        let program_id = ProgramID::<Circuit>::new(mode, console_program_id);
+        let program_id = match mode {
+            Mode::Constant => ProgramID::<Circuit>::constant(console_program_id),
+            Mode::Public => ProgramID::<Circuit>::public(console_program_id),
+            _ => panic!("Unsupported mode for ProgramID"),
+        };
 
         // Initialize the function name.
-        let function_name = Identifier::<Circuit>::new(mode, console_function_name);
+        let function_name = match mode {
+            Mode::Constant => Identifier::<Circuit>::constant(console_function_name),
+            Mode::Public => Identifier::<Circuit>::public(console_function_name),
+            _ => panic!("Unsupported mode for Identifier"),
+        };
 
-        Circuit::scope(format!("compute_function_id"), || {
+        Circuit::scope("compute_function_id", || {
             let candidate = compute_function_id(&network_id, &program_id, &function_name, is_dynamic);
             assert_eq!(expected, candidate.eject_value());
             expected_count.assert_matches(
@@ -138,17 +143,31 @@ mod tests {
 
     #[test]
     fn test_compute_function_id_public() -> Result<()> {
-        check(Mode::Public, 0, "credits.aleo", "transfer_public", false, count_is!(18153, 0, 0, 0))?;
-        check(Mode::Public, 0, "credits.aleo", "transfer_private", false, count_is!(779, 0, 0, 0))?;
-        check(Mode::Public, 0, "credits.aleo", "transfer_public_to_private", false, count_is!(883, 0, 0, 0))?;
-        check(Mode::Public, 0, "token_registry.aleo", "transfer_public_to_private", false, count_is!(959, 0, 0, 0))?;
-        check(Mode::Public, 0, "my.aleo", "foo", false, count_is!(584, 0, 0, 0))?;
+        check(Mode::Public, 0, "credits.aleo", "transfer_public", false, count_is!(17851, 0, 1895, 1901))?;
+        check(Mode::Public, 0, "credits.aleo", "transfer_private", false, count_is!(465, 0, 1909, 1915))?;
+        check(Mode::Public, 0, "credits.aleo", "transfer_public_to_private", false, count_is!(465, 0, 2040, 2046))?;
+        check(
+            Mode::Public,
+            0,
+            "token_registry.aleo",
+            "transfer_public_to_private",
+            false,
+            count_is!(465, 0, 2135, 2141),
+        )?;
+        check(Mode::Public, 0, "my.aleo", "foo", false, count_is!(463, 0, 1664, 1670))?;
 
-        check(Mode::Public, 0, "credits.aleo", "transfer_public", true, count_is!(1512, 0, 0, 0))?;
-        check(Mode::Public, 1, "credits.aleo", "transfer_private", true, count_is!(1512, 0, 0, 0))?;
-        check(Mode::Public, 0, "credits.aleo", "transfer_public_to_private", true, count_is!(1512, 0, 0, 0))?;
-        check(Mode::Public, 1, "token_registry.aleo", "transfer_public_to_private", true, count_is!(1512, 0, 0, 0))?;
-        check(Mode::Public, 0, "my.aleo", "foo", true, count_is!(1512, 0, 0, 0))?;
+        check(Mode::Public, 0, "credits.aleo", "transfer_public", true, count_is!(471, 0, 2829, 2835))?;
+        check(Mode::Public, 1, "credits.aleo", "transfer_private", true, count_is!(471, 0, 2829, 2835))?;
+        check(Mode::Public, 0, "credits.aleo", "transfer_public_to_private", true, count_is!(471, 0, 2829, 2835))?;
+        check(
+            Mode::Public,
+            1,
+            "token_registry.aleo",
+            "transfer_public_to_private",
+            true,
+            count_is!(471, 0, 2829, 2835),
+        )?;
+        check(Mode::Public, 0, "my.aleo", "foo", true, count_is!(471, 0, 2829, 2835))?;
 
         Ok(())
     }
