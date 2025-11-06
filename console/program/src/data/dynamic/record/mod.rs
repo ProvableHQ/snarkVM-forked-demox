@@ -186,7 +186,7 @@ impl<N: Network> DynamicRecord<N> {
 
         // TODO (Antonio) remove
         for (i, e) in leaves.iter().enumerate() {
-            println!("   hash_input {}: {:?}", i, e);
+            println!("   hash_input {i}: {e:?}");
         }
         println!("    Hash first leave: {:?}", N::hash_psd8(leaves[0].as_slice()));
         

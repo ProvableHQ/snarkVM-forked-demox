@@ -16,7 +16,6 @@
 use snarkvm_console_algorithms::Poseidon2;
 use snarkvm_console_collections::merkle_tree::PathHash;
 
-// TODO (Antonio) Add consistency check with circuit/program/src/data/record/merkleize/mod.rs
 use super::*;
 
 impl<N: Network> Record<N, Plaintext<N>> {
@@ -26,7 +25,7 @@ impl<N: Network> Record<N, Plaintext<N>> {
     ) -> Result<Field<N>> {
         let depth = N::MAX_DATA_ENTRIES.ilog2();
 
-        ensure!(self.data.len() > 0, "A Record must have at least one entry in order to be merkleized");
+        ensure!(!self.data.is_empty(), "A Record must have at least one entry in order to be merkleized");
         ensure!(
             self.data.len() <= N::MAX_DATA_ENTRIES,
             "The record exceeds the maximum allowed size ({} > {})",
@@ -39,26 +38,24 @@ impl<N: Network> Record<N, Plaintext<N>> {
         let padding_hash = path_hasher.hash_empty()?;
         
         let mut level = self.data.iter().map(|(identifier, entry)| {
-            // TODO (Antonio) Make sure when we add the identifier is grabbed here, it has been loaded as a constant
             let mut hash_input = vec![identifier.to_field()?];
-            // TODO (Antonio) secure? length check?
             hash_input.extend(entry.to_fields()?);
             // TODO (Antonio) Print the hash input
-            println!("   hash_input: {:?}", hash_input);
+            println!("   hash_input: {hash_input:?}");
             N::hash_psd8(hash_input.as_slice())
         }).collect::<Result<Vec<Field<N>>>>()?;
         
         // TODO (Antonio) Print the leaves
         println!("\n**** In Record::merkleize");
         for (i, e) in level.iter().enumerate() {
-            println!("   leaf {}: {:?}", i, e);
+            println!("   leaf {i}: {e:?}");
         }
         println!("****\n");        
 
         for _ in 0..depth {
             //Padding the level to even length
             if level.len() % 2 == 1 {
-                level.push(padding_hash.clone());
+                level.push(padding_hash);
             }
 
             // Hashing pairs of nodes

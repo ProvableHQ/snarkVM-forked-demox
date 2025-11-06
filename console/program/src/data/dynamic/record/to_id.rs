@@ -1,4 +1,3 @@
-
 // Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
@@ -31,6 +30,6 @@ impl<N: Network> DynamicRecord<N> {
         preimage.push(tvk);
         preimage.push(index.to_field()?);
 
-        Ok(N::hash_psd8(&preimage)?)
+        N::hash_psd8(&preimage)
     }
 }

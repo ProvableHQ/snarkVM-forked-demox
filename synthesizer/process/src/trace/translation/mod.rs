@@ -22,6 +22,7 @@ pub mod tests;
 use crate::Stack;
 
 use circuit::{
+    Inject,
     traits::ToGroup,
 };
 

@@ -168,3 +168,45 @@ fn test_merkleize_with_structs() {
 
     assert_eq!(actual_data_root.eject_value(), data_root);
 }
+
+// Checks consistency between console and circuit implementations of merkleization
+#[test]
+fn test_merkleize_consistency() {
+
+    let record_str = r#"{
+        owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.private,
+        location_x: 100field.public,
+        location_y: 243field.public,
+        has_allies: false.public,
+        codename: "morningstar".public,
+        num_crew: 9u64.public,
+        stealth_mode: false.private,
+        resources: {
+            food: 90u32.private,
+            spice: 23918u32.private
+        },
+        targets: {
+            main: {
+                name: "AlphaCentauri".private,
+                star: true.private,
+                interconnected: true.private
+            },
+            secondary: {
+                name: "Earth".private,
+                star: false.private,
+                interconnected: false.private
+            }
+        },
+        interstellar_signing_key: 2group.private,
+        _nonce: 0group.public,
+        _version: 1u8.public
+    }"#;
+
+    let console_record = console::Record::<CurrentNetwork, console::Plaintext<CurrentNetwork>>::from_str(record_str).unwrap();
+    let console_data_root = console_record.merkleize().unwrap();
+    
+    let circuit_record = Record::<CurrentAleo, Plaintext<CurrentAleo>>::new(Mode::Private, console_record);    
+    let circuit_data_root = circuit_record.merkleize().unwrap();
+    
+    assert_eq!(circuit_data_root.eject_value(), console_data_root);
+}

@@ -38,9 +38,7 @@ impl<A: Aleo> Record<A, Plaintext<A>> {
         let padding_hash = Field::<A>::new(Mode::Constant, path_hasher.hash_empty()?);
 
         let mut level = self.data.iter().map(|(identifier, entry)| {
-            // TODO (Antonio) Make sure when we add the identifier is grabbed here, it has been loaded as a constant
             let mut hash_input = vec![identifier.to_field()];
-            // TODO (Antonio) secure? length check?
             hash_input.extend(entry.to_fields());
             A::hash_psd8(hash_input.as_slice())
         }).collect_vec();         
@@ -64,7 +62,6 @@ impl<A: Aleo> Record<A, Plaintext<A>> {
 }
 
 impl<A: Aleo> Record<A, Ciphertext<A>> {
-    /// Returns the record commitment.
     pub fn merkleize(
         &self,
         _program_id: &ProgramID<A>,

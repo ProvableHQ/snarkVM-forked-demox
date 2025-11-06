@@ -2893,6 +2893,7 @@ dependencies = [
 name = "snarkvm-circuit"
 version = "4.2.1"
 dependencies = [
+ "anyhow",
  "snarkvm-circuit-account",
  "snarkvm-circuit-algorithms",
  "snarkvm-circuit-collections",
@@ -2943,6 +2944,7 @@ dependencies = [
 name = "snarkvm-circuit-environment"
 version = "4.2.1"
 dependencies = [
+ "anyhow",
  "criterion",
  "indexmap 2.11.4",
  "itertools 0.14.0",
