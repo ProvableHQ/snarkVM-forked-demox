@@ -62,7 +62,7 @@ impl<N: Network> Record<N, Plaintext<N>> {
 }
 
 impl<N: Network> Record<N, Ciphertext<N>> {
-    /// Returns the record commitment.
+    /// Illegal operation: `merkleize` cannot be invoked on the `Ciphertext` variant. This method always returns an error.
     pub fn merkleize(
         &self,
         _program_id: &ProgramID<N>,
