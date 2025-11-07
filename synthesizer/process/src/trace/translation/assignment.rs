@@ -186,7 +186,7 @@ impl<N: Network> TranslationAssignment<N> {
     ///     assert static_record.owner == dynamic_record.owner
     ///     assert static_record.nonce == dynamic_record.nonce
     ///     assert static_record.version == dynamic_record.version
-    ///     assert merklelize(static_record) == dynamic_record.root
+    ///     assert merkleize(static_record) == dynamic_record.root
     ///     assert [[id_static_record]] == internal_id_static_record
     ///     assert [[id_dynamic_record]] == internal_id_dynamic_record
     /// ```
