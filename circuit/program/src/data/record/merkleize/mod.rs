@@ -25,7 +25,7 @@ impl<A: Aleo> Record<A, Plaintext<A>> {
     ) -> Result<Field<A>> {
         let depth = <A::Network as console::Network>::MAX_DATA_ENTRIES.ilog2();
 
-        ensure!(self.data.len() > 0, "A Record must have at least one entry in order to be merkleized");
+        ensure!(!self.data.is_empty(), "A Record must have at least one entry in order to be merkleized");
         ensure!(
             self.data.len() <= <A::Network as console::Network>::MAX_DATA_ENTRIES,
             "The record exceeds the maximum allowed size ({} > {})",
