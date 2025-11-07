@@ -109,6 +109,9 @@ impl<N: Network> TranslationAssignment<N> {
         // Inject the translation count as `Mode::Public`.
         let _circuit_translation_count = circuit::U16::<A>::new(circuit::Mode::Public, console::types::U16::<N>::new(self.translation_count));
 
+        // Inject the register index as `Mode::Public`.
+        let circuit_register_index = circuit::U16::<A>::new(circuit::Mode::Public, console::types::U16::<N>::new(self.register_index));
+        
         // Inject the commitment or serial number of the static record as `Mode::Public`.
         let circuit_id_static = circuit::Field::<A>::new(circuit::Mode::Public, self.id_static);
 
@@ -126,9 +129,6 @@ impl<N: Network> TranslationAssignment<N> {
         // Inject the transition view key as `Mode::Private`.
         let circuit_tvk = circuit::Field::<A>::new(circuit::Mode::Private, self.tvk);
 
-        // Inject the register index as `Mode::Public`.
-        let circuit_register_index = circuit::U16::<A>::new(circuit::Mode::Public, console::types::U16::<N>::new(self.register_index));
-        
         // Inject the record view key of the static record as `Mode::Private`.
         let circuit_record_view_key = circuit::Field::<A>::new(circuit::Mode::Private, self.record_view_key);
 
