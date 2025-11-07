@@ -81,7 +81,7 @@ impl<N: Network> TranslationAssignment<N> {
         }
     }
 
-    // Internal axuiliary function which actually constructs the translation
+    // Internal auxiliary function which actually constructs the translation
     // circuit in `A`. The publicly exposed function `to_circuit_assignment`
     // ejects the resulting `Assignment` from the R1CS, but having direct access
     // to `A` while the constraint system is still loaded facilitates testing.
