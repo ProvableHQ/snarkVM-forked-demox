@@ -44,7 +44,7 @@ impl<N: Network> Record<N, Plaintext<N>> {
         }).collect::<Result<Vec<Field<N>>>>()?;
 
         for _ in 0..depth {
-            //Padding the level to even length
+            // Padding the level to even length
             if level.len() % 2 == 1 {
                 level.push(padding_hash);
             }
