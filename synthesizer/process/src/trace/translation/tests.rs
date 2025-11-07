@@ -154,7 +154,7 @@ fn test_translation_recursive() {
     // to_static_record = false
     let translation_assignment = translation_assignment_from_record_str(record_static_str, false, None, &mut rng);
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
-    print_rc1s_data("simple");
+    print_rc1s_data("recursive");
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
 
     // to_static_record = true
