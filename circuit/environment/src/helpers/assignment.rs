@@ -280,7 +280,7 @@ pub fn compare_constraints<F: PrimeField>(
                         ensure!(v1 == v2, "Constant terms in constraint {letter}{i} do not match: {var1:?} vs. {var2:?}");
                     }
                     (Variable::Public(index_value1), Variable::Public(index_value2)) | (Variable::Private(index_value1), Variable::Private(index_value2)) => {
-                        ensure!(index_value1.0 == index_value2.0, "Indices in Public terms in constraint {letter}{i} do not match: {var1:?} vs. {var2:?}");
+                        ensure!(index_value1.0 == index_value2.0, "Indices in variable terms in constraint {letter}{i} do not match: {var1:?} vs. {var2:?}");
                     }
                     _ => {
                         bail!("Terms in constraint {letter}{i} have incompatible types: {var1:?} vs. {var2:?}");
