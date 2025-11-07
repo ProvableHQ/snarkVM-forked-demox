@@ -275,7 +275,7 @@ fn test_definition_invariance() {
             _nonce: 0group.public,
             _version: 1u8.public
         }"#,
-        // Modifiying all fields from owner up to resources
+        // Modifying all fields from owner up to resources
         r#"{
             owner: aleo14tlamssdmg3d0p5zmljma573jghe2q9n6wz29qf36re2glcedcpqfg4add.private,
             location_x: 7field.public,
