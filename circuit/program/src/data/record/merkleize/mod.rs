@@ -44,7 +44,7 @@ impl<A: Aleo> Record<A, Plaintext<A>> {
         }).collect_vec();         
 
         for _ in 0..depth {
-            //Padding the level to even length
+            // Padding the level to even length
             if level.len() % 2 == 1 {
                 level.push(padding_hash.clone());
             }
