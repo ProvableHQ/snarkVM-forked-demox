@@ -85,7 +85,7 @@ fn print_rc1s_data(name: &str) {
     println!("   nun_public: {}", <CurrentAleo as circuit::Environment>::num_public());
     println!("   num_private: {}", <CurrentAleo as circuit::Environment>::num_private());
     println!("   num_constraints: {}", <CurrentAleo as circuit::Environment>::num_constraints());
-    println!("   nun_nonzeros: {:?}", <CurrentAleo as circuit::Environment>::num_nonzeros());
+    println!("   num_nonzeros: {:?}", <CurrentAleo as circuit::Environment>::num_nonzeros());
 }
 
 #[test]
