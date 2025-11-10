@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use circuit::{Inject, environment::compare_constraints};
+use circuit::environment::compare_constraints;
 use console::{types::U16, program::{Plaintext, ProgramID, Record}, types::Field};
 
 use crate::{TranslationAssignment, tests::test_utils::{CurrentAleo, CurrentNetwork}};

@@ -19,12 +19,12 @@ use super::*;
 
 type CircuitLH<A> = Poseidon8<A>;
 type CircuitPH<A> = Poseidon2<A>;
-type ConsoleLH<A: Aleo> = console::algorithms::Poseidon8<A::Network>;
-type ConsolePH<A: Aleo> = console::algorithms::Poseidon2<A::Network>;
+type ConsoleLH<N> = console::algorithms::Poseidon8<N>;
+type ConsolePH<N> = console::algorithms::Poseidon2<N>;
 
 pub type RecordMerkleTree<A> = MerkleTree<A, CircuitLH<A>, CircuitPH<A>, RECORD_DATA_TREE_DEPTH>;
 
-/// An assignment for the record translation circuit
+/// An assignment for the record translation circuit.
 #[derive(Clone, Debug)]
 pub struct TranslationAssignment<N: Network> {
     /// The static record.
@@ -102,10 +102,10 @@ impl<N: Network> TranslationAssignment<N> {
         // ******** Initial constants
 
         // Inject the program ID as `Mode::Constant`.
-        let circuit_program_id = circuit::ProgramID::<A>::new(circuit::Mode::Constant, self.program_id);
+        let circuit_program_id = circuit::ProgramID::<A>::constant(self.program_id);
 
         // Inject the record name as `Mode::Constant`.
-        let circuit_record_name = circuit::Identifier::<A>::new(circuit::Mode::Constant, self.record_name);
+        let circuit_record_name = circuit::Identifier::<A>::constant(self.record_name);
 
         // ******** Public inputs and field-name constants
 
@@ -168,8 +168,8 @@ impl<N: Network> TranslationAssignment<N> {
 
         // ******** Merkelizing the static-record data
 
-        let console_leaf_hasher = ConsoleLH::<A>::setup("DynamicRecordLeafHasher").unwrap();
-        let console_path_hasher = ConsolePH::<A>::setup("DynamicRecordPathHasher").unwrap();
+        let console_leaf_hasher = ConsoleLH::<A::Network>::setup("DynamicRecordLeafHasher").unwrap();
+        let console_path_hasher = ConsolePH::<A::Network>::setup("DynamicRecordPathHasher").unwrap();
         let circuit_leaf_hasher = CircuitLH::<A>::constant(console_leaf_hasher.clone());
         let circuit_path_hasher = CircuitPH::<A>::constant(console_path_hasher.clone());
 
