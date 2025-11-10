@@ -275,6 +275,8 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
                 // Eject the circuit inputs.
                 let inputs = inputs.eject_value();
 
+                // TODO (@d0cd): Process the inputs, converting them to the appropriate record type.
+
                 // Set the (console) caller.
                 let console_caller = Some(*stack.program_id());
                 // Check if the substack has a proving key or not.
@@ -408,6 +410,7 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
                             outputs,
                             &function.output_types(),
                             &output_registers,
+                            true,
                         )?;
 
                         // Return the request and response.
@@ -549,6 +552,7 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
                 response.outputs().to_vec(),
                 &function.output_types(),
                 &output_registers,
+                true,
             );
             lap!(timer, "Checked the outputs");
             // Return the circuit outputs.

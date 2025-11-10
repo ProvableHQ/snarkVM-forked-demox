@@ -13,9 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(test)]
-use snarkvm_circuit_types::environment::assert_scope;
-
 mod from_outputs;
 mod process_outputs_from_callback;
 
@@ -196,6 +193,8 @@ pub struct Response<A: Aleo> {
     output_ids: Vec<OutputID<A>>,
     /// The function outputs.
     outputs: Vec<Value<A>>,
+    /// Whether or not the response is dynamic.
+    is_dynamic: bool,
 }
 
 impl<A: Aleo> Response<A> {
@@ -207,6 +206,11 @@ impl<A: Aleo> Response<A> {
     /// Returns the function outputs.
     pub fn outputs(&self) -> &[Value<A>] {
         &self.outputs
+    }
+
+    /// Returns whether or not the response is dynamic.
+    pub fn is_dynamic(&self) -> bool {
+        self.is_dynamic
     }
 }
 
@@ -223,6 +227,7 @@ impl<A: Aleo> Eject for Response<A> {
         Self::Primitive::from((
             self.output_ids.iter().map(|output_id| output_id.eject_value()).collect(),
             self.outputs.eject_value(),
+            self.is_dynamic,
         ))
     }
 }

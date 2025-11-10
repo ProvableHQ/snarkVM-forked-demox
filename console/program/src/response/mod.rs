@@ -41,12 +41,14 @@ pub struct Response<N: Network> {
     output_ids: Vec<OutputID<N>>,
     /// The function outputs.
     outputs: Vec<Value<N>>,
+    /// Whether or not the response is dynamic.
+    is_dynamic: bool,
 }
 
-impl<N: Network> From<(Vec<OutputID<N>>, Vec<Value<N>>)> for Response<N> {
+impl<N: Network> From<(Vec<OutputID<N>>, Vec<Value<N>>, bool)> for Response<N> {
     /// Note: This method is used to eject from a circuit.
-    fn from((output_ids, outputs): (Vec<OutputID<N>>, Vec<Value<N>>)) -> Self {
-        Self { output_ids, outputs }
+    fn from((output_ids, outputs, is_dynamic): (Vec<OutputID<N>>, Vec<Value<N>>, bool)) -> Self {
+        Self { output_ids, outputs, is_dynamic }
     }
 }
 
@@ -63,10 +65,10 @@ impl<N: Network> Response<N> {
         outputs: Vec<Value<N>>,
         output_types: &[ValueType<N>],
         output_operands: &[Option<Register<N>>],
+        is_dynamic: bool,
     ) -> Result<Self> {
         // Compute the function ID.
-        let function_id =
-            compute_function_id(network_id, program_id, function_name, false /* TODO (@d0cd) fix */)?;
+        let function_id = compute_function_id(network_id, program_id, function_name, is_dynamic)?;
 
         // Compute the output IDs.
         let output_ids = outputs
@@ -259,7 +261,7 @@ impl<N: Network> Response<N> {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        Ok(Self { output_ids, outputs })
+        Ok(Self { output_ids, outputs, is_dynamic })
     }
 
     /// Returns the output ID for the transition.
@@ -270,5 +272,10 @@ impl<N: Network> Response<N> {
     /// Returns the function outputs.
     pub fn outputs(&self) -> &[Value<N>] {
         &self.outputs
+    }
+
+    /// Returns whether or not the response is dynamic.
+    pub fn is_dynamic(&self) -> bool {
+        self.is_dynamic
     }
 }
