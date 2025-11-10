@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use circuit::environment::compare_constraints;
+use circuit::{environment::{UpdatableCount, compare_constraints}, prelude::count_is};
 use console::{types::U16, program::{Plaintext, ProgramID, Record}, types::Field};
 
 use crate::{TranslationAssignment, tests::test_utils::{CurrentAleo, CurrentNetwork}};
@@ -86,6 +86,11 @@ fn test_translation_simple() {
         owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.private,
         location_x: 100field.public,
         location_y: 243field.public,
+        target_coords: [
+            92u8.private,
+            3u8.private,
+            100u8.private
+        ],
         has_allies: false.public,
         codename: 1989u64.public,
         interstellar_signing_key: 2group.private,
@@ -98,12 +103,26 @@ fn test_translation_simple() {
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
     print_rc1s_data("simple");
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
+    let counts = count_is!(36040, 37, 23103, 23159);
+    counts.assert_matches(
+        <CurrentAleo as circuit::Environment>::num_constants(),
+        <CurrentAleo as circuit::Environment>::num_public(),
+        <CurrentAleo as circuit::Environment>::num_private(),
+        <CurrentAleo as circuit::Environment>::num_constraints(),
+    );
 
     // to_static_record = true
     <CurrentAleo as circuit::Environment>::reset();
     let translation_assignment = translation_assignment_from_record_str(record_static_str, true, None, &mut rng);
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
+    let counts = count_is!(6114, 37, 23103, 23159);
+    counts.assert_matches(
+        <CurrentAleo as circuit::Environment>::num_constants(),
+        <CurrentAleo as circuit::Environment>::num_public(),
+        <CurrentAleo as circuit::Environment>::num_private(),
+        <CurrentAleo as circuit::Environment>::num_constraints(),
+    );
 }
 
 #[test]
@@ -127,12 +146,22 @@ fn test_translation_recursive() {
             main: {
                 name: 10_992u128.private,
                 star: true.private,
-                interconnected: true.private
+                interconnected: true.private,
+                coords: [
+                    12u8.private,
+                    9u8.private,
+                    72u8.private
+                ]
             },
             secondary: {
                 name: 33_147u128.private,
                 star: false.private,
-                interconnected: false.private
+                interconnected: false.private,
+                coords: [
+                    85u8.private,
+                    90u8.private,
+                    8u8.private
+                ]
             }
         },
         interstellar_signing_key: 2group.private,
@@ -145,12 +174,26 @@ fn test_translation_recursive() {
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
     print_rc1s_data("recursive");
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
+    let counts = count_is!(38738, 37, 31178, 31238);
+    counts.assert_matches(
+        <CurrentAleo as circuit::Environment>::num_constants(),
+        <CurrentAleo as circuit::Environment>::num_public(),
+        <CurrentAleo as circuit::Environment>::num_private(),
+        <CurrentAleo as circuit::Environment>::num_constraints(),
+    );
 
     // to_static_record = true
     <CurrentAleo as circuit::Environment>::reset();
     let translation_assignment = translation_assignment_from_record_str(record_static_str, true, None, &mut rng);
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
+    let counts = count_is!(8812, 37, 31178, 31238);
+    counts.assert_matches(
+        <CurrentAleo as circuit::Environment>::num_constants(),
+        <CurrentAleo as circuit::Environment>::num_public(),
+        <CurrentAleo as circuit::Environment>::num_private(),
+        <CurrentAleo as circuit::Environment>::num_constraints(),
+    );
 }
 
 #[test]
@@ -184,7 +227,7 @@ fn test_translation_complex() {
         },
         entry9: 2group.private,
         entry10: 99u8.public,
-        entry11: 100u64.public,
+        entry11: [true.public, false.public, true.public, true.public, false.public],
         entry12: false.private,
         entry13: 100field.public,
         entry14: 0group.private,
@@ -199,7 +242,7 @@ fn test_translation_complex() {
         entry20: 20u64.public,
         entry21: 21field.public,
         entry22: 22u128.public,
-        entry23: 23field.public,
+        entry23: [0group.public, 2group.public],
         entry24: 24field.public,
         entry25: 25field.public,
         entry26: 26field.public,
@@ -218,12 +261,26 @@ fn test_translation_complex() {
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
     print_rc1s_data("complex");
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
+    let counts = count_is!(41282, 37, 66225, 66302);
+    counts.assert_matches(
+        <CurrentAleo as circuit::Environment>::num_constants(),
+        <CurrentAleo as circuit::Environment>::num_public(),
+        <CurrentAleo as circuit::Environment>::num_private(),
+        <CurrentAleo as circuit::Environment>::num_constraints(),
+    );
 
     // to_static_record = true
     <CurrentAleo as circuit::Environment>::reset();
     let translation_assignment = translation_assignment_from_record_str(record_static_str, true, None, &mut rng);
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
+    let counts = count_is!(11356, 37, 66225, 66302);
+    counts.assert_matches(
+        <CurrentAleo as circuit::Environment>::num_constants(),
+        <CurrentAleo as circuit::Environment>::num_public(),
+        <CurrentAleo as circuit::Environment>::num_private(),
+        <CurrentAleo as circuit::Environment>::num_constraints(),
+    );
 }
 
 // Checks the translation circuit is characterised only by the structure of the
@@ -339,6 +396,18 @@ fn test_definition_invariance() {
         translation_assignment_from_record_str(record_strings[2], true, function_id, &mut rng),
     ];
     
+    // Checking parameters of the first translation separately
+    translation_assignments[0].to_circuit_assignment_internal::<CurrentAleo>().unwrap();
+    let counts = count_is!(37753, 37, 29500, 29558);
+    counts.assert_matches(
+        <CurrentAleo as circuit::Environment>::num_constants(),
+        <CurrentAleo as circuit::Environment>::num_public(),
+        <CurrentAleo as circuit::Environment>::num_private(),
+        <CurrentAleo as circuit::Environment>::num_constraints(),
+    );
+
+    // Testing circuit invariance across all translations
+    <CurrentAleo as circuit::Environment>::reset();
     let circuit_assignments = translation_assignments.iter().map(|assignment| assignment.to_circuit_assignment::<CurrentAleo>().unwrap()).collect_vec();
 
     for circuit_assignment in circuit_assignments.iter().skip(1) {
@@ -362,6 +431,7 @@ fn test_definition_variance() {
             has_allies: false.public,
             codename: 1989u64.public,
             interstellar_signing_key: 2group.private,
+            ponderings: [true.public, false.public, true.public],
             _nonce: 0group.public,
             _version: 1u8.public
         }"#,
@@ -374,6 +444,7 @@ fn test_definition_variance() {
             has_allies: false.public,
             codename: 1989u64.public,
             interstellar_signing_key: 2group.private,
+            ponderings: [true.public, false.public, true.public],
             _nonce: 0group.public,
             _version: 1u8.public
         }"#,
@@ -385,6 +456,7 @@ fn test_definition_variance() {
             has_allies: false.public,
             codename: 1989u64.public,
             interstellar_signing_key: 2group.private,
+            ponderings: [true.public, false.public, true.public],
             _nonce: 0group.public,
             _version: 1u8.public
         }"#,
@@ -396,6 +468,19 @@ fn test_definition_variance() {
             has_allies: false.public,
             codename: 1989u64.public,
             interstellar_signing_key: 2group.public,
+            ponderings: [true.public, false.public, true.public],
+            _nonce: 0group.public,
+            _version: 1u8.public
+        }"#,
+        // Changing the number of elements in the array `ponderings`
+        r#"{
+            owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.private,
+            location_x: 100field.public,
+            location_y: 243field.public,
+            has_allies: false.public,
+            codename: 1989u64.public,
+            interstellar_signing_key: 2group.private,
+            ponderings: [true.public, false.public, true.public, true.public],
             _nonce: 0group.public,
             _version: 1u8.public
         }"#,
