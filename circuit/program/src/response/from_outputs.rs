@@ -30,7 +30,8 @@ impl<A: Aleo> Response<A> {
         output_registers: &[Option<console::Register<A::Network>>], // Note: Console type
     ) -> Self {
         // Compute the function ID.
-        let function_id = compute_function_id(network_id, program_id, function_name);
+        let function_id =
+            compute_function_id(network_id, program_id, function_name, false /* TODO (@d0cd): Fix */);
 
         // Compute the output IDs.
         let output_ids = outputs
@@ -313,8 +314,8 @@ mod tests {
             // Inject the signer, network ID, program ID, function name, `tvk`, `tcm`, and outputs.
             let signer = Address::<Circuit>::new(mode, signer);
             let network_id = U16::<Circuit>::constant(network_id);
-            let program_id = ProgramID::<Circuit>::new(mode, program_id);
-            let function_name = Identifier::<Circuit>::new(mode, function_name);
+            let program_id = ProgramID::<Circuit>::constant(program_id);
+            let function_name = Identifier::<Circuit>::constant(function_name);
             let tvk = Field::<Circuit>::new(mode, tvk);
             let tcm = Field::<Circuit>::new(mode, tcm);
             let outputs = Inject::new(mode, outputs);

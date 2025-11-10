@@ -88,7 +88,12 @@ impl<N: Network> Process<N> {
             // Retrieve the network ID.
             let network_id = U16::new(N::ID);
             // Compute the function ID.
-            let function_id = compute_function_id(&network_id, transition.program_id(), transition.function_name())?;
+            let function_id = compute_function_id(
+                &network_id,
+                transition.program_id(),
+                transition.function_name(),
+                false, /* TODO (@d0cd) fix with transition.is_dynamic() */
+            )?;
 
             // Ensure each input is valid.
             if transition

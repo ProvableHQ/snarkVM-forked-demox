@@ -42,8 +42,8 @@ impl<A: Aleo> Inject for Future<A> {
     /// Initializes a circuit of the given mode and future.
     fn new(mode: Mode, value: Self::Primitive) -> Self {
         Self::from(
-            Inject::new(mode, *value.program_id()),
-            Inject::new(mode, *value.function_name()),
+            ProgramID::constant(*value.program_id()),
+            Identifier::constant(*value.function_name()),
             Inject::new(mode, value.arguments().to_vec()),
         )
     }

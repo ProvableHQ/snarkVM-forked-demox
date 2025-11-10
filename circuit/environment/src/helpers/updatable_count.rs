@@ -46,6 +46,17 @@ macro_rules! count_is {
             column: column!(),
         }
     };
+    (<=$num_constants:literal, $num_public:literal, $num_private:literal, $num_constraints:literal) => {
+        $crate::UpdatableCount {
+            constant: $crate::Measurement::UpperBound($num_constants),
+            public: $crate::Measurement::Exact($num_public),
+            private: $crate::Measurement::Exact($num_private),
+            constraints: $crate::Measurement::Exact($num_constraints),
+            file: file!(),
+            line: line!(),
+            column: column!(),
+        }
+    };
 }
 
 /// To update the arguments to `count_less_than!`, run cargo test with the `UPDATE_COUNT` flag set to the name of the file containing the macro invocation.

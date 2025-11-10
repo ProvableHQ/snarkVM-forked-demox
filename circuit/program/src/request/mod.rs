@@ -13,9 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(test)]
-use snarkvm_circuit_types::environment::assert_scope;
-
 mod to_tpk;
 mod verify;
 
@@ -157,6 +154,9 @@ pub struct Request<A: Aleo> {
     tcm: Field<A>,
     /// The signer commitment.
     scm: Field<A>,
+    /// Whether or not the request is dynamic.
+    //  Note. This field is intentionally excluded for the circuit representation and is only used to select the correct variant of `compute_function_id`.
+    dynamic: Option<bool>,
 }
 
 impl<A: Aleo> Inject for Request<A> {
@@ -239,11 +239,25 @@ impl<A: Aleo> Inject for Request<A> {
             Err(error) => A::halt(format!("{error}")),
         };
 
+        // TODO (@d0cd): Verify correctness.
+        // Initialize the program ID depending on the `dynamic` flag.
+        let program_id = match request.dynamic() {
+            Some(true) => ProgramID::public(*request.program_id()),
+            Some(false) | None => ProgramID::constant(*request.program_id()),
+        };
+
+        // TODO (@d0cd): Verify correctness.
+        // Initialize the function name depending on the `dynamic` flag.
+        let function_name = match request.dynamic() {
+            Some(true) => Identifier::public(*request.function_name()),
+            Some(false) | None => Identifier::constant(*request.function_name()),
+        };
+
         Self {
             signer: Address::new(mode, *request.signer()),
             network_id: U16::new(Mode::Constant, *request.network_id()),
-            program_id: ProgramID::new(Mode::Constant, *request.program_id()),
-            function_name: Identifier::new(Mode::Constant, *request.function_name()),
+            program_id,
+            function_name,
             input_ids: request.input_ids().iter().map(|input_id| InputID::new(Mode::Public, *input_id)).collect(),
             inputs,
             signature: Signature::new(mode, *request.signature()),
@@ -251,6 +265,7 @@ impl<A: Aleo> Inject for Request<A> {
             tvk: Field::new(mode, *request.tvk()),
             tcm,
             scm,
+            dynamic: request.dynamic(),
         }
     }
 }
@@ -310,6 +325,16 @@ impl<A: Aleo> Request<A> {
     pub const fn scm(&self) -> &Field<A> {
         &self.scm
     }
+
+    /// Returns the `dynamic` flag.
+    pub const fn dynamic(&self) -> Option<bool> {
+        self.dynamic
+    }
+
+    /// Returns whether or not the request is dynamic.
+    pub fn is_dynamic(&self) -> bool {
+        self.dynamic.unwrap_or(false)
+    }
 }
 
 impl<A: Aleo> Eject for Request<A> {
@@ -345,6 +370,7 @@ impl<A: Aleo> Eject for Request<A> {
             self.tvk.eject_value(),
             self.tcm.eject_value(),
             self.scm.eject_value(),
+            Some(false), // TODO (@d0cd): Fix after propogating dynamic
         ))
     }
 }

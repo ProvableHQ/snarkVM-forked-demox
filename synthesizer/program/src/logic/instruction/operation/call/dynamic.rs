@@ -353,7 +353,7 @@ impl<N: Network> Display for DynamicCall<N> {
         write!(f, "{} {program_name} {program_network} {function_name}", Self::opcode())?;
         if !rest.is_empty() {
             write!(f, " with")?;
-            rest.iter().try_for_each(|operand| write!(f, " {}", operand))?;
+            rest.iter().try_for_each(|operand| write!(f, " {operand}"))?;
             write!(f, " (as {})", self.operand_types.iter().join(" "))?;
         }
         if !self.destinations.is_empty() {

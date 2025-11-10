@@ -29,6 +29,7 @@ impl<N: Network> Request<N> {
         root_tvk: Option<Field<N>>,
         is_root: bool,
         program_checksum: Option<Field<N>>,
+        dynamic: Option<bool>,
         rng: &mut R,
     ) -> Result<Self> {
         // Ensure the number of inputs matches the number of input types.
@@ -77,7 +78,7 @@ impl<N: Network> Request<N> {
         // Retrieve the network ID.
         let network_id = U16::new(N::ID);
         // Compute the function ID.
-        let function_id = compute_function_id(&network_id, &program_id, &function_name)?;
+        let function_id = compute_function_id(&network_id, &program_id, &function_name, dynamic.unwrap_or(false))?;
 
         // Construct the hash input as `(r * G, pk_sig, pr_sig, signer, [tvk, tcm, function ID, is_root, program checksum?, input IDs])`.
         let mut message = Vec::with_capacity(9 + 2 * inputs.len());
@@ -257,6 +258,7 @@ impl<N: Network> Request<N> {
             tvk,
             tcm,
             scm,
+            dynamic,
         })
     }
 }

@@ -51,6 +51,9 @@ pub struct Request<N: Network> {
     tcm: Field<N>,
     /// The signer commitment.
     scm: Field<N>,
+    /// Whether or not the request is dynamic.
+    /// `None` implies that the request is not dynamic.
+    dynamic: Option<bool>,
 }
 
 impl<N: Network>
@@ -66,11 +69,12 @@ impl<N: Network>
         Field<N>,
         Field<N>,
         Field<N>,
+        Option<bool>,
     )> for Request<N>
 {
     /// Note: See `Request::sign` to create the request. This method is used to eject from a circuit.
     fn from(
-        (signer, network_id, program_id, function_name, input_ids, inputs, signature, sk_tag, tvk, tcm, scm): (
+        (signer, network_id, program_id, function_name, input_ids, inputs, signature, sk_tag, tvk, tcm, scm, dynamic): (
             Address<N>,
             U16<N>,
             ProgramID<N>,
@@ -82,13 +86,27 @@ impl<N: Network>
             Field<N>,
             Field<N>,
             Field<N>,
+            Option<bool>,
         ),
     ) -> Self {
         // Ensure the network ID is correct.
         if *network_id != N::ID {
             N::halt(format!("Invalid network ID. Expected {}, found {}", N::ID, *network_id))
         } else {
-            Self { signer, network_id, program_id, function_name, input_ids, inputs, signature, sk_tag, tvk, tcm, scm }
+            Self {
+                signer,
+                network_id,
+                program_id,
+                function_name,
+                input_ids,
+                inputs,
+                signature,
+                sk_tag,
+                tvk,
+                tcm,
+                scm,
+                dynamic,
+            }
         }
     }
 }
@@ -160,6 +178,16 @@ impl<N: Network> Request<N> {
     pub const fn scm(&self) -> &Field<N> {
         &self.scm
     }
+
+    /// Returns the `dynamic` flag.
+    pub const fn dynamic(&self) -> Option<bool> {
+        self.dynamic
+    }
+
+    /// Returns whether or not the request is dynamic.
+    pub fn is_dynamic(&self) -> bool {
+        self.dynamic.unwrap_or(false)
+    }
 }
 
 #[cfg(test)]
@@ -212,10 +240,17 @@ mod test_helpers {
                     true => Some(Field::rand(rng)),
                     false => None,
                 };
+                // Sample the `dynamic` flag.
+                let dynamic = match i % 3 {
+                    0 => None,
+                    1 => Some(false),
+                    2 => Some(true),
+                    _ => unreachable!(),
+                };
 
                 // Compute the signed request.
                 let request =
-                    Request::sign(&private_key, program_id, function_name, inputs.into_iter(), &input_types, root_tvk, is_root, program_checksum, rng).unwrap();
+                    Request::sign(&private_key, program_id, function_name, inputs.into_iter(), &input_types, root_tvk, is_root, program_checksum, dynamic, rng).unwrap();
                 assert!(request.verify(&input_types, is_root, program_checksum));
                 request
             })
