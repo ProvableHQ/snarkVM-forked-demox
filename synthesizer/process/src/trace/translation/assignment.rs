@@ -13,7 +13,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use circuit::{Aleo, Poseidon2, Poseidon8, merkle_tree::MerkleTree, traits::{ToField, ToFields}};
+
 use super::*;
+
+type CircuitLH<A> = Poseidon8<A>;
+type CircuitPH<A> = Poseidon2<A>;
+type ConsoleLH<A: Aleo> = console::algorithms::Poseidon8<A::Network>;
+type ConsolePH<A: Aleo> = console::algorithms::Poseidon2<A::Network>;
+
+pub type RecordMerkleTree<A> = MerkleTree<A, CircuitLH<A>, CircuitPH<A>, RECORD_DATA_TREE_DEPTH>;
 
 /// An assignment for the record translation circuit
 #[derive(Clone, Debug)]
@@ -85,7 +94,7 @@ impl<N: Network> TranslationAssignment<N> {
     // circuit in `A`. The publicly exposed function `to_circuit_assignment`
     // ejects the resulting `Assignment` from the R1CS, but having direct access
     // to `A` while the constraint system is still loaded facilitates testing.
-    pub(crate) fn to_circuit_assignment_internal<A: circuit::Aleo<Network = N>>(&self) -> Result<()> {
+    pub(crate) fn to_circuit_assignment_internal<A: Aleo<Network = N>>(&self) -> Result<()> {
         // Ensure the circuit environment is clean.
         assert_eq!(A::count(), (0, 1, 0, 0, (0, 0, 0)));
         A::reset();
@@ -159,7 +168,20 @@ impl<N: Network> TranslationAssignment<N> {
 
         // ******** Merkelizing the static-record data
 
-        let circuit_data_root = circuit_record_static.merkleize()?;
+        let console_leaf_hasher = ConsoleLH::<A>::setup("DynamicRecordLeafHasher").unwrap();
+        let console_path_hasher = ConsolePH::<A>::setup("DynamicRecordPathHasher").unwrap();
+        let circuit_leaf_hasher = CircuitLH::<A>::constant(console_leaf_hasher.clone());
+        let circuit_path_hasher = CircuitPH::<A>::constant(console_path_hasher.clone());
+
+        // TODO (Antonio) these should be bound to the data used to compute the commitment!
+        let circuit_leaves = circuit_record_static.data().iter().map(|(identifier, entry)| {
+            let mut leaf = vec![identifier.to_field()];
+            leaf.extend(entry.to_fields());
+            leaf
+        }).collect::<Vec<Vec<circuit::Field<A>>>>();
+
+        let circuit_tree = RecordMerkleTree::<A>::new(circuit_leaf_hasher, circuit_path_hasher, &circuit_leaves).unwrap();
+        let circuit_data_root = circuit_tree.root();
 
         // ******** Assertions
 

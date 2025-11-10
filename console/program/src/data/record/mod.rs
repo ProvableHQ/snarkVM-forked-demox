@@ -25,7 +25,6 @@ mod encrypt;
 mod equal;
 mod find;
 mod is_owner;
-mod merkleize;
 mod num_randomizers;
 mod parse_ciphertext;
 mod parse_plaintext;

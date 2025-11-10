@@ -28,7 +28,6 @@ use circuit::{
 
 use console::{
     network::prelude::*,
-    program::{DynamicRecord, Record, Plaintext, ProgramID, Identifier},
+    program::{DynamicRecord, Record, Plaintext, ProgramID, Identifier, RECORD_DATA_TREE_DEPTH},
     types::{Field, Group},
 };
-

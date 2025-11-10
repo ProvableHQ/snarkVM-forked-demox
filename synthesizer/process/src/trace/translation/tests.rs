@@ -43,17 +43,6 @@ fn translation_assignment_from_record_str(
     // Dependent fields
     let record_dynamic = DynamicRecord::<CurrentNetwork>::from_record(&record_static).unwrap();
 
-    // TODO (Antonio, Pranav) Once the merkleization discrepancy is sorted out,
-    // this block (which simply sets the data root in the dynamic record to that
-    // computed by merkleize()) can be deleted.
-    let record_dynamic = DynamicRecord::<CurrentNetwork>::new_unchecked(
-        record_dynamic.owner().clone(),
-        record_static.merkleize().unwrap(),
-        record_dynamic.nonce().clone(),
-        record_dynamic.version().clone(),
-        record_dynamic.tree().clone(),
-        record_dynamic.data().clone(),
-    );
     let id_dynamic = record_dynamic.to_id(function_id, tvk, U16::new(register_index)).unwrap();
     
     let commitment = record_static.to_commitment(&program_id, &record_name, &record_view_key).unwrap();
