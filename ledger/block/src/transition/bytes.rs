@@ -18,12 +18,11 @@ use super::*;
 impl<N: Network> FromBytes for Transition<N> {
     /// Reads the output from a buffer.
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
-        // Read the version.
-        let version = u8::read_le(&mut reader)?;
-        // Ensure the version is valid.
-        if version != 1 {
-            return Err(error("Invalid transition version"));
-        }
+        // Read the version and ensure that it is valid.
+        let version = match u8::read_le(&mut reader)? {
+            version @ (1 | 2) => version,
+            _ => return Err(error("Invalid request version")),
+        };
 
         // Read the transition ID.
         let transition_id = N::TransitionID::read_le(&mut reader)?;
@@ -73,9 +72,16 @@ impl<N: Network> FromBytes for Transition<N> {
         // Read the signer commitment.
         let scm = FromBytes::read_le(&mut reader)?;
 
+        // If the version is 2, read the `dynamic` flag.
+        let dynamic = match version {
+            1 => None,
+            2 => Some(FromBytes::read_le(&mut reader)?),
+            _ => return Err(error("Invalid transition version")),
+        };
+
         // Construct the candidate transition.
-        let transition =
-            Self::new(program_id, function_name, inputs, outputs, tpk, tcm, scm).map_err(|e| error(e.to_string()))?;
+        let transition = Self::new(program_id, function_name, inputs, outputs, tpk, tcm, scm, dynamic)
+            .map_err(|e| error(e.to_string()))?;
         // Ensure the transition ID matches the expected ID.
         match transition_id == *transition.id() {
             true => Ok(transition),
@@ -88,7 +94,10 @@ impl<N: Network> ToBytes for Transition<N> {
     /// Writes the literal to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         // Write the version.
-        1u8.write_le(&mut writer)?;
+        match self.dynamic.is_some() {
+            false => 1u8.write_le(&mut writer)?,
+            true => 2u8.write_le(&mut writer)?,
+        }
 
         // Write the transition ID.
         self.id.write_le(&mut writer)?;
@@ -112,7 +121,13 @@ impl<N: Network> ToBytes for Transition<N> {
         // Write the transition commitment.
         self.tcm.write_le(&mut writer)?;
         // Write the signer commitment.
-        self.scm.write_le(&mut writer)
+        self.scm.write_le(&mut writer)?;
+        // Write the `dynamic` flag, if it exists.
+        if let Some(dynamic) = &self.dynamic {
+            dynamic.write_le(&mut writer)?;
+        }
+
+        Ok(())
     }
 }
 

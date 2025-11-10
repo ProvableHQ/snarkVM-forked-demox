@@ -1058,6 +1058,7 @@ function compute:
             *transition.tpk(),
             *transition.tcm(),
             *transition.scm(),
+            transition.dynamic(),
         )
         .unwrap();
 

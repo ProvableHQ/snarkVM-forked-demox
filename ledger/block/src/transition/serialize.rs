@@ -29,6 +29,9 @@ impl<N: Network> Serialize for Transition<N> {
                 transition.serialize_field("tpk", &self.tpk)?;
                 transition.serialize_field("tcm", &self.tcm)?;
                 transition.serialize_field("scm", &self.scm)?;
+                if let Some(dynamic) = &self.dynamic {
+                    transition.serialize_field("dynamic", dynamic)?;
+                }
                 transition.end()
             }
             false => ToBytesSerializer::serialize_with_size_encoding(self, serializer),
@@ -62,6 +65,11 @@ impl<'de, N: Network> Deserialize<'de> for Transition<N> {
                     DeserializeExt::take_from_value::<D>(&mut transition, "tcm")?,
                     // Retrieve the `scm`.
                     DeserializeExt::take_from_value::<D>(&mut transition, "scm")?,
+                    // Retrieve the `dynamic` flag, if it exists.
+                    serde_json::from_value(
+                        transition.get_mut("dynamic").unwrap_or(&mut serde_json::Value::Null).take(),
+                    )
+                    .map_err(de::Error::custom)?,
                 )
                 .map_err(de::Error::custom)?;
 
