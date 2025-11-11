@@ -41,6 +41,8 @@ pub struct TransitionMemory<N: Network> {
     reverse_tcm_map: MemoryMap<Field<N>, N::TransitionID>,
     /// The signer commitments.
     scm_map: MemoryMap<N::TransitionID, Field<N>>,
+    /// The `dynamic`` map.
+    dynamic_map: MemoryMap<N::TransitionID, bool>,
 }
 
 #[rustfmt::skip]
@@ -53,6 +55,7 @@ impl<N: Network> TransitionStorage<N> for TransitionMemory<N> {
     type TCMMap = MemoryMap<N::TransitionID, Field<N>>;
     type ReverseTCMMap = MemoryMap<Field<N>, N::TransitionID>;
     type SCMMap = MemoryMap<N::TransitionID, Field<N>>;
+    type DynamicMap = MemoryMap<N::TransitionID, bool>;
 
     /// Initializes the transition storage.
     fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
@@ -66,6 +69,7 @@ impl<N: Network> TransitionStorage<N> for TransitionMemory<N> {
             tcm_map: MemoryMap::default(),
             reverse_tcm_map: MemoryMap::default(),
             scm_map: MemoryMap::default(),
+            dynamic_map: MemoryMap::default(),
         })
     }
 
@@ -107,6 +111,11 @@ impl<N: Network> TransitionStorage<N> for TransitionMemory<N> {
     /// Returns the signer commitments.
     fn scm_map(&self) -> &Self::SCMMap {
         &self.scm_map
+    }
+
+    /// Returns the `dynamic` map.
+    fn dynamic_map(&self) -> &Self::DynamicMap {
+        &self.dynamic_map
     }
 }
 

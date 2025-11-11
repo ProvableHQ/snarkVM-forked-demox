@@ -92,7 +92,7 @@ impl<N: Network> Process<N> {
                 &network_id,
                 transition.program_id(),
                 transition.function_name(),
-                false, /* TODO (@d0cd) fix with transition.is_dynamic() */
+                transition.is_dynamic(),
             )?;
 
             // Ensure each input is valid.

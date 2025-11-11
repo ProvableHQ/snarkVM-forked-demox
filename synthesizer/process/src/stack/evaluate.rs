@@ -272,6 +272,7 @@ impl<N: Network> Stack<N> {
             outputs,
             &function.output_types(),
             &output_registers,
+            request.is_dynamic(),
         )?;
         finish!(timer);
 

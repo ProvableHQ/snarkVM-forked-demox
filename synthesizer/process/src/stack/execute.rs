@@ -418,6 +418,7 @@ impl<N: Network> Stack<N> {
             outputs,
             &output_types,
             &output_registers,
+            request.is_dynamic(),
         );
         lap!(timer, "Construct the response");
 

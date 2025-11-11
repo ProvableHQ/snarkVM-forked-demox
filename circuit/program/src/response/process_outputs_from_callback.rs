@@ -27,9 +27,10 @@ impl<A: Aleo> Response<A> {
         outputs: Vec<console::Value<A::Network>>,        // Note: Console type
         output_types: &[console::ValueType<A::Network>], // Note: Console type
         output_registers: &[Option<console::Register<A::Network>>], // Note: Console type
+        is_dynamic: bool,
     ) -> Vec<Value<A>> {
         // Compute the function ID.
-        let function_id = compute_function_id(network_id, program_id, function_name, false /* TODO (@d0cd) fix */);
+        let function_id = compute_function_id(network_id, program_id, function_name, is_dynamic);
 
         match outputs
             .iter()
@@ -250,6 +251,7 @@ impl<A: Aleo> Response<A> {
 mod tests {
     use super::*;
     use crate::Circuit;
+    use snarkvm_circuit_types::environment::UpdatableCount;
     use snarkvm_utilities::{TestRng, Uniform};
 
     use anyhow::Result;
@@ -258,10 +260,11 @@ mod tests {
 
     fn check_from_callback(
         mode: Mode,
-        num_constants: u64,
-        num_public: u64,
-        num_private: u64,
-        num_constraints: u64,
+        program_id: &str,
+        function_name: &str,
+        is_dynamic: bool,
+        use_record: bool,
+        expected_count: UpdatableCount,
     ) -> Result<()> {
         use console::Network;
 
@@ -290,34 +293,49 @@ mod tests {
             );
             let output_record = console::Value::<<Circuit as Environment>::Network>::Record(console::Record::from_str(&format!("{{ owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.private, token_amount: 100u64.private, _nonce: {nonce}.public }}")).unwrap());
             let output_external_record = console::Value::<<Circuit as Environment>::Network>::Record(console::Record::from_str("{ owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.private, token_amount: 100u64.private, _nonce: 0group.public }").unwrap());
-            let outputs = vec![output_constant, output_public, output_private, output_record, output_external_record];
+            let outputs = if use_record {
+                vec![output_constant, output_public, output_private, output_record, output_external_record]
+            } else {
+                vec![output_constant, output_public, output_private, output_external_record]
+            };
 
             // Construct the output types.
-            let output_types = vec![
-                console::ValueType::from_str("amount.constant").unwrap(),
-                console::ValueType::from_str("amount.public").unwrap(),
-                console::ValueType::from_str("amount.private").unwrap(),
-                console::ValueType::from_str("token.record").unwrap(),
-                console::ValueType::from_str("token.aleo/token.record").unwrap(),
-            ];
+            let output_types = if use_record {
+                vec![
+                    console::ValueType::from_str("amount.constant").unwrap(),
+                    console::ValueType::from_str("amount.public").unwrap(),
+                    console::ValueType::from_str("amount.private").unwrap(),
+                    console::ValueType::from_str("token.record").unwrap(),
+                    console::ValueType::from_str("token.aleo/token.record").unwrap(),
+                ]
+            } else {
+                vec![
+                    console::ValueType::from_str("amount.constant").unwrap(),
+                    console::ValueType::from_str("amount.public").unwrap(),
+                    console::ValueType::from_str("amount.private").unwrap(),
+                    console::ValueType::from_str("token.aleo/token.record").unwrap(),
+                ]
+            };
 
             // Construct the output registers.
-            let output_registers = vec![
+            let mut output_registers = vec![
                 Some(console::Register::Locator(5)),
                 Some(console::Register::Locator(6)),
                 Some(console::Register::Locator(7)),
                 Some(console::Register::Locator(8)),
-                Some(console::Register::Locator(9)),
             ];
+            if use_record {
+                output_registers.push(Some(console::Register::Locator(9)));
+            }
 
             // Construct a signer.
             let signer = console::Address::rand(rng);
             // Construct a network ID.
             let network_id = console::U16::new(<Circuit as Environment>::Network::ID);
             // Construct a program ID.
-            let program_id = console::ProgramID::from_str("test.aleo")?;
+            let program_id = console::ProgramID::from_str(program_id)?;
             // Construct a function name.
-            let function_name = console::Identifier::from_str("check")?;
+            let function_name = console::Identifier::from_str(function_name)?;
 
             // Construct the response.
             let response = console::Response::new(
@@ -331,14 +349,20 @@ mod tests {
                 outputs.clone(),
                 &output_types,
                 &output_registers,
+                is_dynamic,
             )?;
-            // assert!(response.verify());
 
             // Inject the signer, network ID, program ID, function name, `tvk`, `tcm`.
             let signer = Address::<Circuit>::new(mode, signer);
             let network_id = U16::<Circuit>::constant(network_id);
-            let program_id = ProgramID::<Circuit>::constant(program_id);
-            let function_name = Identifier::<Circuit>::constant(function_name);
+            let program_id = match is_dynamic {
+                false => ProgramID::<Circuit>::constant(program_id),
+                true => ProgramID::<Circuit>::public(program_id),
+            };
+            let function_name = match is_dynamic {
+                false => Identifier::<Circuit>::constant(function_name),
+                true => Identifier::<Circuit>::public(function_name),
+            };
             let tvk = Field::<Circuit>::new(mode, tvk);
             let tcm = Field::<Circuit>::new(mode, tcm);
 
@@ -353,12 +377,15 @@ mod tests {
                     response.outputs().to_vec(),
                     &output_types,
                     &output_registers,
+                    is_dynamic,
                 );
                 assert_eq!(response.outputs(), outputs.eject_value());
-                match mode.is_constant() {
-                    true => assert_scope!(<=num_constants, <=num_public, <=num_private, <=num_constraints),
-                    false => assert_scope!(<=num_constants, num_public, num_private, num_constraints),
-                }
+                expected_count.assert_matches(
+                    Circuit::num_constants_in_scope(),
+                    Circuit::num_public_in_scope(),
+                    Circuit::num_private_in_scope(),
+                    Circuit::num_constraints_in_scope(),
+                );
             });
 
             // Compute the response using outputs (circuit).
@@ -374,6 +401,7 @@ mod tests {
                 outputs,
                 &output_types,
                 &output_registers,
+                is_dynamic,
             );
             assert_eq!(response, candidate_b.eject_value());
 
@@ -387,17 +415,69 @@ mod tests {
     // These bounds are determined experimentally.
 
     #[test]
+    #[rustfmt::skip]
     fn test_from_callback_constant() -> Result<()> {
-        check_from_callback(Mode::Constant, 35000, 5, 11500, 11500)
+        // Static response without records.
+        check_from_callback(Mode::Constant, "test.aleo", "foo", false, false, count_less_than!(19915, 4, 2813, 2819))?;
+        check_from_callback(Mode::Constant, "credits.aleo", "transfer_public", false, false, count_less_than!(1529, 4, 2813, 2819))?; 
+
+        // Static response with records.
+        check_from_callback(Mode::Constant, "test.aleo", "foo", false, true, count_less_than!(16058, 5, 10910, 10923))?;
+        check_from_callback(Mode::Constant, "credits.aleo", "transfer_public", false, true, count_less_than!(4299, 5, 11012, 11025))?;
+
+
+        // Dynamic response without records.
+        check_from_callback(Mode::Constant, "test.aleo", "foo", true, false, count_less_than!(1233, 4, 6937, 6949))?;
+        check_from_callback(Mode::Constant, "credits.aleo", "transfer_public", true, false, count_less_than!(1233, 4, 6937, 6949))?;
+
+        // Dynamic response with records.
+        check_from_callback(Mode::Constant, "test.aleo", "foo", true, true, count_less_than!(3975, 5, 16167, 16190))?;
+        check_from_callback(Mode::Constant, "credits.aleo", "transfer_public", true, true, count_less_than!(3843, 5, 16339, 16362))?;
+
+        Ok(())
     }
 
     #[test]
+    #[rustfmt::skip]
     fn test_from_callback_public() -> Result<()> {
-        check_from_callback(Mode::Public, 34374, 5, 13475, 13490)
+        // Static response without records.
+        check_from_callback(Mode::Public, "test.aleo", "foo", false, false, count_is!(1366, 4, 4108, 4114))?;
+        check_from_callback(Mode::Public, "credits.aleo", "transfer_public", false, false, count_is!(1529, 4, 4108, 4114))?;
+
+        // Static response with records.
+        check_from_callback(Mode::Public, "test.aleo", "foo", false, true, count_is!(3953, 5, 13475, 13490))?;
+        check_from_callback(Mode::Public, "credits.aleo", "transfer_public", false, true, count_is!(4046, 5, 13577, 13592))?;
+
+        // Dynamic response without records.
+        check_from_callback(Mode::Public, "test.aleo", "foo", true, false, count_is!(1233, 4, 6957, 6969))?;
+        check_from_callback(Mode::Public, "credits.aleo", "transfer_public", true, false, count_is!(1233, 4, 6957, 6969))?;
+
+        // Dynamic response with records.
+        check_from_callback(Mode::Public, "test.aleo", "foo", true, true, count_is!(3722, 5, 17457, 17482))?;
+        check_from_callback(Mode::Public, "credits.aleo", "transfer_public", true, true, count_is!(3590, 5, 17629, 17654))?;
+
+        Ok(())
     }
 
     #[test]
+    #[rustfmt::skip]
     fn test_from_callback_private() -> Result<()> {
-        check_from_callback(Mode::Private, 34374, 5, 13475, 13490)
+        // Static response without records.
+        check_from_callback(Mode::Private, "test.aleo", "foo", false, false, count_is!(1366, 4, 4108, 4114))?;
+        check_from_callback(Mode::Private, "credits.aleo", "transfer_public", false, false, count_is!(1529, 4, 4108, 4114))?;
+
+        // Static response with records.
+        check_from_callback(Mode::Private, "test.aleo", "foo", false, true, count_is!(3953, 5, 13475, 13490))?;
+        check_from_callback(Mode::Private, "credits.aleo", "transfer_public", false, true, count_is!(4046, 5, 13577, 13592))?;
+
+        // Dynamic response without records.
+        check_from_callback(Mode::Private, "test.aleo", "foo", true, false, count_is!(1233, 4, 6957, 6969))?;
+        check_from_callback(Mode::Private, "credits.aleo", "transfer_public", true, false, count_is!(1233, 4, 6957, 6969))?;
+
+        // Dynamic response with records.
+        check_from_callback(Mode::Private, "test.aleo", "foo", true, true, count_is!(3722, 5, 17457, 17482))?;
+        check_from_callback(Mode::Private, "credits.aleo", "transfer_public", true, true, count_is!(3590, 5, 17629, 17654))?;
+
+        Ok(())
     }
 }

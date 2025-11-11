@@ -2644,6 +2644,7 @@ finalize transfer_public_to_private:
         let tpk = Group::from_str(transition.get("tpk").unwrap().as_str().unwrap()).unwrap();
         let tcm = Field::from_str(transition.get("tcm").unwrap().as_str().unwrap()).unwrap();
         let scm = Field::from_str(transition.get("scm").unwrap().as_str().unwrap()).unwrap();
+        let dynamic = transition.get("dynamic").map(|string| string.as_bool().unwrap());
         let transition = Transition::<CurrentNetwork>::new(
             ProgramID::from_str("credits.aleo").unwrap(),
             Identifier::from_str("transfer_public_to_private").unwrap(),
@@ -2652,6 +2653,7 @@ finalize transfer_public_to_private:
             tpk,
             tcm,
             scm,
+            dynamic,
         )
         .unwrap();
 
@@ -2772,6 +2774,7 @@ finalize transfer_public_to_private:
         let tpk = Group::from_str(transition.get("tpk").unwrap().as_str().unwrap()).unwrap();
         let tcm = Field::from_str(transition.get("tcm").unwrap().as_str().unwrap()).unwrap();
         let scm = Field::from_str(transition.get("scm").unwrap().as_str().unwrap()).unwrap();
+        let dynamic = transition.get("dynamic").map(|string| string.as_bool().unwrap());
         // Construct the new transition.
         let transition = Transition::<CurrentNetwork>::new(
             ProgramID::from_str("credits.aleo").unwrap(),
@@ -2781,6 +2784,7 @@ finalize transfer_public_to_private:
             tpk,
             tcm,
             scm,
+            dynamic,
         )
         .unwrap();
         // Get the state root.
@@ -2906,6 +2910,7 @@ function add_thrice:
         let tpk = Group::from_str(transition.get("tpk").unwrap().as_str().unwrap()).unwrap();
         let tcm = Field::from_str(transition.get("tcm").unwrap().as_str().unwrap()).unwrap();
         let scm = Field::from_str(transition.get("scm").unwrap().as_str().unwrap()).unwrap();
+        let dynamic = transition.get("dynamic").map(|string| string.as_bool().unwrap());
 
         // Construct the new transition.
         let transition = Transition::<CurrentNetwork>::new(
@@ -2916,6 +2921,7 @@ function add_thrice:
             tpk,
             tcm,
             scm,
+            dynamic,
         )
         .unwrap();
 
