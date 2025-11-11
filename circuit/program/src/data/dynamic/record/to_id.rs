@@ -15,7 +15,6 @@
 
 use super::*;
 
-// TODO (Antonio) make sure this isn't unconstrained due to multiple injections
 impl<A: Aleo> DynamicRecord<A> {
     /// Returns the ID of the dynamic record.
     pub fn to_id(

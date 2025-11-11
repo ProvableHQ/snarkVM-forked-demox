@@ -173,7 +173,6 @@ impl<N: Network> TranslationAssignment<N> {
         let circuit_leaf_hasher = CircuitLH::<A>::constant(console_leaf_hasher.clone());
         let circuit_path_hasher = CircuitPH::<A>::constant(console_path_hasher.clone());
 
-        // TODO (Antonio) these should be bound to the data used to compute the commitment!
         let circuit_leaves = circuit_record_static.data().iter().map(|(identifier, entry)| {
             let mut leaf = vec![identifier.to_field()];
             leaf.extend(entry.to_fields());
