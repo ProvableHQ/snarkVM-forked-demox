@@ -186,6 +186,7 @@ impl<N: Network> Async<N> {
                         input_locator
                     );
                 }
+                (RegisterType::DynamicFuture, FinalizeType::DynamicFuture) => {}
                 (input_type, finalize_type) => bail!(
                     "'{}/{}' async expects a '{}' argument, found a '{}' argument",
                     stack.program_id(),

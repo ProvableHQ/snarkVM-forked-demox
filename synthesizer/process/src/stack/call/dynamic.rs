@@ -15,7 +15,7 @@
 
 use super::*;
 
-impl<N: Network> CallTrait<N> for DynamicCall<N> {
+impl<N: Network> CallTrait<N> for CallDynamic<N> {
     /// Evaluates the instruction.
     #[inline]
     fn evaluate<A: circuit::Aleo<Network = N>, R: CryptoRng + Rng>(
@@ -33,13 +33,13 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
         let Value::Plaintext(Plaintext::Literal(Literal::Field(program_name_as_field), _)) = &inputs[0] else {
             bail!("Expected the first operand of `call.dynamic` to be a 'Field' literal.")
         };
-        let program_name = Identifier::from_field(program_name_as_field)?;
+        let program_name = Identifier::from_field(&program_name_as_field)?;
 
         // Get the program network.
         let Value::Plaintext(Plaintext::Literal(Literal::Field(program_network_id), _)) = &inputs[1] else {
             bail!("Expected the second operand of `call.dynamic` to be a 'Field' literal.")
         };
-        let program_network = Identifier::from_field(program_network_id)?;
+        let program_network = Identifier::from_field(&program_network_id)?;
 
         // Construct the program ID.
         let program_id = ProgramID::try_from((program_name, program_network))?;
@@ -48,7 +48,7 @@ impl<N: Network> CallTrait<N> for DynamicCall<N> {
         let Value::Plaintext(Plaintext::Literal(Literal::Field(function_name_as_field), _)) = &inputs[2] else {
             bail!("Expected the third operand of `call.dynamic` to be a 'Field' literal.")
         };
-        let function_name = Identifier::from_field(function_name_as_field)?;
+        let function_name = Identifier::from_field(&function_name_as_field)?;
 
         // Separate the remaining inputs as the function inputs.
         let inputs = &inputs[3..];

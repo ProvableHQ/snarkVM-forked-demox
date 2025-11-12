@@ -40,6 +40,36 @@ impl<N: Network> Stack<N> {
         Ok(future)
     }
 
+    // TODO (@d0cd) verify that this is sound wrt `get.future.dynamic`.
+    /// Samples a dynamic future value.
+    pub fn sample_dynamic_future<R: Rng + CryptoRng>(&self, rng: &mut R) -> Result<DynamicFuture<N>> {
+        // Sample a random program name.
+        let program_name = Field::rand(rng);
+        // Use the `.aleo` program network.
+        let program_network = Identifier::from_str("aleo").unwrap().to_field()?;
+        // Sample a random function name.
+        let function_name = Field::rand(rng);
+        // Sample a random argument root.
+        let argument_root = Field::rand(rng);
+
+        Ok(DynamicFuture::new_unchecked(program_name, program_network, function_name, argument_root, None, None))
+    }
+
+    // TODO (@d0cd) verify that this is sound wrt `get.record.dynamic`.
+    // Samples a dynamic record value.
+    pub fn sample_dynamic_record<R: Rng + CryptoRng>(&self, rng: &mut R) -> Result<DynamicRecord<N>> {
+        // Sample a random address.
+        let owner = Address::rand(rng);
+        // Sample a random root.
+        let root = Field::rand(rng);
+        // Sample a random nonce.
+        let nonce = Group::<N>::rand(rng);
+        // Sample a random version.
+        let version = U8::<N>::rand(rng);
+
+        Ok(DynamicRecord::new_unchecked(owner, root, nonce, version, None, None))
+    }
+
     /// Returns a record for the given record name.
     pub(crate) fn sample_record_internal<R: Rng + CryptoRng>(
         &self,
@@ -198,6 +228,12 @@ impl<N: Network> Stack<N> {
                         let future = self.sample_future_internal(locator, depth + 1, rng)?;
                         // Return the argument.
                         Ok(Argument::Future(future))
+                    }
+                    FinalizeType::DynamicFuture => {
+                        // Sample the dynamic future value.
+                        let dynamic_future = self.sample_dynamic_future(rng)?;
+                        // Return the argument.
+                        Ok(Argument::DynamicFuture(dynamic_future))
                     }
                 }
             })

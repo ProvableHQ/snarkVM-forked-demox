@@ -61,10 +61,13 @@ function dynamic:
     input r3 as address.public;
     input r4 as u64.public;
     call.dynamic r0 r1 r2 with r3 r4 (as address.public u64.public) into r5 (as dynamic.future);
-    async dynamic r4 into r6;
-    output r6 as test_dcall_to_transfer_public.aleo/dynamic.future;
+    call.dynamic r0 r1 r2 with r3 r4 (as address.public u64.public) into r6 (as dynamic.future);
+    async dynamic r5 r6 into r7;
+    output r7 as test_dcall_to_transfer_public.aleo/dynamic.future;
 finalize dynamic:
     input r0 as dynamic.future;
+    input r1 as dynamic.future;
+    await r1;
     await r0;
     ",
     )?;
@@ -116,6 +119,7 @@ finalize dynamic:
         ("test_dynamic_call_to_transfer_public.aleo", "dynamic"),
         vec![
             Value::from_str(&format!("{credits_as_field}"))?,
+            Value::from_str(&format!("{aleo_as_field}"))?,
             Value::from_str(&format!("{transfer_public_as_field}"))?,
             Value::from_str(&format!("{caller_address}"))?,
             Value::from_str("1234u64")?,

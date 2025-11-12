@@ -63,8 +63,8 @@ impl<N: Network> FinalizeTypes<N> {
             finalize_types.check_input(stack, input.register(), input.finalize_type())?;
 
             // If the input is a future, add it to the list of input futures.
-            if let FinalizeType::Future(locator) = input.finalize_type() {
-                input_futures.push((input.register(), *locator));
+            if matches!(input.finalize_type(), FinalizeType::Future(_) | FinalizeType::DynamicFuture) {
+                input_futures.push(input.register());
             }
         }
 
@@ -79,11 +79,11 @@ impl<N: Network> FinalizeTypes<N> {
             // If the command is an `await`, add the future to the set of consumed futures.
             if let Command::Await(await_) = command {
                 // Note: `check_command` ensures that the register is a future. This is an additional check.
-                let locator = match finalize_types.get_type(stack, await_.register())? {
-                    FinalizeType::Future(locator) => locator,
+                match finalize_types.get_type(stack, await_.register())? {
+                    FinalizeType::Future(_) | FinalizeType::DynamicFuture => {}
                     FinalizeType::Plaintext(..) => bail!("Expected a future in '{await_}'"),
                 };
-                consumed_futures.insert((await_.register(), locator));
+                consumed_futures.insert(await_.register());
             }
         }
 
@@ -168,6 +168,7 @@ impl<N: Network> FinalizeTypes<N> {
                     stack.program().id()
                 )
             }
+            FinalizeType::DynamicFuture => {} // Do nothing.
         };
 
         // Insert the input register.
@@ -236,7 +237,7 @@ impl<N: Network> FinalizeTypes<N> {
             FinalizeType::Plaintext(..) => bail!("Expected a future"),
             // If the register is a future, return success.
             // Note that there are not restrictions on the exact type of future.
-            FinalizeType::Future(..) => Ok(()),
+            FinalizeType::Future(..) | FinalizeType::DynamicFuture => Ok(()),
         }
     }
 
@@ -254,6 +255,8 @@ impl<N: Network> FinalizeTypes<N> {
             FinalizeType::Plaintext(plaintext_type) => plaintext_type,
             // If the register is a future, throw an error.
             FinalizeType::Future(..) => bail!("A future cannot be used in a `branch` command"),
+            // If the register is a dynamic future, throw an error.
+            FinalizeType::DynamicFuture => bail!("A dynamic future cannot be used in a `branch` command"),
         };
         // Get the type of the second operand.
         let second_type = match self.get_type_from_operand(stack, branch.second())? {
@@ -261,6 +264,8 @@ impl<N: Network> FinalizeTypes<N> {
             FinalizeType::Plaintext(plaintext_type) => plaintext_type,
             // If the register is a future, throw an error.
             FinalizeType::Future(..) => bail!("A future cannot be used in a `branch` command"),
+            // If the register is a dynamic future, throw an error.
+            FinalizeType::DynamicFuture => bail!("A dynamic future cannot be used in a `branch` command"),
         };
         // Check that the operands have the same type.
         ensure!(
@@ -327,6 +332,8 @@ impl<N: Network> FinalizeTypes<N> {
             FinalizeType::Plaintext(plaintext_type) => plaintext_type,
             // If the register is a future, throw an error.
             FinalizeType::Future(..) => bail!("A future cannot be used as a key in a `contains` command"),
+            // If the register is a dynamic future, throw an error.
+            FinalizeType::DynamicFuture => bail!("A dynamic future cannot be used as a key in a `contains` command"),
         };
         // Check that the key type in the mapping matches the key type in the instruction.
         if *mapping_key_type != key_type {
@@ -392,6 +399,8 @@ impl<N: Network> FinalizeTypes<N> {
             FinalizeType::Plaintext(plaintext_type) => plaintext_type,
             // If the register is a future, throw an error.
             FinalizeType::Future(..) => bail!("A future cannot be used as a key in a `get` command"),
+            // If the register is a dynamic future, throw an error.
+            FinalizeType::DynamicFuture => bail!("A dynamic future cannot be used as a key in a `get` command"),
         };
         // Check that the key type in the mapping matches the key type in the instruction.
         if *mapping_key_type != key_type {
@@ -455,6 +464,8 @@ impl<N: Network> FinalizeTypes<N> {
             FinalizeType::Plaintext(plaintext_type) => plaintext_type,
             // If the register is a future, throw an error.
             FinalizeType::Future(..) => bail!("A future cannot be used as a key in a `get.or_use` command"),
+            // If the register is a dynamic future, throw an error.
+            FinalizeType::DynamicFuture => bail!("A dynamic future cannot be used as a key in a `get.or_use` command"),
         };
         // Check that the key type in the mapping matches the key type.
         if *mapping_key_type != key_type {
@@ -468,6 +479,8 @@ impl<N: Network> FinalizeTypes<N> {
             FinalizeType::Plaintext(plaintext_type) => plaintext_type,
             // If the register is a future, throw an error.
             FinalizeType::Future(..) => bail!("A default value cannot be a future"),
+            // If the register is a dynamic future, throw an error.
+            FinalizeType::DynamicFuture => bail!("A default value cannot be a dynamic future"),
         };
         // Check that the value type in the mapping matches the default value type.
         if mapping_value_type != &default_value_type {
@@ -530,6 +543,8 @@ impl<N: Network> FinalizeTypes<N> {
             FinalizeType::Plaintext(plaintext_type) => plaintext_type,
             // If the register is a future, throw an error.
             FinalizeType::Future(..) => bail!("A future cannot be used as a key in a `set` command"),
+            // If the resiter is a dynamic future, throw an error.
+            FinalizeType::DynamicFuture => bail!("A dynamic future cannot be used as a key in a `set` command"),
         };
         // Check that the key type in the mapping matches the key type.
         if *mapping_key_type != key_type {
@@ -541,6 +556,8 @@ impl<N: Network> FinalizeTypes<N> {
             FinalizeType::Plaintext(plaintext_type) => plaintext_type,
             // If the register is a future, throw an error.
             FinalizeType::Future(..) => bail!("A future cannot be used as a value in a `set` command"),
+            // If the register is a dynamic future, throw an error.
+            FinalizeType::DynamicFuture => bail!("A dynamic future cannot be used as a value in a `set` command"),
         };
         // Check that the value type in the mapping matches the type of the value.
         if mapping_value_type != &value_type {
@@ -569,6 +586,8 @@ impl<N: Network> FinalizeTypes<N> {
             FinalizeType::Plaintext(plaintext_type) => plaintext_type,
             // If the register is a future, throw an error.
             FinalizeType::Future(..) => bail!("A future cannot be used as a key in a `remove` command"),
+            // If the register is a dynamic future, throw an error.
+            FinalizeType::DynamicFuture => bail!("A dynamic future cannot be used as a key in a `remove` command"),
         };
         // Check that the key type in the mapping matches the key type.
         if *mapping_key_type != key_type {

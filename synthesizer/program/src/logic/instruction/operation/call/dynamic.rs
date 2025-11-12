@@ -14,8 +14,7 @@
 // limitations under the License.
 
 use crate::{
-    Opcode,
-    Operand,
+    Opcode, Operand,
     traits::{RegistersCircuit, RegistersTrait, StackTrait},
 };
 
@@ -33,7 +32,7 @@ use console::{
 // TODO (@d0cd) Consider "with" to delineate program and function names, e.g. dcall credits r0 with r0 r1 into r2 (as u64 dynamic.future);
 // TODO (@d0cd) Should we allow operands to be identifiers so that we can allow function names to be specified directly.
 #[derive(Clone, PartialEq, Eq, Hash)]
-pub struct DynamicCall<N: Network> {
+pub struct CallDynamic<N: Network> {
     /// The operands.
     operands: Vec<Operand<N>>,
     /// The operand types.
@@ -44,7 +43,7 @@ pub struct DynamicCall<N: Network> {
     destination_types: Vec<ValueType<N>>,
 }
 
-impl<N: Network> DynamicCall<N> {
+impl<N: Network> CallDynamic<N> {
     /// Creates a new dynamic call operation.
     pub fn new(
         operands: Vec<Operand<N>>,
@@ -58,21 +57,30 @@ impl<N: Network> DynamicCall<N> {
             "There must be at least two operands: program name, program network, and function name"
         );
         // Ensure that the number of operands is within the bounds.
-        ensure!(operands.len() <= N::MAX_OPERANDS + 3, "The number of operands must be <= {}", N::MAX_OPERANDS);
+        // Note that the unwrap is safe since we check that `MAX_OPERANDS` is within `u8::MAX`.
+        ensure!(
+            operands.len() <= N::MAX_OPERANDS.checked_add(3).unwrap(),
+            "The number of operands must be <= {}",
+            N::MAX_OPERANDS.checked_add(3).unwrap()
+        );
         // Ensure that the number of operands and operand types match.
-        ensure!(operands.len() == operand_types.len() - 3, "The number of operands and operand types must match");
+        // Note that the unwrap is safe since we check that there are at least three operands.
+        ensure!(
+            operands.len().checked_sub(3).unwrap() == operand_types.len(),
+            "The number of operands and operand types must match"
+        );
         // Ensure that the operand types do not contain a future, dynamic future, record, or external record type.
         for type_ in &operand_types {
+            println!("Checking operand type: {:?}", type_);
             match type_ {
                 ValueType::Future(_) => bail!("A future cannot be passed in as input to a dynamic call."),
                 ValueType::DynamicFuture => bail!("A dynamic future cannot be passed in as input to a dynamic call."),
-                // TODO (@d0cd)
                 ValueType::Record(_) => {
-                    todo!()
+                    bail!("A record cannot be passed in as input to a dynamic call, use `dynamic.record` instead.")
                 }
-                ValueType::ExternalRecord(_) => {
-                    todo!()
-                }
+                ValueType::ExternalRecord(_) => bail!(
+                    "An external record cannot be passed in as input to a dynamic call, use `dynamic.record` instead."
+                ),
                 _ => {}
             }
         }
@@ -86,14 +94,11 @@ impl<N: Network> DynamicCall<N> {
         // Ensure that the destination types do not contain a future, record, or external record type.
         for type_ in &destination_types {
             match type_ {
-                ValueType::Future(_) => {
-                    bail!("The destination types cannot contain a future type, use `dynamic.future` instead.")
+                ValueType::Future(_) => bail!("A dynamic call cannot return a future, use `dynamic.future` instead."),
+                ValueType::Record(_) => bail!("A dynamic call cannot return a record, use `dynamic.record` instead."),
+                ValueType::ExternalRecord(_) => {
+                    bail!("A dynamic call cannot return an external record, use `dynamic.record` instead.")
                 }
-                // TODO (@d0cd)
-                ValueType::Record(_) => {
-                    todo!()
-                }
-                ValueType::ExternalRecord(_) => todo!(),
                 _ => {}
             }
         }
@@ -101,7 +106,7 @@ impl<N: Network> DynamicCall<N> {
     }
 }
 
-impl<N: Network> DynamicCall<N> {
+impl<N: Network> CallDynamic<N> {
     /// Returns the opcode.
     #[inline]
     pub const fn opcode() -> Opcode {
@@ -133,7 +138,7 @@ impl<N: Network> DynamicCall<N> {
     }
 }
 
-impl<N: Network> DynamicCall<N> {
+impl<N: Network> CallDynamic<N> {
     /// Returns `true` if the instruction is a function call.
     #[inline]
     pub fn is_function_call(&self, _stack: &impl StackTrait<N>) -> Result<bool> {
@@ -175,7 +180,7 @@ impl<N: Network> DynamicCall<N> {
     }
 }
 
-impl<N: Network> Parser for DynamicCall<N> {
+impl<N: Network> Parser for CallDynamic<N> {
     /// Parses a string into an operation.
     #[inline]
     fn parse(string: &str) -> ParserResult<Self> {
@@ -265,7 +270,7 @@ impl<N: Network> Parser for DynamicCall<N> {
                 // Parse the whitespace from the string.
                 let (string, _) = Sanitizer::parse_whitespaces(string)?;
                 // Parse the operands from the string.
-                let (string, operands) = many_m_n(1, N::MAX_OPERANDS, complete(parse_operand))(string)?;
+                let (string, operands) = many_m_n(0, N::MAX_OPERANDS, complete(parse_operand))(string)?;
                 // Parse the operand types from the string.
                 let (string, operand_types) = parse_value_types(string)?;
                 // Return the string, the operands, and the operand types.
@@ -286,7 +291,7 @@ impl<N: Network> Parser for DynamicCall<N> {
                 // Parse the whitespace from the string.
                 let (string, _) = Sanitizer::parse_whitespaces(string)?;
                 // Parse the destinations from the string.
-                let (string, destinations) = many_m_n(1, N::MAX_OPERANDS, complete(parse_destination))(string)?;
+                let (string, destinations) = many_m_n(0, N::MAX_OPERANDS, complete(parse_destination))(string)?;
                 // Parse the destination types from the string.
                 let (string, destination_types) = parse_value_types(string)?;
                 // Return the string, the destinations, and the destination types.
@@ -312,7 +317,7 @@ impl<N: Network> Parser for DynamicCall<N> {
     }
 }
 
-impl<N: Network> FromStr for DynamicCall<N> {
+impl<N: Network> FromStr for CallDynamic<N> {
     type Err = Error;
 
     /// Parses a string into an operation.
@@ -330,14 +335,14 @@ impl<N: Network> FromStr for DynamicCall<N> {
     }
 }
 
-impl<N: Network> Debug for DynamicCall<N> {
+impl<N: Network> Debug for CallDynamic<N> {
     /// Prints the operation as a string.
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         Display::fmt(self, f)
     }
 }
 
-impl<N: Network> Display for DynamicCall<N> {
+impl<N: Network> Display for CallDynamic<N> {
     /// Prints the operation to a string.
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         // Ensure there are at least three operands.
@@ -365,11 +370,17 @@ impl<N: Network> Display for DynamicCall<N> {
     }
 }
 
-impl<N: Network> FromBytes for DynamicCall<N> {
+impl<N: Network> FromBytes for CallDynamic<N> {
     /// Reads the operation from a buffer.
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
         // Read the number of operands.
         let num_operands = u8::read_le(&mut reader)? as usize;
+        // Ensure that the number of operands is at least three.
+        if num_operands < 3 {
+            return Err(error("Failed to read 'call.dynamic' opcode: too few operands."));
+        }
+        // Determine the number of operand types.
+        let num_operand_types = num_operands - 3;
         // Initialize the vector for the operands.
         let mut operands = Vec::with_capacity(num_operands);
         // Read the operands.
@@ -377,8 +388,8 @@ impl<N: Network> FromBytes for DynamicCall<N> {
             operands.push(Operand::read_le(&mut reader)?);
         }
         // Initialize the vector for the operand types.
-        let mut operand_types = Vec::with_capacity(num_operands);
-        for _ in 0..num_operands {
+        let mut operand_types = Vec::with_capacity(num_operand_types);
+        for _ in 0..num_operand_types {
             operand_types.push(ValueType::read_le(&mut reader)?);
         }
         // Read the number of destination registers.
@@ -400,7 +411,7 @@ impl<N: Network> FromBytes for DynamicCall<N> {
     }
 }
 
-impl<N: Network> ToBytes for DynamicCall<N> {
+impl<N: Network> ToBytes for CallDynamic<N> {
     /// Writes the operation to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         // Write the number of operands.
@@ -433,14 +444,15 @@ mod tests {
         "call.dynamic r0 r1 r2 with r3 (as u8.public)",
         "call.dynamic r0 r1 r2 with r3.owner (as address.private)",
         "call.dynamic r0 r1 r2 with r3 r4 (as u8.public u64.private)",
-        "call.dynamic r0 r1 r2 with into r3 (as u8.constant)",
+        "call.dynamic r0 r1 r2 into r3 (as u8.constant)",
         "call.dynamic r0 r1 r2 into r3 r4 (as foo.public bar.private)",
-        "call.dynamic r0 r1 r2 into r3 r4 r5 (as u64.public dynamic.future)",
+        "call.dynamic r0 r1 r2 into r3 r4 r5 (as u64.public address.private dynamic.future)",
         "call.dynamic r0 r1 r2 with r3 (as bool.private) into r4 (as u8.private)",
         "call.dynamic r0 r1 r2 with r3 r4 (as u8.public foo.private) into r5 (as bool.public)",
         "call.dynamic r0 r1 r2 with r3 r4 (as u8.public foo.private) into r5 r6 (as u8.private u64.public)",
-        "call.dynamic r0 r1 r2 with r3 r4 r5 (as foo.private bool.public) into r6 r7 (as u8.private u64.public)",
-        "call.dynamic r0 r1 r2 with r3 r4 r5 (as foo.private bool.public) into r6 r7 r8 (as u8.private u64.public dynamic.future)",
+        "call.dynamic r0 r1 r2 with r3 r4 r5 (as foo.private dynamic.record bool.public) into r6 r7 (as u8.private u64.public)",
+        "call.dynamic r0 r1 r2 with r3 r4 r5 (as foo.private bar.public bool.public) into r6 r7 r8 (as u8.private dynamic.record dynamic.future)",
+        "call.dynamic r0 r1 r2 with r3 r4 (as address.public u64.public) into r5 (as dynamic.future)",
     ];
 
     fn check_parser(
@@ -449,8 +461,9 @@ mod tests {
         expected_destinations: Vec<Register<CurrentNetwork>>,
         exepcted_destination_types: Vec<ValueType<CurrentNetwork>>,
     ) {
+        println!("Checking parser for string: '{string}'");
         // Check that the parser works.
-        let (string, call) = DynamicCall::<CurrentNetwork>::parse(string).unwrap();
+        let (string, call) = CallDynamic::<CurrentNetwork>::parse(string).unwrap();
 
         // Check that the entire string was consumed.
         assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
@@ -492,10 +505,12 @@ mod tests {
             vec![
                 Operand::Register(Register::Locator(4)),
                 Operand::Register(Register::Locator(5)),
+                Operand::Register(Register::Locator(6)),
                 Operand::Register(Register::Access(0, vec![Access::from(Identifier::from_str("owner").unwrap())])),
-                Operand::Register(Register::Access(0, vec![Access::from(
-                    Identifier::from_str("token_amount").unwrap(),
-                )])),
+                Operand::Register(Register::Access(
+                    0,
+                    vec![Access::from(Identifier::from_str("token_amount").unwrap())],
+                )),
             ],
             vec![Register::Locator(1), Register::Locator(2), Register::Locator(3)],
             vec![
@@ -522,7 +537,11 @@ mod tests {
 
         check_parser(
             "call.dynamic r0 r1 r0",
-            vec![Operand::Register(Register::Locator(0)), Operand::Register(Register::Locator(1))],
+            vec![
+                Operand::Register(Register::Locator(0)),
+                Operand::Register(Register::Locator(1)),
+                Operand::Register(Register::Locator(0)),
+            ],
             vec![],
             vec![],
         )
@@ -531,18 +550,26 @@ mod tests {
     #[test]
     fn test_display() {
         for expected in TEST_CASES {
-            assert_eq!(DynamicCall::<CurrentNetwork>::from_str(expected).unwrap().to_string(), *expected);
+            println!("Checking display for string: '{expected}'");
+            assert_eq!(CallDynamic::<CurrentNetwork>::from_str(expected).unwrap().to_string(), *expected);
         }
     }
 
     #[test]
     fn test_bytes() {
         for case in TEST_CASES {
-            let expected = DynamicCall::<CurrentNetwork>::from_str(case).unwrap();
+            println!("Checking bytes for string: '{case}'");
+            let expected = CallDynamic::<CurrentNetwork>::from_str(case).unwrap();
 
             // Check the byte representation.
             let expected_bytes = expected.to_bytes_le().unwrap();
-            assert_eq!(expected, DynamicCall::read_le(&expected_bytes[..]).unwrap());
+            assert_eq!(expected, CallDynamic::read_le(&expected_bytes[..]).unwrap());
         }
+    }
+
+    #[test]
+    fn test_max_operands() {
+        // Sanity check that the max operands is within bounds.
+        assert!(CurrentNetwork::MAX_OPERANDS <= usize::from(u8::MAX));
     }
 }
