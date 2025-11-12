@@ -171,6 +171,11 @@ impl<E: Environment, LH: LeafHash<E, Hash = PH::Hash>, PH: PathHash<E, Hash = Fi
         })
     }
 
+    /// Returns `true` if the given Merkle path is valid for the given root and leaf.
+    pub fn verify(&self, path: &MerklePath<E, DEPTH>, root: &PH::Hash, leaf: &LH::Leaf) -> Boolean<E> {
+        path.verify(&self.leaf_hasher, &self.path_hasher, root, leaf)
+    }
+
     /// Returns the leaf hasher of the Merkle tree.
     pub const fn leaf_hasher(&self) -> &LH {
         &self.leaf_hasher

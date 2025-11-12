@@ -2055,6 +2055,120 @@ function a:
 }
 
 #[test]
+fn test_get_dynamic_record() {
+    // Initialize a new program.
+    let (string, program) = Program::<CurrentNetwork>::parse(
+        r"
+program warehouse.aleo;
+
+record consumable:
+    owner as address.private;
+    expiry_date as [u8; 3u32].public;
+    critical as boolean.public;
+    production_date as [u8; 32u32].public;
+
+record non_consumable:
+    owner as address.private;
+    amount as u64.private;
+    producer_country_code: u128.public;
+    producer_pk as group.private;
+    id as field.public;
+    production_date as [u8; 3u32].public;
+    safety {
+        radioactive as boolean.public;
+        corrosive as boolean.public;
+        toxicity_index as u8.public;
+    }
+
+function production_month:
+    input r0 as dynamic.record;
+    get.dynamic.record r0.production_date into r1;
+    add r1[1] r1[1] into r2;
+    output r2 as u8.public;",
+    )
+    .unwrap();
+    assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
+
+    // Construct the process.
+    let mut process = crate::test_helpers::sample_process(&program);
+
+    // Initialize the RNG.
+    let rng = &mut TestRng::default();
+
+    // Initialize the caller.
+    let caller_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+    let caller = Address::try_from(&caller_private_key).unwrap();
+
+    // Declare the function name.
+    let function_name = Identifier::from_str("production_month").unwrap();
+
+    // Declare the input value.
+    let r0 = Value::<CurrentNetwork>::from_str("{{ owner: {caller}.private, expiry_date: [29u8, 2u8, 2020u8].public, critical: false.public, production_date: [10u8, 7u8, 87u8].public }}").unwrap();
+
+    // TODO (Antonio) remove
+    if let Some(r0) = r0.as_dynamic_record() {
+        println!("r0: {:#?}", r0);
+    } else {
+        panic!("r0 is not a dynamic record");
+    }
+
+    // // Authorize the function call.
+    // let authorization = process
+    //     .authorize::<CurrentAleo, _>(&caller_private_key, program.id(), function_name, [r0, r1].iter(), rng)
+    //     .unwrap();
+    // assert_eq!(authorization.len(), 3);
+    // println!("\nAuthorize\n{:#?}\n\n", authorization.to_vec_deque());
+
+    // let output = Value::<CurrentNetwork>::from_str("3u8").unwrap();
+
+    // // Compute the output value.
+    // let response = process.evaluate::<CurrentAleo>(authorization.replicate()).unwrap();
+    // let candidate = response.outputs();
+    // assert_eq!(1, candidate.len());
+    // assert_eq!(output, candidate[0]);
+
+    // // Check again to make sure we didn't modify the authorization after calling `evaluate`.
+    // assert_eq!(authorization.len(), 3);
+
+    // let expected_execution_cost =
+    //     execution_cost_for_authorization(&process, &authorization, ConsensusVersion::V10).unwrap();
+
+    // // Execute the request.
+    // let (response, mut trace) = process.execute::<CurrentAleo, _>(authorization, rng).unwrap();
+    // let candidate = response.outputs();
+    // assert_eq!(1, candidate.len());
+    // assert_eq!(output, candidate[0]);
+
+    // // Construct the expected transition order.
+    // let expected_order = [
+    //     (program0.id(), Identifier::<MainnetV0>::from_str("c").unwrap()),
+    //     (program1.id(), Identifier::from_str("b").unwrap()),
+    //     (program2.id(), Identifier::from_str("a").unwrap()),
+    // ];
+
+    // // Check the expected transition order.
+    // for (transition, (expected_program_id, expected_function_name)) in
+    //     trace.transitions().iter().zip_eq(expected_order.iter())
+    // {
+    //     assert_eq!(transition.program_id(), *expected_program_id);
+    //     assert_eq!(transition.function_name(), expected_function_name);
+    // }
+
+    // // Initialize a new block store.
+    // let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
+    // // Prepare the trace.
+    // trace.prepare(&Query::from(block_store)).unwrap();
+    // // Prove the execution.
+    // let execution = trace.prove_execution::<CurrentAleo, _>("two", VarunaVersion::V2, rng).unwrap();
+
+    // // Verify the execution.
+    // process.verify_execution(ConsensusVersion::V10, VarunaVersion::V2, InclusionVersion::V1, &execution).unwrap();
+
+    // // Check the execution cost
+    // assert_eq!(execution_cost(&process, &execution, ConsensusVersion::V10).unwrap(), expected_execution_cost);
+}
+
+#[test]
 fn test_complex_execution_order() {
     // This test checks that the execution order is correct.
     // The functions are invoked in the following order:
