@@ -286,7 +286,6 @@ impl<N: Network> Process<N> {
         Ok(process)
     }
 
-<<<<<<< HEAD
     /// Adds a new program to the process, verifying that it is a valid addition.
     /// If the program exists, then the existing stack is replaced and discarded.
     /// Note. This method should **NOT** be used by the on-chain VM to add new program, use `finalize_deployment` or `load_deployment` instead instead.
@@ -346,10 +345,11 @@ impl<N: Network> Process<N> {
         self.commit_stacks();
         Ok(())
     }
+
     #[inline]
     #[cfg(feature = "wasm")]
     pub fn load_inclusion_proving_key() -> ProvingKey<N> {
-        return ProvingKey::<N>::new(N::inclusion_proving_key().clone());
+        ProvingKey::<N>::new(N::inclusion_proving_key(None).clone())
     }
 
     /// Returns the universal SRS.

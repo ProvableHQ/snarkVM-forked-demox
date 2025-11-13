@@ -540,6 +540,32 @@ dependencies = [
 
 [[package]]
 name = "criterion"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f2b12d017a929603d80db1831cd3a24082f8137ce19c69e6447f54f5fc8d692f"
+dependencies = [
+ "anes",
+ "cast",
+ "ciborium",
+ "clap",
+ "criterion-plot 0.5.0",
+ "is-terminal",
+ "itertools 0.10.5",
+ "num-traits",
+ "once_cell",
+ "oorandom",
+ "plotters",
+ "rayon",
+ "regex",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "tinytemplate",
+ "walkdir",
+]
+
+[[package]]
+name = "criterion"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e1c047a62b0cc3e145fa84415a3191f628e980b194c2755aa12300a4e6cbd928"
@@ -548,7 +574,7 @@ dependencies = [
  "cast",
  "ciborium",
  "clap",
- "criterion-plot",
+ "criterion-plot 0.6.0",
  "itertools 0.13.0",
  "num-traits",
  "oorandom",
@@ -559,6 +585,16 @@ dependencies = [
  "serde_json",
  "tinytemplate",
  "walkdir",
+]
+
+[[package]]
+name = "criterion-plot"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6b50826342786a51a89e2da3a28f1c32b06e387201bc2d19791f622c673706b1"
+dependencies = [
+ "cast",
+ "itertools 0.10.5",
 ]
 
 [[package]]
@@ -1529,6 +1565,26 @@ checksum = "dbc5ebe9c3a1a7a5127f920a418f7585e9e758e911d0466ed004f393b0e380b2"
 dependencies = [
  "memchr",
  "serde",
+]
+
+[[package]]
+name = "is-terminal"
+version = "0.4.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
+dependencies = [
+ "hermit-abi",
+ "libc",
+ "windows-sys 0.61.1",
+]
+
+[[package]]
+name = "itertools"
+version = "0.10.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b0fd2260e829bddf4cb6ea802289de2f86d6a7a690192fbe91b3f46e0f2c8473"
+dependencies = [
+ "either",
 ]
 
 [[package]]
@@ -2766,7 +2822,7 @@ dependencies = [
  "bincode",
  "blake2",
  "cfg-if",
- "criterion",
+ "criterion 0.7.0",
  "expect-test",
  "fxhash",
  "hashbrown 0.15.5",
@@ -2853,7 +2909,7 @@ dependencies = [
 name = "snarkvm-circuit-environment"
 version = "4.3.0"
 dependencies = [
- "criterion",
+ "criterion 0.7.0",
  "indexmap 2.11.4",
  "itertools 0.14.0",
  "nom",
@@ -2934,7 +2990,7 @@ dependencies = [
 name = "snarkvm-circuit-types-boolean"
 version = "4.3.0"
 dependencies = [
- "criterion",
+ "criterion 0.7.0",
  "snarkvm-circuit-environment",
  "snarkvm-console-types-boolean",
 ]
@@ -3014,7 +3070,7 @@ version = "4.3.0"
 dependencies = [
  "bincode",
  "bs58",
- "criterion",
+ "criterion 0.7.0",
  "serde_json",
  "snarkvm-console-network",
  "snarkvm-console-types",
@@ -3027,7 +3083,7 @@ version = "4.3.0"
 dependencies = [
  "bincode",
  "blake2s_simd",
- "criterion",
+ "criterion 0.7.0",
  "expect-test",
  "hex",
  "k256",
@@ -3046,7 +3102,7 @@ name = "snarkvm-console-collections"
 version = "4.3.0"
 dependencies = [
  "aleo-std",
- "criterion",
+ "criterion 0.7.0",
  "indexmap 2.11.4",
  "rayon",
  "snarkvm-console-algorithms",
@@ -3095,7 +3151,7 @@ name = "snarkvm-console-program"
 version = "4.3.0"
 dependencies = [
  "bincode",
- "criterion",
+ "criterion 0.5.1",
  "enum-iterator",
  "enum_index",
  "enum_index_derive",
@@ -3116,7 +3172,7 @@ dependencies = [
 name = "snarkvm-console-types"
 version = "4.3.0"
 dependencies = [
- "criterion",
+ "criterion 0.7.0",
  "snarkvm-console-network",
  "snarkvm-console-network-environment",
  "snarkvm-console-types-address",
@@ -3213,7 +3269,7 @@ name = "snarkvm-curves"
 version = "4.3.0"
 dependencies = [
  "bincode",
- "criterion",
+ "criterion 0.7.0",
  "rand 0.8.5",
  "rayon",
  "rustc_version",
@@ -3229,7 +3285,7 @@ version = "4.3.0"
 dependencies = [
  "aleo-std",
  "anyhow",
- "criterion",
+ "criterion 0.7.0",
  "itertools 0.14.0",
  "num-traits",
  "rand 0.8.5",
@@ -3249,7 +3305,7 @@ dependencies = [
  "aleo-std-storage",
  "anyhow",
  "bincode",
- "criterion",
+ "criterion 0.7.0",
  "indexmap 2.11.4",
  "locktick",
  "lru",
@@ -3435,7 +3491,7 @@ dependencies = [
  "aleo-std",
  "anyhow",
  "bincode",
- "criterion",
+ "criterion 0.7.0",
  "indexmap 2.11.4",
  "locktick",
  "lru",
@@ -3581,7 +3637,7 @@ dependencies = [
  "aleo-std",
  "anyhow",
  "bincode",
- "criterion",
+ "criterion 0.7.0",
  "hex",
  "indexmap 2.11.4",
  "itertools 0.14.0",
@@ -3622,7 +3678,7 @@ dependencies = [
  "aleo-std",
  "bincode",
  "colored 3.0.0",
- "criterion",
+ "criterion 0.7.0",
  "indexmap 2.11.4",
  "locktick",
  "parking_lot",
@@ -3649,7 +3705,7 @@ name = "snarkvm-synthesizer-program"
 version = "4.3.0"
 dependencies = [
  "bincode",
- "criterion",
+ "criterion 0.7.0",
  "enum-iterator",
  "indexmap 2.11.4",
  "k256",
