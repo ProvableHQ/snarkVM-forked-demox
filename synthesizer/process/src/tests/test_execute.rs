@@ -18,7 +18,7 @@ use circuit::{Aleo, network::AleoV0};
 use console::{
     account::{Address, PrivateKey, ViewKey},
     network::{MainnetV0, prelude::*},
-    program::{Identifier, Literal, Plaintext, ProgramID, Record, Value},
+    program::{DynamicRecord, Identifier, Literal, Plaintext, ProgramID, Record, Value},
     types::{Field, U64},
 };
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
@@ -2061,33 +2061,35 @@ fn test_get_dynamic_record() {
         r"
 program warehouse.aleo;
 
+struct safety_struct:
+    first as field;
+    second as field;
+
 record consumable:
     owner as address.private;
-    expiry_date as [u8; 3u32].public;
+    expiry_date as [u8; 3u32].private;
     critical as boolean.public;
     production_date as [u8; 32u32].public;
 
 record non_consumable:
     owner as address.private;
     amount as u64.private;
-    producer_country_code: u128.public;
+    producer_country_code as u16.public;
     producer_pk as group.private;
     id as field.public;
     production_date as [u8; 3u32].public;
-    safety {
-        radioactive as boolean.public;
-        corrosive as boolean.public;
-        toxicity_index as u8.public;
-    }
+    safety as safety_struct.public;
 
 function production_month:
-    input r0 as dynamic.record;
-    get.dynamic.record r0.production_date into r1;
-    add r1[1] r1[1] into r2;
-    output r2 as u8.public;",
+    input r0 as dynamic.record;",
     )
     .unwrap();
     assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
+// TODO (Antonio) remove
+//get.dynamic.record r0.production_date into r1;
+// add r1[1u32] r1[1u32] into r2;
+// output r2 as u8.public;
+
 
     // Construct the process.
     let mut process = crate::test_helpers::sample_process(&program);
@@ -2099,22 +2101,30 @@ function production_month:
     let caller_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
     let caller = Address::try_from(&caller_private_key).unwrap();
 
+    let record_static_str = format!(r#"{{
+        owner: {}.private,
+        expiry_date: [29u8, 2u8, 2020u8].private,
+        critical: false.public,
+        production_date: [10u8, 7u8, 87u8].public,
+        _nonce: 1group.public,
+        _version: 1u8.public
+    }}"#, caller);
+
+    println!("record_static_str: {record_static_str}");
+
     // Declare the function name.
-    let function_name = Identifier::from_str("production_month").unwrap();
+    // let function_name = Identifier::from_str("production_month").unwrap();
 
+/*     // Construct the static record:
+    let static_record = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_str(record_static_str).unwrap();
+    let dynamic_record = DynamicRecord::<CurrentNetwork>::from_record(&static_record).unwrap();
+ */
     // Declare the input value.
-    let r0 = Value::<CurrentNetwork>::from_str("{{ owner: {caller}.private, expiry_date: [29u8, 2u8, 2020u8].public, critical: false.public, production_date: [10u8, 7u8, 87u8].public }}").unwrap();
-
-    // TODO (Antonio) remove
-    if let Some(r0) = r0.as_dynamic_record() {
-        println!("r0: {:#?}", r0);
-    } else {
-        panic!("r0 is not a dynamic record");
-    }
+    // let r0 = Value::<CurrentNetwork>::DynamicRecord(dynamic_record);
 
     // // Authorize the function call.
     // let authorization = process
-    //     .authorize::<CurrentAleo, _>(&caller_private_key, program.id(), function_name, [r0, r1].iter(), rng)
+    //     .authorize::<CurrentAleo, _>(&caller_private_key, program.id(), function_name, [r0].iter(), rng)
     //     .unwrap();
     // assert_eq!(authorization.len(), 3);
     // println!("\nAuthorize\n{:#?}\n\n", authorization.to_vec_deque());
