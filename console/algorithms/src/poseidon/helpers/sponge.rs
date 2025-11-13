@@ -14,10 +14,10 @@
 // limitations under the License.
 
 use crate::poseidon::{
-    helpers::{AlgebraicSponge, DuplexSpongeMode},
     State,
+    helpers::{AlgebraicSponge, DuplexSpongeMode},
 };
-use snarkvm_console_types::{prelude::*, Field};
+use snarkvm_console_types::{Field, prelude::*};
 use snarkvm_fields::PoseidonParameters;
 
 use smallvec::SmallVec;
@@ -214,7 +214,7 @@ impl<E: Environment, const RATE: usize, const CAPACITY: usize> PoseidonSponge<E,
 
             let mut new_state = State::default();
             new_state.iter_mut().zip(E::PRECOMPUTED_FIRST_POSEIDON_ROUND).for_each(|(new_elem, hash_elem)| {
-                *new_elem = Field::<E>::new(hash_elem.clone());
+                *new_elem = Field::<E>::new(hash_elem);
             });
             self.state = new_state;
 
