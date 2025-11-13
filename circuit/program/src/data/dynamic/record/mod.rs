@@ -18,9 +18,9 @@ mod to_bits;
 mod to_fields;
 mod to_id;
 
-use crate::{Aleo, Equal, Literal, Owner, Plaintext, ToBits, ToFields};
+use crate::{Aleo, Equal, ToBits, ToFields};
 
-use snarkvm_circuit_types::{Boolean, Field, Group, U8, U16, environment::prelude::*};
+use snarkvm_circuit_types::{Address, Boolean, Field, Group, U8, U16, environment::prelude::*};
 
 /// A dynamic record is a fixed-size representation of a record.
 /// Like static `Record`s, a dynamic record contains an owner, nonce, and a version.
@@ -62,7 +62,7 @@ use snarkvm_circuit_types::{Boolean, Field, Group, U8, U16, environment::prelude
 #[derive(Clone)]
 pub struct DynamicRecord<A: Aleo> {
     /// The owner of the record.
-    owner: Owner<A, Plaintext<A>>,
+    owner: Address<A>,
     /// The Merkle root of the record data.
     root: Field<A>,
     /// The nonce of the record.
@@ -83,10 +83,10 @@ impl<A: Aleo> Inject for DynamicRecord<A> {
     /// Initializes a plaintext record from a primitive.
     fn new(_: Mode, record: Self::Primitive) -> Self {
         Self {
-            owner: Owner::new(Mode::Private, record.owner().clone()),
+            owner: Inject::new(Mode::Private, record.owner().clone()),
             root: Inject::new(Mode::Private, *record.root()),
-            nonce: Group::new(Mode::Private, *record.nonce()),
-            version: U8::new(Mode::Private, *record.version()),
+            nonce: Inject::new(Mode::Private, *record.nonce()),
+            version: Inject::new(Mode::Private, *record.version()),
             tree: record.tree().clone(),
             data: record.data().clone(),
         }
@@ -95,7 +95,7 @@ impl<A: Aleo> Inject for DynamicRecord<A> {
 
 impl<A: Aleo> DynamicRecord<A> {
     /// Returns the owner of the record.
-    pub const fn owner(&self) -> &Owner<A, Plaintext<A>> {
+    pub const fn owner(&self) -> &Address<A> {
         &self.owner
     }
 
@@ -133,17 +133,7 @@ impl<A: Aleo> Eject for DynamicRecord<A> {
 
     /// Ejects the mode of the dynamic record.
     fn eject_mode(&self) -> Mode {
-        let owner = match &self.owner {
-            Owner::Public(owner) => match owner.eject_mode() == Mode::Public {
-                true => Mode::Public,
-                false => A::halt("DynamicRecord::<Plaintext>::eject_mode: 'owner' is not public."),
-            },
-            Owner::Private(plaintext) => match plaintext.eject_mode() == Mode::Private {
-                true => Mode::Private,
-                false => A::halt("DynamicRecord::<Plaintext>::eject_mode: 'owner' is not private."),
-            },
-        };
-
+        let owner = self.owner.eject_mode();
         let root = self.root.eject_mode();
         let nonce = self.nonce.eject_mode();
         let version = self.version.eject_mode();
@@ -153,13 +143,8 @@ impl<A: Aleo> Eject for DynamicRecord<A> {
 
     /// Ejects the dynamic record.
     fn eject_value(&self) -> Self::Primitive {
-        let owner = match &self.owner {
-            Owner::Public(owner) => console::Owner::Public(owner.eject_value()),
-            Owner::Private(plaintext) => console::Owner::Private(plaintext.eject_value()),
-        };
-
         Self::Primitive::new_unchecked(
-            owner,
+            self.owner.eject_value(),
             self.root.eject_value(),
             self.nonce.eject_value(),
             self.version.eject_value(),

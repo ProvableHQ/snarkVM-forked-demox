@@ -333,8 +333,37 @@ impl<A: Aleo> Request<A> {
                         // Ensure the expected hash matches the computed hash.
                         input_hash.is_equal(&A::hash_psd8(&preimage))
                     }
-                    // TODO (@d0cd)
-                    InputID::DynamicRecord(..) => todo!(),
+                    // A dynamic record input is hashed (using `tvk`) to a field element.
+                    InputID::DynamicRecord(input_hash) => {
+                        // Add the input hash to the message.
+                        if CREATE_MESSAGE {
+                            message.push(input_hash.clone());
+                        }
+
+                        // Retrieve the dynamic record.
+                        let record = match &input {
+                            Value::DynamicRecord(dynamic_record) => dynamic_record,
+                            // Ensure the input is a dynamic record.
+                            Value::Plaintext(..) => A::halt("Expected a dynamic record input, found a plaintext input"),
+                            Value::Future(..) => A::halt("Expected a dynamic record input, found a future input"),
+                            Value::Record(..) => A::halt("Expected an dynamic record input, found a record input"),
+                            Value::DynamicFuture(..) => {
+                                A::halt("Expected an dynamic record input, found a dynamic future input")
+                            }
+                        };
+
+                        // Prepare the index as a constant field element.
+                        let input_index = Field::constant(console::Field::from_u16(index as u16));
+                        // Construct the preimage as `(function ID || input || tvk || index)`.
+                        let mut preimage = Vec::new();
+                        preimage.push(function_id.clone());
+                        preimage.extend(record.to_fields());
+                        preimage.push(tvk.clone());
+                        preimage.push(input_index);
+
+                        // Ensure the expected hash matches the computed hash.
+                        input_hash.is_equal(&A::hash_psd8(&preimage))
+                    }
                 }
             })
             .fold(Boolean::constant(true), |acc, x| acc & x);

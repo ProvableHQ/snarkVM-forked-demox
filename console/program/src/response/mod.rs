@@ -33,6 +33,8 @@ pub enum OutputID<N: Network> {
     Future(Field<N>),
     /// The hash of the dynamic record output.
     DynamicRecord(Field<N>),
+    /// The hash of the dynamic future output.
+    DynamicFuture(Field<N>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -235,6 +237,7 @@ impl<N: Network> Response<N> {
                         Ok(OutputID::Future(output_hash))
                     }
                     // For a dynamic record, compute the hash (using `tvk`) of the output.
+                    // TODO (@d0cd) verify correctness
                     ValueType::DynamicRecord => {
                         // Ensure the output is a record.
                         ensure!(matches!(output, Value::DynamicRecord(..)), "Expected a dynamic record output");
@@ -255,8 +258,27 @@ impl<N: Network> Response<N> {
                         // Return the output ID.
                         Ok(OutputID::DynamicRecord(output_hash))
                     }
-                    // Dynamic futures can never be output directly.
-                    ValueType::DynamicFuture => bail!("Dynamic futures cannot be output directly"),
+                    // For a dynamic future output, compute the hash (using `tcm`) of the output.
+                    ValueType::DynamicFuture => {
+                        // Ensure the output is a future.
+                        ensure!(matches!(output, Value::DynamicFuture(..)), "Expected a future output");
+
+                        // Construct the (console) output index as a field element.
+                        let index = Field::from_u16(
+                            u16::try_from(num_inputs + index).or_halt_with::<N>("Output index exceeds u16"),
+                        );
+                        // Construct the preimage as `(function ID || output || tcm || index)`.
+                        let mut preimage = Vec::new();
+                        preimage.push(function_id);
+                        preimage.extend(output.to_fields()?);
+                        preimage.push(*tcm);
+                        preimage.push(index);
+                        // Hash the output to a field element.
+                        let output_hash = N::hash_psd8(&preimage)?;
+
+                        // Return the output ID.
+                        Ok(OutputID::DynamicFuture(output_hash))
+                    }
                 }
             })
             .collect::<Result<Vec<_>>>()?;

@@ -158,11 +158,12 @@ impl<N: Network> RegisterTypes<N> {
         // - All futures produced before the `async` call must be consumed by the `async` call.
 
         // Get all registers containing futures.
-        let mut future_registers: IndexSet<(Register<N>, Locator<N>)> = register_types
+        let mut future_registers: IndexSet<Register<N>> = register_types
             .destinations
             .iter()
             .filter_map(|(index, register_type)| match register_type {
-                RegisterType::Future(locator) => Some((Register::<N>::Locator(*index), *locator)),
+                RegisterType::Future(_) => Some(Register::<N>::Locator(*index)),
+                RegisterType::DynamicFuture => Some(Register::<N>::Locator(*index)),
                 _ => None,
             })
             .collect();
@@ -183,8 +184,14 @@ impl<N: Network> RegisterTypes<N> {
                 // Check only the register operands that are `future` types.
                 for operand in async_.operands() {
                     if let Operand::Register(register) = operand {
-                        if let Ok(RegisterType::Future(locator)) = register_types.get_type(stack, register) {
-                            assert!(future_registers.swap_remove(&(register.clone(), locator)));
+                        if matches!(
+                            register_types.get_type(stack, register)?,
+                            RegisterType::Future(_) | RegisterType::DynamicFuture
+                        ) {
+                            ensure!(
+                                future_registers.swap_remove(&register.clone()),
+                                "Could not find future register '{register}' produced before the 'async' instruction.",
+                            );
                         }
                     }
                 }
@@ -275,8 +282,8 @@ impl<N: Network> RegisterTypes<N> {
                 }
             }
             RegisterType::Future(..) => bail!("Input '{register}' cannot be a future."),
-            // TODO (@d0cd)
-            RegisterType::DynamicRecord => todo!(),
+            // TODO (@d0cd) Verify that we don't need any other checks.
+            RegisterType::DynamicRecord => (),
             RegisterType::DynamicFuture => bail!("Input '{register}' cannot be a dynamic future."),
         };
 
@@ -339,7 +346,7 @@ impl<N: Network> RegisterTypes<N> {
             }
             // TODO (@d0cd) Verify that this is correct.
             RegisterType::DynamicRecord => (),
-            RegisterType::DynamicFuture => (),
+            RegisterType::DynamicFuture => bail!("Output '{operand}' cannot be a dynamic future."),
         };
 
         // Ensure the operand type and the output type match.
@@ -433,72 +440,75 @@ impl<N: Network> RegisterTypes<N> {
                 );
             }
             Opcode::Call(_) => {
-                // TODO (@d0cd) Fix logic to handle dcall
-                // Retrieve the call operation.
-                let call = match instruction {
-                    Instruction::Call(call) => call,
-                    _ => bail!("Instruction '{instruction}' is not a call operation."),
-                };
+                // Validate the call operation.
+                match instruction {
+                    Instruction::Call(call) => {
+                        match call.operator() {
+                            CallOperator::Locator(locator) => {
+                                // Retrieve the program ID.
+                                let program_id = locator.program_id();
+                                // Retrieve the resource from the locator.
+                                let resource = locator.resource();
 
-                // Retrieve the operator.
-                match call.operator() {
-                    CallOperator::Locator(locator) => {
-                        // Retrieve the program ID.
-                        let program_id = locator.program_id();
-                        // Retrieve the resource from the locator.
-                        let resource = locator.resource();
+                                // Ensure the locator does not reference the current program.
+                                if stack.program_id() == program_id {
+                                    bail!("Locator '{locator}' does not reference an external program.");
+                                }
+                                // Ensure the current program contains an import for this external program.
+                                if !stack.program().imports().keys().contains(program_id) {
+                                    bail!(
+                                        "External program '{}' is not imported by '{program_id}'.",
+                                        locator.program_id()
+                                    );
+                                }
 
-                        // Ensure the locator does not reference the current program.
-                        if stack.program_id() == program_id {
-                            bail!("Locator '{locator}' does not reference an external program.");
-                        }
-                        // Ensure the current program contains an import for this external program.
-                        if !stack.program().imports().keys().contains(program_id) {
-                            bail!("External program '{}' is not imported by '{program_id}'.", locator.program_id());
-                        }
+                                // Retrieve the program.
+                                let external_stack = stack.get_external_stack(program_id)?;
+                                let external = external_stack.program();
+                                // Check that function exists in the program.
+                                if let Ok(child_function) = external.get_function_ref(resource) {
+                                    // If the child function contains a finalize block, then the parent function must also contain a finalize block.
+                                    let child_contains_finalize = child_function.finalize_logic().is_some();
+                                    let parent_contains_finalize =
+                                        stack.get_function_ref(closure_or_function_name)?.finalize_logic().is_some();
+                                    if child_contains_finalize && !parent_contains_finalize {
+                                        bail!(
+                                            "Function '{}/{closure_or_function_name}' must contain a finalize block, since it calls '{}/{resource}'.",
+                                            stack.program_id(),
+                                            program_id
+                                        )
+                                    }
+                                }
+                                // Otherwise, ensure the closure exists in the program.
+                                else if !external.contains_closure(resource) {
+                                    bail!("'{resource}' is not defined in '{}'.", external.id())
+                                }
+                            }
+                            CallOperator::Resource(resource) => {
+                                // Ensure the resource does not reference this closure or function.
+                                if resource == closure_or_function_name {
+                                    bail!("Cannot invoke 'call' to self (in '{resource}'): self-recursive call.")
+                                }
 
-                        // Retrieve the program.
-                        let external_stack = stack.get_external_stack(program_id)?;
-                        let external = external_stack.program();
-                        // Check that function exists in the program.
-                        if let Ok(child_function) = external.get_function_ref(resource) {
-                            // If the child function contains a finalize block, then the parent function must also contain a finalize block.
-                            let child_contains_finalize = child_function.finalize_logic().is_some();
-                            let parent_contains_finalize =
-                                stack.get_function_ref(closure_or_function_name)?.finalize_logic().is_some();
-                            if child_contains_finalize && !parent_contains_finalize {
-                                bail!(
-                                    "Function '{}/{closure_or_function_name}' must contain a finalize block, since it calls '{}/{resource}'.",
-                                    stack.program_id(),
-                                    program_id
-                                )
+                                // TODO (howardwu): Revisit this decision to forbid calling internal functions. A record cannot be spent again.
+                                //  But there are legitimate uses for passing a record through to an internal function.
+                                //  We could invoke the internal function without a state transition, but need to match visibility.
+                                if stack.program().contains_function(resource) {
+                                    bail!(
+                                        "Cannot call '{resource}' from '{closure_or_function_name}'. Use a closure ('closure {resource}:') instead."
+                                    )
+                                }
+                                // Ensure the function or closure exists in the program.
+                                // if !self.program.contains_function(resource) && !self.program.contains_closure(resource) {
+                                if !stack.program().contains_closure(resource) {
+                                    bail!("'{resource}' is not defined in '{}'.", stack.program_id())
+                                }
                             }
                         }
-                        // Otherwise, ensure the closure exists in the program.
-                        else if !external.contains_closure(resource) {
-                            bail!("'{resource}' is not defined in '{}'.", external.id())
-                        }
                     }
-                    CallOperator::Resource(resource) => {
-                        // Ensure the resource does not reference this closure or function.
-                        if resource == closure_or_function_name {
-                            bail!("Cannot invoke 'call' to self (in '{resource}'): self-recursive call.")
-                        }
-
-                        // TODO (howardwu): Revisit this decision to forbid calling internal functions. A record cannot be spent again.
-                        //  But there are legitimate uses for passing a record through to an internal function.
-                        //  We could invoke the internal function without a state transition, but need to match visibility.
-                        if stack.program().contains_function(resource) {
-                            bail!(
-                                "Cannot call '{resource}' from '{closure_or_function_name}'. Use a closure ('closure {resource}:') instead."
-                            )
-                        }
-                        // Ensure the function or closure exists in the program.
-                        // if !self.program.contains_function(resource) && !self.program.contains_closure(resource) {
-                        if !stack.program().contains_closure(resource) {
-                            bail!("'{resource}' is not defined in '{}'.", stack.program_id())
-                        }
-                    }
+                    // TODO (@d0cd) Verify.
+                    Instruction::CallDynamic(_) => {} // We do not validate the targets of dynamic calls before hand.
+                    _ => bail!("Instruction '{instruction}' is not a call operation."),
                 }
             }
             Opcode::Cast(opcode) => match opcode {

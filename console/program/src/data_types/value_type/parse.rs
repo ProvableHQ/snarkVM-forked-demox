@@ -22,6 +22,8 @@ impl<N: Network> Parser for ValueType<N> {
         // Parse the mode from the string.
         // Note that the order of the parsers matters.
         alt((
+            map(tag("dynamic.record"), |_| Self::DynamicRecord),
+            map(tag("dynamic.future"), |_| Self::DynamicFuture),
             map(pair(PlaintextType::parse, tag(".constant")), |(plaintext_type, _)| Self::Constant(plaintext_type)),
             map(pair(PlaintextType::parse, tag(".public")), |(plaintext_type, _)| Self::Public(plaintext_type)),
             map(pair(PlaintextType::parse, tag(".private")), |(plaintext_type, _)| Self::Private(plaintext_type)),

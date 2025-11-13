@@ -18,22 +18,16 @@ use super::*;
 impl<N: Network> FromBytes for DynamicRecord<N> {
     /// Reads the dynamic record from a buffer.
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
-        // Read the variant.
-        let variant = U8::<N>::new(u8::read_le(&mut reader)?);
-
-        // Set the version based on the variant.
-        let version = match *variant {
-            0 | 1 => U8::zero(),
-            2 | 3 => U8::one(),
-            4.. => return Err(error(format!("Failed to decode record variant ({variant}) for the version"))),
-        };
+        // Read and validate the variant.
+        match u8::read_le(&mut reader) {
+            Ok(1) => {} // Valid variant for a dynamic record.
+            _ => {
+                return Err(error("Failed to deserialize dynamic record - invalid variant"));
+            }
+        }
 
         // Read the owner.
-        let owner = match *variant {
-            0 | 2 => Owner::Public(Address::read_le(&mut reader)?),
-            1 | 3 => Owner::Private(Plaintext::read_le(&mut reader)?),
-            4.. => return Err(error(format!("Failed to decode record variant ({variant}) for the owner"))),
-        };
+        let owner = Address::read_le(&mut reader)?;
 
         // Read the root.
         // TODO (@d0cd) check that this encoding is differentiated from static records.
@@ -42,6 +36,9 @@ impl<N: Network> FromBytes for DynamicRecord<N> {
         // Read the nonce.
         let nonce = Group::read_le(&mut reader)?;
 
+        // Read the version.
+        let version = U8::read_le(&mut reader)?;
+
         Ok(Self::new_unchecked(owner, root, nonce, version, None, None))
     }
 }
@@ -49,54 +46,19 @@ impl<N: Network> FromBytes for DynamicRecord<N> {
 impl<N: Network> ToBytes for DynamicRecord<N> {
     /// Writes the record to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
-        // Set the variant.
-        let variant = match (*self.version, self.owner.is_public()) {
-            (0, true) => 0u8,
-            (0, false) => 1u8,
-            (1, true) => 2u8,
-            (1, false) => 3u8,
-            (_, _) => {
-                return Err(error(format!(
-                    "Failed to encode record - variant mismatch (version = {}, hiding = {}, owner = {})",
-                    self.version,
-                    self.is_hiding(),
-                    self.owner.is_public()
-                )));
-            }
-        };
-
-        #[cfg(debug_assertions)]
-        {
-            // Ensure the version is correct.
-            let is_version_correct = match (!self.is_hiding(), self.owner.is_public()) {
-                (true, true) => variant == 0,
-                (true, false) => variant == 1,
-                (false, true) => variant == 2,
-                (false, false) => variant == 3,
-            };
-            if !is_version_correct {
-                return Err(error(format!(
-                    "Failed to encode record - version mismatch (version = {}, hiding = {}, owner = {})",
-                    self.version,
-                    self.is_hiding(),
-                    self.owner.is_public()
-                )));
-            }
-        }
-
         // Write the variant.
-        variant.write_le(&mut writer)?;
+        1u8.write_le(&mut writer)?;
 
         // Write the owner.
-        match &self.owner {
-            Owner::Public(owner) => owner.write_le(&mut writer)?,
-            Owner::Private(owner) => owner.write_le(&mut writer)?,
-        };
+        self.owner.write_le(&mut writer)?;
 
         // Write the root.
         self.root.write_le(&mut writer)?;
 
         // Write the nonce.
-        self.nonce.write_le(&mut writer)
+        self.nonce.write_le(&mut writer)?;
+
+        // Write the version.
+        self.version.write_le(&mut writer)
     }
 }

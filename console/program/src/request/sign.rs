@@ -234,7 +234,24 @@ impl<N: Network> Request<N> {
                 ValueType::Future(..) => bail!("A future is not a valid input"),
                 // A dynamic record input is hashed (using `tvk`) to a field element.
                 ValueType::DynamicRecord => {
-                    todo!()
+                    // Ensure the input is a dynamic record.
+                    ensure!(matches!(input, Value::DynamicRecord(..)), "Expected a dynamic record input");
+
+                    // Construct the (console) input index as a field element.
+                    let index = Field::from_u16(u16::try_from(index).or_halt_with::<N>("Input index exceeds u16"));
+                    // Construct the preimage as `(function ID || input || tvk || index)`.
+                    let mut preimage = Vec::new();
+                    preimage.push(function_id);
+                    preimage.extend(input.to_fields()?);
+                    preimage.push(tvk);
+                    preimage.push(index);
+                    // Hash the input to a field element.
+                    let input_hash = N::hash_psd8(&preimage)?;
+
+                    // Add the input hash to the preimage.
+                    message.push(input_hash);
+                    // Add the input hash to the inputs.
+                    input_ids.push(InputID::DynamicRecord(input_hash));
                 }
                 // A dynamic future is not a valid input.
                 ValueType::DynamicFuture => bail!("A dynamic future is not a valid input"),
