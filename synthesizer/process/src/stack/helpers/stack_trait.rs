@@ -589,6 +589,8 @@ impl<N: Network> Stack<N> {
                 (Argument::Future(future), FinalizeType::Future(locator)) => {
                     self.matches_future_internal(future, locator, depth + 1)?
                 }
+                // TODO (@d0cd): Verify these semantics.
+                (Argument::DynamicFuture(_), FinalizeType::DynamicFuture) => {}
                 (_, input_type) => {
                     bail!("Argument type does not match input type: expected '{input_type}'")
                 }

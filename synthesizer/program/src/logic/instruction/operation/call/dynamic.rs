@@ -71,7 +71,6 @@ impl<N: Network> CallDynamic<N> {
         );
         // Ensure that the operand types do not contain a future, dynamic future, record, or external record type.
         for type_ in &operand_types {
-            println!("Checking operand type: {:?}", type_);
             match type_ {
                 ValueType::Future(_) => bail!("A future cannot be passed in as input to a dynamic call."),
                 ValueType::DynamicFuture => bail!("A dynamic future cannot be passed in as input to a dynamic call."),
