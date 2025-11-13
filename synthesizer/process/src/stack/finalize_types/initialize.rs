@@ -739,7 +739,7 @@ impl<N: Network> FinalizeTypes<N> {
             Opcode::ECDSA(opcode) => RegisterTypes::check_ecdsa_opcode(opcode, instruction)?,
             Opcode::Serialize(opcode) => RegisterTypes::check_serialize_opcode(opcode, instruction)?,
             Opcode::Deserialize(opcode) => RegisterTypes::check_deserialize_opcode(opcode, instruction)?,
-            // TODO (Antonio)
+            // TODO (Antonio) how to handle GetDynamicRecord here?
             Opcode::GetDynamicRecord(_) => (),
         }
         Ok(())

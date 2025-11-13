@@ -2062,8 +2062,9 @@ fn test_get_dynamic_record() {
 program warehouse.aleo;
 
 struct safety_struct:
-    first as field;
-    second as field;
+    toxic as bool.public;
+    corrosive as bool.public;
+    radioactivity_index as u8.private;
 
 record consumable:
     owner as address.private;
@@ -2081,18 +2082,18 @@ record non_consumable:
     safety as safety_struct.public;
 
 function production_month:
-    input r0 as dynamic.record;",
+    input r0 as record.dynamic;
+    get.dynamic.record r0.production_date into r1;
+    add r1[1u32] r1[1u32] into r2;
+    output r2 as u8.public;",
     )
     .unwrap();
-    assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
-// TODO (Antonio) remove
-//get.dynamic.record r0.production_date into r1;
-// add r1[1u32] r1[1u32] into r2;
-// output r2 as u8.public;
 
+    // TODO (Antonio) reintroduce once "input r0 as record.dynamic;" works. Also at that time: run the test.
+    assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
 
     // Construct the process.
-    let mut process = crate::test_helpers::sample_process(&program);
+    let process = crate::test_helpers::sample_process(&program);
 
     // Initialize the RNG.
     let rng = &mut TestRng::default();
@@ -2101,7 +2102,7 @@ function production_month:
     let caller_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
     let caller = Address::try_from(&caller_private_key).unwrap();
 
-    let record_static_str = format!(r#"{{
+    let record_static_a_str = format!(r#"{{
         owner: {}.private,
         expiry_date: [29u8, 2u8, 2020u8].private,
         critical: false.public,
@@ -2110,72 +2111,93 @@ function production_month:
         _version: 1u8.public
     }}"#, caller);
 
-    println!("record_static_str: {record_static_str}");
+    let record_static_b_str = format!(r#"{{
+        owner: {}.private,
+        amount: 100u64.private,
+        producer_country_code: 123u16.public,
+        producer_pk: 1group.private,
+        id: 42field.public,
+        production_date: [11u8, 8u8, 89u8].public,
+        safety: {{
+            toxic: true.public,
+            corrosive: false.public,
+            radioactivity_index: 3u8.private
+        }}.public,
+        _nonce: 1group.public,
+        _version: 1u8.public
+    }}"#, caller);
+
+    // Construct the static and dynamicrecords.
+    let r0_a_static = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_str(&record_static_a_str).unwrap();
+    
+    let r0_b_static = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_str(&record_static_b_str).unwrap();
+
+    let r0_a_dynamic = DynamicRecord::<CurrentNetwork>::from_record(&r0_a_static).unwrap();
+    let r0_b_dynamic = DynamicRecord::<CurrentNetwork>::from_record(&r0_b_static).unwrap();
 
     // Declare the function name.
-    // let function_name = Identifier::from_str("production_month").unwrap();
+    let function_name = Identifier::from_str("production_month").unwrap();
 
-/*     // Construct the static record:
-    let static_record = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_str(record_static_str).unwrap();
-    let dynamic_record = DynamicRecord::<CurrentNetwork>::from_record(&static_record).unwrap();
- */
     // Declare the input value.
-    // let r0 = Value::<CurrentNetwork>::DynamicRecord(dynamic_record);
+    let r0_a = Value::<CurrentNetwork>::DynamicRecord(r0_a_dynamic);
+    let r0_b = Value::<CurrentNetwork>::DynamicRecord(r0_b_dynamic);
 
-    // // Authorize the function call.
-    // let authorization = process
-    //     .authorize::<CurrentAleo, _>(&caller_private_key, program.id(), function_name, [r0].iter(), rng)
-    //     .unwrap();
-    // assert_eq!(authorization.len(), 3);
-    // println!("\nAuthorize\n{:#?}\n\n", authorization.to_vec_deque());
+    let expected_output_a = Value::<CurrentNetwork>::from_str("7u8").unwrap();
+    let expected_output_b = Value::<CurrentNetwork>::from_str("8u8").unwrap();
 
-    // let output = Value::<CurrentNetwork>::from_str("3u8").unwrap();
+    for (input, expected_output) in [(r0_a, expected_output_a), (r0_b, expected_output_b)] {
 
-    // // Compute the output value.
-    // let response = process.evaluate::<CurrentAleo>(authorization.replicate()).unwrap();
-    // let candidate = response.outputs();
-    // assert_eq!(1, candidate.len());
-    // assert_eq!(output, candidate[0]);
+        // Authorize the function call.
+        let authorization = process
+            .authorize::<CurrentAleo, _>(&caller_private_key, program.id(), function_name, [input].iter(), rng)
+            .unwrap();
+        assert_eq!(authorization.len(), 3);
+        println!("\nAuthorize\n{:#?}\n\n", authorization.to_vec_deque());
 
-    // // Check again to make sure we didn't modify the authorization after calling `evaluate`.
-    // assert_eq!(authorization.len(), 3);
+        // Compute the output value.
+        let response = process.evaluate::<CurrentAleo>(authorization.replicate()).unwrap();
+        let candidate = response.outputs();
+        assert_eq!(1, candidate.len());
+        assert_eq!(expected_output, candidate[0]);
 
-    // let expected_execution_cost =
-    //     execution_cost_for_authorization(&process, &authorization, ConsensusVersion::V10).unwrap();
+        // Check again to make sure we didn't modify the authorization after calling `evaluate`.
+        assert_eq!(authorization.len(), 1);
 
-    // // Execute the request.
-    // let (response, mut trace) = process.execute::<CurrentAleo, _>(authorization, rng).unwrap();
-    // let candidate = response.outputs();
-    // assert_eq!(1, candidate.len());
-    // assert_eq!(output, candidate[0]);
+        let expected_execution_cost =
+            execution_cost_for_authorization(&process, &authorization, ConsensusVersion::V10).unwrap();
 
-    // // Construct the expected transition order.
-    // let expected_order = [
-    //     (program0.id(), Identifier::<MainnetV0>::from_str("c").unwrap()),
-    //     (program1.id(), Identifier::from_str("b").unwrap()),
-    //     (program2.id(), Identifier::from_str("a").unwrap()),
-    // ];
+        // Execute the request.
+        let (response, mut trace) = process.execute::<CurrentAleo, _>(authorization, rng).unwrap();
+        let candidate = response.outputs();
+        assert_eq!(1, candidate.len());
+        assert_eq!(expected_output, candidate[0]);
 
-    // // Check the expected transition order.
-    // for (transition, (expected_program_id, expected_function_name)) in
-    //     trace.transitions().iter().zip_eq(expected_order.iter())
-    // {
-    //     assert_eq!(transition.program_id(), *expected_program_id);
-    //     assert_eq!(transition.function_name(), expected_function_name);
-    // }
+        // Construct the expected transition order.
+        let expected_order = [
+            (program.id(), function_name),
+        ];
 
-    // // Initialize a new block store.
-    // let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
-    // // Prepare the trace.
-    // trace.prepare(&Query::from(block_store)).unwrap();
-    // // Prove the execution.
-    // let execution = trace.prove_execution::<CurrentAleo, _>("two", VarunaVersion::V2, rng).unwrap();
+        // Check the expected transition order.
+        for (transition, (expected_program_id, expected_function_name)) in
+            trace.transitions().iter().zip_eq(expected_order.iter())
+        {
+            assert_eq!(transition.program_id(), *expected_program_id);
+            assert_eq!(transition.function_name(), expected_function_name);
+        }
 
-    // // Verify the execution.
-    // process.verify_execution(ConsensusVersion::V10, VarunaVersion::V2, InclusionVersion::V1, &execution).unwrap();
+        // Initialize a new block store.
+        let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
+        // Prepare the trace.
+        trace.prepare(&Query::from(block_store)).unwrap();
+        // Prove the execution.
+        let execution = trace.prove_execution::<CurrentAleo, _>("warehouse", VarunaVersion::V2, rng).unwrap();
 
-    // // Check the execution cost
-    // assert_eq!(execution_cost(&process, &execution, ConsensusVersion::V10).unwrap(), expected_execution_cost);
+        // Verify the execution.
+        process.verify_execution(ConsensusVersion::V10, VarunaVersion::V2, InclusionVersion::V1, &execution).unwrap();
+
+        // Check the execution cost
+        assert_eq!(execution_cost(&process, &execution, ConsensusVersion::V10).unwrap(), expected_execution_cost);
+    }
 }
 
 #[test]
