@@ -463,6 +463,7 @@ impl<N: Network> Stack<N> {
                 lap!(timer, "Synthesize the {} circuit key", function.name());
             }
         }
+
         // If the circuit is in `Authorize` mode, then save the transition.
         if let CallStack::Authorize(_, _, authorization) = registers.call_stack_ref() {
             // Construct the transition.

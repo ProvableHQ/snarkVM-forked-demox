@@ -46,26 +46,50 @@ pub trait StackTrait<N: Network> {
     /// Returns `true` if the proving key for the given function name exists.
     fn contains_proving_key(&self, function_name: &Identifier<N>) -> bool;
 
+    /// Returns `true` if the translation proving key for the given record name exists.
+    fn contains_translation_proving_key(&self, record_name: &Identifier<N>) -> bool;
+
     /// Returns the proving key for the given function name.
     fn get_proving_key(&self, function_name: &Identifier<N>) -> Result<ProvingKey<N>>;
+
+    /// Returns the translation proving key for the given record name.
+    fn get_translation_proving_key(&self, record_name: &Identifier<N>) -> Result<ProvingKey<N>>;
 
     /// Inserts the proving key for the given function name.
     fn insert_proving_key(&self, function_name: &Identifier<N>, proving_key: ProvingKey<N>) -> Result<()>;
 
+    /// Inserts the translation proving key for the given record name.
+    fn insert_translation_proving_key(&self, record_name: &Identifier<N>, proving_key: ProvingKey<N>) -> Result<()>;
+
     /// Removes the proving key for the given function name.
     fn remove_proving_key(&self, function_name: &Identifier<N>);
+
+    /// Removes the translation proving key for the given record name.
+    fn remove_translation_proving_key(&self, record_name: &Identifier<N>);
 
     /// Returns `true` if the verifying key for the given function name exists.
     fn contains_verifying_key(&self, function_name: &Identifier<N>) -> bool;
 
+    /// Returns `true` if the translation verifying key for the given record name exists.
+    fn contains_translation_verifying_key(&self, record_name: &Identifier<N>) -> bool;
+
     /// Returns the verifying key for the given function name.
     fn get_verifying_key(&self, function_name: &Identifier<N>) -> Result<VerifyingKey<N>>;
+
+    /// Returns the translation verifying key for the given record name.
+    fn get_translation_verifying_key(&self, record_name: &Identifier<N>) -> Result<VerifyingKey<N>>;
 
     /// Inserts the verifying key for the given function name.
     fn insert_verifying_key(&self, function_name: &Identifier<N>, verifying_key: VerifyingKey<N>) -> Result<()>;
 
+    /// Inserts the given translation verifying key for the given record name.
+    fn insert_translation_verifying_key(&self, record_name: &Identifier<N>, verifying_key: VerifyingKey<N>) -> Result<()>;
+
     /// Removes the verifying key for the given function name.
     fn remove_verifying_key(&self, function_name: &Identifier<N>);
+
+    /// Removes the translation verifying key for the given record name.
+    fn remove_translation_verifying_key(&self, record_name: &Identifier<N>);
 
     /// Checks that the given value matches the layout of the value type.
     fn matches_value_type(&self, value: &Value<N>, value_type: &ValueType<N>) -> Result<()>;

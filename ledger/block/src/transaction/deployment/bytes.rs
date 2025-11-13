@@ -53,6 +53,29 @@ impl<N: Network> FromBytes for Deployment<N> {
             verifying_keys.push((identifier, (verifying_key, certificate)));
         }
 
+        // Read the number of entries in the bundle.
+        let num_entries = u16::read_le(&mut reader)?;
+        // Ensure the number of entries is within bounds.
+        if num_entries as usize > N::MAX_RECORDS {
+            return Err(error(format!(
+                "Deployment (from 'read_le') has too many records ({} > {})",
+                num_entries,
+                N::MAX_RECORDS
+            )));
+        }
+        // Read the verifying keys.
+        let mut translation_verifying_keys = Vec::with_capacity(num_entries as usize);
+        for _ in 0..num_entries {
+            // Read the identifier.
+            let identifier = Identifier::<N>::read_le(&mut reader)?;
+            // Read the verifying key.
+            let verifying_key = VerifyingKey::<N>::read_le(&mut reader)?;
+            // Read the certificate.
+            let certificate = Certificate::<N>::read_le(&mut reader)?;
+            // Add the entry.
+            translation_verifying_keys.push((identifier, (verifying_key, certificate)));
+        }
+
         // If the deployment version is 2, read the program checksum and verify it.
         let program_checksum = match version {
             DeploymentVersion::V1 => None,
@@ -82,7 +105,7 @@ impl<N: Network> FromBytes for Deployment<N> {
         };
 
         // Return the deployment.
-        Self::new(edition, program, verifying_keys, program_checksum, program_owner)
+        Self::new(edition, program, verifying_keys, translation_verifying_keys, program_checksum, program_owner)
             .map_err(|err| error(format!("{err}")))
     }
 }
@@ -105,6 +128,17 @@ impl<N: Network> ToBytes for Deployment<N> {
         for (function_name, (verifying_key, certificate)) in &self.verifying_keys {
             // Write the function name.
             function_name.write_le(&mut writer)?;
+            // Write the verifying key.
+            verifying_key.write_le(&mut writer)?;
+            // Write the certificate.
+            certificate.write_le(&mut writer)?;
+        }
+        // Write the number of entries in the bundle.
+        (u16::try_from(self.translation_verifying_keys.len()).map_err(|e| error(e.to_string()))?).write_le(&mut writer)?;
+        // Write each entry.
+        for (record_name, (verifying_key, certificate)) in &self.translation_verifying_keys {
+            // Write the record name.
+            record_name.write_le(&mut writer)?;
             // Write the verifying key.
             verifying_key.write_le(&mut writer)?;
             // Write the certificate.

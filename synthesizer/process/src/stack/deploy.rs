@@ -13,8 +13,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::TranslationAssignment;
+
 use super::*;
 
+use console::program::DynamicRecord;
 use rand::{SeedableRng, rngs::StdRng};
 
 impl<N: Network> Stack<N> {
@@ -48,10 +51,34 @@ impl<N: Network> Stack<N> {
             verifying_keys.push((*function_name, (verifying_key, certificate)));
         }
 
+        // TODO(dynamic_dispatch): from new consensus version onwards, synthesize the record keys.
+
+        // Initialize a vector for the verifying keys and certificates.
+        let mut translation_verifying_keys = Vec::with_capacity(self.program.records().len());
+
+        for record_name in self.program.records().keys() {
+            // Synthesize the proving and verifying key.
+            self.synthesize_translation_key::<A, R>(record_name, rng)?;
+            lap!(timer, "Synthesize key for translation circuit for {record_identifier}");
+
+            // Retrieve the proving key.
+            let proving_key = self.get_translation_proving_key(record_name)?;
+            // Retrieve the verifying key.
+            let verifying_key = self.get_translation_verifying_key(record_name)?;
+            lap!(timer, "Retrieve the keys for translation circuit for {record_identifier}");
+
+            // Certify the circuit.
+            let certificate = Certificate::certify(&record_name.to_string(), &proving_key, &verifying_key)?;
+            lap!(timer, "Certify the circuit");
+
+            // Add the verifying key and certificate to the bundle.
+            translation_verifying_keys.push((*record_name, (verifying_key, certificate)));
+        }
+
         finish!(timer);
 
         // Return the deployment.
-        Deployment::new(*self.program_edition, self.program.clone(), verifying_keys, None, None)
+        Deployment::new(*self.program_edition, self.program.clone(), verifying_keys, translation_verifying_keys, None, None)
     }
 
     /// Checks each function in the program on the given verifying key and certificate.
@@ -83,6 +110,10 @@ impl<N: Network> Stack<N> {
         // Get the program ID.
         let program_id = self.program.id();
 
+        // TODO (Antonio) so far I have not added the translation-circuit
+        // variables and constraints to deployment.num_combined_variables();
+        // decide whether it needs to be done so that it is bounded by this
+        // check.
         // Check that the number of combined variables does not exceed the deployment limit.
         ensure!(deployment.num_combined_variables()? <= N::MAX_DEPLOYMENT_VARIABLES);
         // Check that the number of combined constraints does not exceed the deployment limit.
@@ -102,6 +133,13 @@ impl<N: Network> Stack<N> {
             "The number of functions in the program does not match the number of verifying keys"
         );
 
+        // Check that the number of records matches the number of translation verifying keys.
+        ensure!(
+            deployment.program().records().len() == deployment.translation_verifying_keys().len(),
+            "The number of records in the program does not match the number of translation verifying keys"
+        );
+
+        // TODO (Antonio) how does this check relate to translation verifying keys and consensus versions?
         #[cfg(not(any(test, feature = "test")))]
         // Skip the certificate verification if the consensus version is before ConsensusVersion::V8.
         // Circuit synthesis was changed in a backwards incompatible way in ConsensusVersion::V8.
@@ -185,6 +223,90 @@ impl<N: Network> Stack<N> {
             );
             // Append the function name, callstack, and assignments.
             call_stacks.push((function.name(), call_stack, assignments));
+        }
+
+        // Iterate through the program records and construct the callstacks and corresponding assignments.
+        for ((record_name, record_type), (_, (verifying_key, _))) in
+            deployment.program().records().iter().zip_eq(deployment.translation_verifying_keys())
+        {
+            // Initialize a burner private key.
+            let burner_private_key = PrivateKey::new(rng)?;
+            // Compute the burner address.
+            let burner_address = Address::try_from(&burner_private_key)?;
+            
+            // Construct a TranslationAssignment:
+            let program_id = self.program_id().clone();
+            let function_id = Field::<N>::from_u64(Uniform::rand(rng));
+            let record_name = record_name.clone();
+            let record_static = self.sample_record(&burner_address, &record_name, Group::rand(rng), rng)?;
+            let record_dynamic = DynamicRecord::<N>::from_record(&record_static)?;
+            let translation_count = Uniform::rand(rng);
+            let tvk = Uniform::rand(rng);
+            let register_index = Uniform::rand(rng);
+            let record_view_key = Uniform::rand(rng);
+            let gamma = Uniform::rand(rng);
+            let id_dynamic = record_dynamic.to_id(function_id, tvk, U16::new(register_index)).unwrap();
+            let to_static_record = Uniform::rand(rng);            
+            let commitment = record_static.to_commitment(&program_id, &record_name, &record_view_key).unwrap();
+            let id_static = if to_static_record {
+                Record::<N, Plaintext<N>>::serial_number_from_gamma(&gamma, commitment).unwrap()
+            } else {
+                commitment
+            };
+
+            let translation_assignment = TranslationAssignment::new(
+                record_static,
+                program_id,
+                function_id,
+                record_name,
+                record_dynamic,
+                to_static_record,
+                translation_count,
+                tvk,
+                register_index,
+                id_dynamic,
+                id_static,
+                record_view_key,
+                gamma,
+            );
+            
+            lap!(timer, "Sample the inputs to the translation circuit");
+
+            // TODO (Antonio)
+            
+/*             // Compute the request, with a burner private key.
+            let request = Request::sign(
+                &burner_private_key,
+                *program_id,
+                *function.name(),
+                inputs.into_iter(),
+                &input_types,
+                root_tvk,
+                is_root,
+                program_checksum,
+                Some(false), // `dynamic` is false because this is a root request.
+                rng,
+            )?;
+            lap!(timer, "Compute the request for {}", function.name());
+            // Initialize the assignments.
+            let assignments = Assignments::<N>::default();
+            // Initialize the constraint limit. Account for the constraint added after synthesis that makes the Varuna zerocheck hiding.
+            let Some(constraint_limit) = verifying_key.circuit_info.num_constraints.checked_sub(1) else {
+                // Since a deployment must always pay non-zero fee, it must always have at least one constraint.
+                bail!("The constraint limit of 0 for function '{}' is invalid", function.name());
+            };
+            // Retrieve the variable limit.
+            let variable_limit = verifying_key.num_variables();
+            // Initialize the call stack.
+            let call_stack = CallStack::CheckDeployment(
+                vec![request],
+                burner_private_key,
+                assignments.clone(),
+                Some(constraint_limit as u64),
+                Some(variable_limit),
+            );
+            // Append the function name, callstack, and assignments.
+            call_stacks.push((function.name(), call_stack, assignments)); */
         }
 
         // Verify the certificates.

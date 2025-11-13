@@ -119,6 +119,10 @@ pub struct DeploymentDB<N: Network> {
     verifying_key_map: DataMap<(ProgramID<N>, Identifier<N>, u16), VerifyingKey<N>>,
     /// The certificate map.
     certificate_map: DataMap<(ProgramID<N>, Identifier<N>, u16), Certificate<N>>,
+    /// The translation verifying key map.
+    translation_verifying_key_map: DataMap<(ProgramID<N>, Identifier<N>, u16), VerifyingKey<N>>,
+    /// The translation certificate map.
+    translation_certificate_map: DataMap<(ProgramID<N>, Identifier<N>, u16), Certificate<N>>,
     /// The fee store.
     fee_store: FeeStore<N, FeeDB<N>>,
 }
@@ -150,6 +154,8 @@ impl<N: Network> DeploymentStorage<N> for DeploymentDB<N> {
             checksum_map: rocksdb::RocksDB::open_map(N::ID, storage_mode.clone(), MapID::Deployment(DeploymentMap::Checksum))?,
             verifying_key_map: rocksdb::RocksDB::open_map(N::ID, storage_mode.clone(), MapID::Deployment(DeploymentMap::VerifyingKey))?,
             certificate_map: rocksdb::RocksDB::open_map(N::ID, storage_mode.clone(), MapID::Deployment(DeploymentMap::Certificate))?,
+            translation_verifying_key_map: rocksdb::RocksDB::open_map(N::ID, storage_mode.clone(), MapID::Deployment(DeploymentMap::VerifyingKey))?,
+            translation_certificate_map: rocksdb::RocksDB::open_map(N::ID, storage_mode.clone(), MapID::Deployment(DeploymentMap::Certificate))?,
             fee_store,
         })
     }
@@ -197,6 +203,16 @@ impl<N: Network> DeploymentStorage<N> for DeploymentDB<N> {
     /// Returns the certificate map.
     fn certificate_map(&self) -> &Self::CertificateMap {
         &self.certificate_map
+    }
+
+    /// Returns the translation verifying key map.
+    fn translation_verifying_key_map(&self) -> &Self::VerifyingKeyMap {
+        &self.translation_verifying_key_map
+    }
+
+    /// Returns the translation certificate map.
+    fn translation_certificate_map(&self) -> &Self::CertificateMap {
+        &self.translation_certificate_map
     }
 
     /// Returns the fee store.

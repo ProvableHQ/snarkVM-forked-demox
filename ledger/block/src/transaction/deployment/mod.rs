@@ -36,6 +36,8 @@ pub struct Deployment<N: Network> {
     program: Program<N>,
     /// The mapping of function names to their verifying key and certificate.
     verifying_keys: Vec<(Identifier<N>, (VerifyingKey<N>, Certificate<N>))>,
+    /// The mapping of record identifiers to their translation verifying key and certificate.
+    translation_verifying_keys: Vec<(Identifier<N>, (VerifyingKey<N>, Certificate<N>))>,
     /// An optional checksum for the program.
     /// This field creates a backwards-compatible implicit versioning mechanism for deployments.
     /// Before the migration height where this feature is enabled, the checksum will **not** be allowed.
@@ -62,11 +64,12 @@ impl<N: Network> Deployment<N> {
         edition: u16,
         program: Program<N>,
         verifying_keys: Vec<(Identifier<N>, (VerifyingKey<N>, Certificate<N>))>,
+        translation_verifying_keys: Vec<(Identifier<N>, (VerifyingKey<N>, Certificate<N>))>,
         program_checksum: Option<[U8<N>; 32]>,
         program_owner: Option<Address<N>>,
     ) -> Result<Self> {
         // Construct the deployment.
-        let deployment = Self { edition, program, verifying_keys, program_checksum, program_owner };
+        let deployment = Self { edition, program, verifying_keys, translation_verifying_keys, program_checksum, program_owner };
         // Ensure the deployment is ordered.
         deployment.check_is_ordered()?;
         // Return the deployment.
@@ -103,11 +106,23 @@ impl<N: Network> Deployment<N> {
             bail!("Deployment has an incorrect number of verifying keys, according to the program.");
         }
 
+        // Ensure the number of records matches the number of translation verifying keys.
+        if self.program.records().len() != self.translation_verifying_keys.len() {
+            bail!("Deployment has an incorrect number of translation verifying keys, according to the program.");
+        }
+
         // Ensure the number of functions does not exceed the maximum.
         ensure!(
             self.program.functions().len() <= N::MAX_FUNCTIONS,
             "Deployment has too many functions (maximum is '{}')",
             N::MAX_FUNCTIONS
+        );
+
+        // Ensure the number of records does not exceed the maximum.
+        ensure!(
+            self.program.records().len() <= N::MAX_RECORDS,
+            "Deployment has too many records (maximum is '{}')",
+            N::MAX_RECORDS
         );
 
         // Ensure the function and verifying keys correspond.
@@ -119,6 +134,18 @@ impl<N: Network> Deployment<N> {
             // Ensure the function name with the verifying key is correct.
             if name != function.name() {
                 bail!("The verifier key is '{name}', but the function name is '{}'", function.name())
+            }
+        }
+
+        // Ensure the function and translation verifying keys correspond.
+        for ((record_name, record), (name, _)) in self.program.records().iter().zip_eq(&self.translation_verifying_keys) {
+            // Ensure the record name is correct.
+            if record_name != record.name() {
+                bail!("The record key is '{record_name}', but the record name is '{}'", record.name())
+            }
+            // Ensure the record name with the translation verifying key is correct.
+            if name != record.name() {
+                bail!("The translation verifier key is '{name}', but the record name is '{}'", record.name())
             }
         }
 
@@ -170,6 +197,11 @@ impl<N: Network> Deployment<N> {
         &self.verifying_keys
     }
 
+    /// Returns the translation verifying keys.
+    pub const fn translation_verifying_keys(&self) -> &Vec<(Identifier<N>, (VerifyingKey<N>, Certificate<N>))> {
+        &self.translation_verifying_keys
+    }
+
     /// Returns the sum of the variable counts for all functions in this deployment.
     pub fn num_combined_variables(&self) -> Result<u64> {
         // Initialize the accumulator.
@@ -187,6 +219,8 @@ impl<N: Network> Deployment<N> {
         Ok(num_combined_variables)
     }
 
+    // TODO (Antonio) does this need to include constraints from translation circuits?
+    //                adding them is trivial
     /// Returns the sum of the constraint counts for all functions in this deployment.
     pub fn num_combined_constraints(&self) -> Result<u64> {
         // Initialize the accumulator.
@@ -299,6 +333,7 @@ function compute:
             edition % 2,
             deployment.program().clone(),
             deployment.verifying_keys().clone(),
+            deployment.translation_verifying_keys().clone(),
             deployment.program_checksum(),
             deployment.program_owner(),
         )
@@ -343,6 +378,7 @@ function compute:
             edition,
             deployment.program().clone(),
             deployment.verifying_keys().clone(),
+            deployment.translation_verifying_keys().clone(),
             deployment.program_checksum(),
             deployment.program_owner(),
         )

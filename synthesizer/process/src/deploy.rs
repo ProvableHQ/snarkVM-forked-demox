@@ -57,8 +57,18 @@ impl<N: Network> Process<N> {
         for (function_name, (verifying_key, _)) in deployment.verifying_keys() {
             stack.insert_verifying_key(function_name, verifying_key.clone())?;
         }
-        lap!(timer, "Insert the verifying keys");
 
+        lap!(timer, "Insert the function verifying keys");
+
+        // TODO(dynamic_dispatch): from new consensus version onwards, insert the translation verifying keys.
+
+        // Insert the translation verifying keys.
+        for (record_name, (verifying_key, _)) in deployment.translation_verifying_keys() {
+            stack.insert_translation_verifying_key(record_name, verifying_key.clone())?;
+        }
+
+        lap!(timer, "Insert the translation verifying keys");
+        
         // Add the stack to the process.
         self.add_stack(stack);
 

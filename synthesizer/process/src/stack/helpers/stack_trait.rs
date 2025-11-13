@@ -105,6 +105,11 @@ impl<N: Network> StackTrait<N> for Stack<N> {
         self.proving_keys.read().contains_key(function_name)
     }
 
+    /// Returns `true` if the translation proving key for the given record name exists.
+    fn contains_translation_proving_key(&self, record_name: &Identifier<N>) -> bool {
+        self.translation_proving_keys.read().contains_key(record_name)
+    }
+
     /// Returns the proving key for the given function name.
     fn get_proving_key(&self, function_name: &Identifier<N>) -> Result<ProvingKey<N>> {
         // If the program is 'credits.aleo', try to load the proving key, if it does not exist.
@@ -113,6 +118,15 @@ impl<N: Network> StackTrait<N> for Stack<N> {
         match self.proving_keys.read().get(function_name) {
             Some(pk) => Ok(pk.clone()),
             None => bail!("Proving key not found for: {}/{}", self.program.id(), function_name),
+        }
+    }
+
+    /// Returns the translation proving key for the given record name.
+    fn get_translation_proving_key(&self, record_name: &Identifier<N>) -> Result<ProvingKey<N>> {
+        // Return the translation proving key, if it exists.
+        match self.translation_proving_keys.read().get(record_name) {
+            Some(pk) => Ok(pk.clone()),
+            None => bail!("Translation proving key not found for: {}/{}", self.program.id(), record_name),
         }
     }
 
@@ -129,14 +143,37 @@ impl<N: Network> StackTrait<N> for Stack<N> {
         Ok(())
     }
 
+    /// Inserts the given translation proving key for the given function name.
+    fn insert_translation_proving_key(&self, record_name: &Identifier<N>, proving_key: ProvingKey<N>) -> Result<()> {
+        // Ensure the record name exists in the program.
+        ensure!(
+            self.program.contains_record(record_name),
+            "Record '{record_name}' does not exist in program '{}'.",
+            self.program.id()
+        );
+        // Insert the translation proving key.
+        self.translation_proving_keys.write().insert(*record_name, proving_key);
+        Ok(())
+    }
+
     /// Removes the proving key for the given function name.
     fn remove_proving_key(&self, function_name: &Identifier<N>) {
         self.proving_keys.write().shift_remove(function_name);
     }
 
+    /// Removes the translation proving key for the given record name.
+    fn remove_translation_proving_key(&self, record_name: &Identifier<N>) {
+        self.translation_proving_keys.write().shift_remove(record_name);
+    }
+
     /// Returns `true` if the verifying key for the given function name exists.
     fn contains_verifying_key(&self, function_name: &Identifier<N>) -> bool {
         self.verifying_keys.read().contains_key(function_name)
+    }
+
+    /// Returns `true` if the translation verifying key for the given record name exists.
+    fn contains_translation_verifying_key(&self, record_name: &Identifier<N>) -> bool {
+        self.translation_verifying_keys.read().contains_key(record_name)
     }
 
     /// Returns the verifying key for the given function name.
@@ -145,6 +182,15 @@ impl<N: Network> StackTrait<N> for Stack<N> {
         match self.verifying_keys.read().get(function_name) {
             Some(vk) => Ok(vk.clone()),
             None => bail!("Verifying key not found for: {}/{}", self.program.id(), function_name),
+        }
+    }
+
+    /// Returns the translation verifying key for the given record name.
+    fn get_translation_verifying_key(&self, record_name: &Identifier<N>) -> Result<VerifyingKey<N>> {
+        // Return the translation verifying key, if it exists.
+        match self.translation_verifying_keys.read().get(record_name) {
+            Some(vk) => Ok(vk.clone()),
+            None => bail!("Translation verifying key not found for: {}/{}", self.program.id(), record_name),
         }
     }
 
@@ -161,9 +207,27 @@ impl<N: Network> StackTrait<N> for Stack<N> {
         Ok(())
     }
 
+    /// Inserts the given translation verifying key for the given record name.
+    fn insert_translation_verifying_key(&self, record_name: &Identifier<N>, verifying_key: VerifyingKey<N>) -> Result<()> {
+        // Ensure the function name exists in the program.
+        ensure!(
+            self.program.contains_record(record_name),
+            "Record '{record_name}' does not exist in program '{}'.",
+            self.program.id()
+        );
+        // Insert the verifying key.
+        self.translation_verifying_keys.write().insert(*record_name, verifying_key);
+        Ok(())
+    }
+
     /// Removes the verifying key for the given function name.
     fn remove_verifying_key(&self, function_name: &Identifier<N>) {
         self.verifying_keys.write().shift_remove(function_name);
+    }
+
+    /// Removes the translation verifying key for the given record name.
+    fn remove_translation_verifying_key(&self, record_name: &Identifier<N>) {
+        self.translation_verifying_keys.write().shift_remove(record_name);
     }
 
     /// Returns the program.

@@ -29,6 +29,7 @@ impl<N: Network> Serialize for Deployment<N> {
                 deployment.serialize_field("edition", &self.edition)?;
                 deployment.serialize_field("program", &self.program)?;
                 deployment.serialize_field("verifying_keys", &self.verifying_keys)?;
+                deployment.serialize_field("translation_verifying_keys", &self.translation_verifying_keys)?;
                 if let Some(program_checksum) = &self.program_checksum {
                     deployment.serialize_field("program_checksum", program_checksum)?;
                 }
@@ -58,6 +59,8 @@ impl<'de, N: Network> Deserialize<'de> for Deployment<N> {
                     DeserializeExt::take_from_value::<D>(&mut deployment, "program")?,
                     // Retrieve the verifying keys.
                     DeserializeExt::take_from_value::<D>(&mut deployment, "verifying_keys")?,
+                    // Retrieve the translation verifying keys.
+                    DeserializeExt::take_from_value::<D>(&mut deployment, "translation_verifying_keys")?,
                     // Retrieve the program checksum, if it exists.
                     serde_json::from_value(
                         deployment.get_mut("program_checksum").unwrap_or(&mut serde_json::Value::Null).take(),
