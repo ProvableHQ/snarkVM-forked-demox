@@ -15,6 +15,7 @@
 
 use crate::{Opcode, Operand, RegistersCircuit, RegistersTrait, Result, StackTrait};
 
+use circuit::DynamicFuture;
 use console::{
     network::prelude::*,
     program::{Argument, FinalizeType, Future, Identifier, Locator, Register, RegisterType, Value},
@@ -78,8 +79,7 @@ impl<N: Network> Async<N> {
                 Value::Record(_) => bail!("Cannot pass a record into an `async` instruction"),
                 Value::Future(future) => Ok(Argument::Future(future)),
                 Value::DynamicRecord(_) => bail!("Cannot pass a dynamic record into an `async` instruction"),
-                // TODO (@d0cd)
-                Value::DynamicFuture(_) => todo!(),
+                Value::DynamicFuture(dynamic_future) => Ok(Argument::DynamicFuture(dynamic_future)),
             })
             .try_collect()?;
 
@@ -111,8 +111,7 @@ impl<N: Network> Async<N> {
                 circuit::Value::Record(_) => bail!("Cannot pass a record into an `async` instruction"),
                 circuit::Value::Future(future) => Ok(circuit::Argument::Future(future)),
                 circuit::Value::DynamicRecord(_) => bail!("Cannot pass a dynamic record into an `async` instruction"),
-                // TODO (@d0cd)
-                circuit::Value::DynamicFuture(..) => todo!(),
+                circuit::Value::DynamicFuture(dynamic_future) => Ok(circuit::Argument::DynamicFuture(dynamic_future)),
             })
             .try_collect()?;
 

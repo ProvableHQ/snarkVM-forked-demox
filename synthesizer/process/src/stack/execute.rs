@@ -304,6 +304,10 @@ impl<N: Network> Stack<N> {
                 let result = match instruction {
                     // If the instruction is a `call` instruction, we need to handle it separately.
                     Instruction::Call(call) => CallTrait::evaluate(call, self, &mut registers, rng),
+                    // If the instruction is a `call.dynamic` instruction, we need to handle it separately.
+                    Instruction::CallDynamic(call_dynamic) => {
+                        CallTrait::evaluate(call_dynamic, self, &mut registers, rng)
+                    }
                     // Otherwise, evaluate the instruction normally.
                     _ => instruction.evaluate(self, &mut registers),
                 };
@@ -317,6 +321,8 @@ impl<N: Network> Stack<N> {
             let result = match instruction {
                 // If the instruction is a `call` instruction, we need to handle it separately.
                 Instruction::Call(call) => CallTrait::execute(call, self, &mut registers, rng),
+                // If the instruction is a `call.dynamic` instruction, we need to handle it separately.
+                Instruction::CallDynamic(call_dynamic) => CallTrait::execute(call_dynamic, self, &mut registers, rng),
                 // Otherwise, execute the instruction normally.
                 _ => instruction.execute(self, &mut registers),
             };

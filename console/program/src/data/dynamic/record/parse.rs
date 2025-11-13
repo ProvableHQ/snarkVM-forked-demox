@@ -35,12 +35,7 @@ impl<N: Network> Parser for DynamicRecord<N> {
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
         // Parse the owner from the string.
-        let (string, owner) = alt((
-            map(pair(Address::parse, tag(".public")), |(owner, _)| Owner::Public(owner)),
-            map(pair(Address::parse, tag(".private")), |(owner, _)| {
-                Owner::Private(Plaintext::from(Literal::Address(owner)))
-            }),
-        ))(string)?;
+        let (string, owner) = Address::parse(string)?;
         // Parse the "," from the string.
         let (string, _) = tag(",")(string)?;
 

@@ -22,8 +22,10 @@ impl<N: Network> Parser for Value<N> {
         // Note that the order of the parsers matters.
         alt((
             map(Future::parse, Value::Future),
+            map(DynamicFuture::parse, Value::DynamicFuture),
             map(Plaintext::parse, Value::Plaintext),
             map(Record::parse, Value::Record),
+            map(DynamicRecord::parse, Value::DynamicRecord),
         ))(string)
     }
 }

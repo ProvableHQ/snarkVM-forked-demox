@@ -282,8 +282,8 @@ impl<N: Network> RegisterTypes<N> {
                 }
             }
             RegisterType::Future(..) => bail!("Input '{register}' cannot be a future."),
-            // TODO (@d0cd)
-            RegisterType::DynamicRecord => todo!(),
+            // TODO (@d0cd) Verify that we don't need any other checks.
+            RegisterType::DynamicRecord => (),
             RegisterType::DynamicFuture => bail!("Input '{register}' cannot be a dynamic future."),
         };
 

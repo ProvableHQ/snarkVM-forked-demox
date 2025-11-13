@@ -30,6 +30,9 @@ impl<N: Network> StackTrait<N> for Stack<N> {
                 self.matches_external_record(record, locator)
             }
             (Value::Future(future), ValueType::Future(locator)) => self.matches_future(future, locator),
+            // TODO (@d0cd): Verify these semantics.
+            (Value::DynamicRecord(_), ValueType::DynamicRecord) => Ok(()),
+            (Value::DynamicFuture(_), ValueType::DynamicFuture) => Ok(()),
             _ => bail!("A value does not match its declared value type '{value_type}'"),
         }
     }
@@ -45,6 +48,9 @@ impl<N: Network> StackTrait<N> for Stack<N> {
                 self.matches_external_record(record, locator)
             }
             (Value::Future(future), RegisterType::Future(locator)) => self.matches_future(future, locator),
+            // TODO (@d0cd): Verify these semantics.
+            (Value::DynamicRecord(_), RegisterType::DynamicRecord) => Ok(()),
+            (Value::DynamicFuture(_), RegisterType::DynamicFuture) => Ok(()),
             _ => bail!("A value does not match its declared register type '{register_type}'"),
         }
     }
@@ -317,9 +323,8 @@ impl<N: Network> StackTrait<N> for Stack<N> {
                 Ok(Value::Record(stack.sample_record(burner_address, locator.resource(), Group::rand(rng), rng)?))
             }
             RegisterType::Future(locator) => Ok(Value::Future(self.sample_future(locator, rng)?)),
-            // TODO (@d0cd)
-            RegisterType::DynamicRecord => todo!(),
-            RegisterType::DynamicFuture => todo!(),
+            RegisterType::DynamicRecord => Ok(Value::DynamicRecord(self.sample_dynamic_record(rng)?)),
+            RegisterType::DynamicFuture => Ok(Value::DynamicFuture(self.sample_dynamic_future(rng)?)),
         }
     }
 

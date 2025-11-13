@@ -124,7 +124,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                     *substack.program_id(),
                     *function.name(),
                     inputs.iter(),
-                    &function.input_types(),
+                    self.operand_types(),
                     root_tvk,
                     is_root,
                     program_checksum,
@@ -182,18 +182,15 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         else {
             bail!("Expected the first operand of `call.dynamic` to be a 'Field' literal.")
         };
-        let console_program_name = Identifier::from_field(&program_name_as_field.eject_value())?;
 
         // Get the program network.
-        let circuit::Value::Plaintext(circuit::Plaintext::Literal(circuit::Literal::Field(program_network_id), _)) =
-            &inputs[1]
+        let circuit::Value::Plaintext(circuit::Plaintext::Literal(
+            circuit::Literal::Field(program_network_as_field),
+            _,
+        )) = &inputs[1]
         else {
             bail!("Expected the second operand of `call.dynamic` to be a 'Field' literal.")
         };
-        let console_program_network = Identifier::from_field(&program_network_id.eject_value())?;
-
-        // Construct the program ID.
-        let console_program_id = ProgramID::try_from((console_program_name, console_program_network))?;
 
         // Get the function name.
         let circuit::Value::Plaintext(circuit::Plaintext::Literal(circuit::Literal::Field(function_name_as_field), _)) =
@@ -201,67 +198,29 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         else {
             bail!("Expected the third operand of `call.dynamic` to be a 'Field' literal.")
         };
-        let console_function_name = Identifier::from_field(&function_name_as_field.eject_value())?;
 
         // Separate the remaining inputs as the function inputs.
         let inputs = &inputs[3..];
-
-        // Retrieve the optional external stack and resource.
-        let external_stack = match stack.program().id() == &console_program_id {
-            // Retrieve the call stack and resource from the locator.
-            false => {
-                // Check the external call locator.
-                let is_credits_program = &console_program_id.to_string() == "credits.aleo";
-                let is_fee_private = &console_function_name.to_string() == "fee_private";
-                let is_fee_public = &console_function_name.to_string() == "fee_public";
-
-                // Ensure the external call is not to 'credits.aleo/fee_private' or 'credits.aleo/fee_public'.
-                if is_credits_program && (is_fee_private || is_fee_public) {
-                    bail!("Cannot perform an external call to 'credits.aleo/fee_private' or 'credits.aleo/fee_public'.")
-                } else {
-                    Some(stack.get_external_stack(&console_program_id)?)
-                }
-            }
-            true => {
-                // TODO (howardwu): Revisit this decision to forbid calling internal functions. A record cannot be spent again.
-                //  But there are legitimate uses for passing a record through to an internal function.
-                //  We could invoke the internal function without a state transition, but need to match visibility.
-                // TODO (@d0cd): Resolve recursion with records.
-                if stack.program().contains_function(&console_function_name) {
-                    bail!("Cannot dynamically execute a local '{console_function_name}' ")
-                }
-                None
-            }
-        };
-        // Retrieve the substack.
-        let substack = match &external_stack {
-            Some(external_stack) => external_stack.as_ref(),
-            None => stack,
-        };
-        lap!(timer, "Retrieved the substack");
 
         // If we are not handling the root request, retrieve the root request's tvk
         let root_tvk = registers.root_tvk().ok();
 
         // Retrieve the program checksum, if the program has a constructor.
-        let program_checksum = match substack.program().contains_constructor() {
-            true => Some(substack.program_checksum_as_field()?),
-            false => None,
-        };
+        // TODO (@d0cd): Every dynamic request should take in a checksum.
+        let program_checksum = None;
 
-        // If the operator is a closure, retrieve the closure and compute the output.
-        let outputs = if substack.program().get_closure(&console_function_name).is_ok() {
-            bail!("Cannot dynamically execute a closure.")
-        }
-        // If the operator is a function, retrieve the function and compute the output.
-        else if let Ok(function) = substack.program().get_function(&console_function_name) {
+        // Execute the function.
+        let outputs = {
             lap!(timer, "Execute the function");
-            // Retrieve the number of inputs.
-            let num_inputs = function.inputs().len();
-            // Ensure the number of inputs matches the number of input statements.
-            if num_inputs != inputs.len() {
-                bail!("Expected {} inputs, found {}", num_inputs, inputs.len())
-            }
+
+            // Resolve the program and function.
+            let target = resolve_dynamic_target(
+                registers.call_stack_ref(),
+                stack,
+                &program_name_as_field.eject_value(),
+                &program_network_as_field.eject_value(),
+                &function_name_as_field.eject_value(),
+            )?;
 
             // Retrieve the number of public variables in the circuit.
             let num_public = A::num_public();
@@ -279,12 +238,22 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
 
                 // Set the (console) caller.
                 let console_caller = Some(*stack.program_id());
-                // Check if the substack has a proving key or not.
-                let pk_missing = !substack.contains_proving_key(function.name());
 
                 match registers.call_stack_ref() {
                     // If the circuit is in authorize mode, then add any external calls to the stack.
                     CallStack::Authorize(_, private_key, authorization) => {
+                        // Get the target.
+                        let Some(target) = target else {
+                            bail!("Failed to resolve the target of the dynamic call in 'Authorize' mode.")
+                        };
+                        // Get the function.
+                        let function = target.substack().program().get_function_ref(target.function_name())?;
+                        // Retrieve the number of inputs.
+                        let num_inputs = function.inputs().len();
+                        // Ensure the number of inputs matches the number of input statements.
+                        if num_inputs != inputs.len() {
+                            bail!("Expected {} inputs, found {}", num_inputs, inputs.len())
+                        }
                         // Ensure that we have a private key to sign the new request.
                         let Some(private_key) = private_key else {
                             bail!("Cannot authorize a new function call without a private key.")
@@ -292,10 +261,10 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         // Compute the request.
                         let request = Request::sign(
                             private_key,
-                            *substack.program_id(),
+                            *target.substack().program_id(),
                             *function.name(),
                             inputs.iter(),
-                            &function.input_types(),
+                            &self.operand_types(),
                             root_tvk,
                             is_root,
                             program_checksum,
@@ -312,48 +281,29 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         authorization.push(request.clone())?;
 
                         // Execute the request.
-                        let response = substack.execute_function::<A, R>(call_stack, console_caller, root_tvk, rng)?;
+                        let response =
+                            target.substack().execute_function::<A, R>(call_stack, console_caller, root_tvk, rng)?;
 
                         // Return the request and response.
                         (request, response)
                     }
-                    // If the proving key is missing, build real sub-circuit.
-                    CallStack::Synthesize(_, private_key, ..) if pk_missing => {
-                        // Compute the request.
-                        let request = Request::sign(
-                            private_key,
-                            *substack.program_id(),
-                            *function.name(),
-                            inputs.iter(),
-                            &function.input_types(),
-                            root_tvk,
-                            is_root,
-                            program_checksum,
-                            Some(true),
-                            rng,
-                        )?;
-
-                        // Retrieve the call stack.
-                        let mut call_stack = registers.call_stack();
-
-                        // Push the request onto the call stack.
-                        call_stack.push(request.clone())?;
-
-                        // Execute the request.
-                        let response = substack.execute_function::<A, R>(call_stack, console_caller, root_tvk, rng)?;
-
-                        // Return the request and response.
-                        (request, response)
-                    }
+                    // TODO (@d0cd): Synthesize based on the declared outputs of the instruction.
                     // In Synthesize mode (with an existing proving key) or CheckDeployment mode, we generate dummy outputs to avoid building a full sub-circuit.
                     CallStack::Synthesize(_, private_key, ..) | CallStack::CheckDeployment(_, private_key, ..) => {
+                        // Sample a random program ID.
+                        // Note. It does not matter what program ID we use here, since we are only synthesizing dummy outputs.
+                        let program_id = ProgramID::from_str("a.aleo")?;
+                        // Sample a random function name.
+                        // Note. It does not matter what function name we use here, since we are only synthesizing dummy outputs.
+                        let function_name = Identifier::<N>::from_str("a")?;
+
                         // Compute the request.
                         let request = Request::sign(
                             private_key,
-                            *substack.program_id(),
-                            *function.name(),
+                            program_id,
+                            function_name,
                             inputs.iter(),
-                            &function.input_types(),
+                            &self.operand_types(),
                             root_tvk,
                             is_root,
                             program_checksum,
@@ -364,51 +314,34 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         // Compute the address.
                         let address = Address::try_from(private_key)?;
 
-                        // For each output, if it's a record, compute the randomizer and nonce.
-                        let outputs = function
-                            .outputs()
+                        // Sample the outputs.
+                        let outputs = self
+                            .destination_types()
                             .iter()
-                            .map(|output| match output.value_type() {
-                                ValueType::Record(record_name) => {
-                                    let index = match output.operand() {
-                                        Operand::Register(Register::Locator(index)) => Field::from_u64(*index),
-                                        _ => bail!("Expected a `Register::Locator` operand for a record output."),
-                                    };
-                                    // Sample the record.
-                                    Ok(Value::Record(substack.sample_record_using_tvk(
-                                        &address,
-                                        record_name,
-                                        *request.tvk(),
-                                        index,
-                                        rng,
-                                    )?))
+                            .map(|output_type| match output_type {
+                                ValueType::Record(_) => bail!("A dynamic call cannot return a record."),
+                                ValueType::ExternalRecord(_) => {
+                                    bail!("A dynamic call cannot return an external record.")
                                 }
-                                // For non-record outputs, call sample_value.
-                                _ => substack.sample_value(&address, &output.value_type().into(), rng),
+                                ValueType::Future(_) => bail!("A dynamic call cannot return a future."),
+                                // Sample the value.
+                                _ => stack.sample_value(&address, &output_type.into(), rng),
                             })
                             .collect::<Result<Vec<_>>>()?;
 
-                        // Construct the dummy response from these outputs.
-                        let output_registers = function
-                            .outputs()
-                            .iter()
-                            .map(|output| match output.operand() {
-                                Operand::Register(register) => Some(register.clone()),
-                                _ => None,
-                            })
-                            .collect::<Vec<_>>();
-
+                        // Use `None` for the output registers. This is safe since an output of a dynamic call cannot be a record.
+                        let output_registers = vec![None; outputs.len()];
                         // Execute the request.
                         let response = crate::Response::new(
                             request.signer(),
                             request.network_id(),
-                            substack.program().id(),
-                            function.name(),
+                            &program_id,
+                            &function_name,
                             request.inputs().len(),
                             request.tvk(),
                             request.tcm(),
                             outputs,
-                            &function.output_types(),
+                            &self.destination_types(),
                             &output_registers,
                             true,
                         )?;
@@ -418,13 +351,25 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                     }
                     // In PackageRun mode, we sign and execute the request once.
                     CallStack::PackageRun(_, private_key, ..) => {
+                        // Get the target.
+                        let Some(target) = target else {
+                            bail!("Failed to resolve the target of the dynamic call in 'Authorize' mode.")
+                        };
+                        // Get the function.
+                        let function = target.substack().program().get_function_ref(target.function_name())?;
+                        // Retrieve the number of inputs.
+                        let num_inputs = function.inputs().len();
+                        // Ensure the number of inputs matches the number of input statements.
+                        if num_inputs != inputs.len() {
+                            bail!("Expected {} inputs, found {}", num_inputs, inputs.len())
+                        }
                         // Compute the request.
                         let request = Request::sign(
                             private_key,
-                            *substack.program_id(),
+                            *target.substack().program_id(),
                             *function.name(),
                             inputs.iter(),
-                            &function.input_types(),
+                            &self.operand_types(),
                             root_tvk,
                             is_root,
                             program_checksum,
@@ -438,7 +383,8 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         call_stack.push(request.clone())?;
 
                         // Evaluate the request.
-                        let response = substack.execute_function::<A, _>(call_stack, console_caller, root_tvk, rng)?;
+                        let response =
+                            target.substack().execute_function::<A, _>(call_stack, console_caller, root_tvk, rng)?;
 
                         // Return the request and response.
                         (request, response)
@@ -449,6 +395,19 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                     }
                     // If the circuit is in execute mode, then evaluate and execute the instructions.
                     CallStack::Execute(authorization, ..) => {
+                        // Get the target.
+                        let Some(target) = target else {
+                            bail!("Failed to resolve the target of the dynamic call in 'Authorize' mode.")
+                        };
+                        // Get the function.
+                        let function = target.substack().program().get_function_ref(target.function_name())?;
+                        // Retrieve the number of inputs.
+                        let num_inputs = function.inputs().len();
+                        // Ensure the number of inputs matches the number of input statements.
+                        if num_inputs != inputs.len() {
+                            bail!("Expected {} inputs, found {}", num_inputs, inputs.len())
+                        }
+
                         // Retrieve the next request (without popping it).
                         let request = authorization.peek_next()?;
                         // Ensure the inputs match the original inputs.
@@ -458,15 +417,19 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         })?;
 
                         // Evaluate the function, and load the outputs.
-                        let console_response = substack.evaluate_function::<A, R>(
+                        let console_response = target.substack().evaluate_function::<A, R>(
                             registers.call_stack(),
                             console_caller,
                             root_tvk,
                             rng,
                         )?;
                         // Execute the request.
-                        let response =
-                            substack.execute_function::<A, R>(registers.call_stack(), console_caller, root_tvk, rng)?;
+                        let response = target.substack().execute_function::<A, R>(
+                            registers.call_stack(),
+                            console_caller,
+                            root_tvk,
+                            rng,
+                        )?;
                         // Ensure the values are equal.
                         if console_response.outputs() != response.outputs() {
                             dev_eprintln!("\n{:#?} != {:#?}\n", console_response.outputs(), response.outputs());
@@ -487,12 +450,18 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             // Inject the network ID as `Mode::Constant`.
             let network_id = circuit::U16::constant(*request.network_id());
             // Inject the program ID name as `Mode::Public`.
-            let program_id = circuit::ProgramID::public(console_program_id);
+            let program_id = circuit::ProgramID::public(*request.program_id());
             // Inject the function name as `Mode::Public`.
-            let function_name = circuit::Identifier::public(console_function_name);
+            let function_name = circuit::Identifier::public(*request.function_name());
+            // TODO (@d0cd) Constraint the program and function names to match the witnessed values.
+
+            // Ensure that the program and function names in the registers match the witnessed values.
+            A::assert_eq(program_id.name(), program_name_as_field);
+            A::assert_eq(program_id.network(), program_network_as_field);
+            A::assert_eq(&function_name, function_name_as_field);
 
             // Ensure the number of public variables remains the same.
-            ensure!(A::num_public() == num_public, "Forbidden: 'call' injected excess public variables");
+            ensure!(A::num_public() == num_public + 3, "Forbidden: 'call.dynamic' injected excess public variables");
 
             // Inject the `signer` (from the request) as `Mode::Private`.
             let signer = circuit::Address::new(circuit::Mode::Private, *request.signer());
@@ -520,7 +489,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                 &function_name,
                 &input_ids,
                 inputs,
-                &function.input_types(),
+                &self.operand_types(),
                 &signer,
                 &sk_tag,
                 &tvk,
@@ -531,36 +500,35 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             A::assert(check_input_ids);
             lap!(timer, "Checked the input ids");
 
-            // Retrieve the output registers.
-            let output_registers = function
-                .outputs()
-                .iter()
-                .map(|output| match output.operand() {
-                    Operand::Register(register) => Some(register.clone()),
-                    _ => None,
-                })
-                .collect::<Vec<_>>();
+            // Get the outputs from the response, checking that none are records.
+            let outputs = response.outputs().to_vec();
+            for output in &outputs {
+                match output {
+                    Value::Record(_) => bail!("A dynamic call cannot return a record."),
+                    Value::Future(_) => bail!("A dynamic call cannot return a future."),
+                    Value::Plaintext(_) | Value::DynamicRecord(_) | Value::DynamicFuture(_) => {} // Do nothing.
+                }
+            }
+
+            // Use `None` for the output registers. This is safe since an output of a dynamic call cannot be a record.
+            let output_registers = vec![None; outputs.len()];
 
             // Inject the outputs as `Mode::Private` (with the 'tcm' and output IDs as `Mode::Public`).
             let outputs = circuit::Response::process_outputs_from_callback(
                 &network_id,
                 &program_id,
                 &function_name,
-                num_inputs,
+                inputs.len(),
                 &tvk,
                 &tcm,
                 response.outputs().to_vec(),
-                &function.output_types(),
+                &self.destination_types(),
                 &output_registers,
                 true,
             );
             lap!(timer, "Checked the outputs");
             // Return the circuit outputs.
             outputs
-        }
-        // Else, throw an error.
-        else {
-            bail!("Dynamic call to '{console_program_id}/{console_function_name}' is invalid or unsupported.")
         };
 
         // Assign the outputs to the destination registers.
@@ -573,5 +541,144 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         finish!(timer);
 
         Ok(())
+    }
+}
+
+// A reference to a stack, either local or external.
+enum StackRef<'a, N: Network> {
+    Local(&'a Stack<N>),
+    External(Arc<Stack<N>>),
+}
+
+impl<'a, N: Network> Deref for StackRef<'a, N> {
+    type Target = Stack<N>;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            StackRef::Local(stack) => stack,
+            StackRef::External(stack) => stack.as_ref(),
+        }
+    }
+}
+
+// A resolved target of a dynamic call.
+struct ResolvedTarget<'a, N: Network> {
+    // The program ID.
+    program_id: ProgramID<N>,
+    // The function name.
+    function_name: Identifier<N>,
+    // The stack.
+    substack: StackRef<'a, N>,
+}
+
+impl<'a, N: Network> ResolvedTarget<'a, N> {
+    /// Returns the program ID.
+    #[inline]
+    pub fn program_id(&self) -> &ProgramID<N> {
+        &self.program_id
+    }
+
+    /// Returns the function name.
+    #[inline]
+    pub fn function_name(&self) -> &Identifier<N> {
+        &self.function_name
+    }
+
+    /// Returns the stack.
+    #[inline]
+    pub fn substack(&self) -> &Stack<N> {
+        &*self.substack
+    }
+}
+
+// A helper function that attempts to resolve the target of a dynamic call.
+// This function returns:
+// - Some(ResolvedTarget) if the target is successfully resolved.
+// - Ok(None) in `Synthesize` or `CheckDeployment` mode when the target cannot be resolved.
+// - Err(_) in other modes when the target cannot be resolved.
+fn resolve_dynamic_target<'a, N: Network>(
+    call_stack: &'a CallStack<N>,
+    stack: &'a Stack<N>,
+    program_name_as_field: &Field<N>,
+    program_network_as_field: &Field<N>,
+    function_name_as_field: &Field<N>,
+) -> Result<Option<ResolvedTarget<'a, N>>> {
+    // Determine whether we are in "dummy" (`Synthesize` or `CheckDeployment`) mode.
+    let in_dummy_mode = match call_stack {
+        CallStack::Synthesize(..) | CallStack::CheckDeployment(..) => true,
+        _ => false,
+    };
+
+    // Decode the program name, exiting gracefully in dummy mode if it fails.
+    let program_name = match Identifier::from_field(program_name_as_field) {
+        Ok(id) => id,
+        Err(_) if in_dummy_mode => {
+            return Ok(None);
+        }
+        Err(e) => return Err(e.into()),
+    };
+
+    // Decode the program network, exiting gracefully in dummy mode if it fails.
+    let program_network = match Identifier::from_field(program_network_as_field) {
+        Ok(id) => id,
+        Err(_) if in_dummy_mode => {
+            return Ok(None);
+        }
+        Err(e) => return Err(e.into()),
+    };
+
+    // Decode the function name, exiting gracefully in dummy mode if it fails.
+    let function_name = match Identifier::from_field(function_name_as_field) {
+        Ok(id) => id,
+        Err(_) if in_dummy_mode => {
+            return Ok(None);
+        }
+        Err(e) => return Err(e.into()),
+    };
+
+    // Construct the program ID.
+    let program_id = match ProgramID::try_from((program_name, program_network)) {
+        Ok(id) => id,
+        Err(_) if in_dummy_mode => {
+            return Ok(None);
+        }
+        Err(e) => return Err(e.into()),
+    };
+
+    // Verify that the call is not to 'credits.aleo/fee_private' or 'credits.aleo/fee_public'.
+    let is_credits_program = &program_id.to_string() == "credits.aleo";
+    let is_fee_private = function_name.to_string() == "fee_private";
+    let is_fee_public = &function_name.to_string() == "fee_public";
+    if is_credits_program && (is_fee_private || is_fee_public) {
+        bail!("Cannot perform an external call to 'credits.aleo/fee_private' or 'credits.aleo/fee_public'.")
+    }
+
+    // Retrieve the optional external stack.
+    let external_stack = match stack.program().id() == &program_id {
+        false => match stack.get_external_stack(&program_id) {
+            Ok(ext_stack) => Some(ext_stack),
+            Err(_) if in_dummy_mode => {
+                return Ok(None);
+            }
+            Err(e) => return Err(e),
+        },
+        true => None,
+    };
+
+    // Retrieve the substack.
+    let substack = match &external_stack {
+        Some(external_stack) => StackRef::External(external_stack.clone()),
+        None => StackRef::Local(stack),
+    };
+
+    // Verify that the function is not a closure.
+    if substack.program().get_closure(&function_name).is_ok() {
+        bail!("Cannot dynamically evaluate a closure: {function_name}")
+    } else if substack.program().contains_function(&function_name) {
+        Ok(Some(ResolvedTarget { program_id, function_name, substack }))
+    } else if in_dummy_mode {
+        Ok(None)
+    } else {
+        bail!("Dynamic call to '{program_id}/{function_name}' is invalid or unsupported.")
     }
 }

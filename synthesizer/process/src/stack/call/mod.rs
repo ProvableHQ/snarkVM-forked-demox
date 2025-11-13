@@ -26,6 +26,8 @@ use snarkvm_synthesizer_program::{
 };
 use snarkvm_utilities::dev_eprintln;
 
+use std::sync::Arc;
+
 mod dynamic;
 pub use dynamic::*;
 

@@ -42,19 +42,19 @@ fn test_dynamic_call_to_transfer_public() -> Result<()> {
         r"
 import credits.aleo;
         
-program test_dcall_to_transfer_public.aleo;
+program test_dcall.aleo;
 
 //function static:
 //    input r0 as address.public;
 //    input r1 as u64.public;
 //    dcall credits transfer_public with r0 r1 (as address.public u64.public) into r2 (as dynamic.future);
 //    async static r2 into r3;
-//    output r3 as test_dcall_to_transfer_public.aleo/static.future;
+//    output r3 as test_dcall.aleo/static.future;
 //finalize static:
 //    input r0 as dynamic.future;
 //    await r0; 
         
-function dynamic:
+function dyn_dub_transfer_public:
     input r0 as field.public;
     input r1 as field.public;
     input r2 as field.public;
@@ -62,13 +62,24 @@ function dynamic:
     input r4 as u64.public;
     call.dynamic r0 r1 r2 with r3 r4 (as address.public u64.public) into r5 (as dynamic.future);
     call.dynamic r0 r1 r2 with r3 r4 (as address.public u64.public) into r6 (as dynamic.future);
-    async dynamic r5 r6 into r7;
-    output r7 as test_dcall_to_transfer_public.aleo/dynamic.future;
-finalize dynamic:
+    async dyn_dub_transfer_public r5 r6 into r7;
+    output r7 as test_dcall.aleo/dyn_dub_transfer_public.future;
+finalize dyn_dub_transfer_public:
     input r0 as dynamic.future;
     input r1 as dynamic.future;
     await r1;
     await r0;
+
+function dynamic_transfer_private:
+    input r0 as field.public;
+    input r1 as field.public;
+    input r2 as field.public;
+    input r3 as dynamic.record;
+    input r4 as address.public;
+    input r5 as u64.public;
+    call.dynamic r0 r1 r2 with r3 r4 r5 (as dynamic.record address.public u64.public) into r6 r7 (as dynamic.record dynamic.record);
+    output r6 as dynamic.record;
+    output r7 as dynamic.record;
     ",
     )?;
 

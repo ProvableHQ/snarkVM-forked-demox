@@ -20,21 +20,8 @@ mod to_bits;
 mod to_fields;
 
 use crate::{
-    Address,
-    Boolean,
-    Entry,
-    Field,
-    Group,
-    Identifier,
-    Literal,
-    Network,
-    Owner,
-    Plaintext,
-    Record,
-    Result,
-    ToField,
-    ToFields,
-    U8,
+    Address, Boolean, Entry, Field, Group, Identifier, Literal, Network, Owner, Plaintext, Record, Result, ToField,
+    ToFields, U8,
 };
 
 use snarkvm_console_algorithms::{Poseidon2, Poseidon8};
@@ -91,7 +78,7 @@ pub type RecordDataPath<E> = MerklePath<E, RECORD_DATA_TREE_DEPTH>;
 #[derive(Clone)]
 pub struct DynamicRecord<N: Network> {
     /// The owner of the record.
-    owner: Owner<N, Plaintext<N>>,
+    owner: Address<N>,
     /// The Merkle root of the record data.
     root: Field<N>,
     /// The nonce of the record.
@@ -107,7 +94,7 @@ pub struct DynamicRecord<N: Network> {
 impl<N: Network> DynamicRecord<N> {
     /// Initializes a dynamic record without checking that the root, tree, and data are consistent.
     pub const fn new_unchecked(
-        owner: Owner<N, Plaintext<N>>,
+        owner: Address<N>,
         root: Field<N>,
         nonce: Group<N>,
         version: U8<N>,
@@ -120,7 +107,7 @@ impl<N: Network> DynamicRecord<N> {
 
 impl<N: Network> DynamicRecord<N> {
     /// Returns the owner of the record.
-    pub const fn owner(&self) -> &Owner<N, Plaintext<N>> {
+    pub const fn owner(&self) -> &Address<N> {
         &self.owner
     }
 
@@ -159,7 +146,7 @@ impl<N: Network> DynamicRecord<N> {
     /// Creates a dynamic record from a static record.
     pub fn from_record(record: &Record<N, Plaintext<N>>) -> Result<Self> {
         // Get the owner.
-        let owner = record.owner().clone();
+        let owner = *record.owner().clone();
         // Get the program data.
         let data = record.data().clone();
         // Get the nonce.
@@ -196,12 +183,18 @@ impl<N: Network> DynamicRecord<N> {
     }
 
     /// Creates a static record from this dynamic record.
-    pub fn to_record(&self) -> Result<Record<N, Plaintext<N>>> {
+    pub fn to_record(&self, owner_is_private: bool) -> Result<Record<N, Plaintext<N>>> {
         // Ensure that the data is present.
         let Some(data) = &self.data else {
             bail!("Cannot convert a dynamic record to static record without the underlying data");
         };
-        Record::<N, Plaintext<N>>::from_plaintext(self.owner.clone(), data.clone(), self.nonce, self.version)
+        // Create the owner.
+        let owner = match owner_is_private {
+            false => Owner::<N, Plaintext<N>>::Public(self.owner),
+            true => Owner::<N, Plaintext<N>>::Private(Plaintext::from(Literal::Address(self.owner))),
+        };
+        // Return the record.
+        Record::<N, Plaintext<N>>::from_plaintext(owner, data.clone(), self.nonce, self.version)
     }
 }
 
