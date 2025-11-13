@@ -39,6 +39,7 @@ mod tests {
 
     use console::{TestRng, Uniform};
     use snarkvm_circuit_network::AleoV0 as CurrentAleo;
+    use snarkvm_circuit_types::environment::UpdatableCount;
     
     use super::*;
 
@@ -46,7 +47,7 @@ mod tests {
 
     const ITERATIONS: usize = 50;
 
-    fn test_to_id_with_mode(mode: Mode) {
+    fn test_to_id_with_mode(mode: Mode, count: UpdatableCount) {
         let mut rng = TestRng::default();
 
         for _ in 0..ITERATIONS {
@@ -78,13 +79,21 @@ mod tests {
             // Comparing IDs
             let console_id = console_record.to_id(function_id, tvk, index).unwrap();
             assert_eq!(circuit_id.eject_value(), console_id);
+
+            // Checking the count
+            count.assert_matches(
+                CurrentAleo::num_constants(),
+                CurrentAleo::num_public(),
+                CurrentAleo::num_private(),
+                CurrentAleo::num_constraints(),
+            );
         }
     }
 
     #[test]
     fn test_to_id() {
-        test_to_id_with_mode(Mode::Constant);
-        test_to_id_with_mode(Mode::Public);
-        test_to_id_with_mode(Mode::Private);
+        test_to_id_with_mode(Mode::Constant, count_is!(714, 1, 2042, 2045));
+        test_to_id_with_mode(Mode::Public, count_is!(2487, 901, 204950, 206050));
+        test_to_id_with_mode(Mode::Private, count_is!(2937, 901, 308700, 309850));
     }
 }
