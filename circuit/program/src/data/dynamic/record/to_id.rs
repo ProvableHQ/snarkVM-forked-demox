@@ -47,24 +47,25 @@ mod tests {
 
     const ITERATIONS: usize = 50;
 
-    fn test_to_id_with_mode(mode: Mode, count: UpdatableCount) {
-        let mut rng = TestRng::default();
+    fn test_to_id_with_mode(mode: Mode, count: UpdatableCount, rng: &mut TestRng) {
 
         for _ in 0..ITERATIONS {
-            
+
+            CurrentAleo::reset();
+
             // Dynamic record fields
-            let owner_address = console::Address::<CurrentNetwork>::rand(&mut rng);
+            let owner_address = console::Address::<CurrentNetwork>::rand(rng);
             let owner = console::Owner::<CurrentNetwork, console::Plaintext<CurrentNetwork>>::Public(owner_address);
-            let root = console::Field::<CurrentNetwork>::rand(&mut rng);
-            let nonce = console::Group::<CurrentNetwork>::rand(&mut rng);
-            let version = console::U8::<CurrentNetwork>::rand(&mut rng);
+            let root = console::Field::<CurrentNetwork>::rand(rng);
+            let nonce = console::Group::<CurrentNetwork>::rand(rng);
+            let version = console::U8::<CurrentNetwork>::rand(rng);
 
             let console_record = console::DynamicRecord::<CurrentNetwork>::new_unchecked(owner, root, nonce, version, None, None);
 
             // Extra fields when computing a Dynamic record's ID
-            let function_id = console::Field::<CurrentNetwork>::rand(&mut rng);
-            let tvk = console::Field::<CurrentNetwork>::rand(&mut rng);
-            let index = console::U16::<CurrentNetwork>::rand(&mut rng);
+            let function_id = console::Field::<CurrentNetwork>::rand(rng);
+            let tvk = console::Field::<CurrentNetwork>::rand(rng);
+            let index = console::U16::<CurrentNetwork>::rand(rng);
 
             // Circuit record
             let circuit_record = DynamicRecord::<CurrentAleo>::new(mode, console_record.clone());
@@ -92,8 +93,9 @@ mod tests {
 
     #[test]
     fn test_to_id() {
-        test_to_id_with_mode(Mode::Constant, count_is!(714, 1, 2042, 2045));
-        test_to_id_with_mode(Mode::Public, count_is!(2487, 901, 204950, 206050));
-        test_to_id_with_mode(Mode::Private, count_is!(2937, 901, 308700, 309850));
+        let mut rng = TestRng::default();
+        test_to_id_with_mode(Mode::Constant, count_is!(27, 1, 2042, 2045), &mut rng);
+        test_to_id_with_mode(Mode::Public, count_is!(9, 19, 2057, 2076), &mut rng);
+        test_to_id_with_mode(Mode::Private, count_is!(9, 1, 2075, 2076), &mut rng);
     }
 }
