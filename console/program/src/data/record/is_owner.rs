@@ -36,7 +36,7 @@ impl<N: Network> Record<N, Ciphertext<N>> {
         // Compute the 0th randomizer.
         let randomizer = N::hash_many_psd8(&[N::encryption_domain(), record_view_key], 1);
         // Decrypt the owner.
-        let owner_x = record_owner_x_coordinate - &randomizer[0];
+        let owner_x = record_owner_x_coordinate - randomizer[0];
         // Check if the address is the owner.
         owner_x == address_x_coordinate
     }
@@ -52,7 +52,7 @@ impl<N: Network> Record<N, Ciphertext<N>> {
         // Compute the 0th randomizer.
         let randomizer = N::hash_many_psd8_precompute(&[N::encryption_domain(), record_view_key], 1);
         // Decrypt the owner.
-        let owner_x = record_owner_x_coordinate - &randomizer[0];
+        let owner_x = record_owner_x_coordinate - randomizer[0];
         // Check if the address is the owner.
         owner_x == address_x_coordinate
     }

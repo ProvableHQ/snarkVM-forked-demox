@@ -484,7 +484,7 @@ impl<N: Network> Process<N> {
     #[inline]
     #[cfg(feature = "wasm")]
     pub fn load_inclusion_proving_key() -> ProvingKey<N> {
-        return ProvingKey::<N>::new(N::inclusion_proving_key().clone());
+        ProvingKey::<N>::new(N::inclusion_proving_key(None).clone())
     }
 
     /// Returns the universal SRS.

@@ -61,12 +61,11 @@ pub mod prelude {
 pub use crate::environment::prelude::*;
 
 use snarkvm_algorithms::{
+    AlgebraicSponge,
     crypto_hash::PoseidonSponge,
     snark::varuna::{CircuitProvingKey, CircuitVerifyingKey, VarunaHidingMode},
     srs::{UniversalProver, UniversalVerifier},
-    AlgebraicSponge,
 };
-<<<<<<< HEAD
 use snarkvm_console_algorithms::{BHP512, BHP1024, Poseidon2, Poseidon4, Poseidon8};
 use snarkvm_console_collections::merkle_tree::{MerklePath, MerkleTree};
 use snarkvm_console_types::{Field, Group, Scalar};
