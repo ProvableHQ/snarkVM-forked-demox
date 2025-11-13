@@ -33,10 +33,11 @@ mod to_bits;
 mod to_commitment;
 mod to_fields;
 
+
 use crate::{Access, Ciphertext, Identifier, Literal, Plaintext, ProgramID, Visibility};
 use snarkvm_circuit_account::{PrivateKey, ViewKey};
 use snarkvm_circuit_network::Aleo;
-use snarkvm_circuit_types::{Boolean, Field, Group, Scalar, U8, U32, environment::prelude::*};
+use snarkvm_circuit_types::{Boolean, Field, Group, Scalar, U8, U32, prelude::ToFields, environment::prelude::*};
 
 #[derive(Clone)]
 pub struct Record<A: Aleo, Private: Visibility<A>> {

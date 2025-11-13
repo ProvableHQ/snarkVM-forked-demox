@@ -27,6 +27,9 @@ edition = "2024"
 save_r1cs_hashes = [ "snarkvm-circuit-environment/save_r1cs_hashes" ]
 dev-print = ["snarkvm-circuit-environment/dev-print"]
 
+[dependencies.anyhow]
+workspace = true
+
 [dependencies.snarkvm-circuit-account]
 workspace = true
 

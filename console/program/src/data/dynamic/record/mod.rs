@@ -18,10 +18,11 @@ mod equal;
 mod parse;
 mod to_bits;
 mod to_fields;
+mod to_id;
 
 use crate::{
     Address, Boolean, Entry, Field, Group, Identifier, Literal, Network, Owner, Plaintext, Record, Result, ToField,
-    ToFields, U8,
+    ToFields, U8, U16
 };
 
 use snarkvm_console_algorithms::{Poseidon2, Poseidon8};

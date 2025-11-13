@@ -13,32 +13,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod access;
-pub use access::Access;
+mod assignment;
+pub use assignment::*;
 
-mod ciphertext;
-pub use ciphertext::Ciphertext;
+#[cfg(test)]
+pub mod tests;
 
-mod dynamic;
-pub use dynamic::{DynamicFuture, DynamicRecord, FutureArgumentTree, RecordDataTree, RECORD_DATA_TREE_DEPTH};
+use crate::Stack;
 
-mod future;
-pub use future::{Argument, Future};
+use circuit::{
+    Inject,
+    traits::ToGroup,
+};
 
-pub(super) mod identifier;
-pub use identifier::Identifier;
-
-mod literal;
-pub use literal::{Cast, CastLossy, Literal};
-
-mod plaintext;
-pub use plaintext::Plaintext;
-
-mod record;
-pub use record::{Entry, Owner, Record};
-
-mod register;
-pub use register::Register;
-
-mod value;
-pub use value::Value;
+use console::{
+    network::prelude::*,
+    program::{DynamicRecord, Record, Plaintext, ProgramID, Identifier, RECORD_DATA_TREE_DEPTH},
+    types::{Field, Group},
+};

@@ -13,32 +13,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod access;
-pub use access::Access;
+use super::*;
 
-mod ciphertext;
-pub use ciphertext::Ciphertext;
+impl<N: Network> DynamicRecord<N> {
+    /// Returns the ID of the dynamic record.
+    pub fn to_id(
+        &self,
+        function_id: Field<N>,
+        tvk: Field<N>,
+        index: U16<N>,
+    ) -> Result<Field<N>> {
+        // Construct the preimage as `(function ID || self || tvk || index)`.
+        let mut preimage = Vec::new();
+        preimage.push(function_id);
+        preimage.extend(self.to_fields()?);
+        preimage.push(tvk);
+        preimage.push(index.to_field()?);
 
-mod dynamic;
-pub use dynamic::{DynamicFuture, DynamicRecord, FutureArgumentTree, RecordDataTree, RECORD_DATA_TREE_DEPTH};
-
-mod future;
-pub use future::{Argument, Future};
-
-pub(super) mod identifier;
-pub use identifier::Identifier;
-
-mod literal;
-pub use literal::{Cast, CastLossy, Literal};
-
-mod plaintext;
-pub use plaintext::Plaintext;
-
-mod record;
-pub use record::{Entry, Owner, Record};
-
-mod register;
-pub use register::Register;
-
-mod value;
-pub use value::Value;
+        N::hash_psd8(&preimage)
+    }
+}

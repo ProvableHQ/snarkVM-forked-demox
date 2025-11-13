@@ -16,10 +16,11 @@
 mod equal;
 mod to_bits;
 mod to_fields;
+mod to_id;
 
 use crate::{Aleo, Equal, ToBits, ToFields};
 
-use snarkvm_circuit_types::{Address, Boolean, Field, Group, U8, environment::prelude::*};
+use snarkvm_circuit_types::{Address, Boolean, Field, Group, U8, U16, environment::prelude::*};
 
 /// A dynamic record is a fixed-size representation of a record.
 /// Like static `Record`s, a dynamic record contains an owner, nonce, and a version.
