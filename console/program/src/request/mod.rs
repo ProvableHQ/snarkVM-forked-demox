@@ -53,6 +53,7 @@ pub struct Request<N: Network> {
     scm: Field<N>,
     /// Whether or not the request is dynamic.
     /// `None` implies that the request is not dynamic.
+    // TODO (@d0cd) Add an optional field for the caller IDs.
     dynamic: Option<bool>,
 }
 
