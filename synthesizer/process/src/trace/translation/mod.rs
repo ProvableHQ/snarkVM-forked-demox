@@ -16,10 +16,13 @@
 mod assignment;
 pub use assignment::*;
 
+mod prepare;
+pub use prepare::*;
+
 #[cfg(test)]
 pub mod tests;
 
-use crate::Stack;
+use crate::{Stack, Input, compute_function_id};
 
 use circuit::{
     Inject,
@@ -28,10 +31,11 @@ use circuit::{
 
 use console::{
     network::prelude::*,
-    program::{DynamicRecord, Record, Plaintext, ProgramID, Identifier, RECORD_DATA_TREE_DEPTH, ValueType},
-    types::{Field, Group},
+    program::{DynamicRecord, Record, Plaintext, ProgramID, Identifier, RECORD_DATA_TREE_DEPTH, TRANSACTION_DEPTH, ValueType},
+    types::{Field, Group, U16},
 };
-use snarkvm_ledger_block::Transition;
+use snarkvm_ledger_block::{Transition, Transaction};
+use snarkvm_ledger_query::QueryTrait;
 use snarkvm_synthesizer_program::{Function, Instruction};
 use snarkvm_synthesizer_snark::VerifyingKey;
 
@@ -44,6 +48,7 @@ pub struct Translation<N: Network> {
 }
 
 impl<N: Network> Translation<N> {
+
     /// Returns the verifier public inputs for the given call graph and transitions.
     pub fn prepare_verifier_inputs<'a>(
         translation_verifying_keys: &HashMap<(ProgramID<N>, Identifier<N>), VerifyingKey<N>>,
