@@ -21,6 +21,8 @@ impl<N: Network> Parser for RegisterType<N> {
     fn parse(string: &str) -> ParserResult<Self> {
         // Parse the mode from the string (ordering matters).
         alt((
+            map(tag("dynamic.record"), |_| Self::DynamicRecord),
+            map(tag("dynamic.future"), |_| Self::DynamicFuture),
             map(pair(Locator::parse, tag(".future")), |(locator, _)| Self::Future(locator)),
             map(pair(Locator::parse, tag(".record")), |(locator, _)| Self::ExternalRecord(locator)),
             map(pair(Identifier::parse, tag(".record")), |(identifier, _)| Self::Record(identifier)),

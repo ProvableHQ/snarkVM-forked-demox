@@ -279,7 +279,7 @@ impl<N: Network> Stack<N> {
         let num_request_constraints = A::num_constraints();
 
         // Retrieve the number of public variables in the circuit.
-        let num_public = A::num_public();
+        let mut num_public = A::num_public();
 
         // Store the inputs.
         function.inputs().iter().map(|i| i.register()).zip_eq(request.inputs()).try_for_each(|(register, input)| {
@@ -304,6 +304,11 @@ impl<N: Network> Stack<N> {
                 let result = match instruction {
                     // If the instruction is a `call` instruction, we need to handle it separately.
                     Instruction::Call(call) => CallTrait::evaluate(call, self, &mut registers, rng),
+                    // If the instruction is a `call.dynamic` instruction, we need to handle it separately.
+                    Instruction::CallDynamic(call_dynamic) => {
+                        // Evaluate the dynamic call.
+                        CallTrait::evaluate(call_dynamic, self, &mut registers, rng)
+                    }
                     // Otherwise, evaluate the instruction normally.
                     _ => instruction.evaluate(self, &mut registers),
                 };
@@ -317,6 +322,14 @@ impl<N: Network> Stack<N> {
             let result = match instruction {
                 // If the instruction is a `call` instruction, we need to handle it separately.
                 Instruction::Call(call) => CallTrait::execute(call, self, &mut registers, rng),
+                // If the instruction is a `call.dynamic` instruction, we need to handle it separately.
+                Instruction::CallDynamic(call_dynamic) => {
+                    // Increment the number of public variables.
+                    // TODO (@d0cd): Explain this count.
+                    num_public += 7;
+                    // Execute the dynamic call.
+                    CallTrait::execute(call_dynamic, self, &mut registers, rng)
+                }
                 // Otherwise, execute the instruction normally.
                 _ => instruction.execute(self, &mut registers),
             };
@@ -326,11 +339,17 @@ impl<N: Network> Stack<N> {
             }
 
             // If the instruction was a function call, then set the tracker to `true`.
-            if let Instruction::Call(call) = instruction {
-                // Check if the call is a function call.
-                if call.is_function_call(self)? {
+            match instruction {
+                Instruction::Call(call) => {
+                    if call.is_function_call(self)? {
+                        contains_function_call = true;
+                    }
+                }
+                // A dynamic call is always a function call.
+                Instruction::CallDynamic(_) => {
                     contains_function_call = true;
                 }
+                _ => {}
             }
         }
         lap!(timer, "Execute the instructions");
@@ -403,7 +422,10 @@ impl<N: Network> Stack<N> {
         // If the function does not contain function calls, ensure no new public variables were injected.
         if !contains_function_call {
             // Ensure the number of public variables remains the same.
-            ensure!(A::num_public() == num_public, "Instructions in function injected public variables");
+            ensure!(
+                A::num_public() == num_public,
+                "Instructions in function injected an unexpected number of public variables"
+            );
         }
 
         // Construct the response.

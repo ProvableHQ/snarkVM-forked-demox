@@ -29,27 +29,8 @@ use crate::{RegistersCircuit, RegistersSigner, RegistersTrait, StackTrait, instr
 use console::{
     network::Network,
     prelude::{
-        Debug,
-        Display,
-        Error,
-        Formatter,
-        FromBytes,
-        FromStr,
-        IoResult,
-        Parser,
-        ParserResult,
-        Read,
-        Result,
-        Sanitizer,
-        ToBytes,
-        Write,
-        alt,
-        bail,
-        ensure,
-        error,
-        fmt,
-        map,
-        tag,
+        Debug, Display, Error, Formatter, FromBytes, FromStr, IoResult, Parser, ParserResult, Read, Result, Sanitizer,
+        ToBytes, Write, alt, bail, ensure, error, fmt, map, tag,
     },
     program::{Register, RegisterType},
 };
@@ -74,6 +55,8 @@ pub enum Instruction<N: Network> {
     Async(Async<N>),
     /// Calls a closure or function on the operands.
     Call(Call<N>),
+    /// Dynamically calls a function on the operands.
+    CallDynamic(CallDynamic<N>),
     /// Casts the operands into the declared type.
     Cast(Cast<N>),
     /// Casts the operands into the declared type, with lossy truncation if applicable.
@@ -446,6 +429,9 @@ macro_rules! instruction {
             HashSha3_512NativeRaw,
             SerializeBits,
             SerializeBitsRaw,
+
+            // Dynamic calls are introduced in `ConsensusVersion::V12`
+            CallDynamic,
 
             // New opcodes should be added here, with a comment on which consensus version they were added in.
         }}

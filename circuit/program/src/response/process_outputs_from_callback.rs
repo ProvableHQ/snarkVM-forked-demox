@@ -229,9 +229,67 @@ impl<A: Aleo> Response<A> {
                             }
                         }
                     }
-                    // TODO (@d0cd)
-                    console::ValueType::DynamicRecord => todo!(),
-                    console::ValueType::DynamicFuture => todo!(),
+                    // For a dynamic record output, compute the hash (using `tvk`) of the output.
+                    console::ValueType::DynamicRecord => {
+                        // Inject the output as `Mode::Private`.
+                        let output = Value::new(Mode::Private, output.clone());
+                        // Ensure the output is a dynamic record.
+                        ensure!(matches!(output, Value::DynamicRecord(..)), "Expected a dynamic record output");
+
+                        // Prepare the index as a constant field element.
+                        let output_index = Field::constant(console::Field::from_u16((num_inputs + index) as u16));
+                        // Construct the preimage as `(function ID || output || tvk || index)`.
+                        let mut preimage = Vec::new();
+                        preimage.push(function_id.clone());
+                        preimage.extend(output.to_fields());
+                        preimage.push(tvk.clone());
+                        preimage.push(output_index);
+
+                        // Return the output ID.
+                        match &output {
+                            Value::DynamicRecord(..) => Ok((OutputID::dynamic_record(A::hash_psd8(&preimage)), output)),
+                            // Ensure the output is a dynamic record.
+                            Value::Plaintext(..) => {
+                                A::halt("Expected a dynamic record output, found a plaintext output")
+                            }
+                            Value::Future(..) => A::halt("Expected a dynamic record output, found a future output"),
+                            Value::Record(..) => A::halt("Expected a dynamic record output, found a record output"),
+                            Value::DynamicFuture(..) => {
+                                A::halt("Expected a dynamic record output, found a dynamic future output")
+                            }
+                        }
+                    }
+                    // For a dynamic future output, compute the hash (using `tcm`) of the output.
+                    console::ValueType::DynamicFuture => {
+                        // Inject the output as `Mode::Private`.
+                        let output = Value::new(Mode::Private, output.clone());
+                        // Ensure the output is a dynamic future.
+                        ensure!(matches!(output, Value::DynamicFuture(..)), "Expected a dynamic future output");
+
+                        // Prepare the index as a constant field element.
+                        let output_index = Field::constant(console::Field::from_u16((num_inputs + index) as u16));
+                        // Construct the preimage as `(function ID || output || tcm || index)`.
+                        let mut preimage = Vec::new();
+                        preimage.push(function_id.clone());
+                        preimage.extend(output.to_fields());
+                        preimage.push(tcm.clone());
+                        preimage.push(output_index);
+
+                        // Hash the output to a field element.
+                        match &output {
+                            // Return the output ID.
+                            Value::DynamicFuture(..) => Ok((OutputID::dynamic_future(A::hash_psd8(&preimage)), output)),
+                            // Ensure the output is a dynamic future.
+                            Value::Plaintext(..) => {
+                                A::halt("Expected a dynamic future output, found a plaintext output")
+                            }
+                            Value::Record(..) => A::halt("Expected a dynamic future output, found a record output"),
+                            Value::DynamicRecord(..) => {
+                                A::halt("Expected a dynamic future output, found a dynamic record output")
+                            }
+                            Value::Future(..) => A::halt("Expected a dynamic future output, found a future output"),
+                        }
+                    }
                 }
             })
             .collect::<Result<Vec<_>>>()
