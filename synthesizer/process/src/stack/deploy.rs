@@ -225,20 +225,21 @@ impl<N: Network> Stack<N> {
             call_stacks.push((function.name(), call_stack, assignments));
         }
 
-        // Iterate through the program records and construct the callstacks and corresponding assignments.
-        for ((record_name, record_type), (_, (verifying_key, _))) in
-            deployment.program().records().iter().zip_eq(deployment.translation_verifying_keys())
+        // Iterate through the program records and translation assignments.
+        let translation_verifying_keys = deployment.program().records().iter().zip_eq(deployment.translation_verifying_keys()).map(|((record_name, record_type), (_, (verifying_key, _)))|
         {
-            // Initialize a burner private key.
-            let burner_private_key = PrivateKey::new(rng)?;
-            // Compute the burner address.
-            let burner_address = Address::try_from(&burner_private_key)?;
+            // Initialize a private key.
+            let private_key = PrivateKey::new(rng)?;
+            // Compute the address.
+            let address = Address::try_from(&private_key)?;
+            
+            // TODO (Antonio) should stack::sample be used here instead of rand? Also, some small improvements can be made here, eg in principle private_key itself is not necessary
             
             // Construct a TranslationAssignment:
             let program_id = self.program_id().clone();
             let function_id = Field::<N>::from_u64(Uniform::rand(rng));
             let record_name = record_name.clone();
-            let record_static = self.sample_record(&burner_address, &record_name, Group::rand(rng), rng)?;
+            let record_static = self.sample_record(&address, &record_name, Group::rand(rng), rng)?;
             let record_dynamic = DynamicRecord::<N>::from_record(&record_static)?;
             let translation_count = Uniform::rand(rng);
             let tvk = Uniform::rand(rng);
@@ -248,13 +249,11 @@ impl<N: Network> Stack<N> {
             let id_dynamic = record_dynamic.to_id(function_id, tvk, U16::new(register_index)).unwrap();
             let to_static_record = Uniform::rand(rng);            
             let commitment = record_static.to_commitment(&program_id, &record_name, &record_view_key).unwrap();
-            let id_static = if to_static_record {
-                Record::<N, Plaintext<N>>::serial_number_from_gamma(&gamma, commitment).unwrap()
-            } else {
-                commitment
-            };
+            let id_static = commitment;
 
-            let translation_assignment = TranslationAssignment::new(
+            lap!(timer, "Sample the inputs to the translation circuit for record {record_name}");
+
+            Ok(TranslationAssignment::new(
                 record_static,
                 program_id,
                 function_id,
@@ -267,50 +266,70 @@ impl<N: Network> Stack<N> {
                 id_dynamic,
                 id_static,
                 record_view_key,
-                gamma,
-            );
+                gamma
+            ))
             
-            lap!(timer, "Sample the inputs to the translation circuit");
+            // TODO (Antonio) ensure none of this needs to be done in the case of translation circuit keys
+            
+            // // Compute the request, with a burner private key.
+            // let request = Request::sign(
+            //     &burner_private_key,
+            //     *program_id,
+            //     *function.name(),
+            //     inputs.into_iter(),
+            //     &input_types,
+            //     root_tvk,
+            //     is_root,
+            //     program_checksum,
+            //     Some(false), // `dynamic` is false because this is a root request.
+            //     rng,
+            // )?;
+            // lap!(timer, "Compute the request for {}", function.name());
 
-            // TODO (Antonio)
-            
-/*             // Compute the request, with a burner private key.
-            let request = Request::sign(
-                &burner_private_key,
-                *program_id,
-                *function.name(),
-                inputs.into_iter(),
-                &input_types,
-                root_tvk,
-                is_root,
-                program_checksum,
-                Some(false), // `dynamic` is false because this is a root request.
-                rng,
-            )?;
-            lap!(timer, "Compute the request for {}", function.name());
-            // Initialize the assignments.
-            let assignments = Assignments::<N>::default();
+            // // Initialize the assignments.
+            // let assignments = Assignments::<N>::default();
             // Initialize the constraint limit. Account for the constraint added after synthesis that makes the Varuna zerocheck hiding.
-            let Some(constraint_limit) = verifying_key.circuit_info.num_constraints.checked_sub(1) else {
-                // Since a deployment must always pay non-zero fee, it must always have at least one constraint.
-                bail!("The constraint limit of 0 for function '{}' is invalid", function.name());
-            };
-            // Retrieve the variable limit.
-            let variable_limit = verifying_key.num_variables();
-            // Initialize the call stack.
-            let call_stack = CallStack::CheckDeployment(
-                vec![request],
-                burner_private_key,
-                assignments.clone(),
-                Some(constraint_limit as u64),
-                Some(variable_limit),
-            );
-            // Append the function name, callstack, and assignments.
-            call_stacks.push((function.name(), call_stack, assignments)); */
-        }
+            // let Some(constraint_limit) = verifying_key.circuit_info.num_constraints.checked_sub(1) else {
+            //     // Since a deployment must always pay non-zero fee, it must always have at least one constraint.
+            //     bail!("The constraint limit of 0 for function '{}' is invalid", function.name());
+            // };
+            // // Retrieve the variable limit.
+            // let variable_limit = verifying_key.num_variables();
+            // // Initialize the call stack.
+            // let call_stack = CallStack::CheckDeployment(
+            //     vec![request],
+            //     burner_private_key,
+            //     assignments.clone(),
+            //     Some(constraint_limit as u64),
+            //     Some(variable_limit),
+            // );
+            // // Append the function name, callstack, and assignments.
+            // call_stacks.push((function.name(), call_stack, assignments));
+        }).collect_vec();
 
         // Verify the certificates.
         let rngs = (0..call_stacks.len()).map(|_| StdRng::from_seed(seeded_rng.r#gen())).collect::<Vec<_>>();
+        cfg_into_iter!(call_stacks).zip_eq(deployment.verifying_keys()).zip_eq(rngs).try_for_each(
+            |(((function_name, call_stack, assignments), (_, (verifying_key, certificate))), mut rng)| {
+                // Synthesize the circuit.
+                if let Err(err) = self.execute_function::<A, _>(call_stack, caller, root_tvk, &mut rng) {
+                    bail!("Failed to synthesize the circuit for '{function_name}': {err}")
+                }
+                // Check the certificate.
+                match assignments.read().last() {
+                    None => bail!("The assignment for function '{function_name}' is missing in '{program_id}'"),
+                    Some((assignment, _metrics)) => {
+                        // Ensure the certificate is valid.
+                        if !certificate.verify(&function_name.to_string(), assignment, verifying_key) {
+                            bail!("The certificate for function '{function_name}' is invalid in '{program_id}'")
+                        }
+                    }
+                };
+                Ok(())
+            },
+        )?;
+
+        // Verify the translation certificates.
         cfg_into_iter!(call_stacks).zip_eq(deployment.verifying_keys()).zip_eq(rngs).try_for_each(
             |(((function_name, call_stack, assignments), (_, (verifying_key, certificate))), mut rng)| {
                 // Synthesize the circuit.
