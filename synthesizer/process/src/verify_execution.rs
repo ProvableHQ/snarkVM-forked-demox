@@ -145,12 +145,14 @@ impl<N: Network> Process<N> {
                 false => None,
             };
             // Retrieve the translation verifying keys for the transition's program.
-            // TODO(dyanmic_dispatch): uncomment this code when the Stack's translation verifying keys are merged in.
             // TODO(dynamic_dispatch): minor perf issue: this can superfluously retrieve the verifying keys multiple times.
-            // for record_name in stack.program().records().keys() {
-            //     let translation_verifying_key = stack.get_translation_verifying_key(&(*transition.program_id(), *record_name)).ok_or_else(|| bail!("Translation verifying key not found for {}/{}", transition.program_id(), record_name))?;
-            //     translation_verifying_keys.insert((*transition.program_id(), *record_name), translation_verifying_key);
-            // }
+            for record_name in stack.program().records().keys() {
+                let translation_verifying_key = stack.get_translation_verifying_key(record_name).map_err(|_| 
+                    anyhow!("Translation verifying key not found for {}/{}", transition.program_id(), record_name)
+                )?;
+                translation_verifying_keys.insert((*transition.program_id(), *record_name), translation_verifying_key);
+            }
+
             // Ensure the number of inputs and outputs match the expected number in the function.
             ensure!(function.inputs().len() == num_inputs, "The number of transition inputs is incorrect");
             ensure!(function.outputs().len() == num_outputs, "The number of transition outputs is incorrect");
@@ -213,13 +215,14 @@ impl<N: Network> Process<N> {
         
         // TODO(dynamic_dispatch): bring appropriate new measurement functions from execution_cost_for_authorization to here.
 
-        for (verifying_key, batch_translation_inputs_for_record) in batch_translation_inputs.iter() {
+        for (verifying_key, batch_translation_inputs_for_record) in batch_translation_inputs.into_iter() {
             // Retrieve the number of public and private variables.
             // Note: This number does *NOT* include the number of constants. This is safe because
             // this program is never deployed, as it is a first-class citizen of the protocol.
+            // TODO (dynamic_dispatch) should this be used?
             let num_variables = verifying_key.circuit_info.num_public_and_private_variables as u64;
             // Insert the inclusion verifier inputs.
-            verifier_inputs.push((VerifyingKey::<N>::new(verifying_key, num_variables), batch_translation_inputs_for_record));
+            verifier_inputs.push((verifying_key.clone(), batch_translation_inputs_for_record));
         }
 
         // Verify the execution proof.
@@ -441,8 +444,6 @@ impl<N: Network> Process<N> {
                         // NOTE: for dynamic calls, the verifier doesn't have access to a locator or resource.
                         // However, the verifier can determine the program and function name directly from the DFS ordering of transitions in the Execution.
                         children.push(TransitionMetadata::new(&mut counter, dynamic_pid, dynamic_fname, None));
-                       
-                        translation_count += 1;
                     }
                 }
 

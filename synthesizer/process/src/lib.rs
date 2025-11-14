@@ -56,6 +56,7 @@ use console::{
         Request,
         Response,
         Value,
+        ValueType,
         compute_function_id,
     },
     types::{Field, U16, U64},
@@ -72,7 +73,6 @@ use snarkvm_synthesizer_program::{
     Instruction,
     Program,
     StackTrait,
-    ValueType,
 };
 use snarkvm_synthesizer_snark::{ProvingKey, UniversalSRS, VerifyingKey};
 use snarkvm_utilities::{defer, dev_println};
