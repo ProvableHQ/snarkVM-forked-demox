@@ -56,7 +56,7 @@ impl<N: Network> Process<N> {
         lap!(timer, "Verify the number of transitions");
 
         // Construct the call graph of the execution.
-        let call_graph = self.construct_call_graph(execution)?;
+        let call_graph = self.construct_call_graph(execution.transitions())?;
         // Construct the reverse call graph of the execution.
         // Note: This is a mapping of the child transition ID to the parent transition ID.
         let reverse_call_graph = Self::reverse_call_graph(&call_graph);
@@ -260,40 +260,87 @@ impl<N: Network> Process<N> {
         let stack = self.get_stack(parent)?;
         let parent_address = stack.program_address();
 
+        // Retrieve the function from the parent.
+        let parent_function = stack.get_function(transition.function_name())?;
+
         // Compute the x- and y-coordinate of `parent`.
         let (parent_x, parent_y) = parent_address.to_xy_coordinates();
 
         // [Inputs] Construct the verifier inputs to verify the proof.
-        let mut inputs = vec![N::Field::one()];
+        let mut verifier_inputs = vec![N::Field::one()];
         // [Inputs] Extend the verifier inputs with the program checksum if it was provided.
         if let Some(program_checksum) = program_checksum {
-            inputs.push(program_checksum);
+            verifier_inputs.push(program_checksum);
         }
         // [Inputs] Extend the verifier inputs with the tpk, transition and signer commitments.
-        inputs.extend([*tpk_x, *tpk_y, **transition.tcm(), **transition.scm()]);
+        verifier_inputs.extend([*tpk_x, *tpk_y, **transition.tcm(), **transition.scm()]);
         // [Inputs] Extend the verifier inputs with the input IDs.
-        inputs.extend(transition.inputs().iter().flat_map(|input| input.verifier_inputs()));
+        verifier_inputs.extend(transition.inputs().iter().flat_map(|input| input.verifier_inputs()));
         // [Inputs] Extend the verifier inputs with the public inputs for 'self.caller'.
-        inputs.extend([*is_root, *parent_x, *parent_y]);
+        verifier_inputs.extend([*is_root, *parent_x, *parent_y]);
+
+        // Prepare the record translation arguments from the parent transition.
+        let record_translation_arguments = transition.record_translation_args().cloned().unwrap_or_default();
+        let mut record_translation_arguments_iter = record_translation_arguments.iter();
 
         // If there are function calls, append their inputs and outputs.
-        for transition_id in call_graph.get(transition.id()).unwrap() {
+        for child_transition_id in call_graph.get(transition.id()).unwrap() {
             // Note: This unwrap is safe, as we are processing transitions in post-order,
             // which implies that all child transition IDs have been added to `transition_map`.
-            let transition: &Transition<N> = transition_map.get(transition_id).unwrap().0;
+            let (child_transition, child_function) = transition_map.get(child_transition_id).unwrap();
             // [Inputs] Extend the verifier inputs with the transition commitment of the external call.
-            inputs.extend([**transition.tcm()]);
+            verifier_inputs.extend([**child_transition.tcm()]);
             // [Inputs] Extend the verifier inputs with the input IDs of the external call.
-            inputs.extend(transition.inputs().iter().flat_map(|input| input.verifier_inputs()));
+            for ((parent_input_type, child_input_type), child_input) in parent_function.input_types().iter().zip(child_function.input_types().iter()).zip(child_transition.inputs().iter()) {
+                match (parent_input_type, child_input_type) {
+                    // When translating from or to a dynamic record, the parent encodes their version of the record.
+                    // NOTE: deployment verification ensures only dynamic calls can invoke these translations.
+                    (ValueType::DynamicRecord, ValueType::Record(_)) 
+                    | (ValueType::Record(_), ValueType::DynamicRecord) 
+                    | (ValueType::DynamicRecord, ValueType::ExternalRecord(_)) 
+                    | (ValueType::ExternalRecord(_), ValueType::DynamicRecord) => {
+                        if let Some(record_id) = record_translation_arguments_iter.next() {
+                            verifier_inputs.push(**record_id);
+                        } else {
+                            bail!("No record translation argument found for the parent input");
+                        }
+                    }
+                    // No translation to perform.
+                    _ => {
+                        verifier_inputs.extend(child_input.verifier_inputs());
+                    }
+                }
+            }
             // [Inputs] Extend the verifier inputs with the output IDs of the external call.
-            inputs.extend(transition.output_ids().map(|id| **id));
+            for ((parent_output_type, child_output_type), child_output_id) in parent_function.output_types().iter().zip(child_function.output_types().iter()).zip(child_transition.output_ids()) {
+                match (parent_output_type, child_output_type) {
+                    // When translating from or to a dynamic record, the parent encodes their version of the record.
+                    // NOTE: deployment verification ensures only dynamic calls can invoke these translations.
+                    (ValueType::DynamicRecord, ValueType::Record(_)) 
+                    | (ValueType::Record(_), ValueType::DynamicRecord) 
+                    | (ValueType::DynamicRecord, ValueType::ExternalRecord(_)) 
+                    | (ValueType::ExternalRecord(_), ValueType::DynamicRecord) => {
+                        if let Some(record_id) = record_translation_arguments_iter.next() {
+                            verifier_inputs.push(**record_id);
+                        } else {
+                            bail!("No record translation argument found for the parent output");
+                        }
+                    }
+                    // No translation to perform.
+                    _ => {
+                        verifier_inputs.extend([**child_output_id]);
+                    }
+                }
+            }
         }
+        
+        ensure!(record_translation_arguments_iter.next().is_none(), "Extra record translation argument found for the parent transition");
 
         // [Inputs] Extend the verifier inputs with the output IDs.
-        inputs.extend(transition.outputs().iter().flat_map(|output| output.verifier_inputs()));
+        verifier_inputs.extend(transition.outputs().iter().flat_map(|output| output.verifier_inputs()));
 
         dev_println!("Transition public inputs ({} elements): {:#?}", inputs.len(), inputs);
-        Ok(inputs)
+        Ok(verifier_inputs)
     }
 }
 
@@ -320,9 +367,9 @@ impl<N: Network> Process<N> {
     // In order to reconstruct the call graph, we:
     // - Iterate over the call structure in reverse post-order. The ordering is maintained by the `traversal_stack`.
     // - Process each transition in the `Execution` in reverse, assigning its transition ID to the corresponding function call.
-    pub fn construct_call_graph(
+    pub fn construct_call_graph<'a>(
         &self,
-        execution: &Execution<N>,
+        transitions: impl ExactSizeIterator<Item = &'a Transition<N>> + DoubleEndedIterator,
     ) -> Result<HashMap<N::TransitionID, Vec<N::TransitionID>>> {
         // Metadata for each transition the execution.
         struct TransitionMetadata<N: Network> {
@@ -386,7 +433,7 @@ impl<N: Network> Process<N> {
         let dynamic_fname = Identifier::<N>::from_str("dynamic")?;
 
         // Iterate over each transition in reverse post-order, and populate the call graph.
-        for transition in execution.transitions().rev() {
+        for transition in transitions.rev() {
             // Now process the current `transition`.
             // At this point, the algorithm must maintain the following invariant:
             // - The stack is either empty, or the top entry is incomplete.
@@ -469,10 +516,6 @@ impl<N: Network> Process<N> {
         }
         // Check that the the traversal completed correctly.
         ensure!(traversal_stack.is_empty(), "Invalid traversal - traversal stack is not empty");
-        ensure!(
-            counter == execution.len(),
-            "Invalid traversal - counter does not match the number of transitions in the execution"
-        );
 
         Ok(call_graph)
     }

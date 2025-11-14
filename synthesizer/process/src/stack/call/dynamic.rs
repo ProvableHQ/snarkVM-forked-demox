@@ -50,6 +50,9 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         };
         let function_name = Identifier::from_field(&function_name_as_field)?;
 
+        // Get the Request of the caller.
+        let caller_request = registers.call_stack_ref().peek()?;
+
         // Separate the remaining inputs as the function inputs.
         let inputs = &inputs[3..];
 
@@ -142,7 +145,33 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             // Evaluate the function.
             let response = substack.evaluate_function::<A, R>(call_stack, console_caller, root_tvk, rng)?;
             // Load the outputs.
-            response.outputs().to_vec()
+            let outputs = response.outputs().to_vec();
+            // Collect record inputs to translate.
+            // TODO(dynamic_dispatch): it is inconsistent to compare InputID and ValueType.
+            // Consider taking InputID from the new Request, or getting the ValueType from the caller function.
+            ensure!(caller_request.input_ids().len() == function.inputs().len(), "Expected {} inputs, found {}", function.inputs().len(), caller_request.input_ids().len());
+            for (parent_input_id, child_input) in caller_request.input_ids().iter().zip(function.inputs()) {
+                match (parent_input_id, child_input.value_type()) {
+                    (InputID::Record(id, ..), ValueType::DynamicRecord) => registers.insert_record_translation_argument(*id),
+                    (InputID::DynamicRecord(id), ValueType::ExternalRecord(_)) => registers.insert_record_translation_argument(*id),
+                    (InputID::DynamicRecord(id), ValueType::Record(_)) => registers.insert_record_translation_argument(*id),
+                    _ => { } // No translation to perform.
+                }
+            }
+            // Collect record outputs to translate.
+            // TODO(dynamic_dispatch): it is inconsistent to compare OutputID and ValueType.
+            // Consider taking OutputIDs from the new Response, or getting the ValueType from the caller function.
+            ensure!(response.output_ids().len() == function.outputs().len(), "Expected {} outputs, found {}", function.outputs().len(), response.output_ids().len());
+            for (parent_output_id, child_output) in response.output_ids().iter().zip(function.outputs()) {
+                match (parent_output_id, child_output.value_type()) {
+                    (OutputID::Record(id, ..), ValueType::DynamicRecord) => registers.insert_record_translation_argument(*id), 
+                    (OutputID::DynamicRecord(id), ValueType::ExternalRecord(_)) => registers.insert_record_translation_argument(*id),
+                    (OutputID::DynamicRecord(id), ValueType::Record(_)) => registers.insert_record_translation_argument(*id),
+                    _ => { } // No translation to perform.
+                }
+            }
+            // Return the outputs.
+            outputs
         }
         // Else, throw an error.
         else {
@@ -198,6 +227,9 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         else {
             bail!("Expected the third operand of `call.dynamic` to be a 'Field' literal.")
         };
+
+        // Get the Request of the caller.
+        let caller_request = registers.call_stack_ref().peek()?;
 
         // Separate the remaining inputs as the function inputs.
         let inputs = &inputs[3..];
@@ -441,6 +473,30 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                 }
             };
             lap!(timer, "Computed the request and response");
+
+            // Collect record inputs to translate.
+            ensure!(caller_request.input_ids().len() == request.input_ids().len(), "Expected {} inputs, found {}", request.input_ids().len(), caller_request.input_ids().len());
+            for (parent_input_id, child_input_id) in caller_request.input_ids().iter().zip(request.input_ids()) {
+                match (parent_input_id, child_input_id) {
+                    (InputID::ExternalRecord(id), InputID::DynamicRecord(_)) => registers.insert_record_translation_argument(*id),
+                    (InputID::Record(id, ..), InputID::DynamicRecord(_)) => registers.insert_record_translation_argument(*id),
+                    (InputID::DynamicRecord(id), InputID::Record(..)) => registers.insert_record_translation_argument(*id),
+                    (InputID::DynamicRecord(id), InputID::ExternalRecord(_)) => registers.insert_record_translation_argument(*id),
+                    _ => { } // No translation to perform.
+                }
+            }
+            // // Collect record outputs to translate.
+            // // TODO(dynamic_dispatch): it is inconsistent to compare OutputIDs and ValueType.
+            // // Consider taking OutputIDs from the new Response, or getting the ValueType from the caller function.
+            // ensure!(response.output_ids().len() == function.outputs().len(), "Expected {} outputs, found {}", function.outputs().len(), response.output_ids().len());
+            // for (parent_output_id, child_output) in response.output_ids().iter().zip(function.outputs()) {
+            //     match (parent_output_id, child_output.value_type()) {
+            //         (OutputID::Record(id, ..), ValueType::DynamicRecord) => registers.insert_record_translation_argument(*id),
+            //         (OutputID::DynamicRecord(id), ValueType::ExternalRecord(_)) => registers.insert_record_translation_argument(*id),
+            //         (OutputID::DynamicRecord(id), ValueType::Record(_)) => registers.insert_record_translation_argument(*id),
+            //         _ => { } // No translation to perform.
+            //     }
+            // }
 
             // Inject the existing circuit.
             A::inject_r1cs(r1cs);

@@ -434,7 +434,8 @@ mod tests {
             rng.r#gen(),
             rng.r#gen(),
             rng.r#gen(),
-            Some(rng.r#gen()),
+            None,
+            None,
         )
         .unwrap();
         assert!(!restrictions.is_argument_restricted(&transition, 5));

@@ -18,7 +18,7 @@ use aleo_std::prelude::{finish, lap, timer};
 use console::{
     account::Field,
     network::prelude::*,
-    program::{Identifier, Literal, Plaintext, ProgramID, Register, Request, Value, ValueType},
+    program::{Identifier, Literal, Plaintext, ProgramID, Register, Request, Value, ValueType, InputID, OutputID},
 };
 use snarkvm_synthesizer_program::{
     Call, CallDynamic, CallOperator, Operand, RegistersCircuit as _, RegistersSigner as _, RegistersTrait as _,

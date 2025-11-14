@@ -63,6 +63,18 @@ impl<N: Network, A: circuit::Aleo<Network = N>> RegistersSigner<N> for Registers
     fn set_tvk(&mut self, tvk: Field<N>) {
         self.tvk = Some(tvk);
     }
+
+    /// Returns the record translation arguments.
+    #[inline]
+    fn record_translation_arguments(&self) -> Option<&Vec<Field<N>>> {
+        self.record_translation_arguments.as_ref()
+    }
+
+    /// Inserts a record translation argument.
+    #[inline]
+    fn insert_record_translation_argument(&mut self, record_translation_argument: Field<N>) {
+        self.record_translation_arguments.get_or_insert_with(Vec::new).push(record_translation_argument);
+    }
 }
 
 impl<N: Network, A: circuit::Aleo<Network = N>> RegistersTrait<N> for Registers<N, A> {

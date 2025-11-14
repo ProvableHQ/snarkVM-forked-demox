@@ -164,7 +164,7 @@ impl<N: Network> CallStack<N> {
     }
 
     /// Peeks at the next request from the stack.
-    pub fn peek(&mut self) -> Result<Request<N>> {
+    pub fn peek(&self) -> Result<Request<N>> {
         match self {
             CallStack::Authorize(requests, ..)
             | CallStack::Synthesize(requests, ..)

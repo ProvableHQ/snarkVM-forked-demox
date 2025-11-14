@@ -488,8 +488,10 @@ impl<N: Network> Stack<N> {
 
         // If the circuit is in `Authorize` mode, then save the transition.
         if let CallStack::Authorize(_, _, authorization) = registers.call_stack_ref() {
+            // Get the record translation arguments.
+            let record_translation_arguments = registers.record_translation_arguments().cloned();
             // Construct the transition.
-            let transition = Transition::from(&console_request, &response, &output_types, &output_registers)?;
+            let transition = Transition::from(&console_request, &response, &output_types, &output_registers, record_translation_arguments)?;
             // Add the transition to the authorization.
             authorization.insert_transition(transition)?;
             lap!(timer, "Save the transition");
@@ -513,8 +515,10 @@ impl<N: Network> Stack<N> {
         else if let CallStack::Execute(_, trace) = registers.call_stack_ref() {
             registers.ensure_console_and_circuit_registers_match()?;
 
+            // Get the record translation arguments.
+            let record_translation_arguments = registers.record_translation_arguments().cloned();
             // Construct the transition.
-            let transition = Transition::from(&console_request, &response, &output_types, &output_registers)?;
+            let transition = Transition::from(&console_request, &response, &output_types, &output_registers, record_translation_arguments)?;
 
             // Retrieve the proving key.
             let proving_key = self.get_proving_key(function.name())?;

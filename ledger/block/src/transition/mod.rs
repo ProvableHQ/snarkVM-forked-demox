@@ -65,6 +65,8 @@ pub struct Transition<N: Network> {
     tcm: Field<N>,
     /// The transition signer commitment.
     scm: Field<N>,
+    /// The IDs for dynamic and external records which need to be translated in a dynamic call.
+    record_translation_args: Option<Vec<Field<N>>>,
     /// Whether or not the transition is dynamic.
     dynamic: Option<bool>,
 }
@@ -80,13 +82,14 @@ impl<N: Network> Transition<N> {
         tpk: Group<N>,
         tcm: Field<N>,
         scm: Field<N>,
+        record_translation_args: Option<Vec<Field<N>>>,
         dynamic: Option<bool>,
     ) -> Result<Self> {
         // Compute the transition ID.
         let function_tree = Self::function_tree(&inputs, &outputs)?;
         let id = N::hash_bhp512(&(*function_tree.root(), tcm).to_bits_le())?;
         // Return the transition.
-        Ok(Self { id: id.into(), program_id, function_name, inputs, outputs, tpk, tcm, scm, dynamic })
+        Ok(Self { id: id.into(), program_id, function_name, inputs, outputs, tpk, tcm, scm, record_translation_args, dynamic })
     }
 
     /// Initializes a new transition from a request and response.
@@ -95,6 +98,7 @@ impl<N: Network> Transition<N> {
         response: &Response<N>,
         output_types: &[ValueType<N>],
         output_registers: &[Option<Register<N>>],
+        record_translation_args: Option<Vec<Field<N>>>,
     ) -> Result<Self> {
         let network_id = *request.network_id();
         let program_id = *request.program_id();
@@ -106,6 +110,9 @@ impl<N: Network> Transition<N> {
             request.is_dynamic() == response.is_dynamic(),
             "The request and response must both be either dynamic or static"
         );
+        if record_translation_args.is_some() {
+            ensure!(request.is_dynamic(), "The record translation IDs must only be provided if the request and response are dynamic");
+        }
 
         // Compute the function ID based on the whether the request and response are dynamic.
         let function_id = compute_function_id(&network_id, &program_id, &function_name, request.is_dynamic())?;
@@ -303,7 +310,7 @@ impl<N: Network> Transition<N> {
         // Retrieve the `scm`.
         let scm = *request.scm();
         // Return the transition.
-        Self::new(program_id, function_name, inputs, outputs, tpk, tcm, scm, request.dynamic())
+        Self::new(program_id, function_name, inputs, outputs, tpk, tcm, scm, record_translation_args, request.dynamic())
     }
 }
 
@@ -346,6 +353,16 @@ impl<N: Network> Transition<N> {
     /// Returns the signer commitment.
     pub const fn scm(&self) -> &Field<N> {
         &self.scm
+    }
+    
+    /// Returns the record IDs which need to be translated in a dynamic call.
+    pub const fn record_translation_args(&self) -> Option<&Vec<Field<N>>> {
+        self.record_translation_args.as_ref()
+    }
+
+    /// Returns the number of record translation arguments.
+    pub fn num_record_translation_args(&self) -> usize {
+        self.record_translation_args.as_ref().map(|args| args.len()).unwrap_or(0)
     }
 
     /// Returns the `dynamic` flag.

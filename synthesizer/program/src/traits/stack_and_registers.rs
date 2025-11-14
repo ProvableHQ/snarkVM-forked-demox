@@ -212,6 +212,12 @@ pub trait RegistersSigner<N: Network>: RegistersTrait<N> {
 
     /// Sets the transition view key.
     fn set_tvk(&mut self, tvk: Field<N>);
+
+    /// Returns the record translation arguments.
+    fn record_translation_arguments(&self) -> Option<&Vec<Field<N>>>;
+
+    /// Inserts a record translation argument.
+    fn insert_record_translation_argument(&mut self, record_translation_argument: Field<N>);
 }
 
 pub trait RegistersTrait<N: Network> {

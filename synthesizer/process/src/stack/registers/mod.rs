@@ -52,6 +52,8 @@ pub struct Registers<N: Network, A: circuit::Aleo<Network = N>> {
     tvk: Option<Field<N>>,
     /// The transition view key, as a circuit.
     tvk_circuit: Option<circuit::Field<A>>,
+    /// The record translation arguments.
+    record_translation_arguments: Option<Vec<Field<N>>>,
 }
 
 impl<N: Network, A: circuit::Aleo<Network = N>> Registers<N, A> {
@@ -83,6 +85,7 @@ impl<N: Network, A: circuit::Aleo<Network = N>> Registers<N, A> {
             caller_circuit: None,
             tvk: None,
             tvk_circuit: None,
+            record_translation_arguments: None,
         }
     }
 

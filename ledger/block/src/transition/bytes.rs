@@ -72,15 +72,23 @@ impl<N: Network> FromBytes for Transition<N> {
         // Read the signer commitment.
         let scm = FromBytes::read_le(&mut reader)?;
 
-        // If the version is 2, read the `dynamic` flag.
-        let dynamic = match version {
-            1 => None,
-            2 => Some(FromBytes::read_le(&mut reader)?),
+        // If the version is 2, read the record translation arguments and the dynamic flag.
+        let (record_translation_arguments, dynamic) = match version {
+            1 => (None, None),
+            2 => {
+                let num_record_translation_arguments: u8 = FromBytes::read_le(&mut reader)?;
+                let mut record_translation_arguments = Vec::with_capacity(num_record_translation_arguments as usize);
+                for _ in 0..num_record_translation_arguments {
+                    record_translation_arguments.push(FromBytes::read_le(&mut reader)?);
+                }
+                let dynamic = FromBytes::read_le(&mut reader)?;
+                (Some(record_translation_arguments), Some(dynamic))
+            },
             _ => return Err(error("Invalid transition version")),
         };
 
         // Construct the candidate transition.
-        let transition = Self::new(program_id, function_name, inputs, outputs, tpk, tcm, scm, dynamic)
+        let transition = Self::new(program_id, function_name, inputs, outputs, tpk, tcm, scm, record_translation_arguments, dynamic)
             .map_err(|e| error(e.to_string()))?;
         // Ensure the transition ID matches the expected ID.
         match transition_id == *transition.id() {
@@ -124,6 +132,15 @@ impl<N: Network> ToBytes for Transition<N> {
         self.scm.write_le(&mut writer)?;
         // Write the `dynamic` flag, if it exists.
         if let Some(dynamic) = &self.dynamic {
+            // Write the number of record translation arguments.
+            (u8::try_from(self.num_record_translation_args()).map_err(|e| error(e.to_string()))?).write_le(&mut writer)?;
+            // Write the record translation arguments.
+            if let Some(record_translation_args) = self.record_translation_args() {
+                for record_translation_argument in record_translation_args.iter() {
+                    record_translation_argument.write_le(&mut writer)?;
+                }
+            }
+            // Write the dynamic flag.
             dynamic.write_le(&mut writer)?;
         }
 

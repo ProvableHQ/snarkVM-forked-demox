@@ -52,6 +52,8 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
     type ReverseTCMMap: for<'a> Map<'a, Field<N>, N::TransitionID>;
     /// The signer commitments.
     type SCMMap: for<'a> Map<'a, N::TransitionID, Field<N>>;
+    /// The mapping of `transition ID` to record translation arguments.
+    type RecordTranslationArgsMap: for<'a> Map<'a, N::TransitionID, Vec<Field<N>>>;
     /// The mapping of `transition commitment` to whether or not it is dynamic.
     type DynamicMap: for<'a> Map<'a, N::TransitionID, bool>;
 
@@ -74,6 +76,8 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
     fn reverse_tcm_map(&self) -> &Self::ReverseTCMMap;
     /// Returns the signer commitments map.
     fn scm_map(&self) -> &Self::SCMMap;
+    /// Returns the record translation arguments map.
+    fn record_translation_args_map(&self) -> &Self::RecordTranslationArgsMap;
     /// Returns the `dynamic` map.
     fn dynamic_map(&self) -> &Self::DynamicMap;
 
@@ -93,6 +97,7 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
         self.tcm_map().start_atomic();
         self.reverse_tcm_map().start_atomic();
         self.scm_map().start_atomic();
+        self.record_translation_args_map().start_atomic();
         self.dynamic_map().start_atomic();
     }
 
@@ -106,6 +111,7 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
             || self.tcm_map().is_atomic_in_progress()
             || self.reverse_tcm_map().is_atomic_in_progress()
             || self.scm_map().is_atomic_in_progress()
+            || self.record_translation_args_map().is_atomic_in_progress()
             || self.dynamic_map().is_atomic_in_progress()
     }
 
@@ -119,6 +125,7 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
         self.tcm_map().atomic_checkpoint();
         self.reverse_tcm_map().atomic_checkpoint();
         self.scm_map().atomic_checkpoint();
+        self.record_translation_args_map().atomic_checkpoint();
         self.dynamic_map().atomic_checkpoint();
     }
 
@@ -132,6 +139,7 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
         self.tcm_map().clear_latest_checkpoint();
         self.reverse_tcm_map().clear_latest_checkpoint();
         self.scm_map().clear_latest_checkpoint();
+        self.record_translation_args_map().clear_latest_checkpoint();
         self.dynamic_map().clear_latest_checkpoint();
     }
 
@@ -145,6 +153,7 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
         self.tcm_map().atomic_rewind();
         self.reverse_tcm_map().atomic_rewind();
         self.scm_map().atomic_rewind();
+        self.record_translation_args_map().atomic_rewind();
         self.dynamic_map().atomic_rewind();
     }
 
@@ -158,6 +167,7 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
         self.tcm_map().abort_atomic();
         self.reverse_tcm_map().abort_atomic();
         self.scm_map().abort_atomic();
+        self.record_translation_args_map().abort_atomic();
         self.dynamic_map().abort_atomic();
     }
 
@@ -171,6 +181,7 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
         self.tcm_map().finish_atomic()?;
         self.reverse_tcm_map().finish_atomic()?;
         self.scm_map().finish_atomic()?;
+        self.record_translation_args_map().finish_atomic()?;
         self.dynamic_map().finish_atomic()
     }
 
@@ -195,6 +206,10 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
             self.reverse_tcm_map().insert(*transition.tcm(), transition_id)?;
             // Store `scm`.
             self.scm_map().insert(transition_id, *transition.scm())?;
+            // Store the record translation arguments.
+            if let Some(record_translation_args) = transition.record_translation_args() {
+                self.record_translation_args_map().insert(transition_id, record_translation_args.clone())?;
+            }
             // Store the `dynamic` flag,  if it exists.
             if let Some(is_dynamic) = transition.dynamic() {
                 self.dynamic_map().insert(transition_id, is_dynamic)?;
@@ -232,6 +247,8 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
             self.reverse_tcm_map().remove(&tcm)?;
             // Remove `scm`.
             self.scm_map().remove(transition_id)?;
+            // Remove the record translation arguments.
+            self.record_translation_args_map().remove(transition_id)?;
             // Remove the `dynamic` flag.
             self.dynamic_map().remove(transition_id)?;
 
@@ -257,6 +274,10 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
         let tcm = self.tcm_map().get_confirmed(transition_id)?;
         // Retrieve `scm`.
         let scm = self.scm_map().get_confirmed(transition_id)?;
+        // Retrieve the record translation arguments.
+        // If it does not exist, then this transition was created before the record translation arguments were introduced.
+        // The correct value to use is `None`.
+        let record_translation_args = self.record_translation_args_map().get_confirmed(transition_id)?;
         // Retrieve the `dynamic` flag.
         // If it is does not exist, then this transition was created before the `dynamic` flag was introduced.
         // The correct value to use is `None`.
@@ -273,6 +294,7 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
                     tpk.into_owned(),
                     tcm.into_owned(),
                     scm.into_owned(),
+                    record_translation_args.map(|o| o.into_owned()),
                     dynamic.map(|o| o.into_owned()),
                 )?;
                 // Ensure the transition ID matches.
@@ -305,6 +327,8 @@ pub struct TransitionStore<N: Network, T: TransitionStorage<N>> {
     reverse_tcm: T::ReverseTCMMap,
     /// The map of signer commitments.
     scm: T::SCMMap,
+    /// The map of record translation arguments.
+    record_translation_args: T::RecordTranslationArgsMap,
     /// The `dynamic` map.
     dynamic: T::DynamicMap,
     /// The transition storage.
@@ -326,6 +350,7 @@ impl<N: Network, T: TransitionStorage<N>> TransitionStore<N, T> {
             tcm: storage.tcm_map().clone(),
             reverse_tcm: storage.reverse_tcm_map().clone(),
             scm: storage.scm_map().clone(),
+            record_translation_args: storage.record_translation_args_map().clone(),
             dynamic: storage.dynamic_map().clone(),
             storage,
         })
@@ -342,6 +367,7 @@ impl<N: Network, T: TransitionStorage<N>> TransitionStore<N, T> {
             tcm: storage.tcm_map().clone(),
             reverse_tcm: storage.reverse_tcm_map().clone(),
             scm: storage.scm_map().clone(),
+            record_translation_args: storage.record_translation_args_map().clone(),
             dynamic: storage.dynamic_map().clone(),
             storage,
         }
@@ -521,6 +547,11 @@ impl<N: Network, T: TransitionStorage<N>> TransitionStore<N, T> {
     /// Returns `true` if the given transition commitment exists.
     pub fn contains_tcm(&self, tcm: &Field<N>) -> Result<bool> {
         self.reverse_tcm.contains_key_confirmed(tcm)
+    }
+    
+    /// Returns `true` if the given record translation argument exists.
+    pub fn contains_record_translation_argument(&self, transition_id: &N::TransitionID) -> Result<bool> {
+        self.record_translation_args.contains_key_confirmed(transition_id)
     }
 
     /// Returns the `dynamic` flag for the given transition commitment, if it exists.

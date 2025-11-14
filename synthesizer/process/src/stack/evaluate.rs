@@ -280,8 +280,10 @@ impl<N: Network> Stack<N> {
 
         // If the circuit is in `Authorize` mode, then save the transition.
         if let CallStack::Authorize(_, _, authorization) = registers.call_stack_ref() {
+            // Get the record translation arguments.
+            let record_translation_arguments = registers.record_translation_arguments().cloned();
             // Construct the transition.
-            let transition = Transition::from(&request, &response, &function.output_types(), &output_registers)?;
+            let transition = Transition::from(&request, &response, &function.output_types(), &output_registers, record_translation_arguments)?;
             // Add the transition to the authorization.
             authorization.insert_transition(transition)?;
             lap!(timer, "Save the transition");
