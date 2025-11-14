@@ -485,6 +485,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                     _ => { } // No translation to perform.
                 }
             }
+            // TODO(dynamic_dispatch): implement this.
             // // Collect record outputs to translate.
             // // TODO(dynamic_dispatch): it is inconsistent to compare OutputIDs and ValueType.
             // // Consider taking OutputIDs from the new Response, or getting the ValueType from the caller function.

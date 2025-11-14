@@ -25,7 +25,7 @@ pub use translation::*;
 use circuit::Assignment;
 use console::{
     network::prelude::*,
-    program::{InputID, Locator},
+    program::{InputID, Locator, Value},
 };
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use snarkvm_ledger_block::{Execution, Fee, Transition};
@@ -44,11 +44,17 @@ pub struct Trace<N: Network> {
     transition_tasks: HashMap<Locator<N>, (ProvingKey<N>, Vec<Assignment<N::Field>>)>,
     /// A tracker for all inclusion tasks.
     inclusion_tasks: Inclusion<N>,
+    /// A tracker for all translation tasks.
+    translation_tasks: Translation<N>,
     /// A list of call metrics.
     call_metrics: Vec<CallMetrics<N>>,
+    /// A map of transition IDs to child transition IDs.
+    call_graph: HashMap<N::TransitionID, Vec<N::TransitionID>>,
 
     /// A tracker for the inclusion assignments.
     inclusion_assignments: OnceLock<Vec<InclusionAssignmentWrapper<N>>>,
+    /// A tracker for the translation assignments.
+    translation_assignments: OnceLock<Vec<(VerifyingKey<N>, Vec<TranslationAssignment<N>>)>>,
     /// A tracker for the global state root.
     global_state_root: OnceLock<N::StateRoot>,
 }
@@ -60,9 +66,12 @@ impl<N: Network> Trace<N> {
             transitions: Vec::new(),
             transition_tasks: HashMap::new(),
             inclusion_tasks: Inclusion::new(),
-            inclusion_assignments: OnceLock::new(),
-            global_state_root: OnceLock::new(),
+            translation_tasks: Translation::new(),
             call_metrics: Vec::new(),
+            call_graph: HashMap::new(),
+            inclusion_assignments: OnceLock::new(),
+            translation_assignments: OnceLock::new(),
+            global_state_root: OnceLock::new(),
         }
     }
 
@@ -75,6 +84,11 @@ impl<N: Network> Trace<N> {
     pub fn call_metrics(&self) -> &[CallMetrics<N>] {
         &self.call_metrics
     }
+
+    /// Returns the call graph.
+    pub fn call_graph(&self) -> &HashMap<N::TransitionID, Vec<N::TransitionID>> {
+        &self.call_graph
+    }
 }
 
 impl<N: Network> Trace<N> {
@@ -82,16 +96,19 @@ impl<N: Network> Trace<N> {
     pub fn insert_transition(
         &mut self,
         input_ids: &[InputID<N>],
+        input_values: &[Value<N>],
         transition: &Transition<N>,
         (proving_key, assignment): (ProvingKey<N>, Assignment<N::Field>),
         metrics: CallMetrics<N>,
     ) -> Result<()> {
         // Ensure the inclusion assignments and global state root have not been set.
         ensure!(self.inclusion_assignments.get().is_none());
+        ensure!(self.translation_assignments.get().is_none());
         ensure!(self.global_state_root.get().is_none());
 
-        // Insert the transition into the inclusion tasks.
+        // Insert the transition into the inclusion and translation tasks.
         self.inclusion_tasks.insert_transition(input_ids, transition)?;
+        self.translation_tasks.insert_transition(input_ids, input_values, transition)?;
 
         // Construct the locator.
         let locator = Locator::new(*transition.program_id(), *transition.function_name());
@@ -132,14 +149,24 @@ impl<N: Network> Trace<N> {
 }
 
 impl<N: Network> Trace<N> {
+    /// Constructs the call graph.
+    pub fn construct_call_graph(&mut self, process: &crate::Process<N>) -> Result<()> {
+        self.call_graph = process.construct_call_graph(self.transitions.iter())?;
+        Ok(())
+    }
+}
+
+impl<N: Network> Trace<N> {
     /// Returns the inclusion assignments and global state root for the current transition(s).
     pub fn prepare(&mut self, query: &dyn QueryTrait<N>) -> Result<()> {
-        // Compute the inclusion assignments.
+        // Compute the inclusion and translation assignments.
         let (inclusion_assignments, global_state_root) = self.inclusion_tasks.prepare(&self.transitions, query)?;
-        // Store the inclusion assignments and global state root.
+        let translation_assignments = self.translation_tasks.prepare(&self.transitions, &self.call_graph)?;
+        // Store the inclusion and translation assignments and global state root.
         self.inclusion_assignments
             .set(inclusion_assignments)
             .map_err(|_| anyhow!("Failed to set inclusion assignments"))?;
+        self.translation_assignments.set(translation_assignments).map_err(|_| anyhow!("Failed to set translation assignments"))?;
         self.global_state_root.set(global_state_root).map_err(|_| anyhow!("Failed to set global state root"))?;
         Ok(())
     }

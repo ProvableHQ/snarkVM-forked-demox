@@ -31,7 +31,7 @@ use circuit::{
 
 use console::{
     network::prelude::*,
-    program::{DynamicRecord, Record, Plaintext, ProgramID, Identifier, RECORD_DATA_TREE_DEPTH, TRANSACTION_DEPTH, ValueType},
+    program::{DynamicRecord, Record, InputID, Plaintext, ProgramID, Identifier, RECORD_DATA_TREE_DEPTH, TRANSACTION_DEPTH, Value, ValueType},
     types::{Field, Group, U16},
 };
 use snarkvm_ledger_block::{Transition, Transaction};
@@ -42,12 +42,65 @@ use snarkvm_synthesizer_snark::VerifyingKey;
 use std::collections::{BTreeMap, HashMap};
 use std::marker::PhantomData;
 
-// #[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
+struct InputTask<N: Network> {
+    /// The commitment.
+    commitment: Field<N>,
+    /// The gamma value.
+    gamma: Group<N>,
+    /// The serial number.
+    serial_number: Field<N>,
+    /// The record.
+    record: Record<N, Plaintext<N>>,
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct Translation<N: Network> { 
-    _phantom: PhantomData<N>,
+    /// A map of `transition IDs` to a list of `input tasks`.
+    input_tasks: HashMap<N::TransitionID, Vec<InputTask<N>>>,
 }
 
 impl<N: Network> Translation<N> {
+    /// Initializes a new `Translation` instance.
+    pub fn new() -> Self {
+        Self { input_tasks: HashMap::new() }
+    }
+
+    /// Inserts the transition to build state for the translation task.
+    pub fn insert_transition(&mut self, input_ids: &[InputID<N>], input_values: &[Value<N>], transition: &Transition<N>) -> Result<()> {
+        // Ensure the transition inputs, input IDs and input values are the same length.
+        if input_ids.len() != transition.inputs().len() {
+            bail!("Inclusion expected the same number of input IDs as transition inputs")
+        }
+        if input_values.len() != transition.inputs().len() {
+            bail!("Translation expected the same number of inputs as transition inputs")
+        }
+
+        // Retrieve the transition index.
+        let transition_index = u16::try_from(self.input_tasks.len())?;
+
+        // Initialize the input tasks.
+        let input_tasks = self.input_tasks.entry(*transition.id()).or_default();
+
+        // Process the inputs.
+        for (input_id, input_value) in input_ids.iter().zip(input_values.iter()) {
+            // Filter the inputs for records.
+            if let InputID::Record(commitment, gamma, _, serial_number, _) = input_id {
+                let Value::Record(record) = input_value else {
+                    bail!("Translation expected a record input value")
+                };
+                // Add the record to the input tasks.
+                input_tasks.push(InputTask {
+                    commitment: *commitment,
+                    gamma: *gamma,
+                    serial_number: *serial_number,
+                    record: record.clone(),
+                });
+            }
+        }
+
+        Ok(())
+    }
 
     /// Returns the verifier public inputs for the given call graph and transitions.
     pub fn prepare_verifier_inputs<'a>(

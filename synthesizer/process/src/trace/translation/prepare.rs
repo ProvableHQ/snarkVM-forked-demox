@@ -19,7 +19,7 @@ use snarkvm_synthesizer_snark::ProvingKey;
 use super::*;
 
 macro_rules! prepare_impl {
-    ($self:ident, $transitions:ident, $query:ident, $current_state_root:ident, $current_block_height:ident, $get_state_paths_for_commitments:ident $(, $await:ident)?) => {{
+    ($self:ident, $transitions:ident, $call_graph:ident) => {{
 
         // Initialize a vector for the batch verifier inputs.
         let mut batch_prover_inputs: HashMap<(ProgramID<N>, Identifier<N>), Vec<TranslationAssignment<N>>> = HashMap::new();
@@ -31,16 +31,16 @@ macro_rules! prepare_impl {
         // Initialize a vector for the assignments.
         let mut assignments = vec![];
 
-        // Retrieve the current block height.
-        let current_block_height = {
-            $query.$current_block_height()
-            $(.$await)?
-        }?;
-
-        // Determine which consensus version is being used.
-        let consensus_version = N::CONSENSUS_VERSION(current_block_height)?;
-
         for transition in $transitions.iter() {
+            // Process the input tasks.
+            match $self.input_tasks.get(transition.id()) {
+                Some(tasks) => {
+                    for task in tasks {
+                        // TODO (dynamic_dispatch) implement this.
+                    }
+                },
+                None => { bail!("Missing input tasks for transition {} in translation", transition.id()) }
+            }
 
             let program_id = transition.program_id().clone();
 
@@ -51,59 +51,59 @@ macro_rules! prepare_impl {
             // TODO (dynamic_dispatch) should we distinguish caller/callee?
             let function_id = compute_function_id(&network_id, &program_id, transition.function_name(), transition.is_dynamic())?;
     
-            for (register_index, input) in transition.inputs().iter().enumerate() {
-                match input {
-                    Input::Record(serial_number, tag) => {
-                        // TODO (dynamic_dispatch) construct the translations object; it could contain pointerse to records in other transactions if we're okay with introducing a lifetime
-                        let Some((
-                            record_static,
-                            static_record_name,
-                            record_view_key,
-                            gamma_option
-                        )) = transition.translations().get(translation_count) else {
-                            bail!("Translation data {translation_count} for transition {} (case 1) not found", transition.id());
-                        };
+            // for (register_index, input) in transition.inputs().iter().enumerate() {
+            //     match input {
+            //         Input::Record(serial_number, tag) => {
+            //             // TODO (dynamic_dispatch) construct the translations object; it could contain pointerse to records in other transactions if we're okay with introducing a lifetime
+            //             let Some((
+            //                 record_static,
+            //                 static_record_name,
+            //                 record_view_key,
+            //                 gamma_option
+            //             )) = transition.translations().get(translation_count) else {
+            //                 bail!("Translation data {translation_count} for transition {} (case 1) not found", transition.id());
+            //             };
 
-                        let to_static_record = true;
+            //             let to_static_record = true;
                         
-                        let commitment = record_static.to_commitment(&program_id, &static_record_name, &record_view_key).unwrap();
+            //             let commitment = record_static.to_commitment(&program_id, &static_record_name, &record_view_key).unwrap();
 
-                        let Some(gamma) = gamma_option else {
-                            bail!("Translation {translation_count} for transition {} (case 1) consumes a static record, but no gamma was supplied", transition.id());
-                        };
+            //             let Some(gamma) = gamma_option else {
+            //                 bail!("Translation {translation_count} for transition {} (case 1) consumes a static record, but no gamma was supplied", transition.id());
+            //             };
 
-                        ensure!(
-                            Record::<N, Plaintext<N>>::serial_number_from_gamma(&gamma, commitment).unwrap() == *serial_number,
-                            "In translation {translation_count} for transition {} (case 1), the serial number of the static record does not match the expected value", transition.id());
+            //             ensure!(
+            //                 Record::<N, Plaintext<N>>::serial_number_from_gamma(&gamma, commitment).unwrap() == *serial_number,
+            //                 "In translation {translation_count} for transition {} (case 1), the serial number of the static record does not match the expected value", transition.id());
 
-                        let record_dynamic = DynamicRecord::<N>::from_record(&record_static)?;
+            //             let record_dynamic = DynamicRecord::<N>::from_record(&record_static)?;
 
-                        let id_dynamic = record_dynamic.to_id(function_id, tvk, U16::new(register_index as u16)).unwrap();
+            //             let id_dynamic = record_dynamic.to_id(function_id, tvk, U16::new(register_index as u16)).unwrap();
 
-                        // TODO (dynamic_dispatch) fix this if necessary
-                        let child_program_id = program_id.clone();
+            //             // TODO (dynamic_dispatch) fix this if necessary
+            //             let child_program_id = program_id.clone();
                         
-                        batch_prover_inputs.entry((child_program_id, *static_record_name)).or_default().push(TranslationAssignment::new(
-                            record_static,
-                            program_id,
-                            function_id,
-                            static_record_name,
-                            record_dynamic,
-                            to_static_record,
-                            translation_count,
-                            tvk,
-                            // TODO (dynamic_dispatch) is this the correct register index?
-                            register_index as u16,
-                            id_dynamic,
-                            *serial_number,
-                            record_view_key,
-                            gamma,
-                        ));
+            //             batch_prover_inputs.entry((child_program_id, *static_record_name)).or_default().push(TranslationAssignment::new(
+            //                 record_static,
+            //                 program_id,
+            //                 function_id,
+            //                 static_record_name,
+            //                 record_dynamic,
+            //                 to_static_record,
+            //                 translation_count,
+            //                 tvk,
+            //                 // TODO (dynamic_dispatch) is this the correct register index?
+            //                 register_index as u16,
+            //                 id_dynamic,
+            //                 *serial_number,
+            //                 record_view_key,
+            //                 gamma,
+            //             ));
 
-                        translation_count += 1;
-                    }
-                }
-            }
+            //             translation_count += 1;
+            //         }
+            //     }
+            // }
 
             //         (ValueType::DynamicRecord, ValueType::Record(record_identifier)) => {
             //             // Case 1: the dynamic call passes in a dynamic record which becomes a static record in the callee.
@@ -210,15 +210,12 @@ impl<N: Network> Translation<N> {
     pub fn prepare(
         &self,
         transitions: &[Transition<N>],
-        query: &dyn QueryTrait<N>,
+        call_graph: &HashMap<N::TransitionID, Vec<N::TransitionID>>,
     ) -> Result<Vec<(VerifyingKey<N>, Vec<TranslationAssignment<N>>)>> {
         prepare_impl!(
             self,
             transitions,
-            query,
-            current_state_root,
-            current_block_height,
-            get_state_paths_for_commitments
+            call_graph
         )
     }
 
@@ -227,16 +224,12 @@ impl<N: Network> Translation<N> {
     pub async fn prepare_async(
         &self,
         transitions: &[Transition<N>],
-        query: &dyn QueryTrait<N>,
+        call_graph: &HashMap<N::TransitionID, Vec<N::TransitionID>>,
     ) -> Result<Vec<(VerifyingKey<N>, Vec<TranslationAssignment<N>>)>> {
         prepare_impl!(
             self,
             transitions,
-            query,
-            current_state_root_async,
-            current_block_height_async,
-            get_state_paths_for_commitments_async,
-            await
+            call_graph
         )
     }
 }
