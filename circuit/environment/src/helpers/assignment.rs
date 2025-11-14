@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use super::R1CS;
 
-use anyhow::{bail, ensure, Result};
+use anyhow::{Result, bail, ensure};
 
 /// A struct that contains public variable assignments, private variable assignments,
 /// and constraint assignments.
@@ -230,10 +230,7 @@ impl<F: PrimeField> snarkvm_algorithms::r1cs::ConstraintSynthesizer<F> for Assig
 /// Asserts whether the representations of the constraints underlying the two
 /// assignments are equal (regardless of the concrete values taken in the
 /// assignments).
-pub fn compare_constraints<F: PrimeField>(
-    assignment_1: &Assignment<F>,
-    assignment_2: &Assignment<F>,
-) -> Result<()> {
+pub fn compare_constraints<F: PrimeField>(assignment_1: &Assignment<F>, assignment_2: &Assignment<F>) -> Result<()> {
     ensure!(
         assignment_1.num_public() == assignment_2.num_public(),
         "Number of public variables in the assignments do not match: {} vs. {}",
@@ -252,8 +249,10 @@ pub fn compare_constraints<F: PrimeField>(
         assignment_1.num_constraints(),
         assignment_2.num_constraints()
     );
-    
-    for (i, (constraint1, constraint2)) in assignment_1.constraints().iter().zip(assignment_2.constraints().iter()).enumerate() {
+
+    for (i, (constraint1, constraint2)) in
+        assignment_1.constraints().iter().zip(assignment_2.constraints().iter()).enumerate()
+    {
         // Compare the scopes
         ensure!(
             constraint1.0 == constraint2.0,
@@ -265,7 +264,7 @@ pub fn compare_constraints<F: PrimeField>(
         // Compare the constraint terms
         let (lc1a, lc1b, lc1c) = constraint1.to_terms();
         let (lc2a, lc2b, lc2c) = constraint2.to_terms();
-        
+
         for ((lc1, lc2), letter) in [(lc1a, lc2a), (lc1b, lc2b), (lc1c, lc2c)].iter().zip(["A", "B", "C"].iter()) {
             ensure!(
                 lc1.to_constant() == lc2.to_constant(),
@@ -278,10 +277,17 @@ pub fn compare_constraints<F: PrimeField>(
                 ensure!(var1.1 == var2.1, "Coefficients in constraint {letter}{i} do not match: {var1:?} vs. {var2:?}");
                 match (&var1.0, &var2.0) {
                     (Variable::Constant(v1), Variable::Constant(v2)) => {
-                        ensure!(v1 == v2, "Constant terms in constraint {letter}{i} do not match: {var1:?} vs. {var2:?}");
+                        ensure!(
+                            v1 == v2,
+                            "Constant terms in constraint {letter}{i} do not match: {var1:?} vs. {var2:?}"
+                        );
                     }
-                    (Variable::Public(index_value1), Variable::Public(index_value2)) | (Variable::Private(index_value1), Variable::Private(index_value2)) => {
-                        ensure!(index_value1.0 == index_value2.0, "Indices in variable terms in constraint {letter}{i} do not match: {var1:?} vs. {var2:?}");
+                    (Variable::Public(index_value1), Variable::Public(index_value2))
+                    | (Variable::Private(index_value1), Variable::Private(index_value2)) => {
+                        ensure!(
+                            index_value1.0 == index_value2.0,
+                            "Indices in variable terms in constraint {letter}{i} do not match: {var1:?} vs. {var2:?}"
+                        );
                     }
                     _ => {
                         bail!("Terms in constraint {letter}{i} have incompatible types: {var1:?} vs. {var2:?}");
@@ -290,7 +296,7 @@ pub fn compare_constraints<F: PrimeField>(
             }
         }
     }
-    
+
     Ok(())
 }
 

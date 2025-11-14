@@ -13,7 +13,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use circuit::{Aleo, Poseidon2, Poseidon8, merkle_tree::MerkleTree, traits::{ToField, ToFields}};
+use circuit::{
+    Aleo,
+    Poseidon2,
+    Poseidon8,
+    merkle_tree::MerkleTree,
+    traits::{ToField, ToFields},
+};
 
 use super::*;
 
@@ -37,7 +43,7 @@ pub struct TranslationAssignment<N: Network> {
     pub(super) record_name: Identifier<N>,
     /// The dynamic record representing the static one.
     pub(super) record_dynamic: DynamicRecord<N>,
-    /// True if the dynamic record is being translated to the static one, false if translation is happening in the opposite direction. 
+    /// True if the dynamic record is being translated to the static one, false if translation is happening in the opposite direction.
     pub(super) to_static_record: bool,
     /// The number of times a translation circuit has been invoked in the current batch.
     pub(super) translation_count: u16,
@@ -111,16 +117,18 @@ impl<N: Network> TranslationAssignment<N> {
 
         // Inject the translation-direction flag as `Mode::Public`.
         let circuit_to_static_record = circuit::Boolean::<A>::new(circuit::Mode::Public, self.to_static_record);
-        
+
         // Inject the calling function id as `Mode::Public`.
         let circuit_function_id = circuit::Field::<A>::new(circuit::Mode::Public, self.function_id);
 
         // Inject the translation count as `Mode::Public`.
-        let _circuit_translation_count = circuit::U16::<A>::new(circuit::Mode::Public, console::types::U16::<N>::new(self.translation_count));
+        let _circuit_translation_count =
+            circuit::U16::<A>::new(circuit::Mode::Public, console::types::U16::<N>::new(self.translation_count));
 
         // Inject the register index as `Mode::Public`.
-        let circuit_register_index = circuit::U16::<A>::new(circuit::Mode::Public, console::types::U16::<N>::new(self.register_index));
-        
+        let circuit_register_index =
+            circuit::U16::<A>::new(circuit::Mode::Public, console::types::U16::<N>::new(self.register_index));
+
         // Inject the commitment or serial number of the static record as `Mode::Public`.
         let circuit_id_static = circuit::Field::<A>::new(circuit::Mode::Public, self.id_static);
 
@@ -128,12 +136,14 @@ impl<N: Network> TranslationAssignment<N> {
         let circuit_id_dynamic = circuit::Field::<A>::new(circuit::Mode::Public, self.id_dynamic);
 
         // ******** Private inputs
-        
+
         // Inject the static record as `Mode::Private`.
-        let circuit_record_static = circuit::Record::<A, circuit::Plaintext<A>>::new(circuit::Mode::Private, self.record_static.clone());
+        let circuit_record_static =
+            circuit::Record::<A, circuit::Plaintext<A>>::new(circuit::Mode::Private, self.record_static.clone());
 
         // Inject the dynamic as `Mode::Private`.
-        let circuit_record_dynamic = circuit::DynamicRecord::<A>::new(circuit::Mode::Private, self.record_dynamic.clone());
+        let circuit_record_dynamic =
+            circuit::DynamicRecord::<A>::new(circuit::Mode::Private, self.record_dynamic.clone());
 
         // Inject the transition view key as `Mode::Private`.
         let circuit_tvk = circuit::Field::<A>::new(circuit::Mode::Private, self.tvk);
@@ -145,20 +155,16 @@ impl<N: Network> TranslationAssignment<N> {
         let circuit_gamma = circuit::Group::<A>::new(circuit::Mode::Private, self.gamma);
 
         // ******** Computing the IDs of the dynamic and static records
-        
-        let actual_id_dynamic = circuit_record_dynamic.to_id(
-            circuit_function_id,
-            circuit_tvk,
-            circuit_register_index,
-        );
 
-        let circuit_static_commitment = circuit_record_static.to_commitment(
-            &circuit_program_id,
-            &circuit_record_name,
-            &circuit_record_view_key,
-        );
+        let actual_id_dynamic = circuit_record_dynamic.to_id(circuit_function_id, circuit_tvk, circuit_register_index);
 
-        let circuit_static_serial_number = circuit::Record::<A, circuit::Plaintext<A>>::serial_number_from_gamma(&circuit_gamma, circuit_static_commitment.clone());
+        let circuit_static_commitment =
+            circuit_record_static.to_commitment(&circuit_program_id, &circuit_record_name, &circuit_record_view_key);
+
+        let circuit_static_serial_number = circuit::Record::<A, circuit::Plaintext<A>>::serial_number_from_gamma(
+            &circuit_gamma,
+            circuit_static_commitment.clone(),
+        );
 
         let actual_id_static = circuit::Field::<A>::ternary(
             &circuit_to_static_record,
@@ -173,13 +179,18 @@ impl<N: Network> TranslationAssignment<N> {
         let circuit_leaf_hasher = CircuitLH::<A>::constant(console_leaf_hasher.clone());
         let circuit_path_hasher = CircuitPH::<A>::constant(console_path_hasher.clone());
 
-        let circuit_leaves = circuit_record_static.data().iter().map(|(identifier, entry)| {
-            let mut leaf = vec![identifier.to_field()];
-            leaf.extend(entry.to_fields());
-            leaf
-        }).collect::<Vec<Vec<circuit::Field<A>>>>();
+        let circuit_leaves = circuit_record_static
+            .data()
+            .iter()
+            .map(|(identifier, entry)| {
+                let mut leaf = vec![identifier.to_field()];
+                leaf.extend(entry.to_fields());
+                leaf
+            })
+            .collect::<Vec<Vec<circuit::Field<A>>>>();
 
-        let circuit_tree = RecordMerkleTree::<A>::new(circuit_leaf_hasher, circuit_path_hasher, &circuit_leaves).unwrap();
+        let circuit_tree =
+            RecordMerkleTree::<A>::new(circuit_leaf_hasher, circuit_path_hasher, &circuit_leaves).unwrap();
         let circuit_data_root = circuit_tree.root();
 
         // ******** Assertions
@@ -203,7 +214,7 @@ impl<N: Network> TranslationAssignment<N> {
     ///     sn = serial_number(cm, gamma)
     ///     internal_id_static_record = to_static_record ? sn : cm
     ///     internal_id_dynamic_record = HashPSD8([[calling_function_id]] | dynamic_record | tvk | [[register_index]])
-    /// 
+    ///
     ///     assert static_record.owner == dynamic_record.owner
     ///     assert static_record.nonce == dynamic_record.nonce
     ///     assert static_record.version == dynamic_record.version
@@ -213,7 +224,10 @@ impl<N: Network> TranslationAssignment<N> {
     /// ```
     pub fn to_circuit_assignment<A: circuit::Aleo<Network = N>>(&self) -> Result<circuit::Assignment<N::Field>> {
         self.to_circuit_assignment_internal::<A>()?;
-        Stack::log_circuit::<A>(format_args!("Translation circuit for dynamic record with nonce {}", self.record_static.nonce()));
+        Stack::log_circuit::<A>(format_args!(
+            "Translation circuit for dynamic record with nonce {}",
+            self.record_static.nonce()
+        ));
         Ok(A::eject_assignment_and_reset())
     }
 }

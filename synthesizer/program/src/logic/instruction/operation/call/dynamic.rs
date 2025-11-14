@@ -14,7 +14,8 @@
 // limitations under the License.
 
 use crate::{
-    Opcode, Operand,
+    Opcode,
+    Operand,
     traits::{RegistersCircuit, RegistersTrait, StackTrait},
 };
 
@@ -506,10 +507,9 @@ mod tests {
                 Operand::Register(Register::Locator(5)),
                 Operand::Register(Register::Locator(6)),
                 Operand::Register(Register::Access(0, vec![Access::from(Identifier::from_str("owner").unwrap())])),
-                Operand::Register(Register::Access(
-                    0,
-                    vec![Access::from(Identifier::from_str("token_amount").unwrap())],
-                )),
+                Operand::Register(Register::Access(0, vec![Access::from(
+                    Identifier::from_str("token_amount").unwrap(),
+                )])),
             ],
             vec![Register::Locator(1), Register::Locator(2), Register::Locator(3)],
             vec![

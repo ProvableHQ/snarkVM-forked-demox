@@ -49,7 +49,7 @@ pub struct Request<N: Network> {
     tvk: Field<N>,
     /// The transition commitment.
     tcm: Field<N>,
-    /// The signer comm7fba93b6-1514-4b1c-9cab-a8607986861eitment.
+    /// The signer commitment.
     scm: Field<N>,
     /// Whether or not the request is dynamic.
     /// `None` implies that the request is not dynamic.

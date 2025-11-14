@@ -21,13 +21,10 @@ pub mod tests;
 
 use crate::Stack;
 
-use circuit::{
-    Inject,
-    traits::ToGroup,
-};
+use circuit::{Inject, traits::ToGroup};
 
 use console::{
     network::prelude::*,
-    program::{DynamicRecord, Record, Plaintext, ProgramID, Identifier, RECORD_DATA_TREE_DEPTH},
+    program::{DynamicRecord, Identifier, Plaintext, ProgramID, RECORD_DATA_TREE_DEPTH, Record},
     types::{Field, Group},
 };

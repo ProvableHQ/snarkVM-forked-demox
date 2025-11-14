@@ -54,7 +54,7 @@ program test_dcall.aleo;
 //    input r0 as dynamic.future;
 //    await r0; 
         
-function dyn_dub_transfer_public:
+function two_transfer_publics:
     input r0 as field.public;
     input r1 as field.public;
     input r2 as field.public;
@@ -62,9 +62,9 @@ function dyn_dub_transfer_public:
     input r4 as u64.public;
     call.dynamic r0 r1 r2 with r3 r4 (as address.public u64.public) into r5 (as dynamic.future);
     call.dynamic r0 r1 r2 with r3 r4 (as address.public u64.public) into r6 (as dynamic.future);
-    async dyn_dub_transfer_public r5 r6 into r7;
-    output r7 as test_dcall.aleo/dyn_dub_transfer_public.future;
-finalize dyn_dub_transfer_public:
+    async two_transfer_publics r5 r6 into r7;
+    output r7 as test_dcall.aleo/two_transfer_publics.future;
+finalize two_transfer_publics:
     input r0 as dynamic.future;
     input r1 as dynamic.future;
     await r1;
@@ -80,6 +80,9 @@ function dynamic_transfer_private:
     call.dynamic r0 r1 r2 with r3 r4 r5 (as dynamic.record address.public u64.public) into r6 r7 (as dynamic.record dynamic.record);
     output r6 as dynamic.record;
     output r7 as dynamic.record;
+
+constructor:
+    assert.eq true true;
     ",
     )?;
 
@@ -127,7 +130,7 @@ function dynamic_transfer_private:
     // Execute the "dynamic" function.
     let transaction = vm.execute(
         &caller_private_key,
-        ("test_dynamic_call_to_transfer_public.aleo", "dynamic"),
+        ("test_dcall.aleo", "two_transfer_publics"),
         vec![
             Value::from_str(&format!("{credits_as_field}"))?,
             Value::from_str(&format!("{aleo_as_field}"))?,

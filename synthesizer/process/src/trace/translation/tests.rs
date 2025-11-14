@@ -14,9 +14,15 @@
 // limitations under the License.
 
 use circuit::{environment::compare_constraints, prelude::count_is};
-use console::{types::U16, program::{Plaintext, ProgramID, Record}, types::Field};
+use console::{
+    program::{Plaintext, ProgramID, Record},
+    types::{Field, U16},
+};
 
-use crate::{TranslationAssignment, tests::test_utils::{CurrentAleo, CurrentNetwork}};
+use crate::{
+    TranslationAssignment,
+    tests::test_utils::{CurrentAleo, CurrentNetwork},
+};
 
 use super::*;
 
@@ -26,9 +32,8 @@ fn translation_assignment_from_record_str(
     record_str: &str,
     to_static_record: bool,
     function_id_opt: Option<Field<CurrentNetwork>>,
-    rng: &mut TestRng
+    rng: &mut TestRng,
 ) -> TranslationAssignment<CurrentNetwork> {
-
     // Independent fields
     let record_static = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_str(record_str).unwrap();
     let program_id = ProgramID::<CurrentNetwork>::from_str("space_fighters.aleo").unwrap();
@@ -44,7 +49,7 @@ fn translation_assignment_from_record_str(
     let record_dynamic = DynamicRecord::<CurrentNetwork>::from_record(&record_static).unwrap();
 
     let id_dynamic = record_dynamic.to_id(function_id, tvk, U16::new(register_index)).unwrap();
-    
+
     let commitment = record_static.to_commitment(&program_id, &record_name, &record_view_key).unwrap();
     let id_static = if to_static_record {
         Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::serial_number_from_gamma(&gamma, commitment).unwrap()
@@ -79,7 +84,6 @@ fn print_rc1s_data(name: &str) {
 
 #[test]
 fn test_translation_simple() {
-
     let mut rng = TestRng::default();
 
     let record_static_str = r#"{
@@ -127,7 +131,6 @@ fn test_translation_simple() {
 
 #[test]
 fn test_translation_recursive() {
-
     let mut rng = TestRng::default();
 
     let record_static_str = r#"{
@@ -198,7 +201,6 @@ fn test_translation_recursive() {
 
 #[test]
 fn test_translation_complex() {
-
     let mut rng = TestRng::default();
 
     let record_static_str = r#"{
@@ -288,7 +290,6 @@ fn test_translation_complex() {
 // by e. g. the data in the record's entries.
 #[test]
 fn test_definition_invariance() {
-
     let mut rng = TestRng::default();
 
     let record_strings = [
@@ -395,7 +396,7 @@ fn test_definition_invariance() {
         translation_assignment_from_record_str(record_strings[2], false, function_id, &mut rng),
         translation_assignment_from_record_str(record_strings[2], true, function_id, &mut rng),
     ];
-    
+
     // Checking parameters of the first translation separately
     translation_assignments[0].to_circuit_assignment_internal::<CurrentAleo>().unwrap();
     let counts = count_is!(37753, 37, 29500, 29558);
@@ -408,7 +409,10 @@ fn test_definition_invariance() {
 
     // Testing circuit invariance across all translations
     <CurrentAleo as circuit::Environment>::reset();
-    let circuit_assignments = translation_assignments.iter().map(|assignment| assignment.to_circuit_assignment::<CurrentAleo>().unwrap()).collect_vec();
+    let circuit_assignments = translation_assignments
+        .iter()
+        .map(|assignment| assignment.to_circuit_assignment::<CurrentAleo>().unwrap())
+        .collect_vec();
 
     for circuit_assignment in circuit_assignments.iter().skip(1) {
         compare_constraints(&circuit_assignments[0], &circuit_assignment).unwrap();
@@ -419,7 +423,6 @@ fn test_definition_invariance() {
 // the program ID or the identifier of a record's entry change
 #[test]
 fn test_definition_variance() {
-
     let mut rng = TestRng::default();
 
     let record_strings = [
@@ -489,7 +492,10 @@ fn test_definition_variance() {
     // We need to ensure the function ID is the same in some of the test cases
     let function_id = Some(Field::<CurrentNetwork>::from_u64(Uniform::rand(&mut rng)));
 
-    let mut translation_assignments = record_strings.iter().map(|record_str| translation_assignment_from_record_str(record_str, false, function_id, &mut rng)).collect_vec();
+    let mut translation_assignments = record_strings
+        .iter()
+        .map(|record_str| translation_assignment_from_record_str(record_str, false, function_id, &mut rng))
+        .collect_vec();
 
     // Modifying the program ID
     let mut assignment_modified_program_id = translation_assignments[0].clone();
@@ -501,7 +507,10 @@ fn test_definition_variance() {
     assignment_modified_record_name.record_name = Identifier::<CurrentNetwork>::from_str("spacemotorbike").unwrap();
     translation_assignments.push(assignment_modified_record_name);
 
-    let circuit_assignments = translation_assignments.iter().map(|assignment| assignment.to_circuit_assignment::<CurrentAleo>().unwrap()).collect_vec();
+    let circuit_assignments = translation_assignments
+        .iter()
+        .map(|assignment| assignment.to_circuit_assignment::<CurrentAleo>().unwrap())
+        .collect_vec();
 
     for circuit_assignment in circuit_assignments.iter().skip(1) {
         assert!(compare_constraints(&circuit_assignments[0], &circuit_assignment).is_err());

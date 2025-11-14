@@ -18,10 +18,27 @@ use aleo_std::prelude::{finish, lap, timer};
 use console::{
     account::Field,
     network::prelude::*,
-    program::{Identifier, Literal, Plaintext, ProgramID, Register, Request, Value, ValueType},
+    program::{
+        DynamicFuture,
+        DynamicRecord,
+        Identifier,
+        Literal,
+        Plaintext,
+        ProgramID,
+        Register,
+        Request,
+        Value,
+        ValueType,
+    },
 };
 use snarkvm_synthesizer_program::{
-    Call, CallDynamic, CallOperator, Operand, RegistersCircuit as _, RegistersSigner as _, RegistersTrait as _,
+    Call,
+    CallDynamic,
+    CallOperator,
+    Operand,
+    RegistersCircuit as _,
+    RegistersSigner as _,
+    RegistersTrait as _,
     StackTrait,
 };
 use snarkvm_utilities::dev_eprintln;
