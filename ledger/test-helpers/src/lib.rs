@@ -181,6 +181,8 @@ function compute:
         edition % 2,
         deployment.program().clone(),
         deployment.verifying_keys().clone(),
+        // TODO (dynamic_dispatch): should this be sampled here, be empty or should a new sample_deployment_version_v<n> be created?
+        deployment.translation_verifying_keys().clone(),
         deployment.program_checksum(),
         deployment.program_owner(),
     )
@@ -225,6 +227,8 @@ function compute:
         edition,
         deployment.program().clone(),
         deployment.verifying_keys().clone(),
+        // TODO (dynamic_dispatch): should this be sampled here, be empty or should a new sample_deployment_version_v<n> be created?
+        deployment.translation_verifying_keys().clone(),
         deployment.program_checksum(),
         deployment.program_owner(),
     )

@@ -46,6 +46,8 @@ pub fn deployment_cost<N: Network>(
     } else {
         deployment_cost_v1(process, deployment)
     }
+
+    // TODO (dynamic_dispatch): call deployment_cost_v3 from the relevant consensus version onwards.
 }
 
 /// Returns the execution cost in microcredits for a given execution.
@@ -179,6 +181,14 @@ pub fn execute_compute_cost_in_microcredits(
             .ok_or(anyhow!("The storage and finalize cost computation overflowed for an execution"))?
     };
     Ok(cost_to_check)
+}
+
+pub fn deployment_cost_v3<N: Network>(
+    _process: &Process<N>,
+    _deployment: &Deployment<N>,
+) -> Result<(MinimumCost, DeployCostDetails)> {
+    // TODO (dynamic_dispatch): implement this. Add translation-circuit-related costs (e. g. synthesis)
+    bail!("deployment_cost_v3 is not implemented");
 }
 
 /// Returns the *minimum* cost in microcredits to publish the given deployment using the ARC_0005_COMPUTE_DISCOUNT.

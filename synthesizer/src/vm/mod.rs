@@ -1583,6 +1583,7 @@ function do:
             deployment.edition(),
             deployment.program().clone(),
             vks_with_overreport,
+            Vec::new(),
             deployment.program_checksum(),
             deployment.program_owner(),
         )
@@ -1644,6 +1645,7 @@ function do:
             deployment.edition(),
             deployment.program().clone(),
             vks_with_underreport,
+            Vec::new(),
             deployment.program_checksum(),
             deployment.program_owner(),
         )
@@ -1725,6 +1727,7 @@ function do:
             deployment.edition(),
             deployment.program().clone(),
             vks_with_underreport,
+            Vec::new(),
             deployment.program_checksum(),
             deployment.program_owner(),
         )

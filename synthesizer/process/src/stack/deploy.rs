@@ -225,8 +225,8 @@ impl<N: Network> Stack<N> {
             call_stacks.push((function.name(), call_stack, assignments));
         }
 
-        // Iterate through the program records and translation assignments.
-        let translation_verifying_keys = deployment.program().records().iter().zip_eq(deployment.translation_verifying_keys()).map(|((record_name, record_type), (_, (verifying_key, _)))|
+        // Iterate through the program records and produce translation assignments.
+        let translation_names_assignments = deployment.program().records().iter().zip_eq(deployment.translation_verifying_keys()).map(|((record_name, record_type), (_, (verifying_key, _)))|
         {
             // Initialize a private key.
             let private_key = PrivateKey::new(rng)?;
@@ -253,7 +253,7 @@ impl<N: Network> Stack<N> {
 
             lap!(timer, "Sample the inputs to the translation circuit for record {record_name}");
 
-            Ok(TranslationAssignment::new(
+            Ok((record_name, TranslationAssignment::new(
                 record_static,
                 program_id,
                 function_id,
@@ -267,10 +267,11 @@ impl<N: Network> Stack<N> {
                 id_static,
                 record_view_key,
                 gamma
-            ))
+            )))
+
+            // TODO (dynamic_dispatch): does the verifying key need to be tested here, for instance in terms of constraint/variable bounds?
             
-            // TODO (Antonio) ensure none of this needs to be done in the case of translation circuit keys
-            
+            // TODO (dynamic_dispatch): ensure none of this needs to be done in the case of translation circuit keys
             // // Compute the request, with a burner private key.
             // let request = Request::sign(
             //     &burner_private_key,
@@ -305,7 +306,7 @@ impl<N: Network> Stack<N> {
             // );
             // // Append the function name, callstack, and assignments.
             // call_stacks.push((function.name(), call_stack, assignments));
-        }).collect_vec();
+        }).collect::<Result<Vec<_>>>()?;
 
         // Verify the certificates.
         let rngs = (0..call_stacks.len()).map(|_| StdRng::from_seed(seeded_rng.r#gen())).collect::<Vec<_>>();
@@ -330,23 +331,21 @@ impl<N: Network> Stack<N> {
         )?;
 
         // Verify the translation certificates.
-        cfg_into_iter!(call_stacks).zip_eq(deployment.verifying_keys()).zip_eq(rngs).try_for_each(
-            |(((function_name, call_stack, assignments), (_, (verifying_key, certificate))), mut rng)| {
+        cfg_into_iter!(translation_names_assignments).zip_eq(deployment.translation_verifying_keys()).try_for_each(
+            |((record_name, translation_assignment), (_, (verifying_key, certificate)))| {
                 // Synthesize the circuit.
-                if let Err(err) = self.execute_function::<A, _>(call_stack, caller, root_tvk, &mut rng) {
-                    bail!("Failed to synthesize the circuit for '{function_name}': {err}")
-                }
-                // Check the certificate.
-                match assignments.read().last() {
-                    None => bail!("The assignment for function '{function_name}' is missing in '{program_id}'"),
-                    Some((assignment, _metrics)) => {
+                match translation_assignment.to_circuit_assignment::<A>() {
+                    Err(err) => Err(anyhow!("Failed to synthesize the circuit for '{record_name}': {err}")),
+                    Ok(circuit_assignment) => {
+                        // TODO (dynamic_dispatch): unlike in the transition-verifying-key case, we only need one assignment per record name, here, correct?
                         // Ensure the certificate is valid.
-                        if !certificate.verify(&function_name.to_string(), assignment, verifying_key) {
-                            bail!("The certificate for function '{function_name}' is invalid in '{program_id}'")
-                        }
-                    }
-                };
-                Ok(())
+                        ensure!(
+                            certificate.verify(&record_name.to_string(), &circuit_assignment, verifying_key),
+                            "The translation-circuit certificate for record '{record_name}' is invalid in '{program_id}'"
+                        );
+                        Ok(())
+                    },
+                }
             },
         )?;
 
