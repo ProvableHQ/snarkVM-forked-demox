@@ -158,13 +158,23 @@ impl<N: Network> Translation<N> {
                 );
                 for ((call_operand_type, child_input), child_input_type) in dynamic_call.operand_types().iter().zip(child_transition.inputs().iter()).zip(child_function.input_types().iter()) {
                     match (call_operand_type, child_input_type) {
-                        // TODO (dynamic_dispatch): add these cases.
-                        // (ValueType::DynamicRecord, ValueType::ExternalRecord(record_identifier)) => {
-                        // }
-                        // (ValueType::Record(record_identifier), ValueType::DynamicRecord) => {
-                        // }
+                        (ValueType::DynamicRecord, ValueType::ExternalRecord(locator)) => {
+                            let dynamic_record_fid = *parent_function.name().to_field()?;
+                            let dynamic_record_id = if let Some(record_translation_argument) = record_translation_arguments_iter.next() {
+                                **record_translation_argument
+                            } else {
+                                bail!("No record translation argument found for the parent input");
+                            };
+                            let static_record_id = **child_input.id();
+                            let to_static_record = N::Field::one();
+                            let translation_count_field = *Field::<N>::from_bits_le(&translation_count.to_bits_le())?;
+                            
+                            batch_verifier_inputs.entry((*child_program_id, *locator.resource())).or_default().push(
+                                vec![translation_count_field, dynamic_record_fid, dynamic_record_id, static_record_id, to_static_record]
+                            );
+                            translation_count += 1;
+                        }
                         (ValueType::DynamicRecord, ValueType::Record(record_identifier)) => {
-                            // Case 1: the dynamic call passes in a dynamic record which becomes a static record in the callee.
                             let dynamic_record_fid = *parent_function.name().to_field()?;
                             let dynamic_record_id = if let Some(record_translation_argument) = record_translation_arguments_iter.next() {
                                 **record_translation_argument
@@ -180,8 +190,23 @@ impl<N: Network> Translation<N> {
                             );
                             translation_count += 1;
                         }
+                        (ValueType::ExternalRecord(locator), ValueType::DynamicRecord) => {
+                            let dynamic_record_fid = *child_function.name().to_field()?;
+                            let dynamic_record_id = **child_input.id();
+                            let static_record_id = if let Some(record_translation_argument) = record_translation_arguments_iter.next() {
+                                **record_translation_argument
+                            } else {
+                                bail!("No record translation argument found for the parent input");
+                            };
+                            let to_static_record = N::Field::zero();
+                            let translation_count_field = *Field::<N>::from_bits_le(&translation_count.to_bits_le())?;
+                            
+                            batch_verifier_inputs.entry((*child_program_id, *locator.resource())).or_default().push(
+                                vec![translation_count_field, dynamic_record_fid, dynamic_record_id, static_record_id, to_static_record]
+                            );
+                            translation_count += 1;
+                        }
                         (ValueType::Record(record_identifier), ValueType::DynamicRecord) => {
-                            // Case 2: the dynamic call passes in a static record which becomes a dynamic record.
                             let dynamic_record_fid = *child_function.name().to_field()?;
                             let dynamic_record_id = **child_input.id();
                             let static_record_id = if let Some(record_translation_argument) = record_translation_arguments_iter.next() {
@@ -208,13 +233,23 @@ impl<N: Network> Translation<N> {
                 );
                 for ((call_destination_type, child_output), child_output_type) in dynamic_call.destination_types().iter().zip(child_transition.outputs().iter()).zip(child_function.output_types().iter()) {
                     match (call_destination_type, child_output_type) {
-                        // TODO (dynamic_dispatch): add these cases.
-                        // (ValueType::DynamicRecord, ValueType::ExternalRecord(record_identifier)) => {
-                        // }
-                        // (ValueType::Record(record_identifier), ValueType::DynamicRecord) => {
-                        // }
+                        (ValueType::ExternalRecord(locator), ValueType::DynamicRecord) => {
+                            let dynamic_record_fid = *child_function.name().to_field()?;
+                            let dynamic_record_id = **child_output.id();
+                            let static_record_id = if let Some(record_translation_argument) = record_translation_arguments_iter.next() {
+                                **record_translation_argument
+                            } else {
+                                bail!("No record translation argument found for the parent output");
+                            };
+                            let to_static_record = N::Field::zero();
+                            let translation_count_field = *Field::<N>::from_bits_le(&translation_count.to_bits_le())?;
+                            
+                            batch_verifier_inputs.entry((*child_program_id, *locator.resource())).or_default().push(
+                                vec![translation_count_field, dynamic_record_fid, dynamic_record_id, static_record_id, to_static_record]
+                            );
+                            translation_count += 1;
+                        }
                         (ValueType::Record(record_identifier), ValueType::DynamicRecord) => {
-                            // Case 3: the dynamic call returns a dynamic record which becomes a static record.
                             let dynamic_record_fid = *child_function.name().to_field()?;
                             let dynamic_record_id = **child_output.id();
                             let static_record_id = if let Some(record_translation_argument) = record_translation_arguments_iter.next() {
@@ -230,8 +265,23 @@ impl<N: Network> Translation<N> {
                             );
                             translation_count += 1;
                         }
+                        (ValueType::DynamicRecord, ValueType::ExternalRecord(locator)) => {
+                            let dynamic_record_fid = *parent_function.name().to_field()?;
+                            let dynamic_record_id = if let Some(record_translation_argument) = record_translation_arguments_iter.next() {
+                                **record_translation_argument
+                            } else {
+                                bail!("No record translation argument found for the parent output");
+                            };
+                            let static_record_id = **child_output.id();
+                            let to_static_record = N::Field::zero();
+                            let translation_count_field = *Field::<N>::from_bits_le(&translation_count.to_bits_le())?;
+                            
+                            batch_verifier_inputs.entry((*child_program_id, *locator.resource())).or_default().push(
+                                vec![translation_count_field, dynamic_record_fid, dynamic_record_id, static_record_id, to_static_record]
+                            );
+                            translation_count += 1;
+                        }
                         (ValueType::DynamicRecord, ValueType::Record(record_identifier)) => {
-                            // Case 4: the dynamic call returns a concrete record which becomes a static record.
                             let dynamic_record_fid = *parent_function.name().to_field()?;
                             let dynamic_record_id = if let Some(record_translation_argument) = record_translation_arguments_iter.next() {
                                 **record_translation_argument
