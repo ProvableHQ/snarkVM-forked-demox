@@ -150,6 +150,9 @@ features = [ "preserve_order" ]
 [dependencies.tracing]
 workspace = true
 
+[dependencies.tracing-subscriber]
+version = "0.3"
+
 [dev-dependencies.anyhow]
 workspace = true
 
