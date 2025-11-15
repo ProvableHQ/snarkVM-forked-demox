@@ -141,7 +141,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             };
 
             // Set the (console) caller.
-            let console_caller = Some(*stack.program_id());
+            let console_caller = Some((*stack.program_id(), *registers.function_name().unwrap()));
             // Evaluate the function.
             let response = substack.evaluate_function::<A, R>(call_stack, console_caller, root_tvk, rng)?;
             // Load the outputs.
@@ -269,7 +269,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                 // TODO (@d0cd): Process the inputs, converting them to the appropriate record type.
 
                 // Set the (console) caller.
-                let console_caller = Some(*stack.program_id());
+                let console_caller = Some((*stack.program_id(), *registers.function_name().unwrap()));
 
                 match registers.call_stack_ref() {
                     // If the circuit is in authorize mode, then add any external calls to the stack.

@@ -218,6 +218,12 @@ pub trait RegistersSigner<N: Network>: RegistersTrait<N> {
 
     /// Inserts a record translation argument.
     fn insert_record_translation_argument(&mut self, record_translation_argument: Field<N>);
+
+    /// Returns the transition function name.
+    fn function_name(&self) -> Option<&Identifier<N>>;
+
+    /// Sets the transition function name.
+    fn set_function_name(&mut self, function_name: Identifier<N>);
 }
 
 pub trait RegistersTrait<N: Network> {

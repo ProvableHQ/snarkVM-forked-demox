@@ -51,6 +51,7 @@ impl<N: Network> Stack<N> {
         registers.set_caller_circuit(caller);
         // Set the transition view key, as a circuit.
         registers.set_tvk_circuit(tvk);
+        // TODO(@vicsn) should closures set the function name, for use in dynamic record translations?
         lap!(timer, "Initialize the registers");
 
         // Store the inputs.
@@ -145,7 +146,7 @@ impl<N: Network> Stack<N> {
     pub fn execute_function<A: circuit::Aleo<Network = N>, R: CryptoRng + Rng>(
         &self,
         mut call_stack: CallStack<N>,
-        console_caller: Option<ProgramID<N>>,
+        console_caller: Option<(ProgramID<N>, Identifier<N>)>,
         console_root_tvk: Option<Field<N>>,
         rng: &mut R,
     ) -> Result<Response<N>> {
@@ -182,11 +183,12 @@ impl<N: Network> Stack<N> {
         // Determine the parent.
         //  - If this execution is the top-level caller, then the parent is the program ID.
         //  - If this execution is a child caller, then the parent is the caller.
-        let console_parent = match console_caller {
+        // TODO(@vicsn) `console_parent` is a misnomer as for the root it specifies itself.
+        let (console_parent, console_parent_function_name) = match console_caller {
             // If this execution is the top-level caller, then the parent is the program ID.
-            None => console_request.program_id().to_address()?,
+            None => (console_request.program_id().to_address()?, None),
             // If this execution is a child caller, then the parent is the caller.
-            Some(console_caller) => console_caller.to_address()?,
+            Some((console_caller, function_name)) => (console_caller.to_address()?, Some(function_name)),
         };
 
         // Retrieve the function from the program.
@@ -270,6 +272,9 @@ impl<N: Network> Stack<N> {
         registers.set_tvk(*console_request.tvk());
         // Set the transition view key, as a circuit.
         registers.set_tvk_circuit(request.tvk().clone());
+
+        // Set the transition function name.
+        registers.set_function_name(*console_request.function_name());
 
         lap!(timer, "Initialize the registers");
 

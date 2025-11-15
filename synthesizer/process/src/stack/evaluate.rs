@@ -45,6 +45,7 @@ impl<N: Network> Stack<N> {
         registers.set_caller(caller);
         // Set the transition view key.
         registers.set_tvk(tvk);
+        // TODO(@vicsn) should closures set the function name, for use in dynamic record translations?
         lap!(timer, "Initialize the registers");
 
         // Store the inputs.
@@ -107,7 +108,7 @@ impl<N: Network> Stack<N> {
     pub fn evaluate_function<A: circuit::Aleo<Network = N>, R: CryptoRng + Rng>(
         &self,
         mut call_stack: CallStack<N>,
-        caller: Option<ProgramID<N>>,
+        caller: Option<(ProgramID<N>, Identifier<N>)>,
         root_tvk: Option<Field<N>>,
         rng: &mut R,
     ) -> Result<Response<N>> {
@@ -145,11 +146,11 @@ impl<N: Network> Stack<N> {
         let function = self.get_function(request.function_name())?;
         let inputs = request.inputs();
         let signer = *request.signer();
-        let (is_root, caller) = match caller {
+        let (is_root, caller, caller_function_name) = match caller {
             // If a caller is provided, then this is an evaluation of a child function.
-            Some(caller) => (false, caller.to_address()?),
+            Some((caller, caller_function_name)) => (false, caller.to_address()?, Some(caller_function_name)),
             // If no caller is provided, then this is an evaluation of a top-level function.
-            None => (true, signer),
+            None => (true, signer, None),
         };
         let tvk = *request.tvk();
         // Retrieve the program checksum, if the program has a constructor.
@@ -178,6 +179,8 @@ impl<N: Network> Stack<N> {
         registers.set_caller(caller);
         // Set the transition view key.
         registers.set_tvk(tvk);
+        // Set the transition function name.
+        registers.set_function_name(*request.function_name());
         // Set the root tvk.
         if let Some(root_tvk) = root_tvk {
             registers.set_root_tvk(root_tvk);

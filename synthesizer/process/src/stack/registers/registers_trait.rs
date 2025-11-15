@@ -75,6 +75,18 @@ impl<N: Network, A: circuit::Aleo<Network = N>> RegistersSigner<N> for Registers
     fn insert_record_translation_argument(&mut self, record_translation_argument: Field<N>) {
         self.record_translation_arguments.get_or_insert_with(Vec::new).push(record_translation_argument);
     }
+
+    /// Returns the transition function name.
+    #[inline]
+    fn function_name(&self) -> Option<&Identifier<N>> {
+        self.function_name.as_ref()
+    }
+
+    /// Sets the transition function name.
+    #[inline]
+    fn set_function_name(&mut self, function_name: Identifier<N>) {
+        self.function_name = Some(function_name);
+    }
 }
 
 impl<N: Network, A: circuit::Aleo<Network = N>> RegistersTrait<N> for Registers<N, A> {
