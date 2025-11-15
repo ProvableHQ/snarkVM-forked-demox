@@ -219,6 +219,23 @@ impl<N: Network> Deployment<N> {
         Ok(num_combined_variables)
     }
 
+    /// Returns the sum of the variable counts for all translations in this deployment.
+    pub fn num_combined_translation_variables(&self) -> Result<u64> {
+        // Initialize the accumulator.
+        let mut num_combined_variables = 0u64;
+        // Iterate over the translation verifying keys.
+        for (_, (vk, _)) in &self.translation_verifying_keys {
+            // Add the number of variables.
+            // Note: This method must be *checked* because the claimed variable count
+            // is from the user, not the synthesizer.
+            num_combined_variables = num_combined_variables
+                .checked_add(vk.num_variables())
+                .ok_or_else(|| anyhow!("Overflow when counting variables for '{}'", self.program_id()))?;
+        }
+        // Return the number of combined variables.
+        Ok(num_combined_variables)
+    }
+
     // TODO (Antonio) does this need to include constraints from translation circuits?
     //                adding them is trivial
     /// Returns the sum of the constraint counts for all functions in this deployment.
@@ -233,6 +250,19 @@ impl<N: Network> Deployment<N> {
             num_combined_constraints = num_combined_constraints
                 .checked_add(vk.circuit_info.num_constraints as u64)
                 .ok_or_else(|| anyhow!("Overflow when counting constraints for '{}'", self.program_id()))?;
+        }
+        // Return the number of combined constraints.
+        Ok(num_combined_constraints)
+    }
+
+    /// Returns the sum of the constraint counts for all translations in this deployment.
+    pub fn num_combined_translation_constraints(&self) -> Result<u64> {
+        // Initialize the accumulator.
+        let mut num_combined_constraints = 0u64;
+        // Iterate over the translation verifying keys.
+        for (_, (vk, _)) in &self.translation_verifying_keys {
+            // Add the number of constraints.
+            num_combined_constraints = num_combined_constraints.checked_add(vk.circuit_info.num_constraints as u64).ok_or_else(|| anyhow!("Overflow when counting constraints for '{}'", self.program_id()))?;
         }
         // Return the number of combined constraints.
         Ok(num_combined_constraints)

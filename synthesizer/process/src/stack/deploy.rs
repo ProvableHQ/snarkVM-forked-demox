@@ -110,14 +110,11 @@ impl<N: Network> Stack<N> {
         // Get the program ID.
         let program_id = self.program.id();
 
-        // TODO (Antonio) so far I have not added the translation-circuit
-        // variables and constraints to deployment.num_combined_variables();
-        // decide whether it needs to be done so that it is bounded by this
-        // check.
-        // Check that the number of combined variables does not exceed the deployment limit.
+        // Check that the number of combined variables and constraints does not exceed the deployment limit.
         ensure!(deployment.num_combined_variables()? <= N::MAX_DEPLOYMENT_VARIABLES);
-        // Check that the number of combined constraints does not exceed the deployment limit.
         ensure!(deployment.num_combined_constraints()? <= N::MAX_DEPLOYMENT_CONSTRAINTS);
+        ensure!(deployment.num_combined_translation_variables()? <= N::MAX_DEPLOYMENT_VARIABLES);
+        ensure!(deployment.num_combined_translation_constraints()? <= N::MAX_DEPLOYMENT_CONSTRAINTS);
 
         // Construct the call stacks and assignments used to verify the certificates.
         let mut call_stacks = Vec::with_capacity(deployment.verifying_keys().len());
