@@ -1058,6 +1058,7 @@ function compute:
             *transition.tpk(),
             *transition.tcm(),
             *transition.scm(),
+            transition.record_translation_args().cloned(),
             transition.dynamic(),
         )
         .unwrap();

@@ -2647,6 +2647,7 @@ finalize transfer_public_to_private:
         let tpk = Group::from_str(transition.get("tpk").unwrap().as_str().unwrap()).unwrap();
         let tcm = Field::from_str(transition.get("tcm").unwrap().as_str().unwrap()).unwrap();
         let scm = Field::from_str(transition.get("scm").unwrap().as_str().unwrap()).unwrap();
+        let record_translation_args = transition.get("record_translation_args").map(|string| string.as_array().unwrap().iter().map(|value| Field::from_str(value.as_str().unwrap()).unwrap()).collect::<Vec<_>>());
         let dynamic = transition.get("dynamic").map(|string| string.as_bool().unwrap());
         let transition = Transition::<CurrentNetwork>::new(
             ProgramID::from_str("credits.aleo").unwrap(),
@@ -2656,6 +2657,7 @@ finalize transfer_public_to_private:
             tpk,
             tcm,
             scm,
+            record_translation_args,
             dynamic,
         )
         .unwrap();
@@ -2777,6 +2779,7 @@ finalize transfer_public_to_private:
         let tpk = Group::from_str(transition.get("tpk").unwrap().as_str().unwrap()).unwrap();
         let tcm = Field::from_str(transition.get("tcm").unwrap().as_str().unwrap()).unwrap();
         let scm = Field::from_str(transition.get("scm").unwrap().as_str().unwrap()).unwrap();
+        let record_translation_args = transition.get("record_translation_args").map(|string| string.as_array().unwrap().iter().map(|value| Field::from_str(value.as_str().unwrap()).unwrap()).collect::<Vec<_>>());
         let dynamic = transition.get("dynamic").map(|string| string.as_bool().unwrap());
         // Construct the new transition.
         let transition = Transition::<CurrentNetwork>::new(
@@ -2787,6 +2790,7 @@ finalize transfer_public_to_private:
             tpk,
             tcm,
             scm,
+            record_translation_args,
             dynamic,
         )
         .unwrap();
@@ -2913,6 +2917,7 @@ function add_thrice:
         let tpk = Group::from_str(transition.get("tpk").unwrap().as_str().unwrap()).unwrap();
         let tcm = Field::from_str(transition.get("tcm").unwrap().as_str().unwrap()).unwrap();
         let scm = Field::from_str(transition.get("scm").unwrap().as_str().unwrap()).unwrap();
+        let record_translation_args = transition.get("record_translation_args").map(|string| string.as_array().unwrap().iter().map(|value| Field::from_str(value.as_str().unwrap()).unwrap()).collect::<Vec<_>>());
         let dynamic = transition.get("dynamic").map(|string| string.as_bool().unwrap());
 
         // Construct the new transition.
@@ -2924,6 +2929,7 @@ function add_thrice:
             tpk,
             tcm,
             scm,
+            record_translation_args,
             dynamic,
         )
         .unwrap();
