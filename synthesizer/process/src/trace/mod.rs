@@ -112,7 +112,6 @@ impl<N: Network> Trace<N> {
         // Insert the transition into the inclusion and translation tasks.
         self.inclusion_tasks.insert_transition(input_ids, transition)?;
         self.translation_tasks.insert_transition(input_ids, input_values, transition, record_translation_arguments, record_translation_data)?;
-
         // Construct the locator.
         let locator = Locator::new(*transition.program_id(), *transition.function_name());
         // Insert the assignment (and proving key if the entry does not exist), for the specified locator.
