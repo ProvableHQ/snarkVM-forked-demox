@@ -13,6 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use snarkvm_synthesizer_program::RecordTranslationData;
+
 use super::*;
 
 impl<N: Network, A: circuit::Aleo<Network = N>> RegistersSigner<N> for Registers<N, A> {
@@ -74,6 +76,18 @@ impl<N: Network, A: circuit::Aleo<Network = N>> RegistersSigner<N> for Registers
     #[inline]
     fn insert_record_translation_argument(&mut self, record_translation_argument: Field<N>) {
         self.record_translation_arguments.get_or_insert_with(Vec::new).push(record_translation_argument);
+    }
+
+    /// Returns the record translation arguments.
+    #[inline]
+    fn record_translation_data(&self) -> Option<&Vec<RecordTranslationData<N>>> {
+        self.record_translation_data.as_ref()
+    }
+
+    /// Inserts the prover data for a record translation.
+    #[inline]
+    fn insert_record_translation_data(&mut self, record_translation_data: RecordTranslationData<N>) {
+        self.record_translation_data.get_or_insert_with(Vec::new).push(record_translation_data);
     }
 
     /// Returns the transition function name.

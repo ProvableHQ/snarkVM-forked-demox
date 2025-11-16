@@ -194,6 +194,7 @@ pub enum TransitionMap {
     TCM = DataID::TransitionTCMMap as u16,
     ReverseTCM = DataID::TransitionReverseTCMMap as u16,
     SCM = DataID::TransitionSCMMap as u16,
+    RecordTranslationArgs = DataID::TransitionRecordTranslationArgsMap as u16,
     Dynamic = DataID::TransitionDynamicMap as u16,
 }
 
@@ -296,6 +297,7 @@ enum DataID {
     TransitionTCMMap,
     TransitionReverseTCMMap,
     TransitionSCMMap,
+    TransitionRecordTranslationArgsMap,
     // Program
     ProgramIDMap,
     KeyValueMap,

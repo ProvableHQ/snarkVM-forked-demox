@@ -22,7 +22,7 @@ use console::{
     program::{Entry, Identifier, Literal, Plaintext, Register, Value},
     types::{Address, Field},
 };
-use snarkvm_synthesizer_program::{Operand, RegistersCircuit, RegistersSigner, RegistersTrait, StackTrait};
+use snarkvm_synthesizer_program::{Operand, RecordTranslationData, RegistersCircuit, RegistersSigner, RegistersTrait, StackTrait};
 
 use indexmap::IndexMap;
 
@@ -54,6 +54,8 @@ pub struct Registers<N: Network, A: circuit::Aleo<Network = N>> {
     tvk_circuit: Option<circuit::Field<A>>,
     /// The record translation arguments.
     record_translation_arguments: Option<Vec<Field<N>>>,
+    /// The record translation data.
+    record_translation_data: Option<Vec<RecordTranslationData<N>>>,
     /// The transition function name.
     function_name: Option<Identifier<N>>,
 }
@@ -88,6 +90,7 @@ impl<N: Network, A: circuit::Aleo<Network = N>> Registers<N, A> {
             tvk: None,
             tvk_circuit: None,
             record_translation_arguments: None,
+            record_translation_data: None,
             function_name: None,
         }
     }

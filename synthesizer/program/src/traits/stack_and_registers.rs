@@ -39,6 +39,22 @@ use console::{
 use rand::{CryptoRng, Rng};
 use snarkvm_synthesizer_snark::{ProvingKey, VerifyingKey};
 
+// TODO (dynamic_dispatch) document
+// TODO (dynamic_dispatch) move to a better place (cannot be in process:Translation because of circular dependencies)
+// TODO (dynamic_dispatch) change visibility of internals, add constructors
+#[derive(Clone, Debug)]
+pub struct RecordTranslationData<N: Network> {
+    pub record_static: Record<N, Plaintext<N>>,
+    pub program_id: ProgramID<N>,
+    pub function_id: Field<N>,
+    pub record_name: Identifier<N>,
+    pub to_static_record: bool,
+    pub tvk: Field<N>,
+    pub register_index: u16,
+    pub record_view_key: Field<N>,
+    pub gamma: Option<Group<N>>,
+}
+
 /// This trait is intended to be implemented only by `snarkvm_synthesizer_process::Stack`.
 ///
 /// We make it a trait only to avoid circular dependencies.
@@ -218,6 +234,12 @@ pub trait RegistersSigner<N: Network>: RegistersTrait<N> {
 
     /// Inserts a record translation argument.
     fn insert_record_translation_argument(&mut self, record_translation_argument: Field<N>);
+
+    /// Returns the record translation data.
+    fn record_translation_data(&self) -> Option<&Vec<RecordTranslationData<N>>>;
+
+    /// Inserts a record translation data.
+    fn insert_record_translation_data(&mut self, record_translation_data: RecordTranslationData<N>);
 
     /// Returns the transition function name.
     fn function_name(&self) -> Option<&Identifier<N>>;

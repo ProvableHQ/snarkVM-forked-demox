@@ -153,7 +153,8 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             for (parent_input_id, child_input) in caller_request.input_ids().iter().zip(function.inputs()) {
                 match (parent_input_id, child_input.value_type()) {
                     (InputID::Record(id, ..), ValueType::DynamicRecord) => registers.insert_record_translation_argument(*id),
-                    (InputID::DynamicRecord(id), ValueType::ExternalRecord(_)) => registers.insert_record_translation_argument(*id),
+                    // TODO (dynamic_dispatch) ExternalRecord handling deferred
+                    // (InputID::DynamicRecord(id), ValueType::ExternalRecord(_)) => registers.insert_record_translation_argument(*id),
                     (InputID::DynamicRecord(id), ValueType::Record(_)) => registers.insert_record_translation_argument(*id),
                     _ => { } // No translation to perform.
                 }
@@ -165,7 +166,8 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             for (parent_output_id, child_output) in response.output_ids().iter().zip(function.outputs()) {
                 match (parent_output_id, child_output.value_type()) {
                     (OutputID::Record(id, ..), ValueType::DynamicRecord) => registers.insert_record_translation_argument(*id), 
-                    (OutputID::DynamicRecord(id), ValueType::ExternalRecord(_)) => registers.insert_record_translation_argument(*id),
+                    // TODO (dynamic_dispatch) ExternalRecord handling deferred
+                    // (OutputID::DynamicRecord(id), ValueType::ExternalRecord(_)) => registers.insert_record_translation_argument(*id),
                     (OutputID::DynamicRecord(id), ValueType::Record(_)) => registers.insert_record_translation_argument(*id),
                     _ => { } // No translation to perform.
                 }
@@ -478,10 +480,12 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             ensure!(caller_request.input_ids().len() == request.input_ids().len(), "Expected {} inputs, found {}", request.input_ids().len(), caller_request.input_ids().len());
             for (parent_input_id, child_input_id) in caller_request.input_ids().iter().zip(request.input_ids()) {
                 match (parent_input_id, child_input_id) {
-                    (InputID::ExternalRecord(id), InputID::DynamicRecord(_)) => registers.insert_record_translation_argument(*id),
+                    // TODO (dynamic_dispatch) ExternalRecord handling deferred
+                    // (InputID::ExternalRecord(id), InputID::DynamicRecord(_)) => registers.insert_record_translation_argument(*id),
                     (InputID::Record(id, ..), InputID::DynamicRecord(_)) => registers.insert_record_translation_argument(*id),
                     (InputID::DynamicRecord(id), InputID::Record(..)) => registers.insert_record_translation_argument(*id),
-                    (InputID::DynamicRecord(id), InputID::ExternalRecord(_)) => registers.insert_record_translation_argument(*id),
+                    // TODO (dynamic_dispatch) ExternalRecord handling deferred
+                    // (InputID::DynamicRecord(id), InputID::ExternalRecord(_)) => registers.insert_record_translation_argument(*id),
                     _ => { } // No translation to perform.
                 }
             }

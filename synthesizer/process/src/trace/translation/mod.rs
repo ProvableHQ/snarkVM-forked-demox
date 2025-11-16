@@ -43,7 +43,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]
-struct InputTask<N: Network> {
+struct TranslationTask<N: Network> {
     /// The commitment.
     commitment: Field<N>,
     /// The gamma value.
@@ -57,13 +57,13 @@ struct InputTask<N: Network> {
 #[derive(Clone, Debug, Default)]
 pub struct Translation<N: Network> { 
     /// A map of `transition IDs` to a list of `input tasks`.
-    input_tasks: HashMap<N::TransitionID, Vec<InputTask<N>>>,
+    translation_tasks: HashMap<N::TransitionID, Vec<TranslationTask<N>>>,
 }
 
 impl<N: Network> Translation<N> {
     /// Initializes a new `Translation` instance.
     pub fn new() -> Self {
-        Self { input_tasks: HashMap::new() }
+        Self { translation_tasks: HashMap::new() }
     }
 
     /// Inserts the transition to build state for the translation task.
@@ -77,10 +77,10 @@ impl<N: Network> Translation<N> {
         }
 
         // Retrieve the transition index.
-        let transition_index = u16::try_from(self.input_tasks.len())?;
+        let transition_index = u16::try_from(self.translation_tasks.len())?;
 
         // Initialize the input tasks.
-        let input_tasks = self.input_tasks.entry(*transition.id()).or_default();
+        let input_tasks = self.translation_tasks.entry(*transition.id()).or_default();
 
         // Process the inputs.
         for (input_id, input_value) in input_ids.iter().zip(input_values.iter()) {
@@ -90,7 +90,7 @@ impl<N: Network> Translation<N> {
                     bail!("Translation expected a record input value")
                 };
                 // Add the record to the input tasks.
-                input_tasks.push(InputTask {
+                input_tasks.push(TranslationTask {
                     commitment: *commitment,
                     gamma: *gamma,
                     serial_number: *serial_number,
@@ -159,20 +159,22 @@ impl<N: Network> Translation<N> {
                 for ((call_operand_type, child_input), child_input_type) in dynamic_call.operand_types().iter().zip(child_transition.inputs().iter()).zip(child_function.input_types().iter()) {
                     match (call_operand_type, child_input_type) {
                         (ValueType::DynamicRecord, ValueType::ExternalRecord(locator)) => {
-                            let dynamic_record_fid = *parent_function.name().to_field()?;
-                            let dynamic_record_id = if let Some(record_translation_argument) = record_translation_arguments_iter.next() {
-                                **record_translation_argument
-                            } else {
-                                bail!("No record translation argument found for the parent input");
-                            };
-                            let static_record_id = **child_input.id();
-                            let to_static_record = N::Field::one();
-                            let translation_count_field = *Field::<N>::from_bits_le(&translation_count.to_bits_le())?;
+                            // TODO (dynamic_dispatch) re-introduce once ExternalRecords are supported in other parts of the stack
+                            bail!("ExternalRecords cannot be DynamicRecords");
+                            // let dynamic_record_fid = *parent_function.name().to_field()?;
+                            // let dynamic_record_id = if let Some(record_translation_argument) = record_translation_arguments_iter.next() {
+                            //     **record_translation_argument
+                            // } else {
+                            //     bail!("No record translation argument found for the parent input");
+                            // };
+                            // let static_record_id = **child_input.id();
+                            // let to_static_record = N::Field::one();
+                            // let translation_count_field = *Field::<N>::from_bits_le(&translation_count.to_bits_le())?;
                             
-                            batch_verifier_inputs.entry((*child_program_id, *locator.resource())).or_default().push(
-                                vec![translation_count_field, dynamic_record_fid, dynamic_record_id, static_record_id, to_static_record]
-                            );
-                            translation_count += 1;
+                            // batch_verifier_inputs.entry((*child_program_id, *locator.resource())).or_default().push(
+                            //     vec![translation_count_field, dynamic_record_fid, dynamic_record_id, static_record_id, to_static_record]
+                            // );
+                            // translation_count += 1;
                         }
                         (ValueType::DynamicRecord, ValueType::Record(record_identifier)) => {
                             let dynamic_record_fid = *parent_function.name().to_field()?;
@@ -191,20 +193,22 @@ impl<N: Network> Translation<N> {
                             translation_count += 1;
                         }
                         (ValueType::ExternalRecord(locator), ValueType::DynamicRecord) => {
-                            let dynamic_record_fid = *child_function.name().to_field()?;
-                            let dynamic_record_id = **child_input.id();
-                            let static_record_id = if let Some(record_translation_argument) = record_translation_arguments_iter.next() {
-                                **record_translation_argument
-                            } else {
-                                bail!("No record translation argument found for the parent input");
-                            };
-                            let to_static_record = N::Field::zero();
-                            let translation_count_field = *Field::<N>::from_bits_le(&translation_count.to_bits_le())?;
+                            // TODO (dynamic_dispatch) re-introduce once ExternalRecords are supported in other parts of the stack
+                            bail!("ExternalRecords cannot be DynamicRecords");
+                            // let dynamic_record_fid = *child_function.name().to_field()?;
+                            // let dynamic_record_id = **child_input.id();
+                            // let static_record_id = if let Some(record_translation_argument) = record_translation_arguments_iter.next() {
+                            //     **record_translation_argument
+                            // } else {
+                            //     bail!("No record translation argument found for the parent input");
+                            // };
+                            // let to_static_record = N::Field::zero();
+                            // let translation_count_field = *Field::<N>::from_bits_le(&translation_count.to_bits_le())?;
                             
-                            batch_verifier_inputs.entry((*child_program_id, *locator.resource())).or_default().push(
-                                vec![translation_count_field, dynamic_record_fid, dynamic_record_id, static_record_id, to_static_record]
-                            );
-                            translation_count += 1;
+                            // batch_verifier_inputs.entry((*child_program_id, *locator.resource())).or_default().push(
+                            //     vec![translation_count_field, dynamic_record_fid, dynamic_record_id, static_record_id, to_static_record]
+                            // );
+                            // translation_count += 1;
                         }
                         (ValueType::Record(record_identifier), ValueType::DynamicRecord) => {
                             let dynamic_record_fid = *child_function.name().to_field()?;
@@ -234,20 +238,22 @@ impl<N: Network> Translation<N> {
                 for ((call_destination_type, child_output), child_output_type) in dynamic_call.destination_types().iter().zip(child_transition.outputs().iter()).zip(child_function.output_types().iter()) {
                     match (call_destination_type, child_output_type) {
                         (ValueType::ExternalRecord(locator), ValueType::DynamicRecord) => {
-                            let dynamic_record_fid = *child_function.name().to_field()?;
-                            let dynamic_record_id = **child_output.id();
-                            let static_record_id = if let Some(record_translation_argument) = record_translation_arguments_iter.next() {
-                                **record_translation_argument
-                            } else {
-                                bail!("No record translation argument found for the parent output");
-                            };
-                            let to_static_record = N::Field::zero();
-                            let translation_count_field = *Field::<N>::from_bits_le(&translation_count.to_bits_le())?;
+                            // TODO (dynamic_dispatch) re-introduce once ExternalRecords are supported in other parts of the stack
+                            bail!("ExternalRecords cannot be DynamicRecords");
+                            // let dynamic_record_fid = *child_function.name().to_field()?;
+                            // let dynamic_record_id = **child_output.id();
+                            // let static_record_id = if let Some(record_translation_argument) = record_translation_arguments_iter.next() {
+                            //     **record_translation_argument
+                            // } else {
+                            //     bail!("No record translation argument found for the parent output");
+                            // };
+                            // let to_static_record = N::Field::zero();
+                            // let translation_count_field = *Field::<N>::from_bits_le(&translation_count.to_bits_le())?;
                             
-                            batch_verifier_inputs.entry((*child_program_id, *locator.resource())).or_default().push(
-                                vec![translation_count_field, dynamic_record_fid, dynamic_record_id, static_record_id, to_static_record]
-                            );
-                            translation_count += 1;
+                            // batch_verifier_inputs.entry((*child_program_id, *locator.resource())).or_default().push(
+                            //     vec![translation_count_field, dynamic_record_fid, dynamic_record_id, static_record_id, to_static_record]
+                            // );
+                            // translation_count += 1;
                         }
                         (ValueType::Record(record_identifier), ValueType::DynamicRecord) => {
                             let dynamic_record_fid = *child_function.name().to_field()?;
@@ -266,20 +272,22 @@ impl<N: Network> Translation<N> {
                             translation_count += 1;
                         }
                         (ValueType::DynamicRecord, ValueType::ExternalRecord(locator)) => {
-                            let dynamic_record_fid = *parent_function.name().to_field()?;
-                            let dynamic_record_id = if let Some(record_translation_argument) = record_translation_arguments_iter.next() {
-                                **record_translation_argument
-                            } else {
-                                bail!("No record translation argument found for the parent output");
-                            };
-                            let static_record_id = **child_output.id();
-                            let to_static_record = N::Field::zero();
-                            let translation_count_field = *Field::<N>::from_bits_le(&translation_count.to_bits_le())?;
+                            // TODO (dynamic_dispatch) re-introduce once ExternalRecords are supported in other parts of the stack
+                            bail!("ExternalRecords cannot be DynamicRecords");
+                            // let dynamic_record_fid = *parent_function.name().to_field()?;
+                            // let dynamic_record_id = if let Some(record_translation_argument) = record_translation_arguments_iter.next() {
+                            //     **record_translation_argument
+                            // } else {
+                            //     bail!("No record translation argument found for the parent output");
+                            // };
+                            // let static_record_id = **child_output.id();
+                            // let to_static_record = N::Field::zero();
+                            // let translation_count_field = *Field::<N>::from_bits_le(&translation_count.to_bits_le())?;
                             
-                            batch_verifier_inputs.entry((*child_program_id, *locator.resource())).or_default().push(
-                                vec![translation_count_field, dynamic_record_fid, dynamic_record_id, static_record_id, to_static_record]
-                            );
-                            translation_count += 1;
+                            // batch_verifier_inputs.entry((*child_program_id, *locator.resource())).or_default().push(
+                            //     vec![translation_count_field, dynamic_record_fid, dynamic_record_id, static_record_id, to_static_record]
+                            // );
+                            // translation_count += 1;
                         }
                         (ValueType::DynamicRecord, ValueType::Record(record_identifier)) => {
                             let dynamic_record_fid = *parent_function.name().to_field()?;

@@ -54,7 +54,7 @@ pub struct Trace<N: Network> {
     /// A tracker for the inclusion assignments.
     inclusion_assignments: OnceLock<Vec<InclusionAssignmentWrapper<N>>>,
     /// A tracker for the translation assignments.
-    translation_assignments: OnceLock<Vec<(VerifyingKey<N>, Vec<TranslationAssignment<N>>)>>,
+    translation_assignments: OnceLock<Vec<(ProvingKey<N>, Vec<TranslationAssignment<N>>)>>,
     /// A tracker for the global state root.
     global_state_root: OnceLock<N::StateRoot>,
 }
