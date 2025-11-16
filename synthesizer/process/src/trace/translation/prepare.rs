@@ -13,6 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use circuit::Assignment;
 use snarkvm_synthesizer_program::Program;
 use snarkvm_synthesizer_snark::ProvingKey;
 
@@ -24,10 +25,10 @@ impl<N: Network> Translation<N> {
         &self,
         transitions: &[Transition<N>],
         call_graph: &HashMap<N::TransitionID, Vec<N::TransitionID>>,
-    ) -> Result<HashMap<(ProgramID<N>, Identifier<N>), Vec<TranslationAssignment<N>>>> {
+    ) -> Result<Vec<(ProvingKey<N>, Vec<TranslationAssignment<N>>)>> {
 
         // Initialize a vector for the batched assignments.
-        let mut batched_inputs_inputs: HashMap<(ProgramID<N>, Identifier<N>), Vec<TranslationAssignment<N>>> = HashMap::new();
+        let mut batched_inputs_inputs: HashMap<(ProgramID<N>, Identifier<N>), (ProvingKey<N>, Vec<TranslationAssignment<N>>)> = HashMap::new();
 
         let mut translation_count = 0;
 
@@ -49,7 +50,7 @@ impl<N: Network> Translation<N> {
                 let (identified_task, identified_data) = found.pop().unwrap();
 
                 let TranslationTask { commitment, gamma, serial_number, record } = identified_task;
-                let RecordTranslationData { record_static, program_id, function_id, record_name, to_static_record, tvk, record_view_key, gamma: gamma_data, static_record_id, register_index } = identified_data;
+                let RecordTranslationData { record_static, program_id, function_id, record_name, to_static_record, tvk, record_view_key, gamma: gamma_data, static_record_id, register_index, proving_key } = identified_data;
                 
                 // Checks associated to translation case 1
                 ensure!(gamma_data.as_ref() == Some(gamma), "gamma value in translation task does not that in translation data for transition ID {} and register index {}", transition_id, index);
@@ -63,9 +64,10 @@ impl<N: Network> Translation<N> {
                 let id_static = static_record_id;
                 let id_dynamic = caller_dynamic_record_id;
 
-                let batch = batched_inputs_inputs.entry((*program_id, *record_name)).or_default();
+                // TODO (dynamic_dispatch): is the clone cheap?
+                let batch = batched_inputs_inputs.entry((*program_id, *record_name)).or_insert((proving_key.clone(), vec![]));
 
-                batch.push(TranslationAssignment::new(
+                batch.1.push(TranslationAssignment::new(
                     record_static.clone(),
                     program_id.clone(),
                     function_id.clone(),
@@ -87,7 +89,8 @@ impl<N: Network> Translation<N> {
             }
         }
 
-        Ok(batched_inputs_inputs)
+        // Discard the program_id and record_name and return the results.
+        Ok(batched_inputs_inputs.into_iter().map(|(_, value)| (value.0, value.1)).collect())
     }
 
     /// Returns the inclusion assignments for the given transitions.

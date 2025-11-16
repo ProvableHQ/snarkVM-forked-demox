@@ -44,6 +44,7 @@ use snarkvm_synthesizer_snark::{ProvingKey, VerifyingKey};
 // TODO (dynamic_dispatch) change visibility of internals, add constructors
 #[derive(Clone, Debug)]
 pub struct RecordTranslationData<N: Network> {
+    pub proving_key: ProvingKey<N>,
     pub record_static: Record<N, Plaintext<N>>,
     pub program_id: ProgramID<N>,
     pub function_id: Field<N>,

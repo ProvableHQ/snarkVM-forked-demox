@@ -171,10 +171,6 @@ impl<N: Network> Trace<N> {
             .map_err(|_| anyhow!("Failed to set inclusion assignments"))?;
 
         let batched_translation_assignments = self.translation_tasks.prepare(&self.transitions, &self.call_graph)?;
-        let translation_assignments: Vec<(ProvingKey<N>, Vec<TranslationAssignment<N>>)> = Vec::from_iter(
-            batched_translation_assignments.iter().map(|((program_id, record_name), assignments)|
-               (SOMETHING.get_translation_proving_key(program_id,record_name)?, assignments.clone())
-        ));
         self.translation_assignments.set(translation_assignments).map_err(|_| anyhow!("Failed to set translation assignments"))?;
 
         self.global_state_root.set(global_state_root).map_err(|_| anyhow!("Failed to set global state root"))?;
@@ -215,6 +211,9 @@ impl<N: Network> Trace<N> {
         // Retrieve the global state root.
         let global_state_root =
             self.global_state_root.get().ok_or_else(|| anyhow!("Global state root has not been set"))?;
+        // Retrieve the translation assignments.
+        let translation_assignments =
+            self.translation_assignments.get().ok_or_else(|| anyhow!("Translation assignments have not been set"))?;
         // Construct the proving tasks.
         let proving_tasks = self.transition_tasks.values().cloned().collect();
         // Compute the proof.
@@ -222,6 +221,7 @@ impl<N: Network> Trace<N> {
             locator,
             varuna_version,
             proving_tasks,
+            &translation_assignments,
             inclusion_assignments,
             *global_state_root,
             rng,
@@ -255,11 +255,14 @@ impl<N: Network> Trace<N> {
         let fee_transition = &self.transitions[0];
         // Construct the proving tasks.
         let proving_tasks = self.transition_tasks.values().cloned().collect();
+        // Set the translation assignments to an empty vector, not applicable to fee transitions.
+        let translation_assignments = vec![];
         // Compute the proof.
         let (global_state_root, proof) = Self::prove_batch::<A, R>(
             "credits.aleo/fee (private or public)",
             varuna_version,
             proving_tasks,
+            &translation_assignments,
             inclusion_assignments,
             *global_state_root,
             rng,
@@ -338,6 +341,7 @@ impl<N: Network> Trace<N> {
         locator: &str,
         varuna_version: VarunaVersion,
         mut proving_tasks: Vec<(ProvingKey<N>, Vec<Assignment<N::Field>>)>,
+        mut translation_assignments: &[(ProvingKey<N>, Vec<TranslationAssignment<N>>)],
         inclusion_assignments: &[InclusionAssignmentWrapper<N>],
         global_state_root: N::StateRoot,
         rng: &mut R,
@@ -400,6 +404,12 @@ impl<N: Network> Trace<N> {
             };
             // Insert the inclusion proving key and assignments.
             proving_tasks.push((proving_key, batch_inclusions));
+        }
+
+        for (proving_key, assignments) in translation_assignments {
+            let circuit_assignments = assignments.into_iter().map(|assignment| assignment.to_circuit_assignment::<A>()).collect::<Result<Vec<Assignment<N::Field>>>>()?;
+            // TODO (dynamic_dispatch): is the clone cheap?
+            proving_tasks.push((proving_key.clone(), circuit_assignments));
         }
 
         // Compute the proof.

@@ -309,9 +309,16 @@ impl<N: Network> Stack<N> {
             match (input_value, input_type, input_id) {
                 // TODO (dynamic_dispatch) move or detect whether translation is happening
                 (Value::Record(record_static), ValueType::Record(record_name), InputID::Record(record_id, gamma, record_view_key, _, _)) => {                    
+                    let program_id = *console_request.program_id();
+                    let stack = match console_request.program_id() == self.program_id() {
+                        true => self,
+                        false => &self.get_external_stack(&program_id)?,
+                    };
+                    let translation_proving_key = stack.get_translation_proving_key(&record_name)?;
                     registers.insert_record_translation_data(RecordTranslationData {
+                        proving_key: translation_proving_key, // TODO: consider using a mapping from (program_id, record_name) to (proving_key, other data)
                         record_static: record_static.clone(),
-                        program_id: *console_request.program_id(),
+                        program_id,
                         function_id: console_parent_function_id,
                         record_name,
                         to_static_record: true,
