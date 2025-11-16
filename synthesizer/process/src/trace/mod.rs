@@ -169,7 +169,14 @@ impl<N: Network> Trace<N> {
         self.inclusion_assignments
             .set(inclusion_assignments)
             .map_err(|_| anyhow!("Failed to set inclusion assignments"))?;
+
+        let batched_translation_assignments = self.translation_tasks.prepare(&self.transitions, &self.call_graph)?;
+        let translation_assignments: Vec<(ProvingKey<N>, Vec<TranslationAssignment<N>>)> = Vec::from_iter(
+            batched_translation_assignments.iter().map(|((program_id, record_name), assignments)|
+               (SOMETHING.get_translation_proving_key(program_id,record_name)?, assignments.clone())
+        ));
         self.translation_assignments.set(translation_assignments).map_err(|_| anyhow!("Failed to set translation assignments"))?;
+
         self.global_state_root.set(global_state_root).map_err(|_| anyhow!("Failed to set global state root"))?;
         Ok(())
     }
