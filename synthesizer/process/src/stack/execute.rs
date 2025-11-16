@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use circuit::compute_function_id;
+use console::program::{InputID, compute_function_id};
 use snarkvm_synthesizer_program::RecordTranslationData;
 
 use super::*;
@@ -54,7 +54,6 @@ impl<N: Network> Stack<N> {
         registers.set_caller_circuit(caller);
         // Set the transition view key, as a circuit.
         registers.set_tvk_circuit(tvk);
-        // TODO(@vicsn) should closures set the function name, for use in dynamic record translations?
         lap!(timer, "Initialize the registers");
 
         // Store the inputs.
@@ -186,24 +185,22 @@ impl<N: Network> Stack<N> {
         // Determine the parent.
         //  - If this execution is the top-level caller, then the parent is the program ID.
         //  - If this execution is a child caller, then the parent is the caller.
-        // TODO(@vicsn) `console_parent` is a misnomer as for the root it specifies itself.
-        let (console_parent, console_parent_function_name) = match console_caller {
+        let (console_parent_address, console_parent_id, console_parent_function_name) = match console_caller {
             // If this execution is the top-level caller, then the parent is the program ID.
-            None => (console_request.program_id().to_address()?, None),
+            None => (console_request.program_id().to_address()?, *console_request.program_id(), None),
             // If this execution is a child caller, then the parent is the caller.
-            Some((console_caller, function_name)) => (console_caller.to_address()?, Some(function_name)),
+            Some((console_caller, function_name)) => (console_caller.to_address()?, console_caller, Some(function_name)),
         };
+
+        let console_parent_function_id = compute_function_id(
+            &U16::<N>::new(N::ID as u16),
+            console_request.program_id(),
+            console_request.function_name(),
+            false,
+        )?;
 
         // Retrieve the function from the program.
         let function = self.get_function(console_request.function_name())?;
-
-        // TODO (dynamic_dispatch) check whether this is already available elsewhere
-        let function_id = console::program::compute_function_id(
-            console_request.network_id(),
-            console_request.program_id(),
-            console_request.function_name(),
-            console_request.is_dynamic(),
-        )?;
         
         // Retrieve the number of inputs.
         let num_inputs = function.inputs().len();
@@ -262,7 +259,7 @@ impl<N: Network> Stack<N> {
         // Inject `is_root` as `Mode::Public`.
         let is_root = circuit::Boolean::new(circuit::Mode::Public, console_is_root);
         // Inject the parent as `Mode::Public`.
-        let parent = circuit::Address::new(circuit::Mode::Public, console_parent);
+        let parent = circuit::Address::new(circuit::Mode::Public, console_parent_address);
         // Determine the caller.
         let caller = Ternary::ternary(&is_root, request.signer(), &parent);
 
@@ -285,9 +282,6 @@ impl<N: Network> Stack<N> {
         // Set the transition view key, as a circuit.
         registers.set_tvk_circuit(request.tvk().clone());
 
-        // Set the transition function name.
-        registers.set_function_name(*console_request.function_name());
-
         lap!(timer, "Initialize the registers");
 
         Self::log_circuit::<A>("Request");
@@ -309,6 +303,42 @@ impl<N: Network> Stack<N> {
             registers.store_circuit(self, register, input.clone())
         })?;
         lap!(timer, "Store the inputs");
+
+        // TODO (dynamic_dispatch) Is this correct? Is the dynamic record id unique enough to serve as an identifier here?
+        for (index, ((input_value, input_id), input_type)) in console_request.inputs().iter().zip_eq(console_request.input_ids()).zip_eq(function.input_types()).enumerate() {
+            match (input_value, input_type, input_id) {
+                // TODO (dynamic_dispatch) move or detect whether translation is happening
+                (Value::Record(record_static), ValueType::Record(record_name), InputID::Record(record_id, gamma, record_view_key, _, _)) => {                    
+                    registers.insert_record_translation_data(RecordTranslationData {
+                        record_static: record_static.clone(),
+                        program_id: *console_request.program_id(),
+                        function_id: console_parent_function_id,
+                        record_name,
+                        to_static_record: true,
+                        tvk: registers.tvk()?,
+                        record_view_key: *record_view_key,
+                        gamma: Some(gamma.clone()),
+                        static_record_id: *record_id,
+                        register_index: index as u16,
+                    });
+                }
+                _ => {}
+            }
+        }
+
+        let actual_inputs = console_request.inputs();
+        let expected_input_types = function.input_types();
+        actual_inputs.iter().zip_eq(expected_input_types).for_each(|(input, input_type)| {
+            match (input, input_type) {
+                (Value::Record(record), ValueType::DynamicRecord) => {
+                    println!("Translation static -> dynamic");
+                }
+                (Value::DynamicRecord(dynamic_record), ValueType::Record(_)) => {
+                    println!("Translation dynamic -> static");
+                }
+                _ => {}
+            }
+        });
 
         // Initialize a tracker to determine if there are any function calls.
         let mut contains_function_call = false;
@@ -369,135 +399,136 @@ impl<N: Network> Stack<N> {
                 _ => {}
             }
 
-            // Constructing inputs for record translation
-            match instruction {
-                Instruction::CallDynamic(call_dynamic) => {
+            // TODO (dynamic_dispatch) remove
+            // // Preparing record-translation data to be fetched by the called functions
+            // match instruction {
+            //     Instruction::CallDynamic(call_dynamic) => {
 
-                    let program_id = match registers.load(self, &call_dynamic.operands()[0])? {
-                        Value::Plaintext(Plaintext::Literal(Literal::Field(program_id), _)) => program_id,
-                        _ => bail!("Expected the first operand of `call.dynamic` to be a ProgramID."),
-                    };
-                    let function_id = match registers.load(self, &call_dynamic.operands()[2])? {
-                        Value::Plaintext(Plaintext::Literal(Literal::Field(function_id), _)) => function_id,
-                        _ => bail!("Expected the third operand of `call.dynamic` to be a FunctionID."),
-                    };
+            //         let program_id = match registers.load(self, &call_dynamic.operands()[0])? {
+            //             Value::Plaintext(Plaintext::Literal(Literal::Field(program_id), _)) => program_id,
+            //             _ => bail!("Expected the first operand of `call.dynamic` to be a ProgramID."),
+            //         };
+            //         let function_id = match registers.load(self, &call_dynamic.operands()[2])? {
+            //             Value::Plaintext(Plaintext::Literal(Literal::Field(function_id), _)) => function_id,
+            //             _ => bail!("Expected the third operand of `call.dynamic` to be a FunctionID."),
+            //         };
 
-                    // TODO (dynamic_dispatch) we need the Identifier, not its Field representation
-                    let callee_function = self.get_function(callee_function_id)?;
-                    let callee_function_input_types = callee_function.input_types();
+            //         // TODO (dynamic_dispatch) we need the Identifier, not its Field representation
+            //         let callee_function = self.get_function(callee_function_id)?;
+            //         let callee_function_input_types = callee_function.input_types();
                     
-                    for (index, ((input_supplied, input_supplied_type), input_received_type)) in call_dynamic.operands().iter().skip(3)
-                        .zip_eq(call_dynamic.operand_types().iter().skip(3))
-                        .zip_eq(callee_function_input_types).enumerate() {
+            //         for (index, ((input_supplied, input_supplied_type), input_received_type)) in call_dynamic.operands().iter().skip(3)
+            //             .zip_eq(call_dynamic.operand_types().iter().skip(3))
+            //             .zip_eq(callee_function_input_types).enumerate() {
                             
-                        let input_supplied_value = registers.load(self, input_supplied)?;
+            //             let input_supplied_value = registers.load(self, input_supplied)?;
 
-                        match (input_supplied_value, input_supplied_type, input_received_type) {
-                            // Case 1: input dynamic -> static
-                            // TODO (dynamic_dispatch) make sure the Record is not an ExternalRecord
-                            (Value::DynamicRecord(dynamic_record), _, ValueType::Record(record_name)) => {
+            //             match (input_supplied_value, input_supplied_type, input_received_type) {
+            //                 // Case 1: input dynamic -> static
+            //                 // TODO (dynamic_dispatch) make sure the Record is not an ExternalRecord
+            //                 (Value::DynamicRecord(dynamic_record), _, ValueType::Record(record_name)) => {
 
-                                // TODO (dynamic_dispatch) decide whether this is the best solution or this can be read e. g. from the record definition
-                                let owner_is_private = {
-                                    if let circuit::Value::DynamicRecord(circuit_dynamic_record) = registers.load_circuit(self, input_supplied)? {
-                                        circuit_dynamic_record.owner().is_private()
-                                    } else {
-                                        bail!("Register contains a console DynamicRecord, but its circuit object is not a circuit DynamicRecord")
-                                    }
-                                };
+            //                     // TODO (dynamic_dispatch) decide whether this is the best solution or this can be read e. g. from the record definition
+            //                     let owner_is_private = {
+            //                         if let circuit::Value::DynamicRecord(circuit_dynamic_record) = registers.load_circuit(self, input_supplied)? {
+            //                             circuit_dynamic_record.owner().is_private()
+            //                         } else {
+            //                             bail!("Register contains a console DynamicRecord, but its circuit object is not a circuit DynamicRecord")
+            //                         }
+            //                     };
 
-                                let record_static = dynamic_record.to_record(owner_is_private)?;
+            //                     let record_static = dynamic_record.to_record(owner_is_private)?;
 
-                                let record_view_key = (record_static.nonce() * *view_key).to_x_coordinate();
-                                let gamma = {
-                                    let h = N::hash_to_group_psd2(&[N::serial_number_domain(), record_static.to_commitment(&callee_program_id, record_identifier, &record_view_key)?.clone()]);
+            //                     let record_view_key = (record_static.nonce() * *view_key).to_x_coordinate();
+            //                     let gamma = {
+            //                         let h = N::hash_to_group_psd2(&[N::serial_number_domain(), record_static.to_commitment(&callee_program_id, record_identifier, &record_view_key)?.clone()]);
 
-                                    // TODO (dynamic_dispatch) I don't think we can get the signing key here
-                                    h * signing_key.sk_sig();
-                                };
+            //                         // TODO (dynamic_dispatch) I don't think we can get the signing key here
+            //                         h * signing_key.sk_sig();
+            //                     };
 
-                                let record_translation_data = RecordTranslationData {
-                                    record_static,
-                                    // TODO (dynamic_dispatch) we need the Identifier, not its Field representation
-                                    // The definition of the static record lives in the called function
-                                    program_id: *callee_program_id,
-                                    // TODO (dynamic_dispatch) make sure this should always be the parent function ID
-                                    function_id,
-                                    // TODO (dynamic_dispatch) where to get?
-                                    record_name,
-                                    to_static_record: true,
-                                    tvk: registers.tvk()?,
-                                    register_index: index as u16,
-                                    record_view_key,
-                                    // TODO (dynamic_dispatch) where to get?
-                                    gamma: Some(Group::<N>::zero()),
-                                };
+            //                     let record_translation_data = RecordTranslationData {
+            //                         record_static,
+            //                         // TODO (dynamic_dispatch) we need the Identifier, not its Field representation
+            //                         // The definition of the static record lives in the called function
+            //                         program_id: *callee_program_id,
+            //                         // TODO (dynamic_dispatch) make sure this should always be the parent function ID
+            //                         function_id,
+            //                         // TODO (dynamic_dispatch) where to get?
+            //                         record_name,
+            //                         to_static_record: true,
+            //                         tvk: registers.tvk()?,
+            //                         register_index: index as u16,
+            //                         record_view_key,
+            //                         // TODO (dynamic_dispatch) where to get?
+            //                         gamma: Some(Group::<N>::zero()),
+            //                     };
 
-                                registers.insert_record_translation_data(record_translation_data);
-                            },
-                            // Case 2: input static -> dynamic
-                            (Value::Record(record_static), ValueType::Record(record_name), ValueType::DynamicRecord) => {
+            //                     registers.insert_record_translation_data(record_translation_data);
+            //                 },
+            //                 // Case 2: input static -> dynamic
+            //                 (Value::Record(record_static), ValueType::Record(record_name), ValueType::DynamicRecord) => {
 
-                                // TODO (dynamic_dispatch) console_request only contains the owner address, i. e. owner_view_key * G
-                                //                         record_static.nonce() = randomizer * G, so one could do randomizer * owner_address, but I can't locate the randomizer
-                                let record_view_key = (record_static.nonce() * owner_view_key).to_x_coordinate();
+            //                     // TODO (dynamic_dispatch) console_request only contains the owner address, i. e. owner_view_key * G
+            //                     //                         record_static.nonce() = randomizer * G, so one could do randomizer * owner_address, but I can't locate the randomizer
+            //                     let record_view_key = (record_static.nonce() * owner_view_key).to_x_coordinate();
             
-                                console_request.input_ids()
-                                let gamma = {
-                                    let h = N::hash_to_group_psd2(&[N::serial_number_domain(), record_static.to_commitment(console_request.program_id(), record_name, &record_view_key)?.clone()]);
+            //                     console_request.input_ids()
+            //                     let gamma = {
+            //                         let h = N::hash_to_group_psd2(&[N::serial_number_domain(), record_static.to_commitment(console_request.program_id(), record_name, &record_view_key)?.clone()]);
 
-                                    // TODO (dynamic_dispatch) I don't think we can get the signing key here
-                                    h * signing_key.sk_sig();
-                                };
+            //                         // TODO (dynamic_dispatch) I don't think we can get the signing key here
+            //                         h * signing_key.sk_sig();
+            //                     };
 
-                                let record_translation_data = RecordTranslationData {
-                                    record_static,
-                                    // The definition of the static record lives in the called function
-                                    program_id: *console_request.program_id(),
-                                    function_id,
-                                    // TODO (dynamic_dispatch) where to get?
-                                    record_name,
-                                    to_static_record: false,
-                                    tvk: registers.tvk()?,
-                                    register_index: index as u16,
-                                    record_view_key,
-                                    // TODO (dynamic_dispatch) where to get?
-                                    gamma: None,
-                                };
+            //                     let record_translation_data = RecordTranslationData {
+            //                         record_static,
+            //                         // The definition of the static record lives in the called function
+            //                         program_id: *console_request.program_id(),
+            //                         function_id,
+            //                         // TODO (dynamic_dispatch) where to get?
+            //                         record_name,
+            //                         to_static_record: false,
+            //                         tvk: registers.tvk()?,
+            //                         register_index: index as u16,
+            //                         record_view_key,
+            //                         // TODO (dynamic_dispatch) where to get?
+            //                         gamma: None,
+            //                     };
 
-                                registers.insert_record_translation_data(record_translation_data);
-                            },
-                            // No translation
-                            _ => {}
-                        }
+            //                     registers.insert_record_translation_data(record_translation_data);
+            //                 },
+            //                 // No translation
+            //                 _ => {}
+            //             }
 
-                    /* for (index, (input_supplied, input_received)) in call.operands().iter().zip_eq(callee_function_input_types).enumerate() {
-                        let input_supplied_value = registers.load(self, input_supplied)?;
-                        if let (Value::Record(static_record), ValueType::DynamicRecord) = (input_supplied_value, input_received) {
-                            let record_translation_data = RecordTranslationData {
-                                record_static: static_record.clone(),
-                                // The definition of the static record lives in the called function
-                                program_id: *callee_program_id,
-                                // TODO (dynamic_dispatch) make sure this should always be the parent function ID
-                                // TODO (dynamic_dispatch) provide
-                                function_id: *function.name(),
-                                // TODO (dynamic_dispatch) where to get?
-                                record_name: input_received.name(),
-                                to_static_record: true,
-                                tvk: registers.tvk()?,
-                                register_index: index as u16,
-                                // TODO (dynamic_dispatch) where to get?
-                                record_view_key: static_record.view_key(),
-                                // TODO (dynamic_dispatch) where to get?
-                                gamma: static_record.gamma(),
-                            };
-                        } */
-                    }
-                }
-                // TODO (dynamic_dispatch) handle call_dynamic
-                Instruction::CallDynamic(call_dynamic) => {},
-                _ => {}
-            }
+            //         /* for (index, (input_supplied, input_received)) in call.operands().iter().zip_eq(callee_function_input_types).enumerate() {
+            //             let input_supplied_value = registers.load(self, input_supplied)?;
+            //             if let (Value::Record(static_record), ValueType::DynamicRecord) = (input_supplied_value, input_received) {
+            //                 let record_translation_data = RecordTranslationData {
+            //                     record_static: static_record.clone(),
+            //                     // The definition of the static record lives in the called function
+            //                     program_id: *callee_program_id,
+            //                     // TODO (dynamic_dispatch) make sure this should always be the parent function ID
+            //                     // TODO (dynamic_dispatch) provide
+            //                     function_id: *function.name(),
+            //                     // TODO (dynamic_dispatch) where to get?
+            //                     record_name: input_received.name(),
+            //                     to_static_record: true,
+            //                     tvk: registers.tvk()?,
+            //                     register_index: index as u16,
+            //                     // TODO (dynamic_dispatch) where to get?
+            //                     record_view_key: static_record.view_key(),
+            //                     // TODO (dynamic_dispatch) where to get?
+            //                     gamma: static_record.gamma(),
+            //                 };
+            //             } */
+            //         }
+            //     }
+            //     // TODO (dynamic_dispatch) handle call_dynamic
+            //     Instruction::CallDynamic(call_dynamic) => {},
+            //     _ => {}
+            // }
         }
         lap!(timer, "Execute the instructions");
 
@@ -638,7 +669,7 @@ impl<N: Network> Stack<N> {
             // Get the record translation arguments.
             let record_translation_arguments = registers.record_translation_arguments().cloned();
             // Construct the transition.
-            let transition = Transition::from(&console_request, &response, &output_types, &output_registers, record_translation_arguments)?;
+            let transition = Transition::from(&console_request, &response, &output_types, &output_registers, Some(record_translation_arguments.unwrap_or_default().iter().map(|(id, _)| *id).collect_vec()))?;
             // Add the transition to the authorization.
             authorization.insert_transition(transition)?;
             lap!(timer, "Save the transition");
@@ -665,8 +696,11 @@ impl<N: Network> Stack<N> {
             // Get the record translation arguments.
             let record_translation_arguments = registers.record_translation_arguments().cloned();
 
+            // Get the record translation data.
+            let record_translation_data = registers.record_translation_data().cloned();
+
             // Construct the transition.
-            let transition = Transition::from(&console_request, &response, &output_types, &output_registers, record_translation_arguments)?;
+            let transition = Transition::from(&console_request, &response, &output_types, &output_registers, Some(record_translation_arguments.clone().unwrap_or_default().iter().map(|(id, _)| *id).collect_vec()))?;
 
             // Retrieve the proving key.
             let proving_key = self.get_proving_key(function.name())?;
@@ -687,6 +721,9 @@ impl<N: Network> Stack<N> {
                 &transition,
                 (proving_key, assignment),
                 metrics,
+                // TODO (dynamic_dispatch) redesign, dedup, map...
+                record_translation_arguments,
+                record_translation_data,
             )?;
         }
         // If the circuit is in `PackageRun` mode, then save the assignment.

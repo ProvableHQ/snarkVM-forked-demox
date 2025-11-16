@@ -36,7 +36,7 @@ use console::{
 };
 use snarkvm_ledger_block::{Transition, Transaction};
 use snarkvm_ledger_query::QueryTrait;
-use snarkvm_synthesizer_program::{Function, Instruction};
+use snarkvm_synthesizer_program::{Function, Instruction, RecordTranslationData};
 use snarkvm_synthesizer_snark::VerifyingKey;
 
 use std::collections::{BTreeMap, HashMap};
@@ -57,17 +57,26 @@ struct TranslationTask<N: Network> {
 #[derive(Clone, Debug, Default)]
 pub struct Translation<N: Network> { 
     /// A map of `transition IDs` to a list of `input tasks`.
-    translation_tasks: HashMap<N::TransitionID, Vec<TranslationTask<N>>>,
+    translation_tasks: HashMap<N::TransitionID, (Vec<TranslationTask<N>>, Vec<RecordTranslationData<N>>)>,
+    // TODO (dynamic_dispatch) comment; A map from (transition id, caller dynamic record id) to index
+    transition_indices:HashMap<(N::TransitionID, Field<N>), u16>
 }
 
 impl<N: Network> Translation<N> {
     /// Initializes a new `Translation` instance.
     pub fn new() -> Self {
-        Self { translation_tasks: HashMap::new() }
+        Self { translation_tasks: HashMap::new(), transition_indices: HashMap::new() }
     }
 
     /// Inserts the transition to build state for the translation task.
-    pub fn insert_transition(&mut self, input_ids: &[InputID<N>], input_values: &[Value<N>], transition: &Transition<N>) -> Result<()> {
+    pub fn insert_transition(
+        &mut self,
+        input_ids: &[InputID<N>],
+        input_values: &[Value<N>],
+        transition: &Transition<N>,
+        record_translation_arguments: Option<Vec<(Field<N>, u16)>>,
+        record_translation_data: Option<Vec<RecordTranslationData<N>>>,
+    ) -> Result<()> {
         // Ensure the transition inputs, input IDs and input values are the same length.
         if input_ids.len() != transition.inputs().len() {
             bail!("Inclusion expected the same number of input IDs as transition inputs")
@@ -76,11 +85,12 @@ impl<N: Network> Translation<N> {
             bail!("Translation expected the same number of inputs as transition inputs")
         }
 
-        // Retrieve the transition index.
-        let transition_index = u16::try_from(self.translation_tasks.len())?;
-
         // Initialize the input tasks.
-        let input_tasks = self.translation_tasks.entry(*transition.id()).or_default();
+        if self.translation_tasks.contains_key(transition.id()) {
+            bail!("Translation tasks already exist for transition {}", transition.id());
+        }
+        
+        let mut translation_tasks = Vec::new();
 
         // Process the inputs.
         for (input_id, input_value) in input_ids.iter().zip(input_values.iter()) {
@@ -90,7 +100,7 @@ impl<N: Network> Translation<N> {
                     bail!("Translation expected a record input value")
                 };
                 // Add the record to the input tasks.
-                input_tasks.push(TranslationTask {
+                translation_tasks.push(TranslationTask {
                     commitment: *commitment,
                     gamma: *gamma,
                     serial_number: *serial_number,
@@ -98,6 +108,23 @@ impl<N: Network> Translation<N> {
                 });
             }
         }
+
+        let record_translation_data = record_translation_data.unwrap_or_default();
+
+        ensure!(
+            translation_tasks.len() == record_translation_data.len(),
+            "The number of translation tasks {} does not match the number of record translation data {}",
+            translation_tasks.len(),
+            record_translation_data.len()
+        );
+
+        if let Some(record_translation_arguments) = record_translation_arguments {
+            for (record_translation_argument, register_index) in record_translation_arguments.iter() {
+                self.transition_indices.insert((*transition.id(), *record_translation_argument), *register_index);
+            }
+        }
+
+        self.translation_tasks.insert(*transition.id(), (translation_tasks, record_translation_data));
 
         Ok(())
     }

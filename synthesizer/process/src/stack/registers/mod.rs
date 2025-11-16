@@ -53,7 +53,7 @@ pub struct Registers<N: Network, A: circuit::Aleo<Network = N>> {
     /// The transition view key, as a circuit.
     tvk_circuit: Option<circuit::Field<A>>,
     /// The record translation arguments.
-    record_translation_arguments: Option<Vec<Field<N>>>,
+    record_translation_arguments: Option<Vec<(Field<N>, u16)>>,
     /// The record translation data.
     record_translation_data: Option<Vec<RecordTranslationData<N>>>,
     /// The transition function name.

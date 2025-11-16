@@ -286,7 +286,8 @@ impl<N: Network> Stack<N> {
             // Get the record translation arguments.
             let record_translation_arguments = registers.record_translation_arguments().cloned();
             // Construct the transition.
-            let transition = Transition::from(&request, &response, &function.output_types(), &output_registers, record_translation_arguments)?;
+            // TODO (dynamic_dispatch) dynamic dispatch
+            let transition = Transition::from(&request, &response, &function.output_types(), &output_registers, Some(record_translation_arguments.unwrap_or_default().iter().map(|(id, _)| *id).collect_vec()))?;
             // Add the transition to the authorization.
             authorization.insert_transition(transition)?;
             lap!(timer, "Save the transition");

@@ -20,12 +20,13 @@ mod inclusion;
 pub use inclusion::*;
 
 mod translation;
+use snarkvm_synthesizer_program::RecordTranslationData;
 pub use translation::*;
 
 use circuit::Assignment;
 use console::{
     network::prelude::*,
-    program::{InputID, Locator, Value},
+    program::{InputID, Locator, Value}, types::Field,
 };
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use snarkvm_ledger_block::{Execution, Fee, Transition};
@@ -100,6 +101,8 @@ impl<N: Network> Trace<N> {
         transition: &Transition<N>,
         (proving_key, assignment): (ProvingKey<N>, Assignment<N::Field>),
         metrics: CallMetrics<N>,
+        record_translation_arguments: Option<Vec<(Field<N>, u16)>>,
+        record_translation_data: Option<Vec<RecordTranslationData<N>>>,
     ) -> Result<()> {
         // Ensure the inclusion assignments and global state root have not been set.
         ensure!(self.inclusion_assignments.get().is_none());
@@ -108,7 +111,7 @@ impl<N: Network> Trace<N> {
 
         // Insert the transition into the inclusion and translation tasks.
         self.inclusion_tasks.insert_transition(input_ids, transition)?;
-        self.translation_tasks.insert_transition(input_ids, input_values, transition)?;
+        self.translation_tasks.insert_transition(input_ids, input_values, transition, record_translation_arguments, record_translation_data)?;
 
         // Construct the locator.
         let locator = Locator::new(*transition.program_id(), *transition.function_name());

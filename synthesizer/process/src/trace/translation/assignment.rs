@@ -43,8 +43,10 @@ pub struct TranslationAssignment<N: Network> {
     pub(super) translation_count: u16,
     /// The view key of the transaction which produces or consumes the dynamic record.
     pub(super) tvk: Field<N>,
-    /// Input or output index of the record.
-    pub(super) register_index: u16,
+    /// Index of the input operand or output destination that contains the dynamic record.
+    // Note that the first three dynamic call operands are reserved for
+    // call-related data, *however* this operand index still starts at 0.
+    pub(super) operand_index: u16,
     /// The ID of the dynamic record.
     pub(super) id_dynamic: Field<N>,
     /// The commitment (if producing `record_static`) or serial number (if consuming `record_static`) of the static record.
@@ -54,7 +56,7 @@ pub struct TranslationAssignment<N: Network> {
     /// The additional point used to produce the record commitment and serial number.
     /// Irrelevant if `to_static_record` is false.
     pub(super) gamma: Group<N>,
-}
+} 
 
 impl<N: Network> TranslationAssignment<N> {
     /// Initializes a new translation assignment.
@@ -82,7 +84,7 @@ impl<N: Network> TranslationAssignment<N> {
             to_static_record,
             translation_count,
             tvk,
-            register_index,
+            operand_index: register_index,
             id_dynamic,
             id_static,
             record_view_key,
@@ -119,7 +121,7 @@ impl<N: Network> TranslationAssignment<N> {
         let _circuit_translation_count = circuit::U16::<A>::new(circuit::Mode::Public, console::types::U16::<N>::new(self.translation_count));
 
         // Inject the register index as `Mode::Public`.
-        let circuit_register_index = circuit::U16::<A>::new(circuit::Mode::Public, console::types::U16::<N>::new(self.register_index));
+        let circuit_register_index = circuit::U16::<A>::new(circuit::Mode::Public, console::types::U16::<N>::new(self.operand_index));
         
         // Inject the commitment or serial number of the static record as `Mode::Public`.
         let circuit_id_static = circuit::Field::<A>::new(circuit::Mode::Public, self.id_static);

@@ -13,6 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use console::{program::compute_function_id, types::U16};
+
 use super::*;
 
 impl<N: Network> CallTrait<N> for CallDynamic<N> {
@@ -49,9 +51,6 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             bail!("Expected the third operand of `call.dynamic` to be a 'Field' literal.")
         };
         let function_name = Identifier::from_field(&function_name_as_field)?;
-
-        // Get the Request of the caller.
-        let caller_request = registers.call_stack_ref().peek()?;
 
         // Separate the remaining inputs as the function inputs.
         let inputs = &inputs[3..];
@@ -149,13 +148,32 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             // Collect record inputs to translate.
             // TODO(dynamic_dispatch): it is inconsistent to compare InputID and ValueType.
             // Consider taking InputID from the new Request, or getting the ValueType from the caller function.
-            ensure!(caller_request.input_ids().len() == function.inputs().len(), "Expected {} inputs, found {}", function.inputs().len(), caller_request.input_ids().len());
-            for (parent_input_id, child_input) in caller_request.input_ids().iter().zip(function.inputs()) {
+            ensure!(inputs.len() == function.inputs().len(), "Expected {} inputs, found {}", function.inputs().len(), inputs.len());
+            for (index, (parent_input_id, child_input)) in inputs.iter().zip(function.inputs()).enumerate() {
                 match (parent_input_id, child_input.value_type()) {
-                    (InputID::Record(id, ..), ValueType::DynamicRecord) => registers.insert_record_translation_argument(*id),
+                    (Value::Record(record), ValueType::DynamicRecord) => {
+                        // TODO (dynamic_dispatch) 
+                        // registers.insert_record_translation_argument(*id)
+                        bail!("Translation case input static -> dynamic not implemented")
+                    },
                     // TODO (dynamic_dispatch) ExternalRecord handling deferred
                     // (InputID::DynamicRecord(id), ValueType::ExternalRecord(_)) => registers.insert_record_translation_argument(*id),
-                    (InputID::DynamicRecord(id), ValueType::Record(_)) => registers.insert_record_translation_argument(*id),
+                    (Value::DynamicRecord(dynamic_record), ValueType::Record(_)) => {
+                        let function_id = compute_function_id(
+                            &U16::<N>::new(N::ID),
+                            stack.program_id(),
+                            &function_name,
+                            // TODO (dynamic_dispatch) Is this correct?
+                            true,
+                        );
+
+                        let dynamic_record_id = dynamic_record.to_id(
+                            function_id?,
+                            registers.tvk()?,
+                            U16::<N>::new(index as u16),
+                        );
+                        registers.insert_record_translation_argument(dynamic_record_id?, index as u16)
+                    },
                     _ => { } // No translation to perform.
                 }
             }
@@ -164,13 +182,14 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             // Consider taking OutputIDs from the new Response, or getting the ValueType from the caller function.
             ensure!(response.output_ids().len() == function.outputs().len(), "Expected {} outputs, found {}", function.outputs().len(), response.output_ids().len());
             for (parent_output_id, child_output) in response.output_ids().iter().zip(function.outputs()) {
-                match (parent_output_id, child_output.value_type()) {
-                    (OutputID::Record(id, ..), ValueType::DynamicRecord) => registers.insert_record_translation_argument(*id), 
-                    // TODO (dynamic_dispatch) ExternalRecord handling deferred
-                    // (OutputID::DynamicRecord(id), ValueType::ExternalRecord(_)) => registers.insert_record_translation_argument(*id),
-                    (OutputID::DynamicRecord(id), ValueType::Record(_)) => registers.insert_record_translation_argument(*id),
-                    _ => { } // No translation to perform.
-                }
+                // TODO (dynamic_dispatch) implement this
+                // match (parent_output_id, child_output.value_type()) {
+                //     (OutputID::Record(id, ..), ValueType::DynamicRecord) => registers.insert_record_translation_argument(*id), 
+                //     // TODO (dynamic_dispatch) ExternalRecord handling deferred
+                //     // (OutputID::DynamicRecord(id), ValueType::ExternalRecord(_)) => registers.insert_record_translation_argument(*id),
+                //     (OutputID::DynamicRecord(id), ValueType::Record(_)) => registers.insert_record_translation_argument(*id),
+                //     _ => { } // No translation to perform.
+                // }
             }
             // Return the outputs.
             outputs
@@ -482,8 +501,8 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                 match (parent_input_id, child_input_id) {
                     // TODO (dynamic_dispatch) ExternalRecord handling deferred
                     // (InputID::ExternalRecord(id), InputID::DynamicRecord(_)) => registers.insert_record_translation_argument(*id),
-                    (InputID::Record(id, ..), InputID::DynamicRecord(_)) => registers.insert_record_translation_argument(*id),
-                    (InputID::DynamicRecord(id), InputID::Record(..)) => registers.insert_record_translation_argument(*id),
+                    // (InputID::Record(id, ..), InputID::DynamicRecord(_)) => registers.insert_record_translation_argument(*id),
+                    // (InputID::DynamicRecord(id), InputID::Record(..)) => registers.insert_record_translation_argument(*id),
                     // TODO (dynamic_dispatch) ExternalRecord handling deferred
                     // (InputID::DynamicRecord(id), InputID::ExternalRecord(_)) => registers.insert_record_translation_argument(*id),
                     _ => { } // No translation to perform.

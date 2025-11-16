@@ -33,7 +33,7 @@ impl<N: Network, A: circuit::Aleo<Network = N>> RegistersSigner<N> for Registers
     /// Returns the root transition view key.
     #[inline]
     fn root_tvk(&self) -> Result<Field<N>> {
-        self.root_tvk.ok_or_else(|| anyhow!("Root tvk (console) is not set in the registers."))
+        self.root_tvk.ok_or_else(|| anyhow!("Root tvk  (console) is not set in the registers."))
     }
 
     /// Sets the root transition view key.
@@ -68,14 +68,14 @@ impl<N: Network, A: circuit::Aleo<Network = N>> RegistersSigner<N> for Registers
 
     /// Returns the record translation arguments.
     #[inline]
-    fn record_translation_arguments(&self) -> Option<&Vec<Field<N>>> {
+    fn record_translation_arguments(&self) -> Option<&Vec<(Field<N>, u16)>> {
         self.record_translation_arguments.as_ref()
     }
 
     /// Inserts a record translation argument.
     #[inline]
-    fn insert_record_translation_argument(&mut self, record_translation_argument: Field<N>) {
-        self.record_translation_arguments.get_or_insert_with(Vec::new).push(record_translation_argument);
+    fn insert_record_translation_argument(&mut self, record_translation_argument: Field<N>, index: u16) {
+        self.record_translation_arguments.get_or_insert_with(Vec::new).push((record_translation_argument, index));
     }
 
     /// Returns the record translation arguments.

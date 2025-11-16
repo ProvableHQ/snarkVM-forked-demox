@@ -50,9 +50,10 @@ pub struct RecordTranslationData<N: Network> {
     pub record_name: Identifier<N>,
     pub to_static_record: bool,
     pub tvk: Field<N>,
-    pub register_index: u16,
     pub record_view_key: Field<N>,
     pub gamma: Option<Group<N>>,
+    pub static_record_id: Field<N>,
+    pub register_index: u16,
 }
 
 /// This trait is intended to be implemented only by `snarkvm_synthesizer_process::Stack`.
@@ -230,10 +231,10 @@ pub trait RegistersSigner<N: Network>: RegistersTrait<N> {
     fn set_tvk(&mut self, tvk: Field<N>);
 
     /// Returns the record translation arguments.
-    fn record_translation_arguments(&self) -> Option<&Vec<Field<N>>>;
+    fn record_translation_arguments(&self) -> Option<&Vec<(Field<N>, u16)>>;
 
     /// Inserts a record translation argument.
-    fn insert_record_translation_argument(&mut self, record_translation_argument: Field<N>);
+    fn insert_record_translation_argument(&mut self, record_translation_argument: Field<N>, index: u16);
 
     /// Returns the record translation data.
     fn record_translation_data(&self) -> Option<&Vec<RecordTranslationData<N>>>;
