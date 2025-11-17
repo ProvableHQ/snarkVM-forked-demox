@@ -1058,7 +1058,7 @@ function compute:
             *transition.tpk(),
             *transition.tcm(),
             *transition.scm(),
-            transition.dynamic(),
+            transition.dynamic_inputs().map(|d| d.to_vec()),
         )
         .unwrap();
 

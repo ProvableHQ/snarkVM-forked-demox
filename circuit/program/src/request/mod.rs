@@ -154,9 +154,9 @@ pub struct Request<A: Aleo> {
     tcm: Field<A>,
     /// The signer commitment.
     scm: Field<A>,
-    /// Whether or not the request is dynamic.
-    //  Note. This field is intentionally excluded for the circuit representation and is only used to select the correct variant of `compute_function_id`.
-    dynamic: Option<bool>,
+    /// The optional dynamic input IDs.
+    /// Note. These are only present if the request is dynamic.
+    dynamic_input_ids: Option<Vec<InputID<A>>>,
 }
 
 impl<A: Aleo> Inject for Request<A> {
@@ -241,18 +241,19 @@ impl<A: Aleo> Inject for Request<A> {
 
         // TODO (@d0cd): Verify correctness.
         // Initialize the program ID depending on the `dynamic` flag.
-        let program_id = match request.dynamic() {
-            Some(true) => ProgramID::public(*request.program_id()),
-            Some(false) | None => ProgramID::constant(*request.program_id()),
+        let program_id = match request.is_dynamic() {
+            true => ProgramID::public(*request.program_id()),
+            false => ProgramID::constant(*request.program_id()),
         };
 
         // TODO (@d0cd): Verify correctness.
         // Initialize the function name depending on the `dynamic` flag.
-        let function_name = match request.dynamic() {
-            Some(true) => Identifier::public(*request.function_name()),
-            Some(false) | None => Identifier::constant(*request.function_name()),
+        let function_name = match request.is_dynamic() {
+            true => Identifier::public(*request.function_name()),
+            false => Identifier::constant(*request.function_name()),
         };
 
+        // TODO (@d0cd): Check on ordering of variable instantiation.
         Self {
             signer: Address::new(mode, *request.signer()),
             network_id: U16::new(Mode::Constant, *request.network_id()),
@@ -265,7 +266,10 @@ impl<A: Aleo> Inject for Request<A> {
             tvk: Field::new(mode, *request.tvk()),
             tcm,
             scm,
-            dynamic: request.dynamic(),
+            dynamic_input_ids: request
+                .dynamic_input_ids()
+                .clone()
+                .map(|ids| ids.into_iter().map(|input_id| InputID::new(Mode::Public, input_id)).collect()),
         }
     }
 }
@@ -326,14 +330,14 @@ impl<A: Aleo> Request<A> {
         &self.scm
     }
 
-    /// Returns the `dynamic` flag.
-    pub const fn dynamic(&self) -> Option<bool> {
-        self.dynamic
-    }
-
     /// Returns whether or not the request is dynamic.
     pub fn is_dynamic(&self) -> bool {
-        self.dynamic.unwrap_or(false)
+        self.dynamic_input_ids.is_some()
+    }
+
+    /// Returns the optional dynamic input IDs.
+    pub const fn dynamic_input_ids(&self) -> &Option<Vec<InputID<A>>> {
+        &self.dynamic_input_ids
     }
 }
 
@@ -342,7 +346,8 @@ impl<A: Aleo> Eject for Request<A> {
 
     /// Ejects the mode of the request.
     fn eject_mode(&self) -> Mode {
-        Mode::combine(self.signer.eject_mode(), [
+        // Get the modes of the individual components.
+        let mut modes = vec![
             self.network_id.eject_mode(),
             self.program_id.eject_mode(),
             self.function_name.eject_mode(),
@@ -353,7 +358,13 @@ impl<A: Aleo> Eject for Request<A> {
             self.tvk.eject_mode(),
             self.tcm.eject_mode(),
             self.scm.eject_mode(),
-        ])
+        ];
+        // Add the modes of the dynamic input IDs if they exist.
+        if let Some(dynamic_input_ids) = &self.dynamic_input_ids {
+            modes.push(dynamic_input_ids.eject_mode());
+        }
+        // Combine the modes.
+        Mode::combine(self.signer.eject_mode(), modes)
     }
 
     /// Ejects the request as a primitive.
@@ -370,7 +381,12 @@ impl<A: Aleo> Eject for Request<A> {
             self.tvk.eject_value(),
             self.tcm.eject_value(),
             self.scm.eject_value(),
-            Some(false), // TODO (@d0cd): Fix after propogating dynamic
+            match &self.dynamic_input_ids {
+                None => None,
+                Some(dynamic_input_ids) => {
+                    Some(dynamic_input_ids.iter().map(|input_id| input_id.eject_value()).collect())
+                }
+            },
         ))
     }
 }

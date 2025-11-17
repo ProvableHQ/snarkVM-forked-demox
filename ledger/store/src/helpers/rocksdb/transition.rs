@@ -26,6 +26,7 @@ use console::{
     program::{Ciphertext, Future, Identifier, Plaintext, ProgramID, Record},
     types::{Field, Group},
 };
+use snarkvm_ledger_block::Input;
 
 use aleo_std_storage::StorageMode;
 
@@ -48,8 +49,8 @@ pub struct TransitionDB<N: Network> {
     reverse_tcm_map: DataMap<Field<N>, N::TransitionID>,
     /// The signer commitments.
     scm_map: DataMap<N::TransitionID, Field<N>>,
-    /// The `dynamic` map.
-    dynamic_map: DataMap<N::TransitionID, bool>,
+    /// The dynamic input map.
+    dynamic_input_map: DataMap<N::TransitionID, Vec<Input<N>>>,
 }
 
 #[rustfmt::skip]
@@ -62,7 +63,7 @@ impl<N: Network> TransitionStorage<N> for TransitionDB<N> {
     type TCMMap = DataMap<N::TransitionID, Field<N>>;
     type ReverseTCMMap = DataMap<Field<N>, N::TransitionID>;
     type SCMMap = DataMap<N::TransitionID, Field<N>>;
-    type DynamicMap = DataMap<N::TransitionID, bool>;
+    type DynamicInputMap = DataMap<N::TransitionID, Vec<Input<N>>>;
 
     /// Initializes the transition storage.
     fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
@@ -76,7 +77,7 @@ impl<N: Network> TransitionStorage<N> for TransitionDB<N> {
             tcm_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Transition(TransitionMap::TCM))?,
             reverse_tcm_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(),  MapID::Transition(TransitionMap::ReverseTCM))?,
             scm_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Transition(TransitionMap::SCM))?,
-            dynamic_map: rocksdb::RocksDB::open_map(N::ID, storage, MapID::Transition(TransitionMap::Dynamic))?,
+            dynamic_input_map: rocksdb::RocksDB::open_map(N::ID, storage, MapID::Transition(TransitionMap::Dynamic))?,
         })
     }
 
@@ -120,9 +121,9 @@ impl<N: Network> TransitionStorage<N> for TransitionDB<N> {
         &self.scm_map
     }
 
-    /// Returns the `dynamic`` map.
-    fn dynamic_map(&self) -> &Self::DynamicMap {
-        &self.dynamic_map
+    /// Returns the dynamic input map.
+    fn dynamic_input_map(&self) -> &Self::DynamicInputMap {
+        &self.dynamic_input_map
     }
 }
 

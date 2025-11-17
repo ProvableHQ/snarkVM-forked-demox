@@ -124,11 +124,11 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                     *substack.program_id(),
                     *function.name(),
                     inputs.iter(),
-                    self.operand_types(),
+                    &function.input_types(),
                     root_tvk,
                     is_root,
                     program_checksum,
-                    Some(true),
+                    Some(self.operand_types()),
                     rng,
                 )?;
                 // Add the request to the requests.
@@ -226,7 +226,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
 
             // Eject the existing circuit.
             let r1cs = A::eject_r1cs_and_reset();
-            let (caller_request, caller_response_outputs) = {
+            let (callee_request, caller_response_outputs) = {
                 // Eject the circuit inputs.
                 let inputs = inputs.eject_value();
 
@@ -252,19 +252,6 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         let Some(private_key) = private_key else {
                             bail!("Cannot authorize a new function call without a private key.")
                         };
-                        // Construct the caller's version of the request.
-                        let caller_request = Request::sign(
-                            private_key,
-                            *target.substack().program_id(),
-                            *function.name(),
-                            inputs.iter(),
-                            &self.operand_types(),
-                            root_tvk,
-                            is_root,
-                            Some(target.substack().program_checksum_as_field()?),
-                            Some(true),
-                            rng,
-                        )?;
 
                         // Get the input types of the callee.
                         let input_types =
@@ -298,6 +285,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                 _ => Ok(input.clone()),
                             })
                             .collect::<Result<Vec<_>>>()?;
+
                         // Construct the callee's version of the request.
                         let callee_request = Request::sign(
                             private_key,
@@ -308,22 +296,17 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             root_tvk,
                             is_root,
                             Some(target.substack().program_checksum_as_field()?),
-                            Some(true),
+                            Some(self.operand_types()),
                             rng,
                         )?;
 
                         // Retrieve the call stack.
                         let mut call_stack = registers.call_stack();
                         // Push the callee's request onto the call stack.
-                        // Note. The caller's request is not pushed onto the call stack, since it is not explicitly executed.
                         call_stack.push(callee_request.clone())?;
 
-                        // Add the caller's request to the authorization.
-                        // Note. The caller's request is pushed to the authorization so that it can be availble during execution.
-                        authorization.push(caller_request.clone())?;
-
                         // Add the callee's request to the authorization.
-                        authorization.push(callee_request)?;
+                        authorization.push(callee_request.clone())?;
 
                         // Execute the callee's request.
                         let callee_response =
@@ -333,7 +316,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         let caller_response_outputs = callee_response.dynamic_call_outputs()?;
 
                         // Return the caller's request and response.
-                        (caller_request, caller_response_outputs)
+                        (callee_request, caller_response_outputs)
                     }
                     // TODO (@d0cd): Synthesize based on the declared outputs of the instruction.
                     // In Synthesize mode (with an existing proving key) or CheckDeployment mode, we generate dummy outputs to avoid building a full sub-circuit.
@@ -347,8 +330,8 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         // Sample a random field as the program checksum.
                         let program_checksum = Some(Field::rand(rng));
 
-                        // Construct the caller's version of the request.
-                        let caller_request = Request::sign(
+                        // Construct the request.
+                        let callee_request = Request::sign(
                             private_key,
                             program_id,
                             function_name,
@@ -357,7 +340,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             root_tvk,
                             is_root,
                             program_checksum,
-                            Some(true),
+                            Some(&self.operand_types()),
                             rng,
                         )?;
 
@@ -365,7 +348,6 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         let address = Address::try_from(private_key)?;
 
                         // Sample the outputs.
-                        println!("Destination types: {:#?}", self.destination_types());
                         let callee_response_outputs = self
                             .destination_types()
                             .iter()
@@ -381,7 +363,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             .collect::<Result<Vec<_>>>()?;
 
                         // Return the caller's request and response.
-                        (caller_request, callee_response_outputs)
+                        (callee_request, callee_response_outputs)
                     }
                     // In PackageRun mode, we sign and execute the request once.
                     CallStack::PackageRun(_, private_key, ..) => {
@@ -397,19 +379,6 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         if num_inputs != inputs.len() {
                             bail!("Expected {} inputs, found {}", num_inputs, inputs.len())
                         }
-                        // Construct the caller's version of the request.
-                        let caller_request = Request::sign(
-                            private_key,
-                            *target.substack().program_id(),
-                            *function.name(),
-                            inputs.iter(),
-                            &self.operand_types(),
-                            root_tvk,
-                            is_root,
-                            Some(target.substack().program_checksum_as_field()?),
-                            Some(true),
-                            rng,
-                        )?;
 
                         // Get the input types of the callee.
                         let input_types =
@@ -453,14 +422,14 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             root_tvk,
                             is_root,
                             Some(target.substack().program_checksum_as_field()?),
-                            Some(true),
+                            Some(self.operand_types()),
                             rng,
                         )?;
 
                         // Retrieve the call stack.
                         let mut call_stack = registers.call_stack();
                         // Push the callee's request onto the call stack.
-                        call_stack.push(callee_request)?;
+                        call_stack.push(callee_request.clone())?;
 
                         // Evaluate the callee's request.
                         let callee_response =
@@ -470,7 +439,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         let caller_response_outputs = callee_response.dynamic_call_outputs()?;
 
                         // Return the caller's request and response.
-                        (caller_request, caller_response_outputs)
+                        (callee_request, caller_response_outputs)
                     }
                     // If the circuit is in evaluate mode, then throw an error.
                     CallStack::Evaluate(..) => {
@@ -491,22 +460,8 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             bail!("Expected {} inputs, found {}", num_inputs, inputs.len())
                         }
 
-                        // Pop the caller's request.
-                        let caller_request = authorization.next()?;
-
                         // Retrieve the callee's request (without popping it).
                         let callee_request = authorization.peek_next()?;
-
-                        // Ensure that the caller and callee requests are consistent.
-                        ensure!(
-                            caller_request.program_id() == callee_request.program_id(),
-                            "Program IDs do not match in a 'call' instruction."
-                        );
-                        ensure!(
-                            caller_request.function_name() == callee_request.function_name(),
-                            "Function names do not match in a 'call' instruction."
-                        );
-                        // TODO (@d0cd): Do we need more validation?
 
                         // Evaluate the function, and load the outputs.
                         let console_callee_response = target.substack().evaluate_function::<A, R>(
@@ -537,7 +492,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         let caller_response_outputs = callee_response.dynamic_call_outputs()?;
 
                         // Return the caller's request and response.
-                        (caller_request, caller_response_outputs)
+                        (callee_request, caller_response_outputs)
                     }
                 }
             };
@@ -549,11 +504,11 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             use circuit::Inject;
 
             // Inject the network ID as `Mode::Constant`.
-            let network_id = circuit::U16::constant(*caller_request.network_id());
+            let network_id = circuit::U16::constant(*callee_request.network_id());
             // Inject the program ID name as `Mode::Public`.
-            let program_id = circuit::ProgramID::public(*caller_request.program_id());
+            let program_id = circuit::ProgramID::public(*callee_request.program_id());
             // Inject the function name as `Mode::Public`.
-            let function_name = circuit::Identifier::public(*caller_request.function_name());
+            let function_name = circuit::Identifier::public(*callee_request.function_name());
 
             // Ensure that the program and function names in the registers match the witnessed values.
             A::assert_eq(program_id.name(), program_name_as_field);
@@ -564,20 +519,24 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             ensure!(A::num_public() == num_public + 3, "Forbidden: 'call.dynamic' injected excess public variables");
 
             // Inject the `signer` (from the request) as `Mode::Private`.
-            let signer = circuit::Address::new(circuit::Mode::Private, *caller_request.signer());
+            let signer = circuit::Address::new(circuit::Mode::Private, *callee_request.signer());
             // Inject the `sk_tag` (from the request) as `Mode::Private`.
-            let sk_tag = circuit::Field::new(circuit::Mode::Private, *caller_request.sk_tag());
+            let sk_tag = circuit::Field::new(circuit::Mode::Private, *callee_request.sk_tag());
             // Inject the `tvk` (from the request) as `Mode::Private`.
-            let tvk = circuit::Field::new(circuit::Mode::Private, *caller_request.tvk());
+            let tvk = circuit::Field::new(circuit::Mode::Private, *callee_request.tvk());
             // Inject the `tcm` (from the request) as `Mode::Public`.
-            let tcm = circuit::Field::new(circuit::Mode::Public, *caller_request.tcm());
+            let tcm = circuit::Field::new(circuit::Mode::Public, *callee_request.tcm());
             // Compute the transition commitment as `Hash(tvk)`.
             let candidate_tcm = A::hash_psd2(&[tvk.clone()]);
             // Ensure the transition commitment matches the computed transition commitment.
             A::assert_eq(&tcm, candidate_tcm);
-            // Inject the input IDs (from the request) as `Mode::Public`.
-            let input_ids = caller_request
-                .input_ids()
+
+            // Get the dynamic input IDs.
+            let Some(dynamic_input_ids) = callee_request.dynamic_input_ids() else {
+                bail!("Expected dynamic input IDs in a request produced by a 'call.dynamic' instruction.")
+            };
+            // Inject the dynamic input IDs (from the request) as `Mode::Public`.
+            let input_ids = dynamic_input_ids
                 .iter()
                 .map(|input_id| circuit::InputID::new(circuit::Mode::Public, *input_id))
                 .collect::<Vec<_>>();

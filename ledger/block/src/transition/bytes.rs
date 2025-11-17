@@ -72,10 +72,17 @@ impl<N: Network> FromBytes for Transition<N> {
         // Read the signer commitment.
         let scm = FromBytes::read_le(&mut reader)?;
 
-        // If the version is 2, read the `dynamic` flag.
+        // Reqd the optional dynamic inputs.
         let dynamic = match version {
             1 => None,
-            2 => Some(FromBytes::read_le(&mut reader)?),
+            2 => {
+                let mut dynamic_inputs = Vec::with_capacity(num_inputs as usize);
+                for _ in 0..num_inputs {
+                    // Read the dynamic input.
+                    dynamic_inputs.push(FromBytes::read_le(&mut reader)?);
+                }
+                Some(dynamic_inputs)
+            }
             _ => return Err(error("Invalid transition version")),
         };
 
@@ -94,7 +101,7 @@ impl<N: Network> ToBytes for Transition<N> {
     /// Writes the literal to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         // Write the version.
-        match self.dynamic.is_some() {
+        match self.dynamic_inputs.is_some() {
             false => 1u8.write_le(&mut writer)?,
             true => 2u8.write_le(&mut writer)?,
         }
@@ -122,9 +129,9 @@ impl<N: Network> ToBytes for Transition<N> {
         self.tcm.write_le(&mut writer)?;
         // Write the signer commitment.
         self.scm.write_le(&mut writer)?;
-        // Write the `dynamic` flag, if it exists.
-        if let Some(dynamic) = &self.dynamic {
-            dynamic.write_le(&mut writer)?;
+        // Write the optional dynamic inputs.
+        if let Some(dynamic_inputs) = &self.dynamic_inputs {
+            dynamic_inputs.write_le(&mut writer)?;
         }
 
         Ok(())

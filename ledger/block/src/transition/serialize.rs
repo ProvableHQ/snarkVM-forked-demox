@@ -29,8 +29,8 @@ impl<N: Network> Serialize for Transition<N> {
                 transition.serialize_field("tpk", &self.tpk)?;
                 transition.serialize_field("tcm", &self.tcm)?;
                 transition.serialize_field("scm", &self.scm)?;
-                if let Some(dynamic) = &self.dynamic {
-                    transition.serialize_field("dynamic", dynamic)?;
+                if let Some(dynamic_inputs) = &self.dynamic_inputs {
+                    transition.serialize_field("dynamic_inputs", dynamic_inputs)?;
                 }
                 transition.end()
             }
@@ -65,9 +65,9 @@ impl<'de, N: Network> Deserialize<'de> for Transition<N> {
                     DeserializeExt::take_from_value::<D>(&mut transition, "tcm")?,
                     // Retrieve the `scm`.
                     DeserializeExt::take_from_value::<D>(&mut transition, "scm")?,
-                    // Retrieve the `dynamic` flag, if it exists.
+                    // Retrieve the optional dynamic inputs.
                     serde_json::from_value(
-                        transition.get_mut("dynamic").unwrap_or(&mut serde_json::Value::Null).take(),
+                        transition.get_mut("dynamic_inputs").unwrap_or(&mut serde_json::Value::Null).take(),
                     )
                     .map_err(de::Error::custom)?,
                 )

@@ -17,9 +17,10 @@ use super::*;
 
 impl<N: Network> Request<N> {
     /// Returns the request for a given private key, program ID, function name, inputs, input types, and RNG, where:
-    ///     challenge := HashToScalar(r * G, pk_sig, pr_sig, signer, \[tvk, tcm, function ID, is_root, program checksum?, input IDs\])
+    ///     challenge := HashToScalar(r * G, pk_sig, pr_sig, signer, \[tvk, tcm, function ID, is_root, program checksum?, input IDs, dynamic input IDs?\])
     ///     response := r - challenge * sk_sig
     /// The program checksum must be provided if the program has a constructor and should not be provided otherwise.
+    /// The dynamic input types must be provided if the function was invoked via a dynamic call and should not be provided otherwise.
     pub fn sign<R: Rng + CryptoRng>(
         private_key: &PrivateKey<N>,
         program_id: ProgramID<N>,
@@ -29,17 +30,21 @@ impl<N: Network> Request<N> {
         root_tvk: Option<Field<N>>,
         is_root: bool,
         program_checksum: Option<Field<N>>,
-        dynamic: Option<bool>,
+        dynamic_input_types: Option<&[ValueType<N>]>,
         rng: &mut R,
     ) -> Result<Self> {
         // Ensure the number of inputs matches the number of input types.
         if input_types.len() != inputs.len() {
-            bail!(
-                "'{program_id}/{function_name}' expects {} inputs, but {} were provided.",
-                input_types.len(),
-                inputs.len()
-            )
+            bail!("Expected {} inputs, but {} were provided.", input_types.len(), inputs.len())
         }
+
+        // Parse the inputs.
+        let mut parsed_inputs = Vec::with_capacity(inputs.len());
+        for (i, input) in inputs.enumerate() {
+            let input = input.try_into().map_err(|_| anyhow!("Failed to parse input #{i}"))?;
+            parsed_inputs.push(input);
+        }
+        let inputs = parsed_inputs;
 
         // Retrieve `sk_sig`.
         let sk_sig = private_key.sk_sig();
@@ -78,7 +83,7 @@ impl<N: Network> Request<N> {
         // Retrieve the network ID.
         let network_id = U16::new(N::ID);
         // Compute the function ID.
-        let function_id = compute_function_id(&network_id, &program_id, &function_name, dynamic.unwrap_or(false))?;
+        let function_id = compute_function_id(&network_id, &program_id, &function_name, dynamic_input_types.is_some())?;
 
         // Construct the hash input as `(r * G, pk_sig, pr_sig, signer, [tvk, tcm, function ID, is_root, program checksum?, input IDs])`.
         let mut message = Vec::with_capacity(9 + 2 * inputs.len());
@@ -89,176 +94,129 @@ impl<N: Network> Request<N> {
             message.push(program_checksum);
         }
 
-        // Initialize a vector to store the prepared inputs.
-        let mut prepared_inputs = Vec::with_capacity(inputs.len());
-        // Initialize a vector to store the input IDs.
-        let mut input_ids = Vec::with_capacity(inputs.len());
-
-        // Prepare the inputs.
-        for (index, (input, input_type)) in inputs.zip_eq(input_types).enumerate() {
-            // Prepare the input.
-            let input = input.try_into().map_err(|_| {
-                anyhow!("Failed to parse input #{index} ('{input_type}') for '{program_id}/{function_name}'")
-            })?;
-            // Store the prepared input.
-            prepared_inputs.push(input.clone());
-
-            match input_type {
-                // A constant input is hashed (using `tcm`) to a field element.
-                ValueType::Constant(..) => {
-                    // Ensure the input is a plaintext.
-                    ensure!(matches!(input, Value::Plaintext(..)), "Expected a plaintext input");
-
-                    // Construct the (console) input index as a field element.
-                    let index = Field::from_u16(u16::try_from(index).or_halt_with::<N>("Input index exceeds u16"));
-                    // Construct the preimage as `(function ID || input || tcm || index)`.
-                    let mut preimage = Vec::new();
-                    preimage.push(function_id);
-                    preimage.extend(input.to_fields()?);
-                    preimage.push(tcm);
-                    preimage.push(index);
-                    // Hash the input to a field element.
-                    let input_hash = N::hash_psd8(&preimage)?;
-
-                    // Add the input hash to the preimage.
-                    message.push(input_hash);
-                    // Add the input ID to the inputs.
-                    input_ids.push(InputID::Constant(input_hash));
-                }
-                // A public input is hashed (using `tcm`) to a field element.
-                ValueType::Public(..) => {
-                    // Ensure the input is a plaintext.
-                    ensure!(matches!(input, Value::Plaintext(..)), "Expected a plaintext input");
-
-                    // Construct the (console) input index as a field element.
-                    let index = Field::from_u16(u16::try_from(index).or_halt_with::<N>("Input index exceeds u16"));
-                    // Construct the preimage as `(function ID || input || tcm || index)`.
-                    let mut preimage = Vec::new();
-                    preimage.push(function_id);
-                    preimage.extend(input.to_fields()?);
-                    preimage.push(tcm);
-                    preimage.push(index);
-                    // Hash the input to a field element.
-                    let input_hash = N::hash_psd8(&preimage)?;
-
-                    // Add the input hash to the preimage.
-                    message.push(input_hash);
-                    // Add the input ID to the inputs.
-                    input_ids.push(InputID::Public(input_hash));
-                }
-                // A private input is encrypted (using `tvk`) and hashed to a field element.
-                ValueType::Private(..) => {
-                    // Ensure the input is a plaintext.
-                    ensure!(matches!(input, Value::Plaintext(..)), "Expected a plaintext input");
-
-                    // Construct the (console) input index as a field element.
-                    let index = Field::from_u16(u16::try_from(index).or_halt_with::<N>("Input index exceeds u16"));
-                    // Compute the input view key as `Hash(function ID || tvk || index)`.
-                    let input_view_key = N::hash_psd4(&[function_id, tvk, index])?;
-                    // Compute the ciphertext.
-                    let ciphertext = match &input {
-                        Value::Plaintext(plaintext) => plaintext.encrypt_symmetric(input_view_key)?,
-                        // Ensure the input is a plaintext.
-                        Value::Record(..) => bail!("Expected a plaintext input, found a record input"),
-                        Value::Future(..) => bail!("Expected a plaintext input, found a future input"),
-                        Value::DynamicRecord(..) => bail!("Expected a plaintext input, found a dynamic record input"),
-                        Value::DynamicFuture(..) => bail!("Expected a plaintext input, found a dynamic future input"),
-                    };
-                    // Hash the ciphertext to a field element.
-                    let input_hash = N::hash_psd8(&ciphertext.to_fields()?)?;
-
-                    // Add the input hash to the preimage.
-                    message.push(input_hash);
-                    // Add the input hash to the inputs.
-                    input_ids.push(InputID::Private(input_hash));
-                }
-                // A record input is computed to its serial number.
-                ValueType::Record(record_name) => {
-                    // Retrieve the record.
-                    let record = match &input {
-                        Value::Record(record) => record,
-                        // Ensure the input is a record.
-                        Value::Plaintext(..) => bail!("Expected a record input, found a plaintext input"),
-                        Value::Future(..) => bail!("Expected a record input, found a future input"),
-                        Value::DynamicRecord(..) => bail!("Expected a record input, found a dynamic record input"),
-                        Value::DynamicFuture(..) => bail!("Expected a record input, found a dynamic future input"),
-                    };
-                    // Ensure the record belongs to the signer.
-                    ensure!(**record.owner() == signer, "Input record for '{program_id}' must belong to the signer");
-                    // Compute the record view key.
-                    let record_view_key = (*record.nonce() * *view_key).to_x_coordinate();
-                    // Compute the record commitment.
-                    let commitment = record.to_commitment(&program_id, record_name, &record_view_key)?;
-
-                    // Compute the generator `H` as `HashToGroup(commitment)`.
-                    let h = N::hash_to_group_psd2(&[N::serial_number_domain(), commitment])?;
-                    // Compute `h_r` as `r * H`.
-                    let h_r = h * r;
-                    // Compute `gamma` as `sk_sig * H`.
-                    let gamma = h * sk_sig;
-
-                    // Compute the `serial_number` from `gamma`.
-                    let serial_number = Record::<N, Plaintext<N>>::serial_number_from_gamma(&gamma, commitment)?;
-                    // Compute the tag.
-                    let tag = Record::<N, Plaintext<N>>::tag(sk_tag, commitment)?;
-
-                    // Add (`H`, `r * H`, `gamma`, `tag`) to the preimage.
-                    message.extend([h, h_r, gamma].iter().map(|point| point.to_x_coordinate()));
-                    message.push(tag);
-
-                    // Add the input ID.
-                    input_ids.push(InputID::Record(commitment, gamma, record_view_key, serial_number, tag));
-                }
-                // An external record input is hashed (using `tvk`) to a field element.
-                ValueType::ExternalRecord(..) => {
-                    // Ensure the input is a record.
-                    ensure!(matches!(input, Value::Record(..)), "Expected a record input");
-
-                    // Construct the (console) input index as a field element.
-                    let index = Field::from_u16(u16::try_from(index).or_halt_with::<N>("Input index exceeds u16"));
-                    // Construct the preimage as `(function ID || input || tvk || index)`.
-                    let mut preimage = Vec::new();
-                    preimage.push(function_id);
-                    preimage.extend(input.to_fields()?);
-                    preimage.push(tvk);
-                    preimage.push(index);
-                    // Hash the input to a field element.
-                    let input_hash = N::hash_psd8(&preimage)?;
-
-                    // Add the input hash to the preimage.
-                    message.push(input_hash);
-                    // Add the input hash to the inputs.
-                    input_ids.push(InputID::ExternalRecord(input_hash));
-                }
-                // A future is not a valid input.
-                ValueType::Future(..) => bail!("A future is not a valid input"),
-                // A dynamic record input is hashed (using `tvk`) to a field element.
-                ValueType::DynamicRecord => {
-                    // Ensure the input is a dynamic record.
-                    ensure!(matches!(input, Value::DynamicRecord(..)), "Expected a dynamic record input");
-
-                    // Construct the (console) input index as a field element.
-                    let index = Field::from_u16(u16::try_from(index).or_halt_with::<N>("Input index exceeds u16"));
-                    // Construct the preimage as `(function ID || input || tvk || index)`.
-                    let mut preimage = Vec::new();
-                    preimage.push(function_id);
-                    preimage.extend(input.to_fields()?);
-                    preimage.push(tvk);
-                    preimage.push(index);
-                    // Hash the input to a field element.
-                    let input_hash = N::hash_psd8(&preimage)?;
-
-                    // Add the input hash to the preimage.
-                    message.push(input_hash);
-                    // Add the input hash to the inputs.
-                    input_ids.push(InputID::DynamicRecord(input_hash));
-                }
-                // A dynamic future is not a valid input.
-                ValueType::DynamicFuture => bail!("A dynamic future is not a valid input"),
+        // If the dynamic input types were provided, ensure they match the number of inputs.
+        if let Some(dynamic_input_types) = dynamic_input_types {
+            // Ensure the number of inputs matches the number of dynamic input types.
+            if dynamic_input_types.len() != inputs.len() {
+                bail!(
+                    "The number of dynamic input types '{}' must match the number of inputs '{}'",
+                    dynamic_input_types.len(),
+                    inputs.len()
+                );
             }
         }
 
-        // Compute `challenge` as `HashToScalar(r * G, pk_sig, pr_sig, signer, [tvk, tcm, function ID, is_root, program checksum?, input IDs])`.
+        // Initialize a vector to store the input IDs.
+        let mut input_ids = Vec::with_capacity(inputs.len());
+        // Initialize a vector to store dynamic input IDs.
+        let mut dynamic_input_ids = Vec::with_capacity(inputs.len());
+        // Initialize a vector to store the message for the dynamic input IDs.
+        let mut dynamic_message = Vec::with_capacity(inputs.len());
+
+        // Prepare the inputs.
+        for (index, (input, input_type)) in inputs.iter().zip_eq(input_types).enumerate() {
+            // Convert index to u16.
+            let index = u16::try_from(index).or_halt_with::<N>("Input index exceeds u16");
+
+            // A helper function that computes the input ID based on the input type and adds it to the message and input IDs.
+            let compute_and_update_input_id = |message: &mut Vec<Field<N>>,
+                                               input_ids: &mut Vec<InputID<N>>,
+                                               input: &Value<N>,
+                                               input_type: &ValueType<N>|
+             -> Result<()> {
+                match input_type {
+                    // A constant input is hashed (using `tcm`) to a field element.
+                    ValueType::Constant(..) => {
+                        let input_id = InputID::constant(function_id, input, tcm, index)?;
+                        // Add the input ID to the preimage.
+                        message.push(*input_id.id());
+                        // Add the input ID to the inputs.
+                        input_ids.push(input_id);
+                    }
+                    // A public input is hashed (using `tcm`) to a field element.
+                    ValueType::Public(..) => {
+                        let input_id = InputID::public(function_id, input, tcm, index)?;
+                        // Add the input ID to the preimage.
+                        message.push(*input_id.id());
+                        // Add the input ID to the inputs.
+                        input_ids.push(input_id);
+                    }
+                    // A private input is encrypted (using `tvk`) and hashed to a field element.
+                    ValueType::Private(..) => {
+                        let input_id = InputID::private(function_id, input, tvk, index)?;
+                        // Add the input ID to the preimage.
+                        message.push(*input_id.id());
+                        // Add the input ID to the inputs.
+                        input_ids.push(input_id);
+                    }
+                    // A record input is computed to its serial number.
+                    ValueType::Record(record_name) => {
+                        let input_id =
+                            InputID::record(&program_id, &record_name, input, &signer, &view_key, &sk_sig, sk_tag)?;
+
+                        // Extract the components for the message.
+                        if let InputID::Record(commitment, gamma, _, _, tag) = input_id {
+                            // Compute the generator `H` as `HashToGroup(commitment)`.
+                            let h = N::hash_to_group_psd2(&[N::serial_number_domain(), commitment])?;
+                            // Compute `h_r` as `r * H`.
+                            let h_r = h * r;
+
+                            // Add (`H`, `r * H`, `gamma`, `tag`) to the preimage.
+                            message.extend([h, h_r, gamma].iter().map(|point| point.to_x_coordinate()));
+                            message.push(tag);
+
+                            // Add the input ID.
+                            input_ids.push(input_id);
+                        } else {
+                            bail!("Expected InputID::Record variant");
+                        }
+                    }
+                    // An external record input is hashed (using `tvk`) to a field element.
+                    ValueType::ExternalRecord(..) => {
+                        let input_id = InputID::external_record(function_id, input, tvk, index)?;
+                        // Add the input ID to the preimage.
+                        message.push(*input_id.id());
+                        // Add the input ID to the inputs.
+                        input_ids.push(input_id);
+                    }
+                    // A future is not a valid input.
+                    ValueType::Future(..) => bail!("A future is not a valid input"),
+                    // A dynamic record input is hashed (using `tvk`) to a field element.
+                    ValueType::DynamicRecord => {
+                        let input_id = InputID::dynamic_record(function_id, input, tvk, index)?;
+                        // Add the input ID to the preimage.
+                        message.push(*input_id.id());
+                        // Add the input ID to the inputs.
+                        input_ids.push(input_id);
+                    }
+                    // A dynamic future is not a valid input.
+                    ValueType::DynamicFuture => bail!("A dynamic future is not a valid input"),
+                };
+
+                Ok(())
+            };
+
+            // Compute and update the input ID.
+            compute_and_update_input_id(&mut message, &mut input_ids, input, &input_type)?;
+            // If dynamic input types were provided, compute and update the dynamic input ID.
+            if let Some(dynamic_input_types) = dynamic_input_types {
+                // Retrieve the dynamic input type.
+                // Note: This indexing is safe because we have already ensured that the lengths match.
+                let dynamic_input_type = &dynamic_input_types[index as usize];
+                // Compute and update the dynamic input ID.
+                compute_and_update_input_id(&mut dynamic_message, &mut dynamic_input_ids, input, dynamic_input_type)?;
+            }
+        }
+
+        // If dynamic input types were provided, extend the message with the dynamic input IDs.
+        let dynamic_input_ids = if dynamic_input_types.is_some() {
+            message.extend(dynamic_message);
+            Some(dynamic_input_ids)
+        } else {
+            None
+        };
+
+        // Compute `challenge` as `HashToScalar(r * G, pk_sig, pr_sig, signer, [tvk, tcm, function ID, is_root, program checksum?, input IDs, dynamic input IDs?])`.
         let challenge = N::hash_to_scalar_psd8(&message)?;
         // Compute `response` as `r - challenge * sk_sig`.
         let response = r - challenge * sk_sig;
@@ -269,13 +227,13 @@ impl<N: Network> Request<N> {
             program_id,
             function_name,
             input_ids,
-            inputs: prepared_inputs,
+            inputs,
             signature: Signature::from((challenge, response, compute_key)),
             sk_tag,
             tvk,
             tcm,
             scm,
-            dynamic,
+            dynamic_input_ids,
         })
     }
 }

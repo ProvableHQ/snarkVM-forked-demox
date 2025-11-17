@@ -210,8 +210,8 @@ impl<N: Network> Stack<N> {
         })?;
         lap!(timer, "Verify the input types");
 
-        // Retrieve the program checksum, if the program has a constructor.
-        let program_checksum = match self.program().contains_constructor() {
+        // Retrieve the program checksum, if the program has a constructor or if the request is dynamic.
+        let program_checksum = match self.program().contains_constructor() || console_request.is_dynamic() {
             true => Some(self.program_checksum_as_field()?),
             false => None,
         };

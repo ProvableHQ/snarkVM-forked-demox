@@ -457,7 +457,10 @@ mod tests {
         // Sample 'is_root'.
         let is_root = true;
         // Sample 'program_checksum'.
-        let program_checksum = set_program_checksum.then(|| console::Field::from_u64(i as u64));
+        let program_checksum = (set_program_checksum || dynamic).then(|| console::Field::from_u64(i as u64));
+
+        // Construct the dynamic input types.
+        let dynamic_input_types = if dynamic { Some(&input_types[..]) } else { None };
 
         // Compute the signed request.
         let request = console::Request::sign(
@@ -469,7 +472,7 @@ mod tests {
             root_tvk,
             is_root,
             program_checksum,
-            Some(dynamic),
+            dynamic_input_types,
             rng,
         )?;
         assert!(request.verify(&input_types, is_root, program_checksum));

@@ -52,8 +52,8 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
     type ReverseTCMMap: for<'a> Map<'a, Field<N>, N::TransitionID>;
     /// The signer commitments.
     type SCMMap: for<'a> Map<'a, N::TransitionID, Field<N>>;
-    /// The mapping of `transition commitment` to whether or not it is dynamic.
-    type DynamicMap: for<'a> Map<'a, N::TransitionID, bool>;
+    /// The mapping of `transition commitment` to its optional dynamic inputs.
+    type DynamicInputMap: for<'a> Map<'a, N::TransitionID, Vec<Input<N>>>;
 
     /// Initializes the transition storage.
     fn open<S: Into<StorageMode>>(storage: S) -> Result<Self>;
@@ -74,8 +74,8 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
     fn reverse_tcm_map(&self) -> &Self::ReverseTCMMap;
     /// Returns the signer commitments map.
     fn scm_map(&self) -> &Self::SCMMap;
-    /// Returns the `dynamic` map.
-    fn dynamic_map(&self) -> &Self::DynamicMap;
+    /// Returns the dynamic input map.
+    fn dynamic_input_map(&self) -> &Self::DynamicInputMap;
 
     /// Returns the storage mode.
     fn storage_mode(&self) -> &StorageMode {
@@ -93,7 +93,7 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
         self.tcm_map().start_atomic();
         self.reverse_tcm_map().start_atomic();
         self.scm_map().start_atomic();
-        self.dynamic_map().start_atomic();
+        self.dynamic_input_map().start_atomic();
     }
 
     /// Checks if an atomic batch is in progress.
@@ -106,7 +106,7 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
             || self.tcm_map().is_atomic_in_progress()
             || self.reverse_tcm_map().is_atomic_in_progress()
             || self.scm_map().is_atomic_in_progress()
-            || self.dynamic_map().is_atomic_in_progress()
+            || self.dynamic_input_map().is_atomic_in_progress()
     }
 
     /// Checkpoints the atomic batch.
@@ -119,7 +119,7 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
         self.tcm_map().atomic_checkpoint();
         self.reverse_tcm_map().atomic_checkpoint();
         self.scm_map().atomic_checkpoint();
-        self.dynamic_map().atomic_checkpoint();
+        self.dynamic_input_map().atomic_checkpoint();
     }
 
     /// Clears the latest atomic batch checkpoint.
@@ -132,7 +132,7 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
         self.tcm_map().clear_latest_checkpoint();
         self.reverse_tcm_map().clear_latest_checkpoint();
         self.scm_map().clear_latest_checkpoint();
-        self.dynamic_map().clear_latest_checkpoint();
+        self.dynamic_input_map().clear_latest_checkpoint();
     }
 
     /// Rewinds the atomic batch to the previous checkpoint.
@@ -145,7 +145,7 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
         self.tcm_map().atomic_rewind();
         self.reverse_tcm_map().atomic_rewind();
         self.scm_map().atomic_rewind();
-        self.dynamic_map().atomic_rewind();
+        self.dynamic_input_map().atomic_rewind();
     }
 
     /// Aborts an atomic batch write operation.
@@ -158,7 +158,7 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
         self.tcm_map().abort_atomic();
         self.reverse_tcm_map().abort_atomic();
         self.scm_map().abort_atomic();
-        self.dynamic_map().abort_atomic();
+        self.dynamic_input_map().abort_atomic();
     }
 
     /// Finishes an atomic batch write operation.
@@ -171,7 +171,7 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
         self.tcm_map().finish_atomic()?;
         self.reverse_tcm_map().finish_atomic()?;
         self.scm_map().finish_atomic()?;
-        self.dynamic_map().finish_atomic()
+        self.dynamic_input_map().finish_atomic()
     }
 
     /// Stores the given `transition` into storage.
@@ -195,9 +195,9 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
             self.reverse_tcm_map().insert(*transition.tcm(), transition_id)?;
             // Store `scm`.
             self.scm_map().insert(transition_id, *transition.scm())?;
-            // Store the `dynamic` flag,  if it exists.
-            if let Some(is_dynamic) = transition.dynamic() {
-                self.dynamic_map().insert(transition_id, is_dynamic)?;
+            // Store the optional dynamic inputs.
+            if let Some(dynamic_inputs) = transition.dynamic_inputs() {
+                self.dynamic_input_map().insert(transition_id, dynamic_inputs.to_vec())?;
             }
 
             Ok(())
@@ -233,7 +233,7 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
             // Remove `scm`.
             self.scm_map().remove(transition_id)?;
             // Remove the `dynamic` flag.
-            self.dynamic_map().remove(transition_id)?;
+            self.dynamic_input_map().remove(transition_id)?;
 
             Ok(())
         })
@@ -260,7 +260,7 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
         // Retrieve the `dynamic` flag.
         // If it is does not exist, then this transition was created before the `dynamic` flag was introduced.
         // The correct value to use is `None`.
-        let dynamic = self.dynamic_map().get_confirmed(transition_id)?;
+        let dynamic = self.dynamic_input_map().get_confirmed(transition_id)?;
 
         match (tpk, tcm, scm) {
             (Some(tpk), Some(tcm), Some(scm)) => {
@@ -306,7 +306,7 @@ pub struct TransitionStore<N: Network, T: TransitionStorage<N>> {
     /// The map of signer commitments.
     scm: T::SCMMap,
     /// The `dynamic` map.
-    dynamic: T::DynamicMap,
+    dynamic_inputs: T::DynamicInputMap,
     /// The transition storage.
     storage: T,
 }
@@ -326,7 +326,7 @@ impl<N: Network, T: TransitionStorage<N>> TransitionStore<N, T> {
             tcm: storage.tcm_map().clone(),
             reverse_tcm: storage.reverse_tcm_map().clone(),
             scm: storage.scm_map().clone(),
-            dynamic: storage.dynamic_map().clone(),
+            dynamic_inputs: storage.dynamic_input_map().clone(),
             storage,
         })
     }
@@ -342,7 +342,7 @@ impl<N: Network, T: TransitionStorage<N>> TransitionStore<N, T> {
             tcm: storage.tcm_map().clone(),
             reverse_tcm: storage.reverse_tcm_map().clone(),
             scm: storage.scm_map().clone(),
-            dynamic: storage.dynamic_map().clone(),
+            dynamic_inputs: storage.dynamic_input_map().clone(),
             storage,
         }
     }
@@ -464,6 +464,11 @@ impl<N: Network, T: TransitionStorage<N>> TransitionStore<N, T> {
     pub fn get_record(&self, commitment: &Field<N>) -> Result<Option<Record<N, Ciphertext<N>>>> {
         self.outputs.get_record(commitment)
     }
+
+    /// Returns the dynamic inputs for the given `transition ID`.
+    pub fn get_dynamic_inputs(&self, transition_id: &N::TransitionID) -> Result<Option<Vec<Input<N>>>> {
+        Ok(self.dynamic_inputs.get_confirmed(transition_id)?.map(|inputs| inputs.into_owned()))
+    }
 }
 
 impl<N: Network, T: TransitionStorage<N>> TransitionStore<N, T> {
@@ -521,11 +526,6 @@ impl<N: Network, T: TransitionStorage<N>> TransitionStore<N, T> {
     /// Returns `true` if the given transition commitment exists.
     pub fn contains_tcm(&self, tcm: &Field<N>) -> Result<bool> {
         self.reverse_tcm.contains_key_confirmed(tcm)
-    }
-
-    /// Returns the `dynamic` flag for the given transition commitment, if it exists.
-    pub fn dynamic(&self, transition_id: &N::TransitionID) -> Result<Option<bool>> {
-        Ok(self.dynamic.get_confirmed(transition_id)?.map(|x| *x))
     }
 }
 

@@ -426,17 +426,9 @@ mod tests {
         );
 
         let input = Input::Public(rng.r#gen(), Some(literal.into()));
-        let transition = Transition::new(
-            program_id,
-            function_id,
-            vec![input],
-            vec![],
-            rng.r#gen(),
-            rng.r#gen(),
-            rng.r#gen(),
-            Some(rng.r#gen()),
-        )
-        .unwrap();
+        let transition =
+            Transition::new(program_id, function_id, vec![input], vec![], rng.r#gen(), rng.r#gen(), rng.r#gen(), None)
+                .unwrap();
         assert!(!restrictions.is_argument_restricted(&transition, 5));
         assert!(restrictions.is_argument_restricted(&transition, 10));
         assert!(restrictions.is_argument_restricted(&transition, 15));
