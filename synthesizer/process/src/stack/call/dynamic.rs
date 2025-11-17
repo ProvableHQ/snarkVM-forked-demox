@@ -141,8 +141,8 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             let console_caller = Some(*stack.program_id());
             // Evaluate the function.
             let response = substack.evaluate_function::<A, R>(call_stack, console_caller, root_tvk, rng)?;
-            // Load the outputs.
-            response.outputs().to_vec()
+            // Convert the callee's outputs to the caller's context.
+            response.dynamic_call_outputs()?
         }
         // Else, throw an error.
         else {
