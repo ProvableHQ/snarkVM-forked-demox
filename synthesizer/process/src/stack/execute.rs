@@ -326,7 +326,7 @@ impl<N: Network> Stack<N> {
                         record_view_key: *record_view_key,
                         gamma: Some(gamma.clone()),
                         static_record_id: *record_id,
-                        register_index: index as u16,
+                        operand_index: index as u16,
                     });
                 }
                 _ => {}
@@ -465,7 +465,7 @@ impl<N: Network> Stack<N> {
             //                         record_name,
             //                         to_static_record: true,
             //                         tvk: registers.tvk()?,
-            //                         register_index: index as u16,
+            //                         operand_index: index as u16,
             //                         record_view_key,
             //                         // TODO (dynamic_dispatch) where to get?
             //                         gamma: Some(Group::<N>::zero()),
@@ -497,7 +497,7 @@ impl<N: Network> Stack<N> {
             //                         record_name,
             //                         to_static_record: false,
             //                         tvk: registers.tvk()?,
-            //                         register_index: index as u16,
+            //                         operand_index: index as u16,
             //                         record_view_key,
             //                         // TODO (dynamic_dispatch) where to get?
             //                         gamma: None,
@@ -523,7 +523,7 @@ impl<N: Network> Stack<N> {
             //                     record_name: input_received.name(),
             //                     to_static_record: true,
             //                     tvk: registers.tvk()?,
-            //                     register_index: index as u16,
+            //                     operand_index: index as u16,
             //                     // TODO (dynamic_dispatch) where to get?
             //                     record_view_key: static_record.view_key(),
             //                     // TODO (dynamic_dispatch) where to get?

@@ -54,7 +54,7 @@ pub struct RecordTranslationData<N: Network> {
     pub record_view_key: Field<N>,
     pub gamma: Option<Group<N>>,
     pub static_record_id: Field<N>,
-    pub register_index: u16,
+    pub operand_index: u16,
 }
 
 /// This trait is intended to be implemented only by `snarkvm_synthesizer_process::Stack`.

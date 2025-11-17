@@ -240,10 +240,10 @@ impl<N: Network> Stack<N> {
             let record_dynamic = DynamicRecord::<N>::from_record(&record_static)?;
             let translation_count = Uniform::rand(rng);
             let tvk = Uniform::rand(rng);
-            let register_index = Uniform::rand(rng);
+            let operand_index = Uniform::rand(rng);
             let record_view_key = Uniform::rand(rng);
             let gamma = Uniform::rand(rng);
-            let id_dynamic = record_dynamic.to_id(function_id, tvk, U16::new(register_index)).unwrap();
+            let id_dynamic = record_dynamic.to_id(function_id, tvk, U16::new(operand_index)).unwrap();
             let to_static_record = Uniform::rand(rng);            
             let commitment = record_static.to_commitment(&program_id, &record_name, &record_view_key).unwrap();
             let id_static = commitment;
@@ -259,7 +259,7 @@ impl<N: Network> Stack<N> {
                 to_static_record,
                 translation_count,
                 tvk,
-                register_index,
+                operand_index,
                 id_dynamic,
                 id_static,
                 record_view_key,

@@ -36,14 +36,14 @@ fn translation_assignment_from_record_str(
     let record_name = Identifier::<CurrentNetwork>::from_str("spacecraft").unwrap();
     let translation_count = Uniform::rand(rng);
     let tvk = Uniform::rand(rng);
-    let register_index = Uniform::rand(rng);
+    let operand_index = Uniform::rand(rng);
     let record_view_key = Uniform::rand(rng);
     let gamma = Uniform::rand(rng);
 
     // Dependent fields
     let record_dynamic = DynamicRecord::<CurrentNetwork>::from_record(&record_static).unwrap();
 
-    let id_dynamic = record_dynamic.to_id(function_id, tvk, U16::new(register_index)).unwrap();
+    let id_dynamic = record_dynamic.to_id(function_id, tvk, U16::new(operand_index)).unwrap();
     
     let commitment = record_static.to_commitment(&program_id, &record_name, &record_view_key).unwrap();
     let id_static = if to_static_record {
@@ -61,7 +61,7 @@ fn translation_assignment_from_record_str(
         to_static_record,
         translation_count,
         tvk,
-        register_index,
+        operand_index,
         id_dynamic,
         id_static,
         record_view_key,

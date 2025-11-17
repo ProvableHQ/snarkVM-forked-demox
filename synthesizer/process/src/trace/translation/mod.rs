@@ -119,8 +119,8 @@ impl<N: Network> Translation<N> {
         );
 
         if let Some(record_translation_arguments) = record_translation_arguments {
-            for (record_translation_argument, register_index) in record_translation_arguments.iter() {
-                self.transition_indices.insert((*transition.id(), *record_translation_argument), *register_index);
+            for (record_translation_argument, operand_index) in record_translation_arguments.iter() {
+                self.transition_indices.insert((*transition.id(), *record_translation_argument), *operand_index);
             }
         }
 

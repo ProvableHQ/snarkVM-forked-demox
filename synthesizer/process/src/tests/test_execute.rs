@@ -2272,25 +2272,25 @@ fn test_translation_case_1() {
       liters as u64.public;
 
     // Consumes a liquid container
-    function consume_liquid:
-      input r0 as liquid_container.record;
-      call.dynamic {program_name_as_field} {network_as_field} {function_name_as_field_1} with r0 (as dynamic.record) into r1 (as bool.public);
-      output r1 as bool.public;
+    // function consume_liquid:
+    //   input r0 as liquid_container.record;
+    //   call.dynamic {program_name_as_field} {network_as_field} {function_name_as_field_1} with r0 (as dynamic.record) into r1 (as bool.public);
+    //   output r1 as bool.public;
 
     // Consumes a container of any type
     function consume_container:
       input r0 as dynamic.record;
       output true as bool.public;
 
-    // Tries to consume a container passed as dynamic as a specifically liquid one
-    function consume_as_liquid:
-      input r0 as dynamic.record;
-      call.dynamic {program_name_as_field} {network_as_field} {function_name_as_field_2} with r0 (as dynamic.record) into r1 (as u64.public);
-      output r1 as u64.public;
+    // // Tries to consume a container passed as dynamic as a specifically liquid one
+    // function consume_as_liquid:
+    //   input r0 as dynamic.record;
+    //   call.dynamic {program_name_as_field} {network_as_field} {function_name_as_field_2} with r0 (as dynamic.record) into r1 (as u64.public);
+    //   output r1 as u64.public;
     
-    function get_liquid_liters:
-      input r0 as liquid_container.record;
-      output r0.liters as u64.public;
+    // function get_liquid_liters:
+    //   input r0 as liquid_container.record;
+    //   output r0.liters as u64.public;
 
     constructor:
         assert.eq true true;

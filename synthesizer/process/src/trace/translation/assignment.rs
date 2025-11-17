@@ -69,7 +69,7 @@ impl<N: Network> TranslationAssignment<N> {
         to_static_record: bool,
         translation_count: u16,
         tvk: Field<N>,
-        register_index: u16,
+        operand_index: u16,
         id_dynamic: Field<N>,
         id_static: Field<N>,
         record_view_key: Field<N>,
@@ -84,7 +84,7 @@ impl<N: Network> TranslationAssignment<N> {
             to_static_record,
             translation_count,
             tvk,
-            operand_index: register_index,
+            operand_index,
             id_dynamic,
             id_static,
             record_view_key,
@@ -121,7 +121,7 @@ impl<N: Network> TranslationAssignment<N> {
         let _circuit_translation_count = circuit::U16::<A>::new(circuit::Mode::Public, console::types::U16::<N>::new(self.translation_count));
 
         // Inject the register index as `Mode::Public`.
-        let circuit_register_index = circuit::U16::<A>::new(circuit::Mode::Public, console::types::U16::<N>::new(self.operand_index));
+        let circuit_operand_index = circuit::U16::<A>::new(circuit::Mode::Public, console::types::U16::<N>::new(self.operand_index));
         
         // Inject the commitment or serial number of the static record as `Mode::Public`.
         let circuit_id_static = circuit::Field::<A>::new(circuit::Mode::Public, self.id_static);
@@ -151,7 +151,7 @@ impl<N: Network> TranslationAssignment<N> {
         let actual_id_dynamic = circuit_record_dynamic.to_id(
             circuit_function_id,
             circuit_tvk,
-            circuit_register_index,
+            circuit_operand_index,
         );
 
         let circuit_static_commitment = circuit_record_static.to_commitment(
@@ -204,7 +204,7 @@ impl<N: Network> TranslationAssignment<N> {
     ///     cm = commit(static_record, [[program_id]], [[record_name]], record_view_key)
     ///     sn = serial_number(cm, gamma)
     ///     internal_id_static_record = to_static_record ? sn : cm
-    ///     internal_id_dynamic_record = HashPSD8([[calling_function_id]] | dynamic_record | tvk | [[register_index]])
+    ///     internal_id_dynamic_record = HashPSD8([[calling_function_id]] | dynamic_record | tvk | [[operand_index]])
     /// 
     ///     assert static_record.owner == dynamic_record.owner
     ///     assert static_record.nonce == dynamic_record.nonce
