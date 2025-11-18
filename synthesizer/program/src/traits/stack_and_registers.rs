@@ -49,6 +49,7 @@ pub struct RecordTranslationData<N: Network> {
     pub program_id: ProgramID<N>,
     pub function_id: Field<N>,
     pub record_name: Identifier<N>,
+    /// TODO (dynamic_dispatch) better nomenclature
     pub to_static_record: bool,
     pub tvk: Field<N>,
     pub record_view_key: Field<N>,

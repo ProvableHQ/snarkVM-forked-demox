@@ -26,6 +26,182 @@ use console::{
 use snarkvm_synthesizer_program::Program;
 use snarkvm_utilities::TestRng;
 
+// fn test_translation(root_function_name: &str, inputs: &[Value<CurrentNetwork>], expected_outputs: &[Value<CurrentNetwork>]) {
+
+//     // Declare function names of dynamic.call instructions.
+//     let get_liquid_liters_function_name = Identifier::<CurrentNetwork>::from_str("get_liquid_liters").unwrap();
+
+//     let program_name_str = "liter_fetcher";
+//     let program_name_as_field = Identifier::<CurrentNetwork>::from_str(program_name_str).unwrap().to_field().unwrap();
+//     let network_as_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+//     let get_liquid_liters_function_name_as_field = get_liquid_liters_function_name.to_field().unwrap();
+
+//     let program_string = format!(r"
+//     program liter_fetcher.aleo;
+    
+//     record liquid_container:
+//       owner as address.private;
+//       liters as u64.public;
+    
+//     record gas_container:
+//       owner as address.private;
+//       liters as u64.public;
+
+//     // Tries to consume a container passed as dynamic as a specifically liquid one
+//     function get_dynamic_liters:
+//       input r0 as dynamic.record;
+//       call.dynamic {program_name_as_field} {network_as_field} {get_liquid_liters_function_name_as_field} with r0 (as dynamic.record) into r1 (as u64.public);
+//       output r1 as u64.public;
+    
+//     function get_liquid_liters:
+//       input r0 as liquid_container.record;
+//       output r0.liters as u64.public;
+
+//     constructor:
+//         assert.eq true true;
+//     ");
+
+//     // Initialize a new program.
+//     let program = Program::<CurrentNetwork>::from_str(&program_string).unwrap();
+
+//     // Construct the process.
+//     let mut process = crate::test_helpers::sample_process(&program);
+
+//     // Initialize the RNG.
+//     let rng = &mut TestRng::default();
+
+//     // Initialize the caller.
+//     let caller_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+//     let caller = Address::try_from(&caller_private_key).unwrap();
+
+//     let record_static_str = format!(r#"{{
+//         owner: {}.private,
+//         liters: 97u64.public,
+//         _nonce: 0group.public,
+//         _version: 1u8.public
+//     }}"#, caller);
+
+//     // Construct the static and dynamic records.
+//     let r0_static = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_str(&record_static_str).unwrap(); 
+//     let r0_dynamic = DynamicRecord::<CurrentNetwork>::from_record(&r0_static).unwrap();
+
+//     // TODO (Antonio) remove
+//     println!("DYNAMIC RECORD OWNER 1: {:#?}", r0_dynamic.owner());
+
+//     // Input and expected output
+//     let r0_value = Value::<CurrentNetwork>::DynamicRecord(r0_dynamic);
+//     let expected_output = Value::<CurrentNetwork>::from_str("97u64").unwrap();
+
+//     // Initialize a new block store.
+//     let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
+//     // Initialize a new finalize store.
+//     let finalize_store = FinalizeStore::<_, FinalizeMemory<_>>::open(StorageMode::new_test(None)).unwrap();
+
+//     // TODO (Antonio) remove
+//     println!("\n\n\n\n\n\n\nDeploying...\n\n\n\n\n\n\n");
+
+//     // Add the program to the process.
+//     let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
+//     // Check that the deployment verifies.
+//     process.verify_deployment::<CurrentAleo, _>(ConsensusVersion::V12, &deployment, rng).unwrap();
+
+//     // TODO (Antonio) remove
+//     println!("\n\n\n\n\n\n\nDeployed and verified\n\n\n\n\n\n\n");
+
+//     // Compute the fee.
+//     let fee = sample_fee::<_, CurrentAleo, _, _>(&process, &block_store, &finalize_store, rng);
+//     // Finalize the deployment.
+//     let (stack, _) = process.finalize_deployment(sample_finalize_state(1), &finalize_store, &deployment, &fee).unwrap();
+//     // Synthesize the translation key.
+//     stack.synthesize_translation_key::<CurrentAleo, _>(&Identifier::from_str("liquid_container").unwrap(), rng).unwrap();
+//     // Add the stack *manually* to the process.
+//     process.add_stack(stack);
+
+//     // Authorize the function call.
+//     let authorization = process
+//         .authorize::<CurrentAleo, _>(&caller_private_key, program.id(), get_dynamic_liters_function_name, [r0_value].iter(), rng)
+//         .unwrap();
+//     assert_eq!(authorization.len(), 2);
+//     println!("\nAuthorize\n{:#?}\n\n", authorization.to_vec_deque());
+
+//     // Compute the output value.
+//     let response = process.evaluate::<CurrentAleo>(authorization.replicate()).unwrap();
+//     let candidate = response.outputs();
+//     assert_eq!(1, candidate.len());
+//     assert_eq!(expected_output, candidate[0]);
+
+//     // Check again to make sure we didn't modify the authorization after calling `evaluate`.
+//     assert_eq!(authorization.len(), 1);
+
+//     // Execute the request.
+//     let (response, mut trace) = process.execute::<CurrentAleo, _>(authorization, rng).unwrap();
+//     let candidate = response.outputs();
+//     assert_eq!(1, candidate.len());
+//     assert_eq!(expected_output, candidate[0]);
+
+//     // TODO (Antonio) reintroduce
+//     // // Construct the expected transition order.
+//     // let expected_order = [
+//     //     (program.id(), consume_liquid_function_name),
+//     // ];
+
+//     // // Check the expected transition order.
+//     // for (transition, (expected_program_id, expected_function_name)) in
+//     //     trace.transitions().iter().zip_eq(expected_order.iter())
+//     // {
+//     //     assert_eq!(transition.program_id(), *expected_program_id);
+//     //     assert_eq!(transition.function_name(), expected_function_name);
+//     // }
+
+//     // Prepare the trace.
+//     trace.prepare(&Query::from(block_store)).unwrap();
+
+//     // Prove the execution.
+//     let execution = trace.prove_execution::<CurrentAleo, _>(program_name_str, VarunaVersion::V2, rng).unwrap();
+
+//     // Verify the execution.
+//     process.verify_execution(ConsensusVersion::V10, VarunaVersion::V2, InclusionVersion::V1, &execution).unwrap();
+// }
+
+// #[test]
+// fn test_execute_with_translation_case_2() {
+
+//     let program_id_as_field = Identifier::<CurrentNetwork>::from_str("liter_fetcher").unwrap().to_field().unwrap();
+//     let network_as_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+//     let function_as_field = Identifier::<CurrentNetwork>::from_str("consume_liquid").unwrap().to_field().unwrap();
+    
+//     let program_string = format!(r"
+//     program liter_fetcher.aleo;
+    
+//     record liquid_container:
+//       owner as address.private;
+//       liters as u64.public;
+    
+//     record gas_container:
+//       owner as address.private;
+//       liters as u64.public;
+
+//     function consume_liquid:
+//       input r0 as liquid_container.record;
+//       call.dynamic {program_id_as_field} {network_as_field} {function_as_field} with r0 (as liquid_container.record) into r1 (as boolean.public);
+//       output r1 as boolean.public;
+
+//     function consume_container:
+//       input r0 as dynamic.record;
+//       output true as boolean.public;
+
+//     constructor:
+//         assert.eq true true;
+//     ");
+
+//     // Initialize a new program.
+//     let (remainder, program) = Program::<CurrentNetwork>::parse(&program_string).unwrap();
+//     assert!(remainder.is_empty(), "Parser did not consume all of the string: '{remainder}'");
+
+//     // Construct the process.
+//     let mut process = crate::test_helpers::sample_process(&program);
+// }
+
 // This test verifiers that a dynamic call to the `credits.transfer_public` function works as expected.
 #[test]
 fn test_dynamic_call_to_transfer_public() -> Result<()> {
@@ -289,3 +465,17 @@ constructor:
     // Obtain the credits_a change and credits_b receiver records.
     let (_change_record, _receiver_record) = block.records().map(|(_, record)| record.decrypt(&caller_view_key)).collect::<Result<Vec<_>>>().unwrap().split_at(1);
 }
+
+// TODO (dynamic_dispatch) translation test cases
+// - input static -> dynamic
+// - input dynamic -> static
+// - output static -> dynamic
+// - output dynamic -> static
+// - input dynamic -> dynamic (no translation)
+// - input static -> static (no translation)
+// - input dynamic -> dynamic (no translation)
+// Chained combinations (not exhaustive)
+// - input static -> dynamic subsequently passed as input dynamic -> static
+// - output static -> dynamic subsequently passed as output dynamic -> static
+// Triple chains
+// 

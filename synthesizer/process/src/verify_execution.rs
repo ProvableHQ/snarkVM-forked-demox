@@ -339,7 +339,7 @@ impl<N: Network> Process<N> {
         // [Inputs] Extend the verifier inputs with the output IDs.
         verifier_inputs.extend(transition.outputs().iter().flat_map(|output| output.verifier_inputs()));
 
-        dev_println!("Transition public inputs ({} elements): {:#?}", inputs.len(), inputs);
+        dev_println!("Transition public inputs ({} elements): {:#?}", verifier_inputs.len(), verifier_inputs);
         Ok(verifier_inputs)
     }
 }

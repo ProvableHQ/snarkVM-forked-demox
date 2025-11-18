@@ -166,6 +166,9 @@ impl<N: Network> Stack<N> {
             A::set_variable_limit(*variable_limit);
         }
 
+        // TODO (dynamic_dispatch) remove
+        println!("call_stack: {:#?}", call_stack);
+
         // Retrieve the next request.
         let console_request = call_stack.pop()?;
 
@@ -215,7 +218,9 @@ impl<N: Network> Stack<N> {
         lap!(timer, "Retrieve the input and output types");
 
         // Ensure the inputs match their expected types.
-        console_request.inputs().iter().zip_eq(&input_types).try_for_each(|(input, input_type)| {
+        console_request .inputs().iter().zip_eq(&input_types).try_for_each(|(input, input_type)| {
+            // TODO (Antonio) remove
+            println!("MATCHINING INPUT TYPES FOR FUNCTION {}: Input: {:#?}, Input Type: {:#?}", function.name(), input, input_type);
             // Ensure the input matches the input type in the function.
             self.matches_value_type(input, input_type)
         })?;
@@ -282,6 +287,10 @@ impl<N: Network> Stack<N> {
         // Set the transition view key, as a circuit.
         registers.set_tvk_circuit(request.tvk().clone());
 
+        // Set the transition function name.
+        registers.set_function_name(function.name().clone());
+
+
         lap!(timer, "Initialize the registers");
 
         Self::log_circuit::<A>("Request");
@@ -306,6 +315,12 @@ impl<N: Network> Stack<N> {
 
         // TODO (dynamic_dispatch) Is this correct? Is the dynamic record id unique enough to serve as an identifier here?
         for (index, ((input_value, input_id), input_type)) in console_request.inputs().iter().zip_eq(console_request.input_ids()).zip_eq(function.input_types()).enumerate() {
+            // Continue if we are in anything but CallStack::Execute mode
+            if let CallStack::Execute(..) = registers.call_stack_ref() {
+                println!("Inserting record translation data for input {index}");
+            } else {
+                continue;
+            }
             match (input_value, input_type, input_id) {
                 // TODO (dynamic_dispatch) move or detect whether translation is happening
                 (Value::Record(record_static), ValueType::Record(record_name), InputID::Record(record_id, gamma, record_view_key, _, _)) => {                    
@@ -382,15 +397,27 @@ impl<N: Network> Stack<N> {
                     // TODO (@d0cd): Explain this count.
                     num_public += 7;
                     // Execute the dynamic call.
-                    CallTrait::execute(call_dynamic, self, &mut registers, rng)
+                    // TODO (Antonio) remove
+                    println!("BEFORE EXECUTE DYNAMIC");
+                    let result = CallTrait::execute(call_dynamic, self, &mut registers, rng);
+
+                    println!("AFTER EXECUTE DYNAMIC: {:#?}", result);
+                    result
                 }
                 // Otherwise, execute the instruction normally.
                 _ => instruction.execute(self, &mut registers),
             };
+
+            // TODO (Antonio) remove
+            println!("BEFORE");
+
             // If the execution fails, bail and return the error.
             if let Err(error) = result {
                 bail!("Failed to execute instruction ({instruction}): {error}");
             }
+
+            // TODO (Antonio) remove
+            println!("AFTER");
 
             // If the instruction was a function call, then set the tracker to `true`.
             match instruction {

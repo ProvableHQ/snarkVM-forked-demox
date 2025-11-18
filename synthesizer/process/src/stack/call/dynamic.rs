@@ -115,6 +115,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                 let Some(private_key) = private_key else {
                     bail!("Cannot authorize a new function call without a private key.")
                 };
+
                 // Retrieve the program checksum, if the program has a constructor.
                 let program_checksum = match substack.program().contains_constructor() {
                     true => Some(substack.program_checksum_as_field()?),
@@ -145,52 +146,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             let response = substack.evaluate_function::<A, R>(call_stack, console_caller, root_tvk, rng)?;
             // Load the outputs.
             let outputs = response.outputs().to_vec();
-            // Collect record inputs to translate.
-            // TODO(dynamic_dispatch): it is inconsistent to compare InputID and ValueType.
-            // Consider taking InputID from the new Request, or getting the ValueType from the caller function.
-            ensure!(inputs.len() == function.inputs().len(), "Expected {} inputs, found {}", function.inputs().len(), inputs.len());
-            for (index, (parent_input_id, child_input)) in inputs.iter().zip(function.inputs()).enumerate() {
-                match (parent_input_id, child_input.value_type()) {
-                    (Value::Record(record), ValueType::DynamicRecord) => {
-                        // TODO (dynamic_dispatch) 
-                        // registers.insert_record_translation_argument(*id)
-                        bail!("Translation case input static -> dynamic not implemented")
-                    },
-                    // TODO (dynamic_dispatch) ExternalRecord handling deferred
-                    // (InputID::DynamicRecord(id), ValueType::ExternalRecord(_)) => registers.insert_record_translation_argument(*id),
-                    (Value::DynamicRecord(dynamic_record), ValueType::Record(_)) => {
-                        let function_id = compute_function_id(
-                            &U16::<N>::new(N::ID),
-                            stack.program_id(),
-                            &function_name,
-                            // TODO (dynamic_dispatch) Is this correct?
-                            true,
-                        );
 
-                        let dynamic_record_id = dynamic_record.to_id(
-                            function_id?,
-                            registers.tvk()?,
-                            U16::<N>::new(index as u16),
-                        );
-                        registers.insert_record_translation_argument(dynamic_record_id?, index as u16)
-                    },
-                    _ => { } // No translation to perform.
-                }
-            }
-            // Collect record outputs to translate.
-            // TODO(dynamic_dispatch): it is inconsistent to compare OutputID and ValueType.
-            // Consider taking OutputIDs from the new Response, or getting the ValueType from the caller function.
-            ensure!(response.output_ids().len() == function.outputs().len(), "Expected {} outputs, found {}", function.outputs().len(), response.output_ids().len());
-            for (parent_output_id, child_output) in response.output_ids().iter().zip(function.outputs()) {
-                // TODO (dynamic_dispatch) implement this
-                // match (parent_output_id, child_output.value_type()) {
-                //     (OutputID::Record(id, ..), ValueType::DynamicRecord) => registers.insert_record_translation_argument(*id), 
-                //     // TODO (dynamic_dispatch) ExternalRecord handling deferred
-                //     // (OutputID::DynamicRecord(id), ValueType::ExternalRecord(_)) => registers.insert_record_translation_argument(*id),
-                //     (OutputID::DynamicRecord(id), ValueType::Record(_)) => registers.insert_record_translation_argument(*id),
-                //     _ => { } // No translation to perform.
-                // }
-            }
             // Return the outputs.
             outputs
         }
@@ -249,9 +205,6 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             bail!("Expected the third operand of `call.dynamic` to be a 'Field' literal.")
         };
 
-        // Get the Request of the caller.
-        let caller_request = registers.call_stack_ref().peek()?;
-
         // Separate the remaining inputs as the function inputs.
         let inputs = &inputs[3..];
 
@@ -260,20 +213,39 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
 
         // Retrieve the program checksum, if the program has a constructor.
         // TODO (@d0cd): Every dynamic request should take in a checksum.
-        let program_checksum = None;
+        // let program_checksum = None;
+        // TODO (dynamic_dispatch) added, perhaps incorrect
+        let program_checksum = match stack.program().contains_constructor() {
+            true => Some(stack.program_checksum_as_field()?),
+            false => None,
+        };
 
-        // Execute the function.
-        let outputs = {
-            lap!(timer, "Execute the function");
-
-            // Resolve the program and function.
-            let target = resolve_dynamic_target(
+        // Resolve the program and function.
+        let function = {
+            let Some(target) = resolve_dynamic_target(
                 registers.call_stack_ref(),
                 stack,
                 &program_name_as_field.eject_value(),
                 &program_network_as_field.eject_value(),
                 &function_name_as_field.eject_value(),
-            )?;
+            )? else {
+                bail!("Failed to resolve the target of the dynamic call in 'Authorize' mode.")
+            };
+            let substack = target.substack();
+            substack.program().get_function_ref(target.function_name())?.clone()
+        };
+
+        let target = resolve_dynamic_target(
+            registers.call_stack_ref(),
+            stack,
+            &program_name_as_field.eject_value(),
+            &program_network_as_field.eject_value(),
+            &function_name_as_field.eject_value(),
+        )?;
+        
+        // Execute the function.
+        let outputs = {
+            lap!(timer, "Execute the function");
 
             // Retrieve the number of public variables in the circuit.
             let num_public = A::num_public();
@@ -311,13 +283,47 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         let Some(private_key) = private_key else {
                             bail!("Cannot authorize a new function call without a private key.")
                         };
+
+                        // TODO (Antonio) this provably overlaps; just patching things up for the test
+                        // TODO (dynamic_dispatch)
+                        // TODO (d0cd)
+                        println!("INPUTS BEFORE: {:#?}", inputs);
+                        use console::program::DynamicRecord;
+                        let mut inputs = inputs;
+                        let child_expected_input_types = function.input_types();
+                        for (child_input_value, child_expected_input_type) in inputs.iter_mut().zip_eq(child_expected_input_types) {
+                            match (&child_input_value, child_expected_input_type) {
+                                (Value::Record(record), ValueType::DynamicRecord) => {
+                                    // TODO (dynamic_dispatch) Remove
+                                    println!("Dynamic dispatch patch (Execute;in function {}): converting input static record from parent to expected dynamic record", function.name());
+                                    *child_input_value = Value::DynamicRecord(DynamicRecord::from_record(record)?);
+                                }
+                                (Value::DynamicRecord(dynamic_record), ValueType::Record(name)) => {
+                                    // TODO (dynamic_dispatch) get the right value of owner_is_private
+                                    println!("Dynamic dispatch patch (Execute; in function {}): converting input dynamic from parent record to expected static record {name}", function.name());
+                                    println!("    - Dynamic record data is some? {:#?}", dynamic_record.data());
+                                    *child_input_value = Value::Record(dynamic_record.to_record(true)?);
+                                }
+                                _ => {}
+                            }
+                        }
+                        println!("INPUTS AFTER: {:#?}", inputs);
+
+                        // TODO (Antonio) remove
+                        println!("@@@@@@@@@@@@@@@@\n\nSigning request for function {}\n\n", function.name());
+                        println!("Input types:");
+                        for input_type in function.input_types() {
+                            println!("    OUTSIDE: input type: {:#?}", input_type);
+                        }
+
                         // Compute the request.
                         let request = Request::sign(
                             private_key,
                             *target.substack().program_id(),
                             *function.name(),
                             inputs.iter(),
-                            &self.operand_types(),
+                            // TODO (dynamic_dispatch) updated from self.operand_types() to child_expected_input_types
+                            &function.input_types(),
                             root_tvk,
                             is_root,
                             program_checksum,
@@ -345,10 +351,61 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                     CallStack::Synthesize(_, private_key, ..) | CallStack::CheckDeployment(_, private_key, ..) => {
                         // Sample a random program ID.
                         // Note. It does not matter what program ID we use here, since we are only synthesizing dummy outputs.
-                        let program_id = ProgramID::from_str("a.aleo")?;
+                        let program_id = if let Some(some_target) = target {
+                            *some_target.substack().program_id()
+                        } else {
+                            ProgramID::from_str("a.aleo")?
+                        };
                         // Sample a random function name.
                         // Note. It does not matter what function name we use here, since we are only synthesizing dummy outputs.
-                        let function_name = Identifier::<N>::from_str("a")?;
+                        let function_name = *function.name();
+
+                        // TODO (Antonio) this provably overlaps; just patching things up for the test
+                        // TODO (dynamic_dispatch)
+                        // TODO (d0cd)
+                        println!("INPUTS BEFORE: {:#?}", inputs);
+                        use console::program::DynamicRecord;
+                        use indexmap::IndexMap;
+                        let mut inputs = inputs;
+                        let child_expected_input_types = function.input_types();
+                        for (child_input_value, child_expected_input_type) in inputs.iter_mut().zip_eq(child_expected_input_types) {
+                            match (&child_input_value, child_expected_input_type) {
+                                (Value::Record(record), ValueType::DynamicRecord) => {
+                                    // TODO (dynamic_dispatch) Remove
+                                    println!("Dynamic dispatch patch (Synthesize; in function {}): converting input static record from parent to expected dynamic record", function.name());
+                                    *child_input_value = Value::DynamicRecord(DynamicRecord::from_record(record)?);
+                                }
+                                (Value::DynamicRecord(dynamic_record), ValueType::Record(name)) => {
+                                    // TODO (dynamic_dispatch) get the right value of owner_is_private
+                                    // TODO (dynamic_dispatch) perhaps sampling a random record is okay
+                                    let dynamic_record_with_data = DynamicRecord::new_unchecked(
+                                        // TODO (dynamic_dispatch) why was the owner not set as the signer before? Is a dynamic record sampled without signer information?
+                                        //                         Getting the following error during synthesis: Input record for (...) must belong to the signer
+                                        Address::try_from(private_key)?,
+                                        *dynamic_record.root(),
+                                        *dynamic_record.nonce(),
+                                        *dynamic_record.version(),
+                                        dynamic_record.tree().clone(),
+                                        Some(IndexMap::new())
+                                    );
+                                    println!("Dynamic dispatch patch (Synthesize; in function {}): converting input dynamic from parent record to expected static record {name}", function.name());
+                                    println!("    - Dynamic record data is some? {:#?}", dynamic_record_with_data.data().is_some());
+                                    println!("      OWNER: {:#?}", dynamic_record_with_data.owner());
+                                    println!("      SIGNER: {:#?}", Address::try_from(private_key)?);
+
+                                    *child_input_value = Value::Record(dynamic_record_with_data.to_record(true)?);
+                                }
+                                _ => {}
+                            }
+                        }
+                        println!("INPUTS AFTER: {:#?}", inputs);
+
+                        // TODO (Antonio) remove
+                        println!("@@@@@@@@@@@@@@@@\n\nSigning request for function {}\n\n", function.name());
+                        println!("Input types:");
+                        for input_type in function.input_types() {
+                            println!("    input type: {:#?}", input_type);
+                        }
 
                         // Compute the request.
                         let request = Request::sign(
@@ -356,7 +413,8 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             program_id,
                             function_name,
                             inputs.iter(),
-                            &self.operand_types(),
+                            // TODO (dynamic_dispatch) updated from self.operand_types() to child_expected_input_types
+                            &function.input_types(),
                             root_tvk,
                             is_root,
                             program_checksum,
@@ -495,34 +553,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             };
             lap!(timer, "Computed the request and response");
 
-            // Collect record inputs to translate.
-            ensure!(caller_request.input_ids().len() == request.input_ids().len(), "Expected {} inputs, found {}", request.input_ids().len(), caller_request.input_ids().len());
-            for (parent_input_id, child_input_id) in caller_request.input_ids().iter().zip(request.input_ids()) {
-                match (parent_input_id, child_input_id) {
-                    // TODO (dynamic_dispatch) ExternalRecord handling deferred
-                    // (InputID::ExternalRecord(id), InputID::DynamicRecord(_)) => registers.insert_record_translation_argument(*id),
-                    // (InputID::Record(id, ..), InputID::DynamicRecord(_)) => registers.insert_record_translation_argument(*id),
-                    // (InputID::DynamicRecord(id), InputID::Record(..)) => registers.insert_record_translation_argument(*id),
-                    // TODO (dynamic_dispatch) ExternalRecord handling deferred
-                    // (InputID::DynamicRecord(id), InputID::ExternalRecord(_)) => registers.insert_record_translation_argument(*id),
-                    _ => { } // No translation to perform.
-                }
-            }
-            // TODO(dynamic_dispatch): implement this.
-            // // Collect record outputs to translate.
-            // // TODO(dynamic_dispatch): it is inconsistent to compare OutputIDs and ValueType.
-            // // Consider taking OutputIDs from the new Response, or getting the ValueType from the caller function.
-            // ensure!(response.output_ids().len() == function.outputs().len(), "Expected {} outputs, found {}", function.outputs().len(), response.output_ids().len());
-            // for (parent_output_id, child_output) in response.output_ids().iter().zip(function.outputs()) {
-            //     match (parent_output_id, child_output.value_type()) {
-            //         (OutputID::Record(id, ..), ValueType::DynamicRecord) => registers.insert_record_translation_argument(*id),
-            //         (OutputID::DynamicRecord(id), ValueType::ExternalRecord(_)) => registers.insert_record_translation_argument(*id),
-            //         (OutputID::DynamicRecord(id), ValueType::Record(_)) => registers.insert_record_translation_argument(*id),
-            //         _ => { } // No translation to perform.
-            //     }
-            // }
-
-            // Inject the existing circuit.
+            // Inject the existing circuit.∫
             A::inject_r1cs(r1cs);
 
             use circuit::Inject;
@@ -556,11 +587,15 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             // Ensure the transition commitment matches the computed transition commitment.
             A::assert_eq(&tcm, candidate_tcm);
             // Inject the input IDs (from the request) as `Mode::Public`.
+            //  TODO(dynamic_dispatch) we need to inject caller input types not callee. Same for the outputs. In the case of translation.
             let input_ids = request
                 .input_ids()
                 .iter()
                 .map(|input_id| circuit::InputID::new(circuit::Mode::Public, *input_id))
                 .collect::<Vec<_>>();
+
+            // TODO (Antonio) remove
+            println!("BEFORE CHECK INPUT IDS 2 in function {}, {}", function.name(), function_name);
 
             // Ensure the candidate input IDs match their computed inputs.
             let (check_input_ids, _) = circuit::Request::check_input_ids::<false>(
@@ -569,7 +604,8 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                 &function_name,
                 &input_ids,
                 inputs,
-                &self.operand_types(),
+                // TODO (dynamic_dispatch) updated from self.operand_types() to child_expected_input_types. Correct?
+                &function.input_types(),
                 &signer,
                 &sk_tag,
                 &tvk,
@@ -579,6 +615,9 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             );
             A::assert(check_input_ids);
             lap!(timer, "Checked the input ids");
+
+            // TODO (Antonio) remove
+            println!("BEFORE CHECK INPUT IDS 2");
 
             // Get the outputs from the response, checking that none are records.
             let outputs = response.outputs().to_vec();
@@ -607,9 +646,43 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                 true,
             );
             lap!(timer, "Checked the outputs");
+
             // Return the circuit outputs.
             outputs
         };
+
+        // Collect record inputs to translate.
+        // TODO(dynamic_dispatch): it is inconsistent to compare InputID and ValueType.
+        // Consider taking InputID from the new Request, or getting the ValueType from the caller function.
+        ensure!(inputs.len() == function.inputs().len(), "Expected {} inputs, found {}", function.inputs().len(), inputs.len());
+        for (index, (parent_input_id, child_input)) in inputs.iter().zip(function.inputs()).enumerate() {
+            match (parent_input_id.eject_value(), child_input.value_type()) {
+                (Value::Record(record), ValueType::DynamicRecord) => {
+                    // TODO (dynamic_dispatch) 
+                    // registers.insert_record_translation_argument(*id)
+                    bail!("Translation case input static -> dynamic not implemented")
+                },
+                // TODO (dynamic_dispatch) ExternalRecord handling deferred
+                // (InputID::DynamicRecord(id), ValueType::ExternalRecord(_)) => registers.insert_record_translation_argument(*id),
+                (Value::DynamicRecord(dynamic_record), ValueType::Record(_)) => {
+                    let function_id = compute_function_id(
+                        &U16::<N>::new(N::ID),
+                        stack.program_id(),
+                        &function.name(),
+                        // TODO (dynamic_dispatch) Is this correct?
+                        true,
+                    );
+
+                    let dynamic_record_id = dynamic_record.to_id(
+                        function_id?,
+                        registers.tvk()?,
+                        U16::<N>::new(index as u16),
+                    );
+                    registers.insert_record_translation_argument(dynamic_record_id?, index as u16)
+                },
+                _ => { } // No translation to perform.
+            }
+        }
 
         // Assign the outputs to the destination registers.
         for (output, register) in outputs.into_iter().zip_eq(&self.destinations()) {

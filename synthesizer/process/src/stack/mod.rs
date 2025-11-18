@@ -70,7 +70,7 @@ use rayon::prelude::*;
 pub type Assignments<N> = Arc<RwLock<Vec<(circuit::Assignment<<N as Environment>::Field>, CallMetrics<N>)>>>;
 
 /// The `CallStack` is used to track the current state of the program execution.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum CallStack<N: Network> {
     /// Authorize an `Execute` transaction.
     Authorize(Vec<Request<N>>, Option<PrivateKey<N>>, Authorization<N>),

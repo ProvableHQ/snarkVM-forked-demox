@@ -46,6 +46,10 @@ impl<N: Network> Signature<N> {
             Err(_) => return false,
         };
 
+
+        // TODO (Antonio) remove
+        println!("IN VERIFIER LAND CANDIDATE CHALLENGE: {:#?}", candidate_challenge);
+
         // Derive the address from the compute key, and return `false` if this operation fails.
         let candidate_address = match Address::try_from(self.compute_key) {
             // Output the computed candidate address.

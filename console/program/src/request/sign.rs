@@ -32,6 +32,20 @@ impl<N: Network> Request<N> {
         dynamic: Option<bool>,
         rng: &mut R,
     ) -> Result<Self> {
+
+        // TODO (Antonio) remove
+        println!("IN SIGNER LAND INPUTS for function {}", function_name);
+        println!("    private_key: {:#?}", private_key);
+        println!("    program_id: {:#?}", program_id);
+        println!("    function_name: {:#?}", function_name);
+        println!("    root_tvk: {:#?}", root_tvk);
+        println!("    is_root: {:#?}", is_root);
+        println!("    program_checksum: {:#?}", program_checksum);
+        println!("    dynamic: {:#?}", dynamic);
+        for input in input_types {
+            println!("    INSIDE: input type: {:#?}", input);
+        }
+
         // Ensure the number of inputs matches the number of input types.
         if input_types.len() != inputs.len() {
             bail!(
@@ -96,10 +110,18 @@ impl<N: Network> Request<N> {
 
         // Prepare the inputs.
         for (index, (input, input_type)) in inputs.zip_eq(input_types).enumerate() {
+
             // Prepare the input.
             let input = input.try_into().map_err(|_| {
-                anyhow!("Failed to parse input #{index} ('{input_type}') for '{program_id}/{function_name}'")
+                anyhow!("[console:Request::sign] Failed to parse input #{index} ('{input_type}') for '{program_id}/{function_name}'")
             })?;
+
+            // TODO (Antonio) remove
+            println!("    - input");
+            println!("        - index: {:#?}", index);
+            println!("        - input: {:#?}", input);
+            println!("        - input_type: {:#?}", input_type);
+
             // Store the prepared input.
             prepared_inputs.push(input.clone());
 
@@ -107,10 +129,10 @@ impl<N: Network> Request<N> {
                 // A constant input is hashed (using `tcm`) to a field element.
                 ValueType::Constant(..) => {
                     // Ensure the input is a plaintext.
-                    ensure!(matches!(input, Value::Plaintext(..)), "Expected a plaintext input");
+                    ensure!(matches!(input, Value::Plaintext(..)), "[console:Request::sign] (in function {}) Expected a plaintext input", function_name);
 
                     // Construct the (console) input index as a field element.
-                    let index = Field::from_u16(u16::try_from(index).or_halt_with::<N>("Input index exceeds u16"));
+                    let index = Field::from_u16(u16::try_from(index).or_halt_with::<N>(&format!("[console:Request::sign] (in function {}) Input index exceeds u16", function_name)));
                     // Construct the preimage as `(function ID || input || tcm || index)`.
                     let mut preimage = Vec::new();
                     preimage.push(function_id);
@@ -128,10 +150,10 @@ impl<N: Network> Request<N> {
                 // A public input is hashed (using `tcm`) to a field element.
                 ValueType::Public(..) => {
                     // Ensure the input is a plaintext.
-                    ensure!(matches!(input, Value::Plaintext(..)), "Expected a plaintext input");
+                    ensure!(matches!(input, Value::Plaintext(..)), "[console:Request::sign] (in function {}) Expected a plaintext input", function_name);
 
                     // Construct the (console) input index as a field element.
-                    let index = Field::from_u16(u16::try_from(index).or_halt_with::<N>("Input index exceeds u16"));
+                    let index = Field::from_u16(u16::try_from(index).or_halt_with::<N>(&format!("[console:Request::sign] (in function {}) Input index exceeds u16", function_name)));
                     // Construct the preimage as `(function ID || input || tcm || index)`.
                     let mut preimage = Vec::new();
                     preimage.push(function_id);
@@ -149,20 +171,20 @@ impl<N: Network> Request<N> {
                 // A private input is encrypted (using `tvk`) and hashed to a field element.
                 ValueType::Private(..) => {
                     // Ensure the input is a plaintext.
-                    ensure!(matches!(input, Value::Plaintext(..)), "Expected a plaintext input");
+                    ensure!(matches!(input, Value::Plaintext(..)), "[console:Request::sign] (in function {}) Expected a plaintext input", function_name);
 
                     // Construct the (console) input index as a field element.
-                    let index = Field::from_u16(u16::try_from(index).or_halt_with::<N>("Input index exceeds u16"));
+                    let index = Field::from_u16(u16::try_from(index).or_halt_with::<N>(&format!("[console:Request::sign] (in function {}) Input index exceeds u16", function_name)));
                     // Compute the input view key as `Hash(function ID || tvk || index)`.
                     let input_view_key = N::hash_psd4(&[function_id, tvk, index])?;
                     // Compute the ciphertext.
                     let ciphertext = match &input {
                         Value::Plaintext(plaintext) => plaintext.encrypt_symmetric(input_view_key)?,
                         // Ensure the input is a plaintext.
-                        Value::Record(..) => bail!("Expected a plaintext input, found a record input"),
-                        Value::Future(..) => bail!("Expected a plaintext input, found a future input"),
-                        Value::DynamicRecord(..) => bail!("Expected a plaintext input, found a dynamic record input"),
-                        Value::DynamicFuture(..) => bail!("Expected a plaintext input, found a dynamic future input"),
+                        Value::Record(..) => bail!("[console:Request::sign] (in function {}) Expected a plaintext input, found a record input", function_name),
+                        Value::Future(..) => bail!("[console:Request::sign] (in function {}) Expected a plaintext input, found a future input", function_name),
+                        Value::DynamicRecord(..) => bail!("[console:Request::sign] (in function {}) Expected a plaintext input, found a dynamic record input", function_name),
+                        Value::DynamicFuture(..) => bail!("[console:Request::sign] (in function {}) Expected a plaintext input, found a dynamic future input", function_name),
                     };
                     // Hash the ciphertext to a field element.
                     let input_hash = N::hash_psd8(&ciphertext.to_fields()?)?;
@@ -178,13 +200,13 @@ impl<N: Network> Request<N> {
                     let record = match &input {
                         Value::Record(record) => record,
                         // Ensure the input is a record.
-                        Value::Plaintext(..) => bail!("Expected a record input, found a plaintext input"),
-                        Value::Future(..) => bail!("Expected a record input, found a future input"),
-                        Value::DynamicRecord(..) => bail!("Expected a record input, found a dynamic record input"),
-                        Value::DynamicFuture(..) => bail!("Expected a record input, found a dynamic future input"),
+                        Value::Plaintext(..) => bail!("[console:Request::sign] (in function {}) Expected a record input, found a plaintext input", function_name),
+                        Value::Future(..) => bail!("[console:Request::sign] (in function {}) Expected a record input, found a future input", function_name),
+                        Value::DynamicRecord(..) => bail!("[console:Request::sign] (in function {}) Expected a record input, found a dynamic record input", function_name),
+                        Value::DynamicFuture(..) => bail!("[console:Request::sign] (in function {}) Expected a record input, found a dynamic future input", function_name),
                     };
                     // Ensure the record belongs to the signer.
-                    ensure!(**record.owner() == signer, "Input record for '{program_id}' must belong to the signer");
+                    ensure!(**record.owner() == signer, "[console:Request::sign] (in function {}) Input record for '{program_id}' must belong to the signer", function_name);
                     // Compute the record view key.
                     let record_view_key = (*record.nonce() * *view_key).to_x_coordinate();
                     // Compute the record commitment.
@@ -212,10 +234,10 @@ impl<N: Network> Request<N> {
                 // An external record input is hashed (using `tvk`) to a field element.
                 ValueType::ExternalRecord(..) => {
                     // Ensure the input is a record.
-                    ensure!(matches!(input, Value::Record(..)), "Expected a record input");
+                    ensure!(matches!(input, Value::Record(..)), "[console:Request::sign] (in function {}) Expected a record input", function_name);
 
                     // Construct the (console) input index as a field element.
-                    let index = Field::from_u16(u16::try_from(index).or_halt_with::<N>("Input index exceeds u16"));
+                    let index = Field::from_u16(u16::try_from(index).or_halt_with::<N>(&format!("[console:Request::sign] (in function {}) Input index exceeds u16", function_name)));
                     // Construct the preimage as `(function ID || input || tvk || index)`.
                     let mut preimage = Vec::new();
                     preimage.push(function_id);
@@ -231,14 +253,16 @@ impl<N: Network> Request<N> {
                     input_ids.push(InputID::ExternalRecord(input_hash));
                 }
                 // A future is not a valid input.
-                ValueType::Future(..) => bail!("A future is not a valid input"),
+                ValueType::Future(..) => bail!("[console:Request::sign] (in function {}) A future is not a valid input", function_name),
                 // A dynamic record input is hashed (using `tvk`) to a field element.
                 ValueType::DynamicRecord => {
+                    // TODO (Antonio) remove
+                    println!("BEFORE SIGNER CHECK: actual value: {:#?}, is it a record? {:#?}", input, matches!(input, Value::Record(..)));
                     // Ensure the input is a dynamic record.
-                    ensure!(matches!(input, Value::DynamicRecord(..)), "Expected a dynamic record input");
+                    ensure!(matches!(input, Value::DynamicRecord(..)), "[console:Request::sign] (in function {}) Expected a dynamic record input", function_name);
 
                     // Construct the (console) input index as a field element.
-                    let index = Field::from_u16(u16::try_from(index).or_halt_with::<N>("Input index exceeds u16"));
+                    let index = Field::from_u16(u16::try_from(index).or_halt_with::<N>(&format!("[console:Request::sign] (in function {}) Input index exceeds u16", function_name)));
                     // Construct the preimage as `(function ID || input || tvk || index)`.
                     let mut preimage = Vec::new();
                     preimage.push(function_id);
@@ -254,12 +278,19 @@ impl<N: Network> Request<N> {
                     input_ids.push(InputID::DynamicRecord(input_hash));
                 }
                 // A dynamic future is not a valid input.
-                ValueType::DynamicFuture => bail!("A dynamic future is not a valid input"),
+                ValueType::DynamicFuture => bail!("[console:Request::sign] (in function {}) A dynamic future is not a valid input", function_name),
             }
         }
 
+        // TODO (Antonio) remove
+        println!("IN SIGNER LAND MESSAGE (function {}): {:#?}", function_name, message);
+
         // Compute `challenge` as `HashToScalar(r * G, pk_sig, pr_sig, signer, [tvk, tcm, function ID, is_root, program checksum?, input IDs])`.
         let challenge = N::hash_to_scalar_psd8(&message)?;
+
+        // TODO (Antonio) remove
+        println!("IN SIGNER LAND CHALLENGE (function {}): {:#?}", function_name, challenge);
+
         // Compute `response` as `r - challenge * sk_sig`.
         let response = r - challenge * sk_sig;
 

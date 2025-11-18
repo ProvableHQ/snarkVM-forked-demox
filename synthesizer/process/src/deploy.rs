@@ -60,8 +60,6 @@ impl<N: Network> Process<N> {
 
         lap!(timer, "Insert the function verifying keys");
 
-        // TODO(dynamic_dispatch): from new consensus version onwards, insert the translation verifying keys.
-
         // Insert the translation verifying keys.
         for (record_name, (verifying_key, _)) in deployment.translation_verifying_keys() {
             stack.insert_translation_verifying_key(record_name, verifying_key.clone())?;

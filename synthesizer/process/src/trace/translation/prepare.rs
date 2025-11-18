@@ -93,13 +93,14 @@ impl<N: Network> Translation<N> {
         Ok(batched_inputs_inputs.into_iter().map(|(_, value)| (value.0, value.1)).collect())
     }
 
+    // TODO (dynamic_dispatch) should this really be the same as prepare?
     /// Returns the inclusion assignments for the given transitions.
     #[cfg(feature = "async")]
     pub async fn prepare_async(
         &self,
         transitions: &[Transition<N>],
         call_graph: &HashMap<N::TransitionID, Vec<N::TransitionID>>,
-    ) -> Result<HashMap<(ProgramID<N>, Identifier<N>), Vec<TranslationAssignment<N>>>> {
+    ) -> Result<Vec<(ProvingKey<N>, Vec<TranslationAssignment<N>>)>> {
         self.prepare(transitions, call_graph)
     }
 }

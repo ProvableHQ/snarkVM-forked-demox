@@ -446,11 +446,11 @@ mod tests {
         "call.dynamic r0 r1 r2 into r3 (as u8.constant)",
         "call.dynamic r0 r1 r2 into r3 r4 (as foo.public bar.private)",
         "call.dynamic r0 r1 r2 into r3 r4 r5 (as u64.public address.private dynamic.future)",
-        "call.dynamic r0 r1 r2 with r3 (as bool.private) into r4 (as u8.private)",
-        "call.dynamic r0 r1 r2 with r3 r4 (as u8.public foo.private) into r5 (as bool.public)",
+        "call.dynamic r0 r1 r2 with r3 (as boolean.private) into r4 (as u8.private)",
+        "call.dynamic r0 r1 r2 with r3 r4 (as u8.public foo.private) into r5 (as boolean.public)",
         "call.dynamic r0 r1 r2 with r3 r4 (as u8.public foo.private) into r5 r6 (as u8.private u64.public)",
-        "call.dynamic r0 r1 r2 with r3 r4 r5 (as foo.private dynamic.record bool.public) into r6 r7 (as u8.private u64.public)",
-        "call.dynamic r0 r1 r2 with r3 r4 r5 (as foo.private bar.public bool.public) into r6 r7 r8 (as u8.private dynamic.record dynamic.future)",
+        "call.dynamic r0 r1 r2 with r3 r4 r5 (as foo.private dynamic.record boolean.public) into r6 r7 (as u8.private u64.public)",
+        "call.dynamic r0 r1 r2 with r3 r4 r5 (as foo.private bar.public boolean.public) into r6 r7 r8 (as u8.private dynamic.record dynamic.future)",
         "call.dynamic r0 r1 r2 with r3 r4 (as address.public u64.public) into r5 (as dynamic.future)",
     ];
 
