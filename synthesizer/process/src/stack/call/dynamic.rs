@@ -128,6 +128,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                     root_tvk,
                     is_root,
                     program_checksum,
+                    Some(u16::try_from(authorization.len())?),
                     Some(self.operand_types()),
                     rng,
                 )?;
@@ -296,6 +297,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             root_tvk,
                             is_root,
                             Some(target.substack().program_checksum_as_field()?),
+                            Some(u16::try_from(authorization.len())?),
                             Some(self.operand_types()),
                             rng,
                         )?;
@@ -329,6 +331,8 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         let function_name = Identifier::<N>::from_str("a")?;
                         // Sample a random field as the program checksum.
                         let program_checksum = Some(Field::rand(rng));
+                        // Sample a random index.
+                        let index = Some(u16::rand(rng));
 
                         // Construct the request.
                         let callee_request = Request::sign(
@@ -340,6 +344,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             root_tvk,
                             is_root,
                             program_checksum,
+                            index,
                             Some(&self.operand_types()),
                             rng,
                         )?;
@@ -366,7 +371,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         (callee_request, callee_response_outputs)
                     }
                     // In PackageRun mode, we sign and execute the request once.
-                    CallStack::PackageRun(_, private_key, ..) => {
+                    CallStack::PackageRun(requests, private_key, ..) => {
                         // Get the target.
                         let Some(target) = target else {
                             bail!("Failed to resolve the target of the dynamic call in 'Authorize' mode.")
@@ -422,6 +427,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             root_tvk,
                             is_root,
                             Some(target.substack().program_checksum_as_field()?),
+                            Some(u16::try_from(requests.len())?),
                             Some(self.operand_types()),
                             rng,
                         )?;

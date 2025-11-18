@@ -72,7 +72,8 @@ impl<N: Network> Stack<N> {
             root_tvk,
             is_root,
             program_checksum,
-            None, // No dynamic input types because this is a root request.
+            None,
+            None,
             rng,
         )?;
         // Initialize the authorization.

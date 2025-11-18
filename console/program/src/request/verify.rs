@@ -19,8 +19,9 @@ impl<N: Network> Request<N> {
     /// Returns `true` if the request is valid, and `false` otherwise.
     ///
     /// Verifies (challenge == challenge') && (address == address') && (serial_numbers == serial_numbers') where:
-    ///     challenge' := HashToScalar(r * G, pk_sig, pr_sig, signer, \[tvk, tcm, function ID, is_root, program checksum?, input IDs, dynamic input IDs?\])
+    ///     challenge' := HashToScalar(r * G, pk_sig, pr_sig, signer, \[tvk, tcm, function ID, is_root, program checksum?, index?, input IDs, dynamic input IDs?\])
     /// The program checksum must be provided if the program has a constructor and should not be provided otherwise.
+    /// The index must be provided if the function was invoked via a dynamic call and should not be provided otherwise.
     pub fn verify(&self, input_types: &[ValueType<N>], is_root: bool, program_checksum: Option<Field<N>>) -> bool {
         // Verify the transition public key, transition view key, and transition commitment are well-formed.
         {
@@ -58,7 +59,7 @@ impl<N: Network> Request<N> {
         // Compute the 'is_root' field.
         let is_root = if is_root { Field::<N>::one() } else { Field::<N>::zero() };
 
-        // Construct the signature message as `[tvk, tcm, function ID, is_root, program_checksum?, input IDs, dynamic input IDs?]`.
+        // Construct the signature message as `[tvk, tcm, function ID, is_root, program_checksum?, index?, input IDs, dynamic input IDs?]`.
         let mut message = Vec::with_capacity(5 + 2 * self.input_ids.len());
         message.push(self.tvk);
         message.push(self.tcm);
@@ -67,6 +68,11 @@ impl<N: Network> Request<N> {
         // Add the program checksum to the signature message if it was provided.
         if let Some(program_checksum) = program_checksum {
             message.push(program_checksum);
+        }
+        // Add the index to the signature message if it was provided.
+        if let Some(index) = self.index {
+            let index_field = Field::<N>::from_u16(index);
+            message.push(index_field);
         }
 
         // Initialize storage for the dynamic message.
@@ -269,10 +275,10 @@ mod tests {
                 true => Some(Field::rand(rng)),
                 false => None,
             };
-            // Sample the dynamic input types.
-            let dynamic_input_types = match i % 3 {
-                0 | 1 => None,
-                2 => Some(&input_types[..]),
+            // Sample the index and dynamic input types.
+            let (index, dynamic_input_types) = match i % 3 {
+                0 | 1 => (None, None),
+                2 => (Some(i as u16), Some(&input_types[..])),
                 _ => unreachable!(),
             };
 
@@ -286,6 +292,7 @@ mod tests {
                 root_tvk,
                 is_root,
                 program_checksum,
+                index,
                 dynamic_input_types,
                 rng,
             )

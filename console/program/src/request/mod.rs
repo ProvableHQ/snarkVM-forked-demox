@@ -54,6 +54,9 @@ pub struct Request<N: Network> {
     /// The optional dynamic input IDs.
     /// Note. These are only present if and only if the request is dynamic.
     dynamic_input_ids: Option<Vec<InputID<N>>>,
+    /// The optional index of the request in a batch.
+    /// Note. This is only present if and only if the request is dynamic.
+    index: Option<
 }
 
 impl<N: Network>
@@ -273,16 +276,16 @@ mod test_helpers {
                     true => Some(Field::rand(rng)),
                     false => None,
                 };
-                // Sample the dynamic input types.
-                let dynamic_input_types = match i % 3 {
-                    0 | 1 => None,
-                    2 => Some(&input_types[..]),
+                // Sample the index and dynamic input types.
+                let (index, dynamic_input_types) = match i % 3 {
+                    0 | 1 => (None, None),
+                    2 => (Some(i as u16), Some(&input_types[..])),
                     _ => unreachable!(),
                 };
 
                 // Compute the signed request.
                 let request =
-                    Request::sign(&private_key, program_id, function_name, inputs.into_iter(), &input_types, root_tvk, is_root, program_checksum, dynamic_input_types, rng).unwrap();
+                    Request::sign(&private_key, program_id, function_name, inputs.into_iter(), &input_types, root_tvk, is_root, program_checksum, index, dynamic_input_types, rng).unwrap();
                 assert!(request.verify(&input_types, is_root, program_checksum));
                 request
             })

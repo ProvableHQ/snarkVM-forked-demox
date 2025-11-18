@@ -458,6 +458,8 @@ mod tests {
         let is_root = true;
         // Sample 'program_checksum'.
         let program_checksum = (set_program_checksum || dynamic).then(|| console::Field::from_u64(i as u64));
+        // Sample the index.
+        let index = if dynamic { Some(i as u16) } else { None };
 
         // Construct the dynamic input types.
         let dynamic_input_types = if dynamic { Some(&input_types[..]) } else { None };
@@ -472,10 +474,11 @@ mod tests {
             root_tvk,
             is_root,
             program_checksum,
+            index,
             dynamic_input_types,
             rng,
         )?;
-        assert!(request.verify(&input_types, is_root, program_checksum));
+        assert!(request.verify(&input_types, is_root, program_checksum, index));
 
         Ok((request, input_types, is_root, program_checksum))
     }

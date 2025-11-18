@@ -17,9 +17,10 @@ use super::*;
 
 impl<N: Network> Request<N> {
     /// Returns the request for a given private key, program ID, function name, inputs, input types, and RNG, where:
-    ///     challenge := HashToScalar(r * G, pk_sig, pr_sig, signer, \[tvk, tcm, function ID, is_root, program checksum?, input IDs, dynamic input IDs?\])
+    ///     challenge := HashToScalar(r * G, pk_sig, pr_sig, signer, \[tvk, tcm, function ID, is_root, program checksum?, index?, input IDs, dynamic input IDs?\])
     ///     response := r - challenge * sk_sig
     /// The program checksum must be provided if the program has a constructor and should not be provided otherwise.
+    /// The index must be provided if the function was invoked via a dynamic call and should not be provided otherwise.
     /// The dynamic input types must be provided if the function was invoked via a dynamic call and should not be provided otherwise.
     pub fn sign<R: Rng + CryptoRng>(
         private_key: &PrivateKey<N>,
@@ -30,6 +31,7 @@ impl<N: Network> Request<N> {
         root_tvk: Option<Field<N>>,
         is_root: bool,
         program_checksum: Option<Field<N>>,
+        index: Option<u16>,
         dynamic_input_types: Option<&[ValueType<N>]>,
         rng: &mut R,
     ) -> Result<Self> {
@@ -92,6 +94,10 @@ impl<N: Network> Request<N> {
         // Add the program checksum to the hash input if it was provided.
         if let Some(program_checksum) = program_checksum {
             message.push(program_checksum);
+        }
+        // Add the index to the hash input if it was provided.
+        if let Some(index) = index {
+            message.push(Field::<N>::from_u16(index));
         }
 
         // If the dynamic input types were provided, ensure they match the number of inputs.
