@@ -659,7 +659,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             match (parent_input_id.eject_value(), child_input.value_type()) {
                 (Value::Record(record), ValueType::DynamicRecord) => {
                     // TODO (dynamic_dispatch) 
-                    // registers.insert_record_translation_argument(*id)
+                    registers.insert_record_translation_argument(*id)
                     bail!("Translation case input static -> dynamic not implemented")
                 },
                 // TODO (dynamic_dispatch) ExternalRecord handling deferred

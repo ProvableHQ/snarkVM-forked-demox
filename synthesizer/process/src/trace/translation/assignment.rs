@@ -37,7 +37,7 @@ pub struct TranslationAssignment<N: Network> {
     pub(super) record_name: Identifier<N>,
     /// The dynamic record representing the static one.
     pub(super) record_dynamic: DynamicRecord<N>,
-    /// True if the dynamic record is being translated to the static one, false if translation is happening in the opposite direction. 
+    /// True if translation is happening for an input to `dynamic.call` (static record is being produced) or an output of `dynamic.call` (static record is being consumed).
     pub(super) to_static_record: bool,
     /// The number of times a translation circuit has been invoked in the current batch.
     pub(super) translation_count: u16,
