@@ -82,7 +82,6 @@ impl<N: Network> Transition<N> {
         response: &Response<N>,
         output_types: &[ValueType<N>],
         output_registers: &[Option<Register<N>>],
-        record_translation_args: Option<Vec<Field<N>>>,
     ) -> Result<Self> {
         let network_id = *request.network_id();
         let program_id = *request.program_id();
@@ -94,9 +93,6 @@ impl<N: Network> Transition<N> {
             request.is_dynamic() == response.is_dynamic(),
             "The request and response must both be either dynamic or static"
         );
-        if record_translation_args.is_some() {
-            ensure!(request.is_dynamic(), "The record translation IDs must only be provided if the request and response are dynamic");
-        }
 
         // Compute the function ID based on the whether the request and response are dynamic.
         let function_id = compute_function_id(&network_id, &program_id, &function_name, request.is_dynamic())?;

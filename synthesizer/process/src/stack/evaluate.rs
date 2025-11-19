@@ -108,7 +108,7 @@ impl<N: Network> Stack<N> {
     pub fn evaluate_function<A: circuit::Aleo<Network = N>, R: CryptoRng + Rng>(
         &self,
         mut call_stack: CallStack<N>,
-        caller: Option<(ProgramID<N>, Identifier<N>)>,
+        caller: Option<ProgramID<N>>,
         root_tvk: Option<Field<N>>,
         rng: &mut R,
     ) -> Result<Response<N>> {
@@ -146,11 +146,11 @@ impl<N: Network> Stack<N> {
         let function = self.get_function(request.function_name())?;
         let inputs = request.inputs();
         let signer = *request.signer();
-        let (is_root, caller, caller_function_name) = match caller {
+        let (is_root, caller) = match caller {
             // If a caller is provided, then this is an evaluation of a child function.
-            Some((caller, caller_function_name)) => (false, caller.to_address()?, Some(caller_function_name)),
+            Some(caller) => (false, caller.to_address()?),
             // If no caller is provided, then this is an evaluation of a top-level function.
-            None => (true, signer, None),
+            None => (true, signer),
         };
         let tvk = *request.tvk();
         // Retrieve the program checksum, if the program has a constructor or if the request is dynamic.
@@ -179,8 +179,6 @@ impl<N: Network> Stack<N> {
         registers.set_caller(caller);
         // Set the transition view key.
         registers.set_tvk(tvk);
-        // Set the transition function name.
-        registers.set_function_name(*request.function_name());
         // Set the root tvk.
         if let Some(root_tvk) = root_tvk {
             registers.set_root_tvk(root_tvk);
@@ -286,11 +284,8 @@ impl<N: Network> Stack<N> {
 
         // If the circuit is in `Authorize` mode, then save the transition.
         if let CallStack::Authorize(_, _, authorization) = registers.call_stack_ref() {
-            // Get the record translation arguments.
-            let record_translation_arguments = registers.record_translation_arguments().cloned();
             // Construct the transition.
-            // TODO (dynamic_dispatch) dynamic dispatch
-            let transition = Transition::from(&request, &response, &function.output_types(), &output_registers, Some(record_translation_arguments.unwrap_or_default().iter().map(|(id, _)| *id).collect_vec()))?;
+            let transition = Transition::from(&request, &response, &function.output_types(), &output_registers)?;
             // Add the transition to the authorization.
             authorization.insert_transition(transition)?;
             lap!(timer, "Save the transition");

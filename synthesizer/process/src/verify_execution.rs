@@ -280,8 +280,7 @@ impl<N: Network> Process<N> {
         verifier_inputs.extend([*is_root, *parent_x, *parent_y]);
 
         // Prepare the record translation arguments from the parent transition.
-        let record_translation_arguments = transition.record_translation_args().cloned().unwrap_or_default();
-        let mut record_translation_arguments_iter = record_translation_arguments.iter();
+        let mut caller_input_ids = transition.caller_inputs().unwrap_or_default().iter().map(|input| input.id());
 
         // If there are function calls, append their inputs and outputs.
         for child_transition_id in call_graph.get(transition.id()).unwrap() {
@@ -299,7 +298,7 @@ impl<N: Network> Process<N> {
                     | (ValueType::Record(_), ValueType::DynamicRecord) 
                     | (ValueType::DynamicRecord, ValueType::ExternalRecord(_)) 
                     | (ValueType::ExternalRecord(_), ValueType::DynamicRecord) => {
-                        if let Some(record_id) = record_translation_arguments_iter.next() {
+                        if let Some(record_id) = caller_input_ids.next() {
                             verifier_inputs.push(**record_id);
                         } else {
                             bail!("No record translation argument found for the parent input");
@@ -320,7 +319,7 @@ impl<N: Network> Process<N> {
                     | (ValueType::Record(_), ValueType::DynamicRecord) 
                     | (ValueType::DynamicRecord, ValueType::ExternalRecord(_)) 
                     | (ValueType::ExternalRecord(_), ValueType::DynamicRecord) => {
-                        if let Some(record_id) = record_translation_arguments_iter.next() {
+                        if let Some(record_id) = caller_input_ids.next() {
                             verifier_inputs.push(**record_id);
                         } else {
                             bail!("No record translation argument found for the parent output");
@@ -334,7 +333,7 @@ impl<N: Network> Process<N> {
             }
         }
         
-        ensure!(record_translation_arguments_iter.next().is_none(), "Extra record translation argument found for the parent transition");
+        ensure!(caller_input_ids.next().is_none(), "Extra record translation argument found for the parent transition");
 
         // [Inputs] Extend the verifier inputs with the output IDs.
         verifier_inputs.extend(transition.outputs().iter().flat_map(|output| output.verifier_inputs()));
