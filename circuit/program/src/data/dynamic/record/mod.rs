@@ -83,7 +83,7 @@ impl<A: Aleo> Inject for DynamicRecord<A> {
     /// Initializes a plaintext record from a primitive.
     fn new(_: Mode, record: Self::Primitive) -> Self {
         Self {
-            owner: Inject::new(Mode::Private, record.owner().clone()),
+            owner: Inject::new(Mode::Private, *record.owner()),
             root: Inject::new(Mode::Private, *record.root()),
             nonce: Inject::new(Mode::Private, *record.nonce()),
             version: Inject::new(Mode::Private, *record.version()),

@@ -177,9 +177,9 @@ impl<N: Network> Request<N> {
         }
         
         // Verify the signature.
-        let result = self.signature.verify(&self.signer, &message);
+        
 
-        result
+        self.signature.verify(&self.signer, &message)
     }
 }
 

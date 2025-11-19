@@ -69,12 +69,12 @@ impl<N: Network> Request<N> {
         let caller_inputs = parsed_caller_inputs;
 
         // TODO (dynamic_dispatch) remove
-        println!("inputs: {:?}", inputs);
-        println!("input_types: {:?}", input_types);
-        println!("caller_input_types: {:?}", caller_input_types);
-        println!("private_key: {:?}", private_key);
-        println!("program_id: {:?}", program_id);
-        println!("function_name: {:?}", function_name);
+        println!("inputs: {inputs:?}");
+        println!("input_types: {input_types:?}");
+        println!("caller_input_types: {caller_input_types:?}");
+        println!("private_key: {private_key:?}");
+        println!("program_id: {program_id:?}");
+        println!("function_name: {function_name:?}");
 
         // Retrieve `sk_sig`.
         let sk_sig = private_key.sk_sig();
@@ -145,7 +145,7 @@ impl<N: Network> Request<N> {
                     ValueType::Private(..) => InputID::private(function_id, input, tvk, index),
                     // A record input is computed to its serial number.
                     ValueType::Record(record_name) => {
-                        InputID::record(&program_id, &record_name, input, &signer, &view_key, &sk_sig, sk_tag)
+                        InputID::record(&program_id, record_name, input, &signer, &view_key, &sk_sig, sk_tag)
                     }
                     // An external record input is hashed (using `tvk`) to a field element.
                     ValueType::ExternalRecord(..) => InputID::external_record(function_id, input, tvk, index),

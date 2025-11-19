@@ -128,7 +128,7 @@ impl<N: Network> Request<N> {
                 // A record input is computed to its serial number.
                 ValueType::Record(record_name) => {
                     let input_id =
-                        InputID::record(&program_id, &record_name, input, &signer, &view_key, &sk_sig, sk_tag)?;
+                        InputID::record(&program_id, record_name, input, &signer, &view_key, &sk_sig, sk_tag)?;
 
                     // Extract the components for the message.
                     if let InputID::Record(commitment, gamma, _, _, tag) = input_id {

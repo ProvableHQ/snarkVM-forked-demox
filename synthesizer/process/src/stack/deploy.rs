@@ -59,13 +59,13 @@ impl<N: Network> Stack<N> {
         for record_name in self.program.records().keys() {
             // Synthesize the proving and verifying key.
             self.synthesize_translation_key::<A, R>(record_name, rng)?;
-            lap!(timer, "Synthesize key for translation circuit for {record_identifier}");
+            lap!(timer, "Synthesize key for translation circuit for {record_name}");
 
             // Retrieve the proving key.
             let proving_key = self.get_translation_proving_key(record_name)?;
             // Retrieve the verifying key.
             let verifying_key = self.get_translation_verifying_key(record_name)?;
-            lap!(timer, "Retrieve the keys for translation circuit for {record_identifier}");
+            lap!(timer, "Retrieve the keys for translation circuit for {record_name}");
 
             // Certify the circuit.
             let certificate = Certificate::certify(&record_name.to_string(), &proving_key, &verifying_key)?;
@@ -78,7 +78,14 @@ impl<N: Network> Stack<N> {
         finish!(timer);
 
         // Return the deployment.
-        Deployment::new(*self.program_edition, self.program.clone(), verifying_keys, translation_verifying_keys, None, None)
+        Deployment::new(
+            *self.program_edition,
+            self.program.clone(),
+            verifying_keys,
+            translation_verifying_keys,
+            None,
+            None,
+        )
     }
 
     /// Checks each function in the program on the given verifying key and certificate.
@@ -222,89 +229,97 @@ impl<N: Network> Stack<N> {
         }
 
         // Iterate through the program records and produce translation assignments.
-        let translation_names_assignments = deployment.program().records().iter().zip_eq(deployment.translation_verifying_keys()).map(|((record_name, record_type), (_, (verifying_key, _)))|
-        {
-            // Initialize a private key.
-            let private_key = PrivateKey::new(rng)?;
-            // Compute the address.
-            let address = Address::try_from(&private_key)?;
-            
-            // TODO (dynamic_dispatch) should stack::sample be used here instead
-            // of rand? Also, some small improvements can be made here, eg in
-            // principle private_key itself is not necessary
-            
-            // Construct a TranslationAssignment:
-            let program_id = self.program_id().clone();
-            let function_id = Field::<N>::from_u64(Uniform::rand(rng));
-            let record_name = record_name.clone();
-            let record_static = self.sample_record(&address, &record_name, Group::rand(rng), rng)?;
-            let record_dynamic = DynamicRecord::<N>::from_record(&record_static)?;
-            let translation_count = Uniform::rand(rng);
-            let tvk = Uniform::rand(rng);
-            let input_output_index = Uniform::rand(rng);
-            let record_view_key = Uniform::rand(rng);
-            let gamma = Uniform::rand(rng);
-            let id_dynamic = record_dynamic.to_id(function_id, tvk, U16::new(input_output_index)).unwrap();
-            let record_consumed = Uniform::rand(rng);            
-            let commitment = record_static.to_commitment(&program_id, &record_name, &record_view_key).unwrap();
-            let id_static = commitment;
+        let translation_names_assignments = deployment
+            .program()
+            .records()
+            .iter()
+            .zip_eq(deployment.translation_verifying_keys())
+            .map(|((record_name, record_type), (_, (verifying_key, _)))| {
+                // Initialize a private key.
+                let private_key = PrivateKey::new(rng)?;
+                // Compute the address.
+                let address = Address::try_from(&private_key)?;
 
-            lap!(timer, "Sample the inputs to the translation circuit for record {record_name}");
+                // TODO (dynamic_dispatch) should stack::sample be used here instead
+                // of rand? Also, some small improvements can be made here, eg in
+                // principle private_key itself is not necessary
 
-            Ok((record_name, TranslationAssignment::new(
-                record_static,
-                program_id,
-                function_id,
-                record_name,
-                record_dynamic,
-                record_consumed,
-                translation_count,
-                tvk,
-                input_output_index,
-                id_dynamic,
-                id_static,
-                record_view_key,
-                gamma
-            )))
+                // Construct a TranslationAssignment:
+                let program_id = self.program_id().clone();
+                let function_id = Field::<N>::from_u64(Uniform::rand(rng));
+                let record_name = record_name.clone();
+                let record_static = self.sample_record(&address, &record_name, Group::rand(rng), rng)?;
+                let record_dynamic = DynamicRecord::<N>::from_record(&record_static)?;
+                let translation_count = Uniform::rand(rng);
+                let tvk = Uniform::rand(rng);
+                let input_output_index = Uniform::rand(rng);
+                let record_view_key = Uniform::rand(rng);
+                let gamma = Uniform::rand(rng);
+                let id_dynamic = record_dynamic.to_id(function_id, tvk, U16::new(input_output_index)).unwrap();
+                let record_consumed = Uniform::rand(rng);
+                let commitment = record_static.to_commitment(&program_id, &record_name, &record_view_key).unwrap();
+                let id_static = commitment;
 
-            // TODO (dynamic_dispatch): does the verifying key need to be tested here, for instance in terms of constraint/variable bounds?
-            
-            // TODO (dynamic_dispatch): ensure none of this needs to be done in the case of translation circuit keys
-            // // Compute the request, with a burner private key.
-            // let request = Request::sign(
-            //     &burner_private_key,
-            //     *program_id,
-            //     *function.name(),
-            //     inputs.into_iter(),
-            //     &input_types,
-            //     root_tvk,
-            //     is_root,
-            //     program_checksum,
-            //     Some(false), // `dynamic` is false because this is a root request.
-            //     rng,
-            // )?;
-            // lap!(timer, "Compute the request for {}", function.name());
+                lap!(timer, "Sample the inputs to the translation circuit for record {record_name}");
 
-            // // Initialize the assignments.
-            // let assignments = Assignments::<N>::default();
-            // Initialize the constraint limit. Account for the constraint added after synthesis that makes the Varuna zerocheck hiding.
-            // let Some(constraint_limit) = verifying_key.circuit_info.num_constraints.checked_sub(1) else {
-            //     // Since a deployment must always pay non-zero fee, it must always have at least one constraint.
-            //     bail!("The constraint limit of 0 for function '{}' is invalid", function.name());
-            // };
-            // // Retrieve the variable limit.
-            // let variable_limit = verifying_key.num_variables();
-            // // Initialize the call stack.
-            // let call_stack = CallStack::CheckDeployment(
-            //     vec![request],
-            //     burner_private_key,
-            //     assignments.clone(),
-            //     Some(constraint_limit as u64),
-            //     Some(variable_limit),
-            // );
-            // // Append the function name, callstack, and assignments.
-            // call_stacks.push((function.name(), call_stack, assignments));
-        }).collect::<Result<Vec<_>>>()?;
+                Ok((
+                    record_name,
+                    TranslationAssignment::new(
+                        record_static,
+                        program_id,
+                        function_id,
+                        record_name,
+                        record_dynamic,
+                        record_consumed,
+                        translation_count,
+                        tvk,
+                        input_output_index,
+                        id_dynamic,
+                        id_static,
+                        record_view_key,
+                        gamma,
+                    ),
+                ))
+
+                // TODO (dynamic_dispatch): does the verifying key need to be tested here, for instance in terms of constraint/variable bounds?
+
+                // TODO (dynamic_dispatch): ensure none of this needs to be done in the case of translation circuit keys
+                // // Compute the request, with a burner private key.
+                // let request = Request::sign(
+                //     &burner_private_key,
+                //     *program_id,
+                //     *function.name(),
+                //     inputs.into_iter(),
+                //     &input_types,
+                //     root_tvk,
+                //     is_root,
+                //     program_checksum,
+                //     Some(false), // `dynamic` is false because this is a root request.
+                //     rng,
+                // )?;
+                // lap!(timer, "Compute the request for {}", function.name());
+
+                // // Initialize the assignments.
+                // let assignments = Assignments::<N>::default();
+                // Initialize the constraint limit. Account for the constraint added after synthesis that makes the Varuna zerocheck hiding.
+                // let Some(constraint_limit) = verifying_key.circuit_info.num_constraints.checked_sub(1) else {
+                //     // Since a deployment must always pay non-zero fee, it must always have at least one constraint.
+                //     bail!("The constraint limit of 0 for function '{}' is invalid", function.name());
+                // };
+                // // Retrieve the variable limit.
+                // let variable_limit = verifying_key.num_variables();
+                // // Initialize the call stack.
+                // let call_stack = CallStack::CheckDeployment(
+                //     vec![request],
+                //     burner_private_key,
+                //     assignments.clone(),
+                //     Some(constraint_limit as u64),
+                //     Some(variable_limit),
+                // );
+                // // Append the function name, callstack, and assignments.
+                // call_stacks.push((function.name(), call_stack, assignments));
+            })
+            .collect::<Result<Vec<_>>>()?;
 
         // Verify the certificates.
         let rngs = (0..call_stacks.len()).map(|_| StdRng::from_seed(seeded_rng.r#gen())).collect::<Vec<_>>();
