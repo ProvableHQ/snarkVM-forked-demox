@@ -169,8 +169,9 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                     private_key,
                     *substack.program_id(),
                     *function.name(),
-                    inputs.iter(),
+                    callee_inputs.iter(),
                     &function.input_types(),
+                    inputs.iter(),
                     self.operand_types(),
                     root_tvk,
                     is_root,
@@ -215,6 +216,17 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         rng: &mut R,
     ) -> Result<()> {
         use circuit::Eject;
+
+        // TODO (dynamic_dispatch) remove
+        let mode = match registers.call_stack_ref() {
+            CallStack::Authorize(..) => "Authorize",
+            CallStack::Execute(..) => "Execute",
+            CallStack::CheckDeployment(..) => "CheckDeployment",
+            CallStack::Synthesize(..) => "Synthesize",
+            CallStack::Evaluate(..) => "Evaluate",
+            CallStack::PackageRun(..) => "PackageRun",
+        };
+        println!("**ENTERING EXECUTE in mode: {:?}**", mode);
 
         let timer = timer!("Call::execute");
 
@@ -356,6 +368,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             *function.name(),
                             callee_inputs.iter(),
                             input_types,
+                            inputs.iter(),
                             self.operand_types(),
                             root_tvk,
                             is_root,
@@ -516,6 +529,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             *function.name(),
                             callee_inputs.iter(),
                             input_types,
+                            inputs.iter(),
                             self.operand_types(),
                             root_tvk,
                             is_root,
@@ -816,6 +830,10 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                 true,
             );
             lap!(timer, "Checked the outputs");
+
+            // TODO (dynamic_dispatch) remove
+            println!("**INSIDE EXECUTE FOR FUNCTION {:?} PROCESS OUTPUTS FROM CALLBACK in mode: {:?}**", function_name, mode);
+            
             // Return the circuit outputs.
             outputs
         };
@@ -828,6 +846,10 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         lap!(timer, "Assigned the outputs to registers");
 
         finish!(timer);
+
+
+        // TODO (dynamic_dispatch) remove
+        println!("**COMPLETED CALL DYNAMIC in mode: {:?}**", mode);
 
         Ok(())
     }

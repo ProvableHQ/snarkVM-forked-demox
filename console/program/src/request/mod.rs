@@ -54,6 +54,10 @@ pub struct Request<N: Network> {
     /// The optional caller input IDs.
     /// Note. These are only present if and only if the request is dynamic.
     caller_input_ids: Option<Vec<InputID<N>>>,
+    /// The optional caller input values.
+    /// Note. These are only present if and only if the request is dynamic.
+    // TODO (dynamic_dispatch) make sure this is properly handled, eg. in (de)serialisation
+    caller_input_values: Option<Vec<Value<N>>>,
 }
 
 impl<N: Network>
@@ -70,6 +74,7 @@ impl<N: Network>
         Field<N>,
         Field<N>,
         Option<Vec<InputID<N>>>,
+        Option<Vec<Value<N>>>,
     )> for Request<N>
 {
     /// Note: See `Request::sign` to create the request. This method is used to eject from a circuit.
@@ -87,6 +92,7 @@ impl<N: Network>
             tcm,
             scm,
             caller_input_ids,
+            caller_input_values,
         ): (
             Address<N>,
             U16<N>,
@@ -100,6 +106,7 @@ impl<N: Network>
             Field<N>,
             Field<N>,
             Option<Vec<InputID<N>>>,
+            Option<Vec<Value<N>>>,
         ),
     ) -> Self {
         // TODO (@d0cd) Verify that adding checks here does not create failure cases.
@@ -122,6 +129,8 @@ impl<N: Network>
             }
         }
 
+        // TODO (@d0cd) check that the number of caller inputs matches that of caller input ids
+
         // Ensure the network ID is correct.
         if *network_id != N::ID {
             N::halt(format!("Invalid network ID. Expected {}, found {}", N::ID, *network_id))
@@ -139,6 +148,7 @@ impl<N: Network>
                 tcm,
                 scm,
                 caller_input_ids,
+                caller_input_values,
             }
         }
     }
@@ -217,6 +227,12 @@ impl<N: Network> Request<N> {
         &self.caller_input_ids
     }
 
+    // TODO (dynamic_dispatch) rename to caller_inputs
+    /// Returns the optional caller input values.
+    pub const fn caller_input_values(&self) -> &Option<Vec<Value<N>>> {
+        &self.caller_input_values
+    }
+
     /// Returns whether or not the request is dynamic.
     pub fn is_dynamic(&self) -> bool {
         self.caller_input_ids.is_some()
@@ -278,7 +294,19 @@ mod test_helpers {
                 let request = if bool::rand(rng) {
                     Request::sign(&private_key, program_id, function_name, inputs.into_iter(), &input_types, root_tvk, is_root, program_checksum, rng).unwrap()
                 } else {
-                    Request::sign_dynamic(&private_key, program_id, function_name, inputs.into_iter(), &input_types, &input_types, root_tvk, is_root, program_checksum, rng).unwrap()
+                    Request::sign_dynamic(
+                        &private_key,
+                        program_id,
+                        function_name,
+                        inputs.clone().into_iter(),
+                        &input_types,
+                        inputs.into_iter(),
+                        &input_types,
+                        root_tvk,
+                        is_root,
+                        program_checksum,
+                        rng,
+                    ).unwrap()
                 };
                 assert!(request.verify(&input_types, is_root, program_checksum));
                 request

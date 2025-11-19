@@ -75,12 +75,6 @@ impl<N: Network> CallDynamic<N> {
             match type_ {
                 ValueType::Future(_) => bail!("A future cannot be passed in as input to a dynamic call."),
                 ValueType::DynamicFuture => bail!("A dynamic future cannot be passed in as input to a dynamic call."),
-                ValueType::Record(_) => {
-                    bail!("A record cannot be passed in as input to a dynamic call, use `dynamic.record` instead.")
-                }
-                ValueType::ExternalRecord(_) => bail!(
-                    "An external record cannot be passed in as input to a dynamic call, use `dynamic.record` instead."
-                ),
                 _ => {}
             }
         }
@@ -176,6 +170,7 @@ impl<N: Network> CallDynamic<N> {
         _stack: &impl StackTrait<N>,
         _input_types: &[RegisterType<N>],
     ) -> Result<Vec<RegisterType<N>>> {
+        // TODO (@d0cd) fix for type check static records...
         Ok(self.destination_types.clone().into_iter().map(RegisterType::from).collect())
     }
 }

@@ -80,6 +80,8 @@ impl<'de, N: Network> Deserialize<'de> for Request<N> {
                         request.get_mut("caller_input_ids").unwrap_or(&mut serde_json::Value::Null).take(),
                     )
                     .map_err(de::Error::custom)?,
+                    // TODO (dynamic_dispatch) serialise
+                    None,
                 )))
             }
             false => FromBytesDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "request"),

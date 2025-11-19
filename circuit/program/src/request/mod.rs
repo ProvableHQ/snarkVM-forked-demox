@@ -153,6 +153,9 @@ pub struct Request<A: Aleo> {
     /// The optional caller input IDs.
     //  Note. This field is intentionally excluded for the circuit representation and is only used to eject back to the console representation.
     caller_input_ids: Option<Vec<console::InputID<A::Network>>>,
+    /// The optional caller input values.
+    /// Note. These are only present if and only if the request is dynamic.
+    caller_input_values: Option<Vec<console::Value<A::Network>>>,
 }
 
 impl<A: Aleo> Inject for Request<A> {
@@ -262,6 +265,7 @@ impl<A: Aleo> Inject for Request<A> {
             tcm,
             scm,
             caller_input_ids: request.caller_input_ids().clone(),
+            caller_input_values: request.caller_input_values().clone(),
         }
     }
 }
@@ -327,6 +331,12 @@ impl<A: Aleo> Request<A> {
         &self.caller_input_ids
     }
 
+    // TODO (dynamic_dispatch) rename to caller_inputs
+    /// Returns the optional caller input values.
+    pub const fn caller_input_values(&self) -> &Option<Vec<console::Value<A::Network>>> {
+        &self.caller_input_values
+    }
+
     /// Returns whether or not the request is dynamic.
     pub fn is_dynamic(&self) -> bool {
         self.caller_input_ids.is_some()
@@ -370,6 +380,7 @@ impl<A: Aleo> Eject for Request<A> {
             self.tcm.eject_value(),
             self.scm.eject_value(),
             self.caller_input_ids().clone(),
+            self.caller_input_values().clone(),
         ))
     }
 }

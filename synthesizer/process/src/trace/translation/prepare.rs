@@ -13,8 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use circuit::Assignment;
-use snarkvm_synthesizer_program::Program;
+use console::types::U16;
 use snarkvm_synthesizer_snark::ProvingKey;
 
 use super::*;
@@ -25,72 +24,110 @@ impl<N: Network> Translation<N> {
         &self,
         transitions: &[Transition<N>],
         call_graph: &HashMap<N::TransitionID, Vec<N::TransitionID>>,
+        // TODO (dynamic_dispatch) Consider using pointers or Arcs to proving keys
     ) -> Result<Vec<(ProvingKey<N>, Vec<TranslationAssignment<N>>)>> {
 
         // Initialize a vector for the batched assignments.
-        let mut batched_inputs_inputs: HashMap<(ProgramID<N>, Identifier<N>), (ProvingKey<N>, Vec<TranslationAssignment<N>>)> = HashMap::new();
+        let mut batched_assignments: HashMap<(ProgramID<N>, Identifier<N>), Vec<TranslationAssignment<N>>> = HashMap::new();
+        let mut proving_keys: HashMap<(ProgramID<N>, Identifier<N>), ProvingKey<N>> = HashMap::new();
 
         let mut translation_count = 0;
 
+        ensure!(
+            transitions.len() == self.translation_tasks.len(),
+            "The number of transitions ({}) does not match the number of translation tasks ({})",
+            transitions.len(),
+            self.translation_tasks.len()
+        );
+
         // TODO (dynamic_dispatch) so far we only cover translation case 1: input dynamic -> static
-        for ((transition_id, caller_dynamic_record_id), index) in self.transition_indices.iter() {
-            if let Some((translation_tasks, record_translation_data)) = self.translation_tasks.get(transition_id) {
+        // TODO (dynamic_dispatch) traversal order
+        for transition in transitions {
+
+            let transition_id = transition.id();
+
+            let Some(translation_tasks) = self.translation_tasks.get(transition_id) else {
+                bail!("Translation tasks not found for transition ID {}", transition_id);
+            };
+
+            for translation_task in translation_tasks {
+                let RecordTranslationData {
+                    translation_proving_key,
+                    record_dynamic,
+                    record_static,
+                    program_id,
+                    function_id,
+                    record_name,
+                    record_consumed,
+                    tvk,
+                    record_view_key,
+                    gamma,
+                    static_record_id,
+                    dynamic_record_id,
+                    input_output_index,
+                } = translation_task;
+
+                // TODO (dynamic_dispatch) add here consistency checks with the Transition object?
+                
+                let Some(gamma_value) = gamma.as_ref() else {
+                    bail!(
+                        "gamma is None in the input-record translation for transition ID {} and index {}",
+                        transition_id,
+                        input_output_index
+                    );
+                };
+                
+                let Some(record_view_key_value) = record_view_key.as_ref() else {
+                    bail!(
+                        "record_view_key is None in record translation for transition ID {} and index {}",
+                        transition_id,
+                        input_output_index
+                    );
+                };
+                // Checks associated to input-record translation
+                
                 ensure!(
-                    translation_tasks.len() == record_translation_data.len(),
-                    "The number of translation tasks for transition {} does not match the number of record translation data ({} vs. {})", transition_id, translation_tasks.len(),
-                    record_translation_data.len()
+                    record_consumed,
+                    "Expected record_consumed = true in input-record translation for transition ID {} and index {}",
+                    transition_id,
+                    input_output_index
                 );
 
-                // Identify which translation task corresopnds to the marked translation in translation_indices
-                let mut found = translation_tasks.iter().zip(record_translation_data.iter()).filter(|(_, data)| data.input_output_index == *index).collect_vec();
-            
-                ensure!(found.len() != 0, "No translation task and data found for transition {} marked for translation", transition_id);
-                ensure!(found.len() <= 1, "Multiple translation tasks and data found for transition {} marked for translation", transition_id);
-
-                let (identified_task, identified_data) = found.pop().unwrap();
-
-                let TranslationTask { commitment, gamma, serial_number, record } = identified_task;
-                let RecordTranslationData { record_static, program_id, function_id, record_name, record_consumed, tvk, record_view_key, gamma: gamma_data, static_record_id, input_output_index, translation_proving_key } = identified_data;
+                let input_output_index_value = U16::new(*input_output_index);
                 
-                // Checks associated to translation case 1
-                ensure!(gamma_data.as_ref() == Some(gamma), "gamma value in translation task does not that in translation data for transition ID {} and register index {}", transition_id, index);
-                ensure!(!record_consumed, "Expected record_consumed = false in translation data for transition ID {} and register index {}", transition_id, index);
-                ensure!(input_output_index == index, "Expected register index in translation data to be the same as the index in translation tasks for transition ID {} and register index {}", transition_id, index);
+                let id_static = record_static.to_commitment(program_id, record_name, record_view_key_value)?;
+                let id_dynamic = record_dynamic.to_id(*function_id, *tvk, input_output_index_value)?;
 
-                // Preparing the TranslationAssignment data
-                let record_dynamic = DynamicRecord::<N>::from_record(&record_static)?;
-                let record_consumed = false;
-                let input_output_index = *index;
-                let id_static = static_record_id;
-                let id_dynamic = caller_dynamic_record_id;
+                let batch = &mut batched_assignments.entry((*program_id, *record_name)).or_insert(vec![]);
 
-                // TODO (dynamic_dispatch): is the clone cheap?
-                let batch = batched_inputs_inputs.entry((*program_id, *record_name)).or_insert((translation_proving_key.clone(), vec![]));
+                if let Some(previous_key) = proving_keys.get(&(*program_id, *record_name)) {
+                    ensure!(previous_key == translation_proving_key, "Proving key mismatch for record {}/{}", program_id, record_name);
+                } else {
+                    proving_keys.insert((*program_id, *record_name), translation_proving_key.clone());
+                }
 
-                batch.1.push(TranslationAssignment::new(
+                batch.push(TranslationAssignment::new(
                     record_static.clone(),
                     program_id.clone(),
                     function_id.clone(),
                     record_name.clone(),
                     record_dynamic.clone(),
-                    record_consumed,
+                    *record_consumed,
                     translation_count,
                     tvk.clone(),
-                    input_output_index,
+                    *input_output_index,
                     id_dynamic.clone(),
                     id_static.clone(),
-                    record_view_key.clone(),
-                    gamma.clone(),
+                    record_view_key_value.clone(),
+                    gamma_value.clone(),
                 ));
 
                 translation_count += 1;
-            } else {
-                bail!("Translation tasks and data not found for transition {} marked for translation", transition_id);
             }
         }
 
-        // Discard the program_id and record_name and return the results.
-        Ok(batched_inputs_inputs.into_iter().map(|(_, value)| (value.0, value.1)).collect())
+        // Replace program ID + record name by proving key
+        Ok(batched_assignments.into_iter().map(|(key, value)| (proving_keys.get(&key).unwrap().clone(), value)).collect())
     }
 
     // TODO (dynamic_dispatch) should this really be the same as prepare?

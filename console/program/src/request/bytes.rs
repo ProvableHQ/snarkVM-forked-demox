@@ -81,6 +81,8 @@ impl<N: Network> FromBytes for Request<N> {
             tcm,
             scm,
             caller_input_ids,
+            // TODO (dynamic_dispatch) (de)serialise
+            None
         )))
     }
 }

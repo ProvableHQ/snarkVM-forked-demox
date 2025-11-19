@@ -22,118 +22,47 @@ pub use prepare::*;
 #[cfg(test)]
 pub mod tests;
 
-use crate::{Stack, Input, compute_function_id};
+use crate::Stack;
 
 use circuit::{Inject, traits::ToGroup};
 
 use console::{
     network::prelude::*,
-    program::{DynamicRecord, Record, InputID, Plaintext, ProgramID, Identifier, RECORD_DATA_TREE_DEPTH, TRANSACTION_DEPTH, Value, ValueType},
-    types::{Field, Group, U16},
+    program::{DynamicRecord, Record, InputID, Plaintext, ProgramID, Identifier, RECORD_DATA_TREE_DEPTH, Value, ValueType},
+    types::{Field, Group},
 };
-use snarkvm_ledger_block::{Transition, Transaction};
-use snarkvm_ledger_query::QueryTrait;
+use snarkvm_ledger_block::Transition;
 use snarkvm_synthesizer_program::{Function, Instruction, RecordTranslationData};
 use snarkvm_synthesizer_snark::VerifyingKey;
 
-use std::collections::{BTreeMap, HashMap};
-use std::marker::PhantomData;
-
-#[derive(Clone, Debug)]
-struct TranslationTask<N: Network> {
-    // TODO (dynamic_dispatch) document (same meaning as in TranslationAssignment)
-    record_static: Record<N, Plaintext<N>>,
-    program_id: ProgramID<N>,
-    function_id: Field<N>,
-    record_name: Identifier<N>,
-    record_dynamic: DynamicRecord<N>,
-    record_consumed: bool,
-    translation_count: u16,
-    tvk: Field<N>,
-    input_output_index: u16,
-    id_dynamic: Field<N>,
-    id_static: Field<N>,
-    record_view_key: Field<N>,
-    gamma: Group<N>,
-}
+use std::collections::HashMap;
 
 #[derive(Clone, Debug, Default)]
 pub struct Translation<N: Network> { 
-    // TODO (dynamic_dispatch) decide whether this should contain translation-only stuff
     /// A map of `transition IDs` to a list of `input tasks`.
-    translation_tasks: HashMap<N::TransitionID, Vec<TranslationAssignment<N>>>,
-    // TODO (dynamic_dispatch) comment; A map from (transition id, caller dynamic record id) to index
-    transition_indices:HashMap<(N::TransitionID, Field<N>), u16>
+    translation_tasks: HashMap<N::TransitionID, Vec<RecordTranslationData<N>>>,
 }
 
 impl<N: Network> Translation<N> {
     /// Initializes a new `Translation` instance.
     pub fn new() -> Self {
-        Self { translation_tasks: HashMap::new(), transition_indices: HashMap::new() }
+        Self { translation_tasks: HashMap::new() }
     }
 
     /// Inserts the transition to build state for the translation task.
     pub fn insert_transition(
         &mut self,
+        // TODO (dynamic_dispatch) seemingly unnecessary
         input_ids: &[InputID<N>],
+        // TODO (dynamic_dispatch) seemingly unnecessary
         input_values: &[Value<N>],
+        // TODO (dynamic_dispatch) seemingly only ID needed
         transition: &Transition<N>,
+        record_translation_data: Result<&Vec<RecordTranslationData<N>>>,
     ) -> Result<()> {
 
-        let caller_inputs = transition.caller_inputs().unwrap_or_default();
-
-        // Ensure the transition inputs, input IDs and input values are the same length.
-        if input_ids.len() != transition.inputs().len() {
-            bail!("Inclusion expected the same number of input IDs as transition inputs")
-        }
-        if input_values.len() != transition.inputs().len() {
-            bail!("Translation expected the same number of inputs as transition inputs")
-        }
-        // TODO (dynamic_dispatch) decide whether caller_inputs contains all inputs or only translated ones
-        if input_values.len() != transition.inputs().len() {
-            bail!("Translation expected the same number of inputs as transition inputs")
-        }
-
-        // Initialize the input tasks.
-        if self.translation_tasks.contains_key(transition.id()) {
-            bail!("Translation tasks already exist for transition {}", transition.id());
-        }
-        
-        let mut translation_tasks = Vec::new();
-
-        // Process the inputs.
-        for (input_id, input_value) in input_ids.iter().zip(input_values.iter()) {
-            // Filter the inputs for records.
-            if let InputID::Record(commitment, gamma, _, serial_number, _) = input_id {
-                let Value::Record(record) = input_value else {
-                    bail!("Translation expected a record input value")
-                };
-                // Add the record to the input tasks.
-                translation_tasks.push(TranslationTask {
-                    commitment: *commitment,
-                    gamma: *gamma,
-                    serial_number: *serial_number,
-                    record: record.clone(),
-                });
-            }
-        }
-
-        let record_translation_data = record_translation_data.unwrap_or_default();
-
-        ensure!(
-            translation_tasks.len() == record_translation_data.len(),
-            "The number of translation tasks {} does not match the number of record translation data {}",
-            translation_tasks.len(),
-            record_translation_data.len()
-        );
-
-        if let Some(record_translation_arguments) = record_translation_arguments {
-            for (record_translation_argument, input_output_index) in record_translation_arguments.iter() {
-                self.transition_indices.insert((*transition.id(), *record_translation_argument), *input_output_index);
-            }
-        }
-
-        self.translation_tasks.insert(*transition.id(), (translation_tasks, record_translation_data));
+        // TODO (dynamic_dispatch): Result isn't a good interface; also, decide whether always having a value for a valid key = TransitionID (even if empty) is a good choice
+        self.translation_tasks.insert(*transition.id(), record_translation_data.cloned().unwrap_or_default());
 
         Ok(())
     }
@@ -152,7 +81,7 @@ impl<N: Network> Translation<N> {
 
         let mut translation_count = 0;
 
-        for (parent, children) in call_graph.iter() {
+       /*  for (parent, children) in call_graph.iter() {
             let (parent_transition, parent_function) = transitions.get(parent).ok_or_else(|| 
                 anyhow!("Transition not found in the call graph")
             )?;
@@ -287,6 +216,8 @@ impl<N: Network> Translation<N> {
             Ok((verifying_key.clone(), inputs))
         }).collect::<Result<Vec<(VerifyingKey<N>, Vec<Vec<N::Field>>)>>>()?;
 
-        Ok(batch_with_verifying_keys)
+        Ok(batch_with_verifying_keys) */
+
+        Ok(vec![])
     }
 }

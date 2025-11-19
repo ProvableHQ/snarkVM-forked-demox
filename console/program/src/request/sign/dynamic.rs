@@ -26,6 +26,7 @@ impl<N: Network> Request<N> {
         function_name: Identifier<N>,
         inputs: impl ExactSizeIterator<Item = impl TryInto<Value<N>>>,
         input_types: &[ValueType<N>],
+        caller_inputs: impl ExactSizeIterator<Item = impl TryInto<Value<N>>>,
         caller_input_types: &[ValueType<N>],
         root_tvk: Option<Field<N>>,
         is_root: bool,
@@ -37,6 +38,16 @@ impl<N: Network> Request<N> {
             bail!("Expected {} inputs, but {} were provided.", input_types.len(), inputs.len())
         }
 
+        // Ensure the number of inputs matches the number of input types.
+        if caller_input_types.len() != caller_inputs.len() {
+            bail!("Expected {} caller inputs, but {} were provided.", caller_input_types.len(), caller_inputs.len())
+        }
+
+        // Ensure the number of caller and callee inputs match.
+        if caller_inputs.len() != inputs.len() {
+            bail!("Number of caller inputs ({}) doesn't match that of callee ones ({}).", caller_inputs.len(), inputs.len())
+        }
+
         // Parse the inputs.
         let mut parsed_inputs = Vec::with_capacity(inputs.len());
         for (i, input) in inputs.enumerate() {
@@ -44,6 +55,22 @@ impl<N: Network> Request<N> {
             parsed_inputs.push(input);
         }
         let inputs = parsed_inputs;
+
+        // Parse the caller inputs.
+        let mut parsed_caller_inputs = Vec::with_capacity(caller_inputs.len());
+        for (i, input) in caller_inputs.into_iter().enumerate() {
+            let input = input.try_into().map_err(|_| anyhow!("Failed to parse caller input #{i}"))?;
+            parsed_caller_inputs.push(input);
+        }
+        let caller_inputs = parsed_caller_inputs;
+
+        // TODO (dynamic_dispatch) remove
+        println!("inputs: {:?}", inputs);
+        println!("input_types: {:?}", input_types);
+        println!("caller_input_types: {:?}", caller_input_types);
+        println!("private_key: {:?}", private_key);
+        println!("program_id: {:?}", program_id);
+        println!("function_name: {:?}", function_name);
 
         // Retrieve `sk_sig`.
         let sk_sig = private_key.sk_sig();
@@ -149,13 +176,16 @@ impl<N: Network> Request<N> {
             // Retrieve the caller input type.
             // Note: This indexing is safe because we have already ensured that the lengths match.
             let caller_input_type = &caller_input_types[index as usize];
+            // Retrieve the caller input.
+            // Note: This indexing is safe because we have already ensured that the lengths match.
+            let caller_input = &caller_inputs[index as usize];
             // Compute the caller input ID.
-            let caller_input_id = compute_input_id(input, caller_input_type)?;
+            let caller_input_id = compute_input_id(caller_input, caller_input_type)?;
             // Update the caller input IDs
             caller_input_ids.push(caller_input_id);
         }
 
-        // Compute `challenge` as `HashToScalar(r * G, pk_sig, pr_sig, signer, [tvk, tcm, function ID, is_root, program checksum?, input IDs, dynamic input IDs?])`.
+        // Compute `challenge` as `HashToScalar(r * G, pk_sig, pr_sig, signer, [tvk, tcm, function ID, is_root, program checksum?, input IDs])`.
         let challenge = N::hash_to_scalar_psd8(&message)?;
         // Compute `response` as `r - challenge * sk_sig`.
         let response = r - challenge * sk_sig;
@@ -173,6 +203,7 @@ impl<N: Network> Request<N> {
             tcm,
             scm,
             caller_input_ids: Some(caller_input_ids),
+            caller_input_values: Some(caller_inputs),
         })
     }
 }

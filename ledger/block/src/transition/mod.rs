@@ -88,6 +88,9 @@ impl<N: Network> Transition<N> {
         let function_name = *request.function_name();
         let num_inputs = request.inputs().len();
 
+        // TODO (dynamic_dispatch) remove
+        println!("********** INSIDE FROM FOR FUNCTION {:?}**", function_name);
+
         // Ensure that the request and response are either both dynamic or both static.
         ensure!(
             request.is_dynamic() == response.is_dynamic(),
@@ -96,6 +99,9 @@ impl<N: Network> Transition<N> {
 
         // Compute the function ID based on the whether the request and response are dynamic.
         let function_id = compute_function_id(&network_id, &program_id, &function_name, request.is_dynamic())?;
+
+        // TODO (dynamic_dispatch) remove
+        println!("function_id: {:?}", function_id);
 
         // A helper function to construct and verify the inputs.
         let construct_inputs = |input_ids: &[InputID<N>], inputs: &[Value<N>]| -> Result<Vec<Input<N>>> {
@@ -143,6 +149,10 @@ impl<N: Network> Transition<N> {
                         }
                         (InputID::ExternalRecord(input_hash), Value::Record(..)) => {
                             Ok(Input::ExternalRecord(*input_hash))
+                        }
+                        (InputID::DynamicRecord(input_hash), Value::DynamicRecord(..)) => {
+                            // TODO (@d0cd) check that this is correct
+                            Ok(Input::DynamicRecord(*input_hash))
                         }
                         _ => bail!("Malformed request input: {input_id:?}, {input}"),
                     }
@@ -290,7 +300,10 @@ impl<N: Network> Transition<N> {
 
         // Compute and verify the optional caller inputs.
         let caller_inputs = if let Some(caller_input_ids) = request.caller_input_ids() {
-            Some(construct_inputs(caller_input_ids, request.inputs())?)
+            let Some(caller_input_values) = request.caller_input_values() else {
+                bail!("Caller input values not present in dynamic request");
+            };
+            Some(construct_inputs(caller_input_ids, caller_input_values)?)
         } else {
             None
         };

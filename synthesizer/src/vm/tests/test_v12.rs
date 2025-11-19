@@ -80,7 +80,7 @@ fn test_translation(
 
     function consume_gas:
        input r0 as gas_container.record;
-       call.dynamic {program_name_as_field} {network_as_field} {consume_dynamic_blob_function_field} with r0 (as dynamic.record) into r1 (as boolean.private);
+       call.dynamic {program_name_as_field} {network_as_field} {consume_dynamic_blob_function_field} with r0 (as gas_container.record) into r1 (as boolean.private);
        output r0.liters as u64.public;
 
     function nitrogen_pump:
@@ -288,6 +288,33 @@ constructor:
     Ok(())
 }
 
+/************************** Translation test cases ***************************/
+
+// TODO (dynamic_dispatch) remove the legend once working
+// Single-translation test cases (O: coded, P: passing)
+// O input static -> dynamic
+// O input dynamic -> static
+// O output static -> dynamic
+// x output dynamic -> static ! Cannot be tested directly since dynamic records cannot be directly instantiated. Tested as part of multi-translation tests below.
+// Double-translation test cases
+// - input dynamic -> dynamic (no translation; check dynamic-record InputID changes as expected)
+// - input static -> static (no translation)
+// Double-translation test cases (non-exhaustive)
+// - input static -> dynamic subsequently passed as input dynamic -> static
+// - output static -> dynamic subsequently passed as output dynamic -> static
+// Polimorphy
+// - input static-type-1 -> dynamic, then static-type-2 -> dynamic (e. g. controlled by a boolean private input)
+// - input static-type-1 + static-type2 -> dynamic, dynamic
+// Other chained cases (non-exhaustive)
+// - input static -> dynamic passed as static -> dynamic, output as dynamic -> static
+// - input static -> dynamic passed as static -> dynamic, output as dynamic (check dynamic-record OutputID changes as expected)
+// Key-fetching
+// - input static -> dynamic, input dynamic -> static, output static -> dynamic, output dynamic -> static all witht he same static definition: only one translation proving key should be fetched
+// - static {program_1 - record_name_1, program_1 - record_name_1, program_1 - record_name_2, program_2 - record_name_1, program_2 - record_name_2}: 4 translation proving keys should be fetched
+// Signature consistency
+// - test involve translation of the output of a call from a preexisting program to ensure signature-verification circuit hasn't changed
+// More
+
 #[test]
 fn test_translation_input_static_dynamic() {
 
@@ -357,7 +384,6 @@ fn test_translation_output_static_dynamic() {
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     let record_static_str = r#"{
         owner: 0group.private,
