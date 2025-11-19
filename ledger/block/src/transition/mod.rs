@@ -27,22 +27,8 @@ mod string;
 use console::{
     network::prelude::*,
     program::{
-        Ciphertext,
-        Identifier,
-        InputID,
-        OutputID,
-        ProgramID,
-        Record,
-        Register,
-        Request,
-        Response,
-        TRANSITION_DEPTH,
-        TransitionLeaf,
-        TransitionPath,
-        TransitionTree,
-        Value,
-        ValueType,
-        compute_function_id,
+        Ciphertext, Identifier, InputID, OutputID, ProgramID, Record, Register, Request, Response, TRANSITION_DEPTH,
+        TransitionLeaf, TransitionPath, TransitionTree, Value, ValueType, compute_function_id,
     },
     types::{Field, Group},
 };
@@ -65,10 +51,9 @@ pub struct Transition<N: Network> {
     tcm: Field<N>,
     /// The transition signer commitment.
     scm: Field<N>,
-    /// The IDs for dynamic and external records which need to be translated in a dynamic call.
-    record_translation_args: Option<Vec<Field<N>>>,
-    /// Whether or not the transition is dynamic.
-    dynamic: Option<bool>,
+    /// The optional caller inputs to the transition.
+    /// Note. These are only present if and only if the transition is dynamic.
+    caller_inputs: Option<Vec<Input<N>>>,
 }
 
 impl<N: Network> Transition<N> {
@@ -82,17 +67,16 @@ impl<N: Network> Transition<N> {
         tpk: Group<N>,
         tcm: Field<N>,
         scm: Field<N>,
-        record_translation_args: Option<Vec<Field<N>>>,
-        dynamic: Option<bool>,
+        caller_inputs: Option<Vec<Input<N>>>,
     ) -> Result<Self> {
         // Compute the transition ID.
         let function_tree = Self::function_tree(&inputs, &outputs)?;
         let id = N::hash_bhp512(&(*function_tree.root(), tcm).to_bits_le())?;
         // Return the transition.
-        Ok(Self { id: id.into(), program_id, function_name, inputs, outputs, tpk, tcm, scm, record_translation_args, dynamic })
+        Ok(Self { id: id.into(), program_id, function_name, inputs, outputs, tpk, tcm, scm, caller_inputs })
     }
 
-    /// Initializes a new transition from a request and response.
+    /// Initializes a new transition from a request, response, and optional dynamic input types.
     pub fn from(
         request: &Request<N>,
         response: &Response<N>,
@@ -120,58 +104,63 @@ impl<N: Network> Transition<N> {
         // Compute the function ID based on the whether the request and response are dynamic.
         let function_id = compute_function_id(&network_id, &program_id, &function_name, request.is_dynamic())?;
 
-        let inputs = request
-            .input_ids()
-            .iter()
-            .zip_eq(request.inputs())
-            .enumerate()
-            .map(|(index, (input_id, input))| {
-                // Construct the transition input.
-                match (input_id, input) {
-                    (InputID::Constant(input_hash), Value::Plaintext(plaintext)) => {
-                        // Construct the constant input.
-                        let input = Input::Constant(*input_hash, Some(plaintext.clone()));
-                        // Ensure the input is valid.
-                        match input.verify(function_id, request.tcm(), index) {
-                            true => Ok(input),
-                            false => bail!("Malformed constant transition input: '{input}'"),
+        // A helper function to construct and verify the inputs.
+        let construct_inputs = |input_ids: &[InputID<N>], inputs: &[Value<N>]| -> Result<Vec<Input<N>>> {
+            input_ids
+                .iter()
+                .zip_eq(inputs)
+                .enumerate()
+                .map(|(index, (input_id, input))| {
+                    // Construct the transition input.
+                    match (input_id, input) {
+                        (InputID::Constant(input_hash), Value::Plaintext(plaintext)) => {
+                            // Construct the constant input.
+                            let input = Input::Constant(*input_hash, Some(plaintext.clone()));
+                            // Ensure the input is valid.
+                            match input.verify(function_id, request.tcm(), index) {
+                                true => Ok(input),
+                                false => bail!("Malformed constant transition input: '{input}'"),
+                            }
                         }
-                    }
-                    (InputID::Public(input_hash), Value::Plaintext(plaintext)) => {
-                        // Construct the public input.
-                        let input = Input::Public(*input_hash, Some(plaintext.clone()));
-                        // Ensure the input is valid.
-                        match input.verify(function_id, request.tcm(), index) {
-                            true => Ok(input),
-                            false => bail!("Malformed public transition input: '{input}'"),
+                        (InputID::Public(input_hash), Value::Plaintext(plaintext)) => {
+                            // Construct the public input.
+                            let input = Input::Public(*input_hash, Some(plaintext.clone()));
+                            // Ensure the input is valid.
+                            match input.verify(function_id, request.tcm(), index) {
+                                true => Ok(input),
+                                false => bail!("Malformed public transition input: '{input}'"),
+                            }
                         }
+                        (InputID::Private(input_hash), Value::Plaintext(plaintext)) => {
+                            // Construct the (console) input index as a field element.
+                            let index = Field::from_u16(index as u16);
+                            // Compute the ciphertext, with the input view key as `Hash(function ID || tvk || index)`.
+                            let ciphertext =
+                                plaintext.encrypt_symmetric(N::hash_psd4(&[function_id, *request.tvk(), index])?)?;
+                            // Compute the ciphertext hash.
+                            let ciphertext_hash = N::hash_psd8(&ciphertext.to_fields()?)?;
+                            // Ensure the ciphertext hash matches.
+                            ensure!(*input_hash == ciphertext_hash, "The input ciphertext hash is incorrect");
+                            // Return the private input.
+                            Ok(Input::Private(*input_hash, Some(ciphertext)))
+                        }
+                        (InputID::Record(_, _, _, serial_number, tag), Value::Record(..)) => {
+                            // Return the input record.
+                            Ok(Input::Record(*serial_number, *tag))
+                        }
+                        (InputID::ExternalRecord(input_hash), Value::Record(..)) => {
+                            Ok(Input::ExternalRecord(*input_hash))
+                        }
+                        _ => bail!("Malformed request input: {input_id:?}, {input}"),
                     }
-                    (InputID::Private(input_hash), Value::Plaintext(plaintext)) => {
-                        // Construct the (console) input index as a field element.
-                        let index = Field::from_u16(index as u16);
-                        // Compute the ciphertext, with the input view key as `Hash(function ID || tvk || index)`.
-                        let ciphertext =
-                            plaintext.encrypt_symmetric(N::hash_psd4(&[function_id, *request.tvk(), index])?)?;
-                        // Compute the ciphertext hash.
-                        let ciphertext_hash = N::hash_psd8(&ciphertext.to_fields()?)?;
-                        // Ensure the ciphertext hash matches.
-                        ensure!(*input_hash == ciphertext_hash, "The input ciphertext hash is incorrect");
-                        // Return the private input.
-                        Ok(Input::Private(*input_hash, Some(ciphertext)))
-                    }
-                    (InputID::Record(_, _, _, serial_number, tag), Value::Record(..)) => {
-                        // Return the input record.
-                        Ok(Input::Record(*serial_number, *tag))
-                    }
-                    (InputID::ExternalRecord(input_hash), Value::Record(..)) => Ok(Input::ExternalRecord(*input_hash)),
-                    _ => bail!("Malformed request input: {input_id:?}, {input}"),
-                }
-            })
-            .collect::<Result<Vec<_>>>()?;
+                })
+                .collect::<Result<Vec<_>>>()
+        };
 
-        // Compute the function ID based on the response.
-        let function_id = compute_function_id(&network_id, &program_id, &function_name, request.is_dynamic())?;
+        // Construct and verify the inputs.
+        let inputs = construct_inputs(request.input_ids(), request.inputs())?;
 
+        // Construct and verify the outputs.
         let outputs = response
             .output_ids()
             .iter()
@@ -306,6 +295,13 @@ impl<N: Network> Transition<N> {
             })
             .collect::<Result<Vec<_>>>()?;
 
+        // Compute and verify the optional caller inputs.
+        let caller_inputs = if let Some(caller_input_ids) = request.caller_input_ids() {
+            Some(construct_inputs(caller_input_ids, request.inputs())?)
+        } else {
+            None
+        };
+
         // Retrieve the `tpk`.
         let tpk = request.to_tpk();
         // Retrieve the `tcm`.
@@ -313,7 +309,7 @@ impl<N: Network> Transition<N> {
         // Retrieve the `scm`.
         let scm = *request.scm();
         // Return the transition.
-        Self::new(program_id, function_name, inputs, outputs, tpk, tcm, scm, record_translation_args, request.dynamic())
+        Self::new(program_id, function_name, inputs, outputs, tpk, tcm, scm, caller_inputs)
     }
 }
 
@@ -357,25 +353,15 @@ impl<N: Network> Transition<N> {
     pub const fn scm(&self) -> &Field<N> {
         &self.scm
     }
-    
-    /// Returns the record IDs which need to be translated in a dynamic call.
-    pub const fn record_translation_args(&self) -> Option<&Vec<Field<N>>> {
-        self.record_translation_args.as_ref()
-    }
 
-    /// Returns the number of record translation arguments.
-    pub fn num_record_translation_args(&self) -> usize {
-        self.record_translation_args.as_ref().map(|args| args.len()).unwrap_or(0)
-    }
-
-    /// Returns the `dynamic` flag.
-    pub const fn dynamic(&self) -> Option<bool> {
-        self.dynamic
-    }
-
-    /// Returns whether or not the request is dynamic.
+    /// Returns whether or not the transition is dynamic.
     pub fn is_dynamic(&self) -> bool {
-        self.dynamic.unwrap_or(false)
+        self.caller_inputs.is_some()
+    }
+
+    /// Returns the optional caller inputs.
+    pub fn caller_inputs(&self) -> Option<&[Input<N>]> {
+        self.caller_inputs.as_deref()
     }
 }
 

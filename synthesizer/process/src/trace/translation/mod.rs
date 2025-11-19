@@ -24,10 +24,7 @@ pub mod tests;
 
 use crate::{Stack, Input, compute_function_id};
 
-use circuit::{
-    Inject,
-    traits::ToGroup,
-};
+use circuit::{Inject, traits::ToGroup};
 
 use console::{
     network::prelude::*,

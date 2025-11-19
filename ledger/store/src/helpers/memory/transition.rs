@@ -19,6 +19,7 @@ use console::{
     program::{Ciphertext, Future, Identifier, Plaintext, ProgramID, Record},
     types::{Field, Group},
 };
+use snarkvm_ledger_block::Input;
 
 use aleo_std_storage::StorageMode;
 
@@ -41,10 +42,8 @@ pub struct TransitionMemory<N: Network> {
     reverse_tcm_map: MemoryMap<Field<N>, N::TransitionID>,
     /// The signer commitments.
     scm_map: MemoryMap<N::TransitionID, Field<N>>,
-    /// The record translation arguments map.
-    record_translation_args_map: MemoryMap<N::TransitionID, Vec<Field<N>>>,
-    /// The `dynamic`` map.
-    dynamic_map: MemoryMap<N::TransitionID, bool>,
+    /// The dynamic input map.
+    caller_input_map: MemoryMap<N::TransitionID, Vec<Input<N>>>,
 }
 
 #[rustfmt::skip]
@@ -57,8 +56,7 @@ impl<N: Network> TransitionStorage<N> for TransitionMemory<N> {
     type TCMMap = MemoryMap<N::TransitionID, Field<N>>;
     type ReverseTCMMap = MemoryMap<Field<N>, N::TransitionID>;
     type SCMMap = MemoryMap<N::TransitionID, Field<N>>;
-    type RecordTranslationArgsMap = MemoryMap<N::TransitionID, Vec<Field<N>>>;
-    type DynamicMap = MemoryMap<N::TransitionID, bool>;
+    type CallerInputMap = MemoryMap<N::TransitionID, Vec<Input<N>>>;
 
     /// Initializes the transition storage.
     fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
@@ -72,8 +70,7 @@ impl<N: Network> TransitionStorage<N> for TransitionMemory<N> {
             tcm_map: MemoryMap::default(),
             reverse_tcm_map: MemoryMap::default(),
             scm_map: MemoryMap::default(),
-            record_translation_args_map: MemoryMap::default(),
-            dynamic_map: MemoryMap::default(),
+            caller_input_map: MemoryMap::default(),
         })
     }
 
@@ -117,14 +114,9 @@ impl<N: Network> TransitionStorage<N> for TransitionMemory<N> {
         &self.scm_map
     }
 
-    /// Returns the record translation arguments map.
-    fn record_translation_args_map(&self) -> &Self::RecordTranslationArgsMap {
-        &self.record_translation_args_map
-    }
-
-    /// Returns the `dynamic` map.
-    fn dynamic_map(&self) -> &Self::DynamicMap {
-        &self.dynamic_map
+    /// Returns the caller input map.
+    fn caller_input_map(&self) -> &Self::CallerInputMap {
+        &self.caller_input_map
     }
 }
 

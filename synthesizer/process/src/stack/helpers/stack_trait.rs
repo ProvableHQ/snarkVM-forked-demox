@@ -33,7 +33,7 @@ impl<N: Network> StackTrait<N> for Stack<N> {
             // TODO (@d0cd): Verify these semantics.
             (Value::DynamicRecord(_), ValueType::DynamicRecord) => Ok(()),
             (Value::DynamicFuture(_), ValueType::DynamicFuture) => Ok(()),
-            _ => bail!("A value does not match its declared value type '{value_type}'"),
+            (value, _) => bail!("A value '{value}' does not match its declared value type '{value_type}'"),
         }
     }
 
@@ -51,7 +51,7 @@ impl<N: Network> StackTrait<N> for Stack<N> {
             // TODO (@d0cd): Verify these semantics.
             (Value::DynamicRecord(_), RegisterType::DynamicRecord) => Ok(()),
             (Value::DynamicFuture(_), RegisterType::DynamicFuture) => Ok(()),
-            _ => bail!("A value does not match its declared register type '{register_type}'"),
+            (value, _) => bail!("A value '{value}' does not match its declared register type '{register_type}'"),
         }
     }
 

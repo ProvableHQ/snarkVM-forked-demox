@@ -153,8 +153,8 @@ impl<N: Network> Stack<N> {
             None => (true, signer, None),
         };
         let tvk = *request.tvk();
-        // Retrieve the program checksum, if the program has a constructor.
-        let program_checksum = match self.program().contains_constructor() {
+        // Retrieve the program checksum, if the program has a constructor or if the request is dynamic.
+        let program_checksum = match self.program().contains_constructor() || request.is_dynamic() {
             true => Some(self.program_checksum_as_field()?),
             false => None,
         };
@@ -190,7 +190,10 @@ impl<N: Network> Stack<N> {
         lap!(timer, "Initialize the registers");
 
         // Ensure the request is well-formed.
-        ensure!(request.verify(&function.input_types(), is_root, program_checksum), "[Evaluate] Request is invalid");
+        ensure!(
+            request.verify(&function.input_types(), is_root, program_checksum),
+            "[Evaluate] Request is invalid"
+        );
         lap!(timer, "Verify the request");
 
         // Store the inputs.

@@ -17,12 +17,7 @@ use super::*;
 
 impl<A: Aleo> DynamicRecord<A> {
     /// Returns the ID of the dynamic record.
-    pub fn to_id(
-        &self,
-        function_id: Field<A>,
-        tvk: Field<A>,
-        index: U16<A>,
-    ) -> Field<A> {
+    pub fn to_id(&self, function_id: Field<A>, tvk: Field<A>, index: U16<A>) -> Field<A> {
         // Construct the preimage as `(function ID || self || tvk || index)`.
         let mut preimage = Vec::new();
         preimage.push(function_id);
@@ -40,7 +35,7 @@ mod tests {
     use console::{TestRng, Uniform};
     use snarkvm_circuit_network::AleoV0 as CurrentAleo;
     use snarkvm_circuit_types::environment::UpdatableCount;
-    
+
     use super::*;
 
     type CurrentNetwork = <CurrentAleo as Environment>::Network;
@@ -48,19 +43,17 @@ mod tests {
     const ITERATIONS: usize = 50;
 
     fn test_to_id_with_mode(mode: Mode, count: UpdatableCount, rng: &mut TestRng) {
-
         for _ in 0..ITERATIONS {
-
             CurrentAleo::reset();
 
             // Dynamic record fields
-            let owner_address = console::Address::<CurrentNetwork>::rand(rng);
-            let owner = console::Owner::<CurrentNetwork, console::Plaintext<CurrentNetwork>>::Public(owner_address);
+            let owner = console::Address::<CurrentNetwork>::rand(rng);
             let root = console::Field::<CurrentNetwork>::rand(rng);
             let nonce = console::Group::<CurrentNetwork>::rand(rng);
             let version = console::U8::<CurrentNetwork>::rand(rng);
 
-            let console_record = console::DynamicRecord::<CurrentNetwork>::new_unchecked(owner, root, nonce, version, None, None);
+            let console_record =
+                console::DynamicRecord::<CurrentNetwork>::new_unchecked(owner, root, nonce, version, None, None);
 
             // Extra fields when computing a Dynamic record's ID
             let function_id = console::Field::<CurrentNetwork>::rand(rng);

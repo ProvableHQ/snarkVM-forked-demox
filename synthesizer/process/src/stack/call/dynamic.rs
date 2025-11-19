@@ -33,13 +33,13 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         let Value::Plaintext(Plaintext::Literal(Literal::Field(program_name_as_field), _)) = &inputs[0] else {
             bail!("Expected the first operand of `call.dynamic` to be a 'Field' literal.")
         };
-        let program_name = Identifier::from_field(&program_name_as_field)?;
+        let program_name = Identifier::from_field(program_name_as_field)?;
 
         // Get the program network.
         let Value::Plaintext(Plaintext::Literal(Literal::Field(program_network_id), _)) = &inputs[1] else {
             bail!("Expected the second operand of `call.dynamic` to be a 'Field' literal.")
         };
-        let program_network = Identifier::from_field(&program_network_id)?;
+        let program_network = Identifier::from_field(program_network_id)?;
 
         // Construct the program ID.
         let program_id = ProgramID::try_from((program_name, program_network))?;
@@ -48,7 +48,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         let Value::Plaintext(Plaintext::Literal(Literal::Field(function_name_as_field), _)) = &inputs[2] else {
             bail!("Expected the third operand of `call.dynamic` to be a 'Field' literal.")
         };
-        let function_name = Identifier::from_field(&function_name_as_field)?;
+        let function_name = Identifier::from_field(function_name_as_field)?;
 
         // Separate the remaining inputs as the function inputs.
         let inputs = &inputs[3..];
@@ -118,31 +118,77 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                     true => Some(substack.program_checksum_as_field()?),
                     false => None,
                 };
+
+                // Get the input types of the callee.
+                let input_types = substack.program().get_function_ref(&function_name)?.input_types();
+                // Ensure that the number of inputs match.
+                if input_types.len() != inputs.len() {
+                    bail!("Expected {} inputs, found {}", input_types.len(), inputs.len())
+                }
+
+                // Convert the inputs to the callee's context.
+                // TODO (@d0cd): Do we need to check that they match? I think no because `CallDynamic::output_types should have`
+                let callee_inputs = inputs
+                    .iter()
+                    .zip_eq(input_types.iter())
+                    .map(|(input, input_type)| match (input, input_type) {
+                        (Value::Record(record), ValueType::DynamicRecord) => {
+                            Ok(Value::DynamicRecord(DynamicRecord::from_record(&record)?))
+                        }
+                        (Value::Future(future), ValueType::DynamicFuture) => {
+                            Ok(Value::DynamicFuture(DynamicFuture::from_future(future)?))
+                        }
+                        (Value::DynamicRecord(dynamic_record), ValueType::Record(record_name)) => {
+                            // Look up the owner visibility.
+                            let owner_is_private =
+                                substack.program().get_record(record_name)?.owner().is_private();
+                            Ok(Value::Record(dynamic_record.to_record(owner_is_private)?))
+                        }
+                        (Value::DynamicFuture(dynamic_future), ValueType::Future(locator)) => {
+                            // Construct the dynamic future.
+                            let future = dynamic_future.to_future()?;
+                            // Ensure that the locator matches.
+                            ensure!(
+                                future.program_id() == locator.program_id(),
+                                "Locator program ID does not match for dynamic future."
+                            );
+                            ensure!(
+                                future.function_name() == locator.resource(),
+                                "Locator resource does not match for dynamic future."
+                            );
+
+                            Ok(Value::Future(dynamic_future.to_future()?))
+                        }
+                        // For other types, we assume they are directly compatible.
+                        _ => Ok(input.clone()),
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+
                 // Compute the request.
-                let request = Request::sign(
+                let request = Request::sign_dynamic(
                     private_key,
                     *substack.program_id(),
                     *function.name(),
                     inputs.iter(),
+                    &function.input_types(),
                     self.operand_types(),
                     root_tvk,
                     is_root,
                     program_checksum,
-                    Some(true),
                     rng,
                 )?;
                 // Add the request to the requests.
                 requests.push(request.clone());
                 // Add the request to the authorization.
-                authorization.push(request.clone())?;
+                authorization.push(request)?;
             };
 
             // Set the (console) caller.
             let console_caller = Some(*stack.program_id());
             // Evaluate the function.
             let response = substack.evaluate_function::<A, R>(call_stack, console_caller, root_tvk, rng)?;
-            // Load the outputs.
-            response.outputs().to_vec()
+            // Convert the callee's outputs to the caller's context.
+            response.dynamic_call_outputs()?
         }
         // Else, throw an error.
         else {
@@ -205,10 +251,6 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         // If we are not handling the root request, retrieve the root request's tvk
         let root_tvk = registers.root_tvk().ok();
 
-        // Retrieve the program checksum, if the program has a constructor.
-        // TODO (@d0cd): Every dynamic request should take in a checksum.
-        let program_checksum = None;
-
         // Execute the function.
         let outputs = {
             lap!(timer, "Execute the function");
@@ -230,11 +272,9 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
 
             // Eject the existing circuit.
             let r1cs = A::eject_r1cs_and_reset();
-            let (request, response) = {
+            let (request, caller_response_outputs) = {
                 // Eject the circuit inputs.
                 let inputs = inputs.eject_value();
-
-                // TODO (@d0cd): Process the inputs, converting them to the appropriate record type.
 
                 // Set the (console) caller.
                 let console_caller = Some(*stack.program_id());
@@ -258,34 +298,90 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         let Some(private_key) = private_key else {
                             bail!("Cannot authorize a new function call without a private key.")
                         };
-                        // Compute the request.
-                        let request = Request::sign(
+                        // Retrieve the program checksum, if the program has a constructor.
+                        let program_checksum = match target.substack().program().contains_constructor() {
+                            true => Some(target.substack().program_checksum_as_field()?),
+                            false => None,
+                        };
+
+                        // Get the input types of the callee.
+                        let input_types =
+                            &target.substack().program().get_function_ref(target.function_name())?.input_types();
+                        // Ensure that the number of inputs match.
+                        if input_types.len() != inputs.len() {
+                            bail!("Expected {} inputs, found {}", input_types.len(), inputs.len())
+                        }
+                        // Convert the inputs to the callee's context.
+                        // TODO (@d0cd): Do we need to check that they match? I think no because `CallDynamic::output_types should have`
+                        let callee_inputs = inputs
+                            .iter()
+                            .zip_eq(input_types.iter())
+                            .map(|(input, input_type)| match (input, input_type) {
+                                (Value::Record(record), ValueType::DynamicRecord) => {
+                                    Ok(Value::DynamicRecord(DynamicRecord::from_record(&record)?))
+                                }
+                                (Value::Future(future), ValueType::DynamicFuture) => {
+                                    Ok(Value::DynamicFuture(DynamicFuture::from_future(future)?))
+                                }
+                                (Value::DynamicRecord(dynamic_record), ValueType::Record(record_name)) => {
+                                    // Look up the owner visibility.
+                                    let owner_is_private =
+                                        target.substack().program().get_record(record_name)?.owner().is_private();
+                                    Ok(Value::Record(dynamic_record.to_record(owner_is_private)?))
+                                }
+                                (Value::DynamicFuture(dynamic_future), ValueType::Future(locator)) => {
+                                    // Construct the dynamic future.
+                                    let future = dynamic_future.to_future()?;
+                                    // Ensure that the locator matches.
+                                    ensure!(
+                                        future.program_id() == locator.program_id(),
+                                        "Locator program ID does not match for dynamic future."
+                                    );
+                                    ensure!(
+                                        future.function_name() == locator.resource(),
+                                        "Locator resource does not match for dynamic future."
+                                    );
+
+                                    Ok(Value::Future(dynamic_future.to_future()?))
+                                }
+                                // For other types, we assume they are directly compatible.
+                                _ => Ok(input.clone()),
+                            })
+                            .collect::<Result<Vec<_>>>()?;
+
+                        // Construct the callee's version of the request.
+                        let callee_request = Request::sign_dynamic(
                             private_key,
                             *target.substack().program_id(),
                             *function.name(),
-                            inputs.iter(),
-                            &self.operand_types(),
+                            callee_inputs.iter(),
+                            input_types,
+                            self.operand_types(),
                             root_tvk,
                             is_root,
                             program_checksum,
-                            Some(true),
                             rng,
                         )?;
 
+                        // Construct the request verification inputs.
+                        let request_verification_inputs = RequestVerificationInputs::from(&callee_request)?;
                         // Retrieve the call stack.
                         let mut call_stack = registers.call_stack();
-                        // Push the request onto the call stack.
-                        call_stack.push(request.clone())?;
+                        // Push the callee's request onto the call stack.
+                        call_stack.push(callee_request.clone())?;
 
-                        // Add the request to the authorization.
-                        authorization.push(request.clone())?;
+                        // Add the callee's request to the authorization.
+                        authorization.push(callee_request.clone())?;
 
-                        // Execute the request.
-                        let response =
+                        // Execute the callee's request.
+                        let callee_response =
                             target.substack().execute_function::<A, R>(call_stack, console_caller, root_tvk, rng)?;
 
-                        // Return the request and response.
-                        (request, response)
+                        // Convert the callee's outputs to the caller's context.
+                        let caller_response_outputs = callee_response.dynamic_call_outputs()?;
+
+                        // Return the request verification inputs and response.
+                        (request_verification_inputs, caller_response_outputs)
                     }
                     // TODO (@d0cd): Synthesize based on the declared outputs of the instruction.
                     // In Synthesize mode (with an existing proving key) or CheckDeployment mode, we generate dummy outputs to avoid building a full sub-circuit.
@@ -297,25 +393,42 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         // Note. It does not matter what function name we use here, since we are only synthesizing dummy outputs.
                         let function_name = Identifier::<N>::from_str("a")?;
 
-                        // Compute the request.
-                        let request = Request::sign(
-                            private_key,
-                            program_id,
-                            function_name,
-                            inputs.iter(),
-                            &self.operand_types(),
-                            root_tvk,
-                            is_root,
-                            program_checksum,
-                            Some(true),
-                            rng,
-                        )?;
-
                         // Compute the address.
                         let address = Address::try_from(private_key)?;
 
+                        // Construct the request verification inputs.
+                        let request_verification_inputs = RequestVerificationInputs {
+                            network_id: U16::new(N::ID),
+                            program_id,
+                            function_name,
+                            signer: Address::rand(rng),
+                            sk_tag: Field::rand(rng),
+                            tvk: Field::rand(rng),
+                            tcm: Field::rand(rng),
+                            caller_input_ids: self
+                                .operand_types()
+                                .iter()
+                                .map(|type_| match type_ {
+                                    ValueType::Constant(..) => Ok(InputID::Constant(Field::rand(rng))),
+                                    ValueType::Public(..) => Ok(InputID::Public(Field::rand(rng))),
+                                    ValueType::Private(..) => Ok(InputID::Private(Field::rand(rng))),
+                                    ValueType::Record(..) => Ok(InputID::Record(
+                                        Field::rand(rng),
+                                        Group::rand(rng),
+                                        Field::rand(rng),
+                                        Field::rand(rng),
+                                        Field::rand(rng),
+                                    )),
+                                    ValueType::ExternalRecord(..) => Ok(InputID::ExternalRecord(Field::rand(rng))),
+                                    ValueType::Future(..) => bail!("A future cannot be input directly"),
+                                    ValueType::DynamicRecord => Ok(InputID::DynamicRecord(Field::rand(rng))),
+                                    ValueType::DynamicFuture => bail!("A dynamic future cannot be input directly"),
+                                })
+                                .collect::<Result<Vec<_>>>()?,
+                        };
+
                         // Sample the outputs.
-                        let outputs = self
+                        let callee_response_outputs = self
                             .destination_types()
                             .iter()
                             .map(|output_type| match output_type {
@@ -329,25 +442,8 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             })
                             .collect::<Result<Vec<_>>>()?;
 
-                        // Use `None` for the output registers. This is safe since an output of a dynamic call cannot be a record.
-                        let output_registers = vec![None; outputs.len()];
-                        // Execute the request.
-                        let response = crate::Response::new(
-                            request.signer(),
-                            request.network_id(),
-                            &program_id,
-                            &function_name,
-                            request.inputs().len(),
-                            request.tvk(),
-                            request.tcm(),
-                            outputs,
-                            &self.destination_types(),
-                            &output_registers,
-                            true,
-                        )?;
-
-                        // Return the request and response.
-                        (request, response)
+                        // Return the request verification inputs and response.
+                        (request_verification_inputs, callee_response_outputs)
                     }
                     // In PackageRun mode, we sign and execute the request once.
                     CallStack::PackageRun(_, private_key, ..) => {
@@ -363,31 +459,87 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         if num_inputs != inputs.len() {
                             bail!("Expected {} inputs, found {}", num_inputs, inputs.len())
                         }
-                        // Compute the request.
-                        let request = Request::sign(
+                        // Retrieve the program checksum, if the program has a constructor.
+                        let program_checksum = match target.substack().program().contains_constructor() {
+                            true => Some(target.substack().program_checksum_as_field()?),
+                            false => None,
+                        };
+
+                        // Get the input types of the callee.
+                        let input_types =
+                            &target.substack().program().get_function_ref(target.function_name())?.input_types();
+                        // Ensure that the number of inputs match.
+                        if input_types.len() != inputs.len() {
+                            bail!("Expected {} inputs, found {}", input_types.len(), inputs.len())
+                        }
+                        // Convert the inputs to the callee's context.
+                        // TODO (@d0cd): Do we need to check that they match? I think no because `CallDynamic::output_types should have`
+                        let callee_inputs = inputs
+                            .iter()
+                            .zip_eq(input_types.iter())
+                            .map(|(input, input_type)| match (input, input_type) {
+                                (Value::Record(record), ValueType::DynamicRecord) => {
+                                    Ok(Value::DynamicRecord(DynamicRecord::from_record(&record)?))
+                                }
+                                (Value::Future(future), ValueType::DynamicFuture) => {
+                                    Ok(Value::DynamicFuture(DynamicFuture::from_future(future)?))
+                                }
+                                (Value::DynamicRecord(dynamic_record), ValueType::Record(record_name)) => {
+                                    // Look up the owner visibility.
+                                    let owner_is_private =
+                                        target.substack().program().get_record(record_name)?.owner().is_private();
+                                    Ok(Value::Record(dynamic_record.to_record(owner_is_private)?))
+                                }
+                                (Value::DynamicFuture(dynamic_future), ValueType::Future(locator)) => {
+                                    // Construct the dynamic future.
+                                    let future = dynamic_future.to_future()?;
+                                    // Ensure that the locator matches.
+                                    ensure!(
+                                        future.program_id() == locator.program_id(),
+                                        "Locator program ID does not match for dynamic future."
+                                    );
+                                    ensure!(
+                                        future.function_name() == locator.resource(),
+                                        "Locator resource does not match for dynamic future."
+                                    );
+
+                                    Ok(Value::Future(dynamic_future.to_future()?))
+                                }
+                                // For other types, we assume they are directly compatible.
+                                _ => Ok(input.clone()),
+                            })
+                            .collect::<Result<Vec<_>>>()?;
+                        // Construct the callee's version of the request.
+                        let callee_request = Request::sign_dynamic(
                             private_key,
                             *target.substack().program_id(),
                             *function.name(),
-                            inputs.iter(),
-                            &self.operand_types(),
+                            callee_inputs.iter(),
+                            input_types,
+                            self.operand_types(),
                             root_tvk,
                             is_root,
                             program_checksum,
-                            Some(true),
                             rng,
                         )?;
 
+                        // Construct the request verification inputs.
+                        let request_verification_inputs = RequestVerificationInputs::from(&callee_request)?;
+
                         // Retrieve the call stack.
                         let mut call_stack = registers.call_stack();
-                        // Push the request onto the call stack.
-                        call_stack.push(request.clone())?;
+                        // Push the callee's request onto the call stack.
+                        call_stack.push(callee_request.clone())?;
 
-                        // Evaluate the request.
-                        let response =
+                        // Evaluate the callee's request.
+                        let callee_response =
                             target.substack().execute_function::<A, _>(call_stack, console_caller, root_tvk, rng)?;
 
-                        // Return the request and response.
-                        (request, response)
+                        // Convert the callee's outputs to the caller's context.
+                        let caller_response_outputs = callee_response.dynamic_call_outputs()?;
+
+                        // Return the request verification inputs and response.
+                        (request_verification_inputs, caller_response_outputs)
                     }
                     // If the circuit is in evaluate mode, then throw an error.
                     CallStack::Evaluate(..) => {
@@ -408,35 +560,42 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             bail!("Expected {} inputs, found {}", num_inputs, inputs.len())
                         }
 
-                        // Retrieve the next request (without popping it).
-                        let request = authorization.peek_next()?;
-                        // Ensure the inputs match the original inputs.
-                        request.inputs().iter().zip_eq(&inputs).try_for_each(|(request_input, input)| {
-                            ensure!(request_input == input, "Inputs do not match in a 'call' instruction.");
-                            Ok(())
-                        })?;
+                        // Retrieve the callee's request (without popping it).
+                        let callee_request = authorization.peek_next()?;
+
+                        // Construct the request verification inputs.
+                        let request_verification_inputs = RequestVerificationInputs::from(&callee_request)?;
 
                         // Evaluate the function, and load the outputs.
-                        let console_response = target.substack().evaluate_function::<A, R>(
+                        let console_callee_response = target.substack().evaluate_function::<A, R>(
                             registers.call_stack(),
                             console_caller,
                             root_tvk,
                             rng,
                         )?;
                         // Execute the request.
-                        let response = target.substack().execute_function::<A, R>(
+                        let callee_response = target.substack().execute_function::<A, R>(
                             registers.call_stack(),
                             console_caller,
                             root_tvk,
                             rng,
                         )?;
+
                         // Ensure the values are equal.
-                        if console_response.outputs() != response.outputs() {
-                            dev_eprintln!("\n{:#?} != {:#?}\n", console_response.outputs(), response.outputs());
+                        if console_callee_response.outputs() != callee_response.outputs() {
+                            dev_eprintln!(
+                                "\n{:#?} != {:#?}\n",
+                                console_callee_response.outputs(),
+                                callee_response.outputs()
+                            );
                             bail!("Function '{}' outputs do not match in a 'call' instruction.", function.name())
                         }
-                        // Return the request and response.
-                        (request, response)
+
+                        // Convert the callee's outputs to the caller's context.
+                        let caller_response_outputs = callee_response.dynamic_call_outputs()?;
+
+                        // Return the caller's request and response.
+                        (request_verification_inputs, caller_response_outputs)
                     }
                 }
             };
@@ -453,7 +612,6 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             let program_id = circuit::ProgramID::public(*request.program_id());
             // Inject the function name as `Mode::Public`.
             let function_name = circuit::Identifier::public(*request.function_name());
-            // TODO (@d0cd) Constraint the program and function names to match the witnessed values.
 
             // Ensure that the program and function names in the registers match the witnessed values.
             A::assert_eq(program_id.name(), program_name_as_field);
@@ -475,9 +633,10 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             let candidate_tcm = A::hash_psd2(&[tvk.clone()]);
             // Ensure the transition commitment matches the computed transition commitment.
             A::assert_eq(&tcm, candidate_tcm);
-            // Inject the input IDs (from the request) as `Mode::Public`.
+
+            // Inject the caller input IDs  as `Mode::Public`.
             let input_ids = request
-                .input_ids()
+                .caller_input_ids
                 .iter()
                 .map(|input_id| circuit::InputID::new(circuit::Mode::Public, *input_id))
                 .collect::<Vec<_>>();
@@ -489,7 +648,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                 &function_name,
                 &input_ids,
                 inputs,
-                &self.operand_types(),
+                self.operand_types(),
                 &signer,
                 &sk_tag,
                 &tvk,
@@ -500,9 +659,8 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             A::assert(check_input_ids);
             lap!(timer, "Checked the input ids");
 
-            // Get the outputs from the response, checking that none are records.
-            let outputs = response.outputs().to_vec();
-            for output in &outputs {
+            // Checking that none of the outputs in the caller's context are records or futures.
+            for output in caller_response_outputs.iter() {
                 match output {
                     Value::Record(_) => bail!("A dynamic call cannot return a record."),
                     Value::Future(_) => bail!("A dynamic call cannot return a future."),
@@ -511,7 +669,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             }
 
             // Use `None` for the output registers. This is safe since an output of a dynamic call cannot be a record.
-            let output_registers = vec![None; outputs.len()];
+            let output_registers = vec![None; caller_response_outputs.len()];
 
             // Inject the outputs as `Mode::Private` (with the 'tcm' and output IDs as `Mode::Public`).
             let outputs = circuit::Response::process_outputs_from_callback(
@@ -521,8 +679,8 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                 inputs.len(),
                 &tvk,
                 &tcm,
-                response.outputs().to_vec(),
-                &self.destination_types(),
+                caller_response_outputs,
+                self.destination_types(),
                 &output_registers,
                 true,
             );
@@ -541,6 +699,89 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         finish!(timer);
 
         Ok(())
+    }
+}
+
+// Information needed to verify the callee's request for a dynamic call.
+struct RequestVerificationInputs<N: Network> {
+    // The network ID.
+    pub network_id: U16<N>,
+    // The program ID.
+    pub program_id: ProgramID<N>,
+    // The function name.
+    pub function_name: Identifier<N>,
+    // The signer.
+    pub signer: Address<N>,
+    // The sk_tag.
+    pub sk_tag: Field<N>,
+    // The tvk.
+    pub tvk: Field<N>,
+    // The tcm.
+    pub tcm: Field<N>,
+    // The caller input IDs.
+    pub caller_input_ids: Vec<InputID<N>>,
+}
+
+impl<N: Network> RequestVerificationInputs<N> {
+    /// Constructs the request verification inputs from a request and caller input IDs.
+    #[inline]
+    pub fn from(request: &Request<N>) -> Result<Self> {
+        // Ensure the the caller input IDs are present.
+        let Some(caller_input_ids) = &request.caller_input_ids() else {
+            bail!("Missing caller input IDs for request verification inputs.")
+        };
+        Ok(Self {
+            network_id: *request.network_id(),
+            program_id: *request.program_id(),
+            function_name: *request.function_name(),
+            signer: *request.signer(),
+            sk_tag: *request.sk_tag(),
+            tvk: *request.tvk(),
+            tcm: *request.tcm(),
+            caller_input_ids: caller_input_ids.clone(),
+        })
+    }
+}
+
+impl<N: Network> RequestVerificationInputs<N> {
+    /// Returns the request signer.
+    pub const fn signer(&self) -> &Address<N> {
+        &self.signer
+    }
+
+    /// Returns the network ID.
+    pub const fn network_id(&self) -> &U16<N> {
+        &self.network_id
+    }
+
+    /// Returns the program ID.
+    pub const fn program_id(&self) -> &ProgramID<N> {
+        &self.program_id
+    }
+
+    /// Returns the function name.
+    pub const fn function_name(&self) -> &Identifier<N> {
+        &self.function_name
+    }
+
+    /// Returns the tag secret key `sk_tag`.
+    pub const fn sk_tag(&self) -> &Field<N> {
+        &self.sk_tag
+    }
+
+    /// Returns the transition view key `tvk`.
+    pub const fn tvk(&self) -> &Field<N> {
+        &self.tvk
+    }
+
+    /// Returns the transition commitment `tcm`.
+    pub const fn tcm(&self) -> &Field<N> {
+        &self.tcm
+    }
+
+    /// Returns the caller input IDs.
+    pub fn caller_input_ids(&self) -> &[InputID<N>] {
+        &self.caller_input_ids
     }
 }
 
@@ -587,7 +828,7 @@ impl<'a, N: Network> ResolvedTarget<'a, N> {
     /// Returns the stack.
     #[inline]
     pub fn substack(&self) -> &Stack<N> {
-        &*self.substack
+        &self.substack
     }
 }
 
@@ -615,7 +856,7 @@ fn resolve_dynamic_target<'a, N: Network>(
         Err(_) if in_dummy_mode => {
             return Ok(None);
         }
-        Err(e) => return Err(e.into()),
+        Err(e) => bail!("Failed to decode the program name in a dynamic call: {e}"),
     };
 
     // Decode the program network, exiting gracefully in dummy mode if it fails.
@@ -624,7 +865,7 @@ fn resolve_dynamic_target<'a, N: Network>(
         Err(_) if in_dummy_mode => {
             return Ok(None);
         }
-        Err(e) => return Err(e.into()),
+        Err(e) => bail!("Failed to decode the program network in a dynamic call: {e}"),
     };
 
     // Decode the function name, exiting gracefully in dummy mode if it fails.
@@ -633,7 +874,7 @@ fn resolve_dynamic_target<'a, N: Network>(
         Err(_) if in_dummy_mode => {
             return Ok(None);
         }
-        Err(e) => return Err(e.into()),
+        Err(e) => bail!("Failed to decode the function name in a dynamic call: {e}"),
     };
 
     // Construct the program ID.
@@ -642,7 +883,7 @@ fn resolve_dynamic_target<'a, N: Network>(
         Err(_) if in_dummy_mode => {
             return Ok(None);
         }
-        Err(e) => return Err(e.into()),
+        Err(e) => bail!("Failed to construct the program ID in a dynamic call: {e}"),
     };
 
     // Verify that the call is not to 'credits.aleo/fee_private' or 'credits.aleo/fee_public'.
@@ -660,7 +901,7 @@ fn resolve_dynamic_target<'a, N: Network>(
             Err(_) if in_dummy_mode => {
                 return Ok(None);
             }
-            Err(e) => return Err(e),
+            Err(e) => bail!("Failed to retrieve the external stack in a dynamic call: {e}"),
         },
         true => None,
     };

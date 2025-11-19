@@ -49,11 +49,11 @@ pub struct Request<N: Network> {
     tvk: Field<N>,
     /// The transition commitment.
     tcm: Field<N>,
-    /// The signer comm7fba93b6-1514-4b1c-9cab-a8607986861eitment.
+    /// The signer commitment.
     scm: Field<N>,
-    /// Whether or not the request is dynamic.
-    /// `None` implies that the request is not dynamic.
-    dynamic: Option<bool>,
+    /// The optional caller input IDs.
+    /// Note. These are only present if and only if the request is dynamic.
+    caller_input_ids: Option<Vec<InputID<N>>>,
 }
 
 impl<N: Network>
@@ -69,12 +69,25 @@ impl<N: Network>
         Field<N>,
         Field<N>,
         Field<N>,
-        Option<bool>,
+        Option<Vec<InputID<N>>>,
     )> for Request<N>
 {
     /// Note: See `Request::sign` to create the request. This method is used to eject from a circuit.
     fn from(
-        (signer, network_id, program_id, function_name, input_ids, inputs, signature, sk_tag, tvk, tcm, scm, dynamic): (
+        (
+            signer,
+            network_id,
+            program_id,
+            function_name,
+            input_ids,
+            inputs,
+            signature,
+            sk_tag,
+            tvk,
+            tcm,
+            scm,
+            caller_input_ids,
+        ): (
             Address<N>,
             U16<N>,
             ProgramID<N>,
@@ -86,9 +99,29 @@ impl<N: Network>
             Field<N>,
             Field<N>,
             Field<N>,
-            Option<bool>,
+            Option<Vec<InputID<N>>>,
         ),
     ) -> Self {
+        // TODO (@d0cd) Verify that adding checks here does not create failure cases.
+        // Ensure that the number of inputs matches the number of input IDs.
+        if inputs.len() != input_ids.len() {
+            N::halt(format!(
+                "Invalid request: mismatching number of input IDs ({}) and inputs ({})",
+                input_ids.len(),
+                inputs.len()
+            ))
+        }
+        // Ensure that the correct number of caller input IDs are provided.
+        if let Some(caller_input_ids) = &caller_input_ids {
+            if caller_input_ids.len() != input_ids.len() {
+                N::halt(format!(
+                    "Invalid request: mismatching number of dynamic input IDs ({}) and inputs ({})",
+                    caller_input_ids.len(),
+                    inputs.len()
+                ))
+            }
+        }
+
         // Ensure the network ID is correct.
         if *network_id != N::ID {
             N::halt(format!("Invalid network ID. Expected {}, found {}", N::ID, *network_id))
@@ -105,7 +138,7 @@ impl<N: Network>
                 tvk,
                 tcm,
                 scm,
-                dynamic,
+                caller_input_ids,
             }
         }
     }
@@ -179,14 +212,14 @@ impl<N: Network> Request<N> {
         &self.scm
     }
 
-    /// Returns the `dynamic` flag.
-    pub const fn dynamic(&self) -> Option<bool> {
-        self.dynamic
+    /// Returns the optional caller input IDs.
+    pub const fn caller_input_ids(&self) -> &Option<Vec<InputID<N>>> {
+        &self.caller_input_ids
     }
 
     /// Returns whether or not the request is dynamic.
     pub fn is_dynamic(&self) -> bool {
-        self.dynamic.unwrap_or(false)
+        self.caller_input_ids.is_some()
     }
 }
 
@@ -236,21 +269,17 @@ mod test_helpers {
                 // Construct 'is_root'.
                 let is_root = Uniform::rand(rng);
                 // Sample the program checksum.
-                let program_checksum = match i % 2 == 0 {
+                let program_checksum = match bool::rand(rng) {
                     true => Some(Field::rand(rng)),
                     false => None,
                 };
-                // Sample the `dynamic` flag.
-                let dynamic = match i % 3 {
-                    0 => None,
-                    1 => Some(false),
-                    2 => Some(true),
-                    _ => unreachable!(),
-                };
 
                 // Compute the signed request.
-                let request =
-                    Request::sign(&private_key, program_id, function_name, inputs.into_iter(), &input_types, root_tvk, is_root, program_checksum, dynamic, rng).unwrap();
+                let request = if bool::rand(rng) {
+                    Request::sign(&private_key, program_id, function_name, inputs.into_iter(), &input_types, root_tvk, is_root, program_checksum, rng).unwrap()
+                } else {
+                    Request::sign_dynamic(&private_key, program_id, function_name, inputs.into_iter(), &input_types, &input_types, root_tvk, is_root, program_checksum, rng).unwrap()
+                };
                 assert!(request.verify(&input_types, is_root, program_checksum));
                 request
             })

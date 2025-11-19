@@ -72,18 +72,17 @@ impl<N: Network> FromBytes for Transition<N> {
         // Read the signer commitment.
         let scm = FromBytes::read_le(&mut reader)?;
 
-        // If the version is 2, read the record translation arguments and the dynamic flag.
-        let (record_translation_arguments, dynamic) = match version {
-            1 => (None, None),
+        // Reqd the optional dynamic inputs.
+        let dynamic = match version {
+            1 => None,
             2 => {
-                let num_record_translation_arguments: u8 = FromBytes::read_le(&mut reader)?;
-                let mut record_translation_arguments = Vec::with_capacity(num_record_translation_arguments as usize);
-                for _ in 0..num_record_translation_arguments {
-                    record_translation_arguments.push(FromBytes::read_le(&mut reader)?);
+                let mut dynamic_inputs = Vec::with_capacity(num_inputs as usize);
+                for _ in 0..num_inputs {
+                    // Read the dynamic input.
+                    dynamic_inputs.push(FromBytes::read_le(&mut reader)?);
                 }
-                let dynamic = FromBytes::read_le(&mut reader)?;
-                (Some(record_translation_arguments), Some(dynamic))
-            },
+                Some(dynamic_inputs)
+            }
             _ => return Err(error("Invalid transition version")),
         };
 
@@ -102,7 +101,7 @@ impl<N: Network> ToBytes for Transition<N> {
     /// Writes the literal to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         // Write the version.
-        match self.dynamic.is_some() {
+        match self.caller_inputs.is_some() {
             false => 1u8.write_le(&mut writer)?,
             true => 2u8.write_le(&mut writer)?,
         }
@@ -130,18 +129,9 @@ impl<N: Network> ToBytes for Transition<N> {
         self.tcm.write_le(&mut writer)?;
         // Write the signer commitment.
         self.scm.write_le(&mut writer)?;
-        // Write the `dynamic` flag, if it exists.
-        if let Some(dynamic) = &self.dynamic {
-            // Write the number of record translation arguments.
-            (u8::try_from(self.num_record_translation_args()).map_err(|e| error(e.to_string()))?).write_le(&mut writer)?;
-            // Write the record translation arguments.
-            if let Some(record_translation_args) = self.record_translation_args() {
-                for record_translation_argument in record_translation_args.iter() {
-                    record_translation_argument.write_le(&mut writer)?;
-                }
-            }
-            // Write the dynamic flag.
-            dynamic.write_le(&mut writer)?;
+        // Write the optional caller inputs.
+        if let Some(caller_inputs) = &self.caller_inputs {
+            caller_inputs.write_le(&mut writer)?;
         }
 
         Ok(())

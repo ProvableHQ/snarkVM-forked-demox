@@ -341,6 +341,7 @@ impl<A: Aleo> Request<A> {
                         // Ensure the expected hash matches the computed hash.
                         input_hash.is_equal(&A::hash_psd8(&preimage))
                     }
+                    // TODO (@d0cd)
                     // A dynamic record input is hashed (using `tvk`) to a field element.
                     InputID::DynamicRecord(input_hash) => {
                         // Add the input hash to the message.
@@ -468,18 +469,31 @@ mod tests {
         let program_checksum = set_program_checksum.then(|| console::Field::from_u64(i as u64));
 
         // Compute the signed request.
-        let request = console::Request::sign(
-            &private_key,
-            program_id,
-            function_name,
-            inputs.iter(),
-            &input_types,
-            root_tvk,
-            is_root,
-            program_checksum,
-            Some(dynamic),
-            rng,
-        )?;
+        let request = match dynamic {
+            false => console::Request::sign(
+                &private_key,
+                program_id,
+                function_name,
+                inputs.iter(),
+                &input_types,
+                root_tvk,
+                is_root,
+                program_checksum,
+                rng,
+            )?,
+            true => console::Request::sign_dynamic(
+                &private_key,
+                program_id,
+                function_name,
+                inputs.iter(),
+                &input_types,
+                &input_types,
+                root_tvk,
+                is_root,
+                program_checksum,
+                rng,
+            )?,
+        };
         assert!(request.verify(&input_types, is_root, program_checksum));
 
         Ok((request, input_types, is_root, program_checksum))

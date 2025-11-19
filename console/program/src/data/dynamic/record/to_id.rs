@@ -17,12 +17,7 @@ use super::*;
 
 impl<N: Network> DynamicRecord<N> {
     /// Returns the ID of the dynamic record.
-    pub fn to_id(
-        &self,
-        function_id: Field<N>,
-        tvk: Field<N>,
-        index: U16<N>,
-    ) -> Result<Field<N>> {
+    pub fn to_id(&self, function_id: Field<N>, tvk: Field<N>, index: U16<N>) -> Result<Field<N>> {
         // Construct the preimage as `(function ID || self || tvk || index)`.
         let mut preimage = Vec::new();
         preimage.push(function_id);

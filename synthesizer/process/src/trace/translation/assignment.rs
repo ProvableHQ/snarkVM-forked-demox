@@ -13,7 +13,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use circuit::{Aleo, Poseidon2, Poseidon8, merkle_tree::MerkleTree, traits::{ToField, ToFields}};
+use circuit::{
+    Aleo,
+    Poseidon2,
+    Poseidon8,
+    merkle_tree::MerkleTree,
+    traits::{ToField, ToFields},
+};
 
 use super::*;
 
@@ -113,12 +119,13 @@ impl<N: Network> TranslationAssignment<N> {
 
         // Inject the translation-direction flag as `Mode::Public`.
         let circuit_to_static_record = circuit::Boolean::<A>::new(circuit::Mode::Public, self.to_static_record);
-        
+
         // Inject the calling function id as `Mode::Public`.
         let circuit_function_id = circuit::Field::<A>::new(circuit::Mode::Public, self.function_id);
 
         // Inject the translation count as `Mode::Public`.
-        let _circuit_translation_count = circuit::U16::<A>::new(circuit::Mode::Public, console::types::U16::<N>::new(self.translation_count));
+        let _circuit_translation_count =
+            circuit::U16::<A>::new(circuit::Mode::Public, console::types::U16::<N>::new(self.translation_count));
 
         // Inject the register index as `Mode::Public`.
         let circuit_operand_index = circuit::U16::<A>::new(circuit::Mode::Public, console::types::U16::<N>::new(self.operand_index));
@@ -130,12 +137,14 @@ impl<N: Network> TranslationAssignment<N> {
         let circuit_id_dynamic = circuit::Field::<A>::new(circuit::Mode::Public, self.id_dynamic);
 
         // ******** Private inputs
-        
+
         // Inject the static record as `Mode::Private`.
-        let circuit_record_static = circuit::Record::<A, circuit::Plaintext<A>>::new(circuit::Mode::Private, self.record_static.clone());
+        let circuit_record_static =
+            circuit::Record::<A, circuit::Plaintext<A>>::new(circuit::Mode::Private, self.record_static.clone());
 
         // Inject the dynamic as `Mode::Private`.
-        let circuit_record_dynamic = circuit::DynamicRecord::<A>::new(circuit::Mode::Private, self.record_dynamic.clone());
+        let circuit_record_dynamic =
+            circuit::DynamicRecord::<A>::new(circuit::Mode::Private, self.record_dynamic.clone());
 
         // Inject the transition view key as `Mode::Private`.
         let circuit_tvk = circuit::Field::<A>::new(circuit::Mode::Private, self.tvk);
@@ -154,13 +163,13 @@ impl<N: Network> TranslationAssignment<N> {
             circuit_operand_index,
         );
 
-        let circuit_static_commitment = circuit_record_static.to_commitment(
-            &circuit_program_id,
-            &circuit_record_name,
-            &circuit_record_view_key,
-        );
+        let circuit_static_commitment =
+            circuit_record_static.to_commitment(&circuit_program_id, &circuit_record_name, &circuit_record_view_key);
 
-        let circuit_static_serial_number = circuit::Record::<A, circuit::Plaintext<A>>::serial_number_from_gamma(&circuit_gamma, circuit_static_commitment.clone());
+        let circuit_static_serial_number = circuit::Record::<A, circuit::Plaintext<A>>::serial_number_from_gamma(
+            &circuit_gamma,
+            circuit_static_commitment.clone(),
+        );
 
         let actual_id_static = circuit::Field::<A>::ternary(
             &circuit_to_static_record,
@@ -175,13 +184,18 @@ impl<N: Network> TranslationAssignment<N> {
         let circuit_leaf_hasher = CircuitLH::<A>::constant(console_leaf_hasher.clone());
         let circuit_path_hasher = CircuitPH::<A>::constant(console_path_hasher.clone());
 
-        let circuit_leaves = circuit_record_static.data().iter().map(|(identifier, entry)| {
-            let mut leaf = vec![identifier.to_field()];
-            leaf.extend(entry.to_fields());
-            leaf
-        }).collect::<Vec<Vec<circuit::Field<A>>>>();
+        let circuit_leaves = circuit_record_static
+            .data()
+            .iter()
+            .map(|(identifier, entry)| {
+                let mut leaf = vec![identifier.to_field()];
+                leaf.extend(entry.to_fields());
+                leaf
+            })
+            .collect::<Vec<Vec<circuit::Field<A>>>>();
 
-        let circuit_tree = RecordMerkleTree::<A>::new(circuit_leaf_hasher, circuit_path_hasher, &circuit_leaves).unwrap();
+        let circuit_tree =
+            RecordMerkleTree::<A>::new(circuit_leaf_hasher, circuit_path_hasher, &circuit_leaves).unwrap();
         let circuit_data_root = circuit_tree.root();
 
         // ******** Assertions
@@ -215,7 +229,10 @@ impl<N: Network> TranslationAssignment<N> {
     /// ```
     pub fn to_circuit_assignment<A: circuit::Aleo<Network = N>>(&self) -> Result<circuit::Assignment<N::Field>> {
         self.to_circuit_assignment_internal::<A>()?;
-        Stack::log_circuit::<A>(format_args!("Translation circuit for dynamic record with nonce {}", self.record_static.nonce()));
+        Stack::log_circuit::<A>(format_args!(
+            "Translation circuit for dynamic record with nonce {}",
+            self.record_static.nonce()
+        ));
         Ok(A::eject_assignment_and_reset())
     }
 }

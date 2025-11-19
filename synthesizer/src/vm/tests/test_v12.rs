@@ -111,7 +111,56 @@ fn test_translation(
     let caller = Address::try_from(caller_private_key).unwrap();
 
     // Initialize the VM.
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap(), rng);
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12)?, rng);
+
+    // Define the program to be executed.
+    let program = Program::from_str(
+        r"
+import credits.aleo;
+        
+program test_dcall.aleo;
+
+//function static:
+//    input r0 as address.public;
+//    input r1 as u64.public;
+//    dcall credits transfer_public with r0 r1 (as address.public u64.public) into r2 (as dynamic.future);
+//    async static r2 into r3;
+//    output r3 as test_dcall.aleo/static.future;
+//finalize static:
+//    input r0 as dynamic.future;
+//    await r0; 
+        
+function two_transfer_publics:
+    input r0 as field.public;
+    input r1 as field.public;
+    input r2 as field.public;
+    input r3 as address.public;
+    input r4 as u64.public;
+    call.dynamic r0 r1 r2 with r3 r4 (as address.public u64.public) into r5 (as dynamic.future);
+    call.dynamic r0 r1 r2 with r3 r4 (as address.public u64.public) into r6 (as dynamic.future);
+    async two_transfer_publics r5 r6 into r7;
+    output r7 as test_dcall.aleo/two_transfer_publics.future;
+finalize two_transfer_publics:
+    input r0 as dynamic.future;
+    input r1 as dynamic.future;
+    await r1;
+    await r0;
+
+function dynamic_transfer_private:
+    input r0 as field.public;
+    input r1 as field.public;
+    input r2 as field.public;
+    input r3 as dynamic.record;
+    input r4 as address.public;
+    input r5 as u64.public;
+    call.dynamic r0 r1 r2 with r3 r4 r5 (as dynamic.record address.public u64.public) into r6 r7 (as dynamic.record dynamic.record);
+    output r6 as dynamic.record;
+    output r7 as dynamic.record;
+
+constructor:
+    assert.eq true true;
+    ",
+    )?;
 
     // Deploy the program.
     println!("Deploying program...");
@@ -127,8 +176,15 @@ fn test_translation(
     // Execute the "dynamic" function.
     let transaction = vm.execute(
         &caller_private_key,
-        ("liquids.aleo", root_function_name),
-        input_values.into_iter(),
+        ("test_dcall.aleo", "two_transfer_publics"),
+        vec![
+            Value::from_str(&format!("{credits_as_field}"))?,
+            Value::from_str(&format!("{aleo_as_field}"))?,
+            Value::from_str(&format!("{transfer_public_as_field}"))?,
+            Value::from_str(&format!("{caller_address}"))?,
+            Value::from_str("1234u64")?,
+        ]
+        .into_iter(),
         None,
         0,
         None,

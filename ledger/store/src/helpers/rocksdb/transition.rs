@@ -14,11 +14,7 @@
 // limitations under the License.
 
 use crate::{
-    InputStorage,
-    InputStore,
-    OutputStorage,
-    OutputStore,
-    TransitionStorage,
+    InputStorage, InputStore, OutputStorage, OutputStore, TransitionStorage,
     helpers::rocksdb::{self, DataMap, Database, MapID, TransitionInputMap, TransitionMap, TransitionOutputMap},
 };
 use console::{
@@ -26,6 +22,7 @@ use console::{
     program::{Ciphertext, Future, Identifier, Plaintext, ProgramID, Record},
     types::{Field, Group},
 };
+use snarkvm_ledger_block::Input;
 
 use aleo_std_storage::StorageMode;
 
@@ -48,10 +45,8 @@ pub struct TransitionDB<N: Network> {
     reverse_tcm_map: DataMap<Field<N>, N::TransitionID>,
     /// The signer commitments.
     scm_map: DataMap<N::TransitionID, Field<N>>,
-    /// The record translation arguments map.
-    record_translation_args_map: DataMap<N::TransitionID, Vec<Field<N>>>,
-    /// The `dynamic` map.
-    dynamic_map: DataMap<N::TransitionID, bool>,
+    /// The dynamic input map.
+    caller_input_map: DataMap<N::TransitionID, Vec<Input<N>>>,
 }
 
 #[rustfmt::skip]
@@ -64,8 +59,7 @@ impl<N: Network> TransitionStorage<N> for TransitionDB<N> {
     type TCMMap = DataMap<N::TransitionID, Field<N>>;
     type ReverseTCMMap = DataMap<Field<N>, N::TransitionID>;
     type SCMMap = DataMap<N::TransitionID, Field<N>>;
-    type RecordTranslationArgsMap = DataMap<N::TransitionID, Vec<Field<N>>>;
-    type DynamicMap = DataMap<N::TransitionID, bool>;
+    type CallerInputMap = DataMap<N::TransitionID, Vec<Input<N>>>;
 
     /// Initializes the transition storage.
     fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
@@ -79,8 +73,7 @@ impl<N: Network> TransitionStorage<N> for TransitionDB<N> {
             tcm_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Transition(TransitionMap::TCM))?,
             reverse_tcm_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(),  MapID::Transition(TransitionMap::ReverseTCM))?,
             scm_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Transition(TransitionMap::SCM))?,
-            record_translation_args_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Transition(TransitionMap::RecordTranslationArgs))?,
-            dynamic_map: rocksdb::RocksDB::open_map(N::ID, storage, MapID::Transition(TransitionMap::Dynamic))?,
+            caller_input_map: rocksdb::RocksDB::open_map(N::ID, storage, MapID::Transition(TransitionMap::Caller))?,
         })
     }
 
@@ -124,14 +117,9 @@ impl<N: Network> TransitionStorage<N> for TransitionDB<N> {
         &self.scm_map
     }
 
-    /// Returns the record translation arguments map.
-    fn record_translation_args_map(&self) -> &Self::RecordTranslationArgsMap {
-        &self.record_translation_args_map
-    }
-
-    /// Returns the `dynamic` map.
-    fn dynamic_map(&self) -> &Self::DynamicMap {
-        &self.dynamic_map
+    /// Returns the caller input map.
+    fn caller_input_map(&self) -> &Self::CallerInputMap {
+        &self.caller_input_map
     }
 }
 

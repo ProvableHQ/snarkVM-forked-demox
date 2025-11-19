@@ -194,8 +194,7 @@ pub enum TransitionMap {
     TCM = DataID::TransitionTCMMap as u16,
     ReverseTCM = DataID::TransitionReverseTCMMap as u16,
     SCM = DataID::TransitionSCMMap as u16,
-    RecordTranslationArgs = DataID::TransitionRecordTranslationArgsMap as u16,
-    Dynamic = DataID::TransitionDynamicMap as u16,
+    Caller = DataID::TransitionCallerMap as u16,
 }
 
 /// The RocksDB map prefix for program-related entries.
@@ -313,8 +312,8 @@ enum DataID {
     InputDynamicRecordMap,
     // Track dynamic record outputs.
     OutputDynamicRecordMap,
-    // Track dynamic transitions.
-    TransitionDynamicMap,
+    // Track caller inputs.
+    TransitionCallerMap,
 
     // Testing
     #[cfg(test)]

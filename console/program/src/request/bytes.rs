@@ -58,10 +58,13 @@ impl<N: Network> FromBytes for Request<N> {
         // Read the signer commitment.
         let scm = FromBytes::read_le(&mut reader)?;
 
-        // Read the `dynamic` flag.
-        let dynamic = match version {
-            0 => None,
-            1 => Some(FromBytes::read_le(&mut reader)?),
+        // Read the optional caller input IDs.
+        let caller_input_ids = match version {
+            1 => None,
+            2 => {
+                let num_caller_input_ids = u16::read_le(&mut reader)?;
+                Some((0..num_caller_input_ids).map(|_| FromBytes::read_le(&mut reader)).collect::<Result<Vec<_>, _>>()?)
+            },
             _ => return Err(error("Invalid request version")),
         };
 
@@ -77,7 +80,7 @@ impl<N: Network> FromBytes for Request<N> {
             tvk,
             tcm,
             scm,
-            dynamic,
+            caller_input_ids,
         )))
     }
 }
@@ -86,7 +89,7 @@ impl<N: Network> ToBytes for Request<N> {
     /// Writes the request to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         // Write the version.
-        match self.dynamic.is_some() {
+        match self.caller_input_ids.is_some() {
             false => 1u8.write_le(&mut writer)?,
             true => 2u8.write_le(&mut writer)?,
         }
@@ -127,9 +130,14 @@ impl<N: Network> ToBytes for Request<N> {
         self.tcm.write_le(&mut writer)?;
         // Write the signer commitment.
         self.scm.write_le(&mut writer)?;
-        // Write the `dynamic` flag, if it exists.
-        if let Some(dynamic) = &self.dynamic {
-            dynamic.write_le(&mut writer)?;
+        // Write the optional caller input IDs.
+        if let Some(caller_input_ids) = &self.caller_input_ids {
+            u16::try_from(caller_input_ids.len())
+                .or_halt_with::<N>("Caller input IDs length exceeds u16")
+                .write_le(&mut writer)?;
+            for caller_input_id in caller_input_ids {
+                caller_input_id.write_le(&mut writer)?;
+            }
         }
 
         Ok(())

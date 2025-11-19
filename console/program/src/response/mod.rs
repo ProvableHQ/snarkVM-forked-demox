@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Identifier, ProgramID, Register, Value, ValueType, compute_function_id};
+use crate::{DynamicFuture, DynamicRecord, Identifier, ProgramID, Register, Value, ValueType, compute_function_id};
 use snarkvm_console_network::Network;
 use snarkvm_console_types::prelude::*;
 
@@ -284,6 +284,21 @@ impl<N: Network> Response<N> {
             .collect::<Result<Vec<_>>>()?;
 
         Ok(Self { output_ids, outputs, is_dynamic })
+    }
+
+    /// Converts a response outputs into the expected output types for a dynamic call by:
+    /// - converting all record outputs to dynamic record outputs
+    /// - converting all future outputs to dynamic future outputs.
+    /// - leaving all other outputs unchanged.
+    pub fn dynamic_call_outputs(&self) -> Result<Vec<Value<N>>> {
+        self.outputs
+            .iter()
+            .map(|output| match output {
+                Value::Record(record) => Ok(Value::DynamicRecord(DynamicRecord::from_record(record)?)),
+                Value::Future(future) => Ok(Value::DynamicFuture(DynamicFuture::from_future(future)?)),
+                _ => Ok(output.clone()),
+            })
+            .collect::<Result<Vec<_>>>()
     }
 
     /// Returns the output ID for the transition.

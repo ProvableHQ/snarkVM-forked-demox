@@ -68,7 +68,12 @@ impl<E: Environment, const DEPTH: u8> Eject for MerklePath<E, DEPTH> {
 }
 
 #[derive(Clone)]
-pub struct MerkleTree<E: Environment, LH: LeafHash<E, Hash = PH::Hash>, PH: PathHash<E, Hash = Field<E>>, const DEPTH: u8> {
+pub struct MerkleTree<
+    E: Environment,
+    LH: LeafHash<E, Hash = PH::Hash>,
+    PH: PathHash<E, Hash = Field<E>>,
+    const DEPTH: u8,
+> {
     /// The leaf hasher for the Merkle tree.
     leaf_hasher: LH,
     /// The path hasher for the Merkle tree.
@@ -83,12 +88,12 @@ pub struct MerkleTree<E: Environment, LH: LeafHash<E, Hash = PH::Hash>, PH: Path
     number_of_leaves: usize,
 }
 
-impl<E: Environment, LH: LeafHash<E, Hash = PH::Hash>, PH: PathHash<E, Hash = Field<E>>, const DEPTH: u8> MerkleTree<E, LH, PH, DEPTH> {
-
+impl<E: Environment, LH: LeafHash<E, Hash = PH::Hash>, PH: PathHash<E, Hash = Field<E>>, const DEPTH: u8>
+    MerkleTree<E, LH, PH, DEPTH>
+{
     #[inline]
     /// Initializes a new Merkle tree with the given leaves.
     pub fn new(leaf_hasher: LH, path_hasher: PH, leaves: &[LH::Leaf]) -> Result<Self> {
-
         // Ensure the Merkle tree depth is greater than 0.
         ensure!(DEPTH > 0, "Merkle tree depth must be greater than 0");
         // Ensure the Merkle tree depth is less than or equal to 64.
@@ -161,14 +166,7 @@ impl<E: Environment, LH: LeafHash<E, Hash = PH::Hash>, PH: PathHash<E, Hash = Fi
             root_hash = path_hasher.hash_children(&root_hash, &empty_hash);
         }
 
-        Ok(Self {
-            leaf_hasher,
-            path_hasher,
-            root: root_hash,
-            tree,
-            empty_hash,
-            number_of_leaves: leaves.len(),
-        })
+        Ok(Self { leaf_hasher, path_hasher, root: root_hash, tree, empty_hash, number_of_leaves: leaves.len() })
     }
 
     /// Returns the leaf hasher of the Merkle tree.
@@ -237,18 +235,18 @@ const fn parent(index: usize) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use snarkvm_circuit_algorithms::{Poseidon2, Poseidon8};
     use snarkvm_circuit_network::AleoV0 as Circuit;
     use snarkvm_circuit_types::environment::UpdatableCount;
     use snarkvm_console_collections::merkle_tree::MerkleTree as ConsoleMerkleTree;
     use snarkvm_utilities::{TestRng, Uniform};
-    use snarkvm_circuit_algorithms::{Poseidon2, Poseidon8};
 
     use anyhow::Result;
 
     type CurrentNetwork = <Circuit as Environment>::Network;
     type NativeLH = console::algorithms::Poseidon8<CurrentNetwork>;
     type NativePH = console::algorithms::Poseidon2<CurrentNetwork>;
-    type CircuitLH =Poseidon8<Circuit>;
+    type CircuitLH = Poseidon8<Circuit>;
     type CircuitPH = Poseidon2<Circuit>;
 
     const ITERATIONS: u128 = 100;
@@ -316,11 +314,9 @@ mod tests {
     }
 
     fn test_compatibility<const DEPTH: u8>(mode: Mode, count: UpdatableCount, rng: &mut TestRng) {
-    
         for num_leaves in 1..=1 << DEPTH {
-
             Circuit::reset();
-            
+
             // **** Console tree
             let console_leaf_hasher = NativeLH::setup("AleoMerklePathTest0").unwrap();
             let console_path_hasher = NativePH::setup("AleoMerklePathTest1").unwrap();
@@ -328,33 +324,39 @@ mod tests {
             let circuit_leaf_hasher = CircuitLH::constant(console_leaf_hasher.clone());
             let circuit_path_hasher = CircuitPH::constant(console_path_hasher.clone());
 
-            let console_leaves = (0..num_leaves).map(|i| {
-                // We want to generate a random-looking leaf length for testing
-                // purposes but need to do so in a deterministic way due to
-                // constant/public/private-variable count checks. One has
-                // MAX_LEAF_LENGTH - MIN_LEAF_LENGTH = 11, which is coprime with
-                // 7 * DEPTH * i * num_leaves in the tested cases except
-                // whenever num_leaves is a multiple of 11.
-                let leaf_length = MIN_LEAF_LENGTH + (7usize * DEPTH as usize * i * num_leaves) % (MAX_LEAF_LENGTH - MIN_LEAF_LENGTH);
-                (0..leaf_length).map(|_| console::Field::<CurrentNetwork>::rand(rng)).collect_vec()
-            }).collect_vec();
+            let console_leaves = (0..num_leaves)
+                .map(|i| {
+                    // We want to generate a random-looking leaf length for testing
+                    // purposes but need to do so in a deterministic way due to
+                    // constant/public/private-variable count checks. One has
+                    // MAX_LEAF_LENGTH - MIN_LEAF_LENGTH = 11, which is coprime with
+                    // 7 * DEPTH * i * num_leaves in the tested cases except
+                    // whenever num_leaves is a multiple of 11.
+                    let leaf_length = MIN_LEAF_LENGTH
+                        + (7usize * DEPTH as usize * i * num_leaves) % (MAX_LEAF_LENGTH - MIN_LEAF_LENGTH);
+                    (0..leaf_length).map(|_| console::Field::<CurrentNetwork>::rand(rng)).collect_vec()
+                })
+                .collect_vec();
 
             let console_tree = ConsoleMerkleTree::<CurrentNetwork, NativeLH, NativePH, DEPTH>::new(
                 &console_leaf_hasher,
                 &console_path_hasher,
                 &console_leaves,
-            ).unwrap();
+            )
+            .unwrap();
 
             // **** Circuit tree
-            let circuit_leaves = console_leaves.iter().map(|leaf| {
-                leaf.iter().map(|leaf_element| Field::new(mode, *leaf_element)).collect_vec()
-            }).collect_vec();
+            let circuit_leaves = console_leaves
+                .iter()
+                .map(|leaf| leaf.iter().map(|leaf_element| Field::new(mode, *leaf_element)).collect_vec())
+                .collect_vec();
 
             let circuit_tree = MerkleTree::<Circuit, CircuitLH, CircuitPH, DEPTH>::new(
                 circuit_leaf_hasher,
                 circuit_path_hasher,
                 &circuit_leaves,
-            ).unwrap();
+            )
+            .unwrap();
 
             // Check the count
             count.assert_matches(
