@@ -27,6 +27,13 @@ use console::{
 use snarkvm_synthesizer_program::Program;
 use snarkvm_utilities::TestRng;
 
+fn get_main_field(output_id: OutputID<CurrentNetwork>) -> Field<CurrentNetwork> {
+    match output_id {
+        OutputID::Constant(field) | OutputID::Public(field) | OutputID::Private(field) | OutputID::Record(field, _, _) | OutputID::ExternalRecord(field) | OutputID::Future(field) | OutputID::DynamicRecord(field) | OutputID::DynamicFuture(field) => field,
+        OutputID::Record(field, _, _) => field,
+    }
+}
+
 fn test_translation(
     caller_private_key: Option<&PrivateKey<CurrentNetwork>>,
     root_function_name: &str,
@@ -128,16 +135,6 @@ fn test_translation(
         rng,
     ).unwrap();
 
-    println!("Verifying transaction...");
-
-    vm.check_transaction(&transaction, None, rng).unwrap();
-    
-    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
-    assert_eq!(block.transactions().num_accepted(), 1);
-    assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
-    vm.add_next_block(&block).unwrap();
-
     println!("Asserting output correctness...");
     
     let output_ids = transaction.transitions().last().unwrap().output_ids().collect_vec();
@@ -152,8 +149,18 @@ fn test_translation(
     }
 
     if let Some(expected_output_ids) = expected_output_ids {
-        assert_eq!(output_ids.into_iter().cloned().collect_vec(), expected_output_ids.into_iter().map(|id| id.to_field().unwrap()).collect_vec());
+        assert_eq!(output_ids.into_iter().cloned().collect_vec(), expected_output_ids.into_iter().map(get_main_field).collect_vec());
     }
+
+    println!("Verifying transaction...");
+
+    vm.check_transaction(&transaction, None, rng).unwrap();
+    
+    let block = sample_next_block(&vm, &caller_private_key, &[transaction.clone()], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    vm.add_next_block(&block).unwrap();
 }
 
 // // This test verifiers that a dynamic call to the `credits.transfer_public` function works as expected.
@@ -529,7 +536,12 @@ fn test_translation_output_static_dynamic() {
     let r0_dynamic = DynamicRecord::<CurrentNetwork>::from_record(&r0_static).unwrap();
 
     // Input and expected output
-    let r0_dynamic_id = r0_dynamic.to_id().unwrap();
+    let caller_function_name = Identifier::<CurrentNetwork>::from_str("nitrogen_pump").unwrap();
+    let caller_function_field = caller_function_name.to_field().unwrap();
+    let operand_index = U16::<CurrentNetwork>::from_str("0").unwrap();
+    let tvk = None::<Field<CurrentNetwork>>.unwrap();
+
+    let r0_dynamic_id = r0_dynamic.to_id(caller_function_field, tvk, operand_index).unwrap();
 
     test_translation(
         Some(&caller_private_key),
