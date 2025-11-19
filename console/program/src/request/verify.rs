@@ -19,9 +19,8 @@ impl<N: Network> Request<N> {
     /// Returns `true` if the request is valid, and `false` otherwise.
     ///
     /// Verifies (challenge == challenge') && (address == address') && (serial_numbers == serial_numbers') where:
-    ///     challenge' := HashToScalar(r * G, pk_sig, pr_sig, signer, \[tvk, tcm, function ID, is_root, program checksum?, index?, input IDs, dynamic input IDs?\])
+    ///     challenge' := HashToScalar(r * G, pk_sig, pr_sig, signer, \[tvk, tcm, function ID, is_root, program checksum?, input IDs, dynamic input IDs?\])
     /// The program checksum must be provided if the program has a constructor and should not be provided otherwise.
-    /// The index must be provided if the function was invoked via a dynamic call and should not be provided otherwise.
     pub fn verify(&self, input_types: &[ValueType<N>], is_root: bool, program_checksum: Option<Field<N>>) -> bool {
         // Verify the transition public key, transition view key, and transition commitment are well-formed.
         {
@@ -59,8 +58,8 @@ impl<N: Network> Request<N> {
         // Compute the 'is_root' field.
         let is_root = if is_root { Field::<N>::one() } else { Field::<N>::zero() };
 
-        // Construct the signature message as `[tvk, tcm, function ID, is_root, program_checksum?, index?, input IDs, dynamic input IDs?]`.
-        let mut message = Vec::with_capacity(5 + 2 * self.input_ids.len());
+        // Construct the signature message as `[tvk, tcm, function ID, is_root, program_checksum?, input IDs]`.
+        let mut message = Vec::with_capacity(5 + self.input_ids.len());
         message.push(self.tvk);
         message.push(self.tcm);
         message.push(function_id);
@@ -69,149 +68,112 @@ impl<N: Network> Request<N> {
         if let Some(program_checksum) = program_checksum {
             message.push(program_checksum);
         }
-        // Add the index to the signature message if it was provided.
-        if let Some(index) = self.index {
-            let index_field = Field::<N>::from_u16(index);
-            message.push(index_field);
-        }
-
-        // Initialize storage for the dynamic message.
-        let mut dynamic_message = Vec::with_capacity(self.input_ids.len());
 
         if let Err(error) = self.input_ids.iter().zip_eq(&self.inputs).zip_eq(input_types).enumerate().try_for_each(
-            |(index, ((input_id, input), input_type))| -> Result<()> {
+            |(index, ((input_id, input), input_type))| {
                 // Convert index to u16.
                 let index = u16::try_from(index).or_halt_with::<N>("Input index exceeds u16");
 
-                // A helper function that checks the input ID based on the input type and adds it to the message and input IDs.
-                let check_and_add_input_id = |message: &mut Vec<Field<N>>, input_id: &InputID<N>| -> Result<()> {
-                    match input_id {
-                        // A constant input is hashed (using `tcm`) to a field element.
-                        InputID::Constant(input_hash) => {
-                            let candidate_hash = *InputID::constant(function_id, input, self.tcm, index)?.id();
-                            // Ensure the input hash matches.
-                            ensure!(*input_hash == candidate_hash, "Expected a constant input with the same hash");
+                match input_id {
+                    // A constant input is hashed (using `tcm`) to a field element.
+                    InputID::Constant(input_hash) => {
+                        let candidate_hash = *InputID::constant(function_id, input, self.tcm, index)?.id();
+                        // Ensure the input hash matches.
+                        ensure!(*input_hash == candidate_hash, "Expected a constant input with the same hash");
 
-                            // Add the input hash to the message.
-                            message.push(candidate_hash);
-                        }
-                        // A public input is hashed (using `tcm`) to a field element.
-                        InputID::Public(input_hash) => {
-                            let candidate_hash = *InputID::public(function_id, input, self.tcm, index)?.id();
-                            // Ensure the input hash matches.
-                            ensure!(*input_hash == candidate_hash, "Expected a public input with the same hash");
-
-                            // Add the input hash to the message.
-                            message.push(candidate_hash);
-                        }
-                        // A private input is encrypted (using `tvk`) and hashed to a field element.
-                        InputID::Private(input_hash) => {
-                            let candidate_hash = *InputID::private(function_id, input, self.tvk, index)?.id();
-                            // Ensure the input hash matches.
-                            ensure!(*input_hash == candidate_hash, "Expected a private input with the same hash");
-
-                            // Add the input hash to the message.
-                            message.push(candidate_hash);
-                        }
-                        // A record input is computed to its serial number.
-                        InputID::Record(commitment, gamma, record_view_key, serial_number, tag) => {
-                            // Retrieve the record.
-                            let record = match &input {
-                                Value::Record(record) => record,
-                                // Ensure the input is a record.
-                                Value::Plaintext(..) => bail!("Expected a record input, found a plaintext input"),
-                                Value::Future(..) => bail!("Expected a record input, found a future input"),
-                                Value::DynamicRecord(..) => {
-                                    bail!("Expected a record input, found a dynamic record input")
-                                }
-                                Value::DynamicFuture(..) => {
-                                    bail!("Expected a record input, found a dynamic future input")
-                                }
-                            };
-                            // Retrieve the record name.
-                            let record_name = match input_type {
-                                ValueType::Record(record_name) => record_name,
-                                // Ensure the input type is a record.
-                                _ => bail!("Expected a record type at input {index}"),
-                            };
-                            // Ensure the record belongs to the signer.
-                            ensure!(**record.owner() == self.signer, "Input record does not belong to the signer");
-
-                            // Compute the record commitment.
-                            let candidate_commitment =
-                                record.to_commitment(&self.program_id, record_name, record_view_key)?;
-                            // Ensure the commitment matches.
-                            ensure!(
-                                *commitment == candidate_commitment,
-                                "Expected a record input with the same commitment"
-                            );
-
-                            // Compute the `candidate_sn` from `gamma`.
-                            let candidate_sn = Record::<N, Plaintext<N>>::serial_number_from_gamma(gamma, *commitment)?;
-                            // Ensure the serial number matches.
-                            ensure!(
-                                *serial_number == candidate_sn,
-                                "Expected a record input with the same serial number"
-                            );
-
-                            // Compute the generator `H` as `HashToGroup(commitment)`.
-                            let h = N::hash_to_group_psd2(&[N::serial_number_domain(), *commitment])?;
-                            // Compute `h_r` as `(challenge * gamma) + (response * H)`, equivalent to `r * H`.
-                            let h_r = (*gamma * challenge) + (h * response);
-
-                            // Compute the tag as `Hash(sk_tag || commitment)`.
-                            let candidate_tag = N::hash_psd2(&[self.sk_tag, *commitment])?;
-                            // Ensure the tag matches.
-                            ensure!(*tag == candidate_tag, "Expected a record input with the same tag");
-
-                            // Add (`H`, `r * H`, `gamma`, `tag`) to the message.
-                            message.extend([h, h_r, *gamma].iter().map(|point| point.to_x_coordinate()));
-                            message.push(*tag);
-                        }
-                        // An external record input is hashed (using `tvk`) to a field element.
-                        InputID::ExternalRecord(input_hash) => {
-                            let candidate_hash = *InputID::external_record(function_id, input, self.tvk, index)?.id();
-                            // Ensure the input hash matches.
-                            ensure!(*input_hash == candidate_hash, "Expected a locator input with the same hash");
-
-                            // Add the input hash to the message.
-                            message.push(candidate_hash);
-                        }
-                        // A dynamic record input is hashed (using `tvk`) to a field element.
-                        InputID::DynamicRecord(input_hash) => {
-                            let candidate_hash = *InputID::dynamic_record(function_id, input, self.tvk, index)?.id();
-                            // Ensure the input hash matches.
-                            ensure!(*input_hash == candidate_hash, "Expected a locator input with the same hash");
-
-                            // Add the input hash to the message.
-                            message.push(candidate_hash);
-                        }
+                        // Add the input hash to the message.
+                        message.push(candidate_hash);
                     }
-                    Ok(())
-                };
+                    // A public input is hashed (using `tcm`) to a field element.
+                    InputID::Public(input_hash) => {
+                        let candidate_hash = *InputID::public(function_id, input, self.tcm, index)?.id();
+                        // Ensure the input hash matches.
+                        ensure!(*input_hash == candidate_hash, "Expected a public input with the same hash");
 
-                // Check the input ID and add it to the message.
-                check_and_add_input_id(&mut message, input_id)?;
-                // If the request is dynamic, check and add the dynamic input ID.
-                if let Some(dynamic_input_ids) = &self.dynamic_input_ids {
-                    // Retrieve the dynamic input ID.
-                    // Note: This indexing is safe because we have already ensured that the lengths match.
-                    let dynamic_input_id = &dynamic_input_ids[index as usize];
-                    // Check the dynamic input ID and add it to the dynamic message.
-                    check_and_add_input_id(&mut dynamic_message, dynamic_input_id)?;
+                        // Add the input hash to the message.
+                        message.push(candidate_hash);
+                    }
+                    // A private input is encrypted (using `tvk`) and hashed to a field element.
+                    InputID::Private(input_hash) => {
+                        let candidate_hash = *InputID::private(function_id, input, self.tvk, index)?.id();
+                        // Ensure the input hash matches.
+                        ensure!(*input_hash == candidate_hash, "Expected a private input with the same hash");
+
+                        // Add the input hash to the message.
+                        message.push(candidate_hash);
+                    }
+                    // A record input is computed to its serial number.
+                    InputID::Record(commitment, gamma, record_view_key, serial_number, tag) => {
+                        // Retrieve the record.
+                        let record = match &input {
+                            Value::Record(record) => record,
+                            // Ensure the input is a record.
+                            Value::Plaintext(..) => bail!("Expected a record input, found a plaintext input"),
+                            Value::Future(..) => bail!("Expected a record input, found a future input"),
+                            Value::DynamicRecord(..) => bail!("Expected a record input, found a dynamic record input"),
+                            Value::DynamicFuture(..) => bail!("Expected a record input, found a dynamic future input"),
+                        };
+                        // Retrieve the record name.
+                        let record_name = match input_type {
+                            ValueType::Record(record_name) => record_name,
+                            // Ensure the input type is a record.
+                            _ => bail!("Expected a record type at input {index}"),
+                        };
+                        // Ensure the record belongs to the signer.
+                        ensure!(**record.owner() == self.signer, "Input record does not belong to the signer");
+
+                        // Compute the record commitment.
+                        let candidate_commitment =
+                            record.to_commitment(&self.program_id, record_name, record_view_key)?;
+                        // Ensure the commitment matches.
+                        ensure!(
+                            *commitment == candidate_commitment,
+                            "Expected a record input with the same commitment"
+                        );
+
+                        // Compute the `candidate_sn` from `gamma`.
+                        let candidate_sn = Record::<N, Plaintext<N>>::serial_number_from_gamma(gamma, *commitment)?;
+                        // Ensure the serial number matches.
+                        ensure!(*serial_number == candidate_sn, "Expected a record input with the same serial number");
+
+                        // Compute the generator `H` as `HashToGroup(commitment)`.
+                        let h = N::hash_to_group_psd2(&[N::serial_number_domain(), *commitment])?;
+                        // Compute `h_r` as `(challenge * gamma) + (response * H)`, equivalent to `r * H`.
+                        let h_r = (*gamma * challenge) + (h * response);
+
+                        // Compute the tag as `Hash(sk_tag || commitment)`.
+                        let candidate_tag = N::hash_psd2(&[self.sk_tag, *commitment])?;
+                        // Ensure the tag matches.
+                        ensure!(*tag == candidate_tag, "Expected a record input with the same tag");
+
+                        // Add (`H`, `r * H`, `gamma`, `tag`) to the message.
+                        message.extend([h, h_r, *gamma].iter().map(|point| point.to_x_coordinate()));
+                        message.push(*tag);
+                    }
+                    // An external record input is hashed (using `tvk`) to a field element.
+                    InputID::ExternalRecord(input_hash) => {
+                        let candidate_hash = *InputID::external_record(function_id, input, self.tvk, index)?.id();
+                        // Ensure the input hash matches.
+                        ensure!(*input_hash == candidate_hash, "Expected a locator input with the same hash");
+
+                        // Add the input hash to the message.
+                        message.push(candidate_hash);
+                    }
+                    // A dynamic record input is hashed (using `tvk`) to a field element.
+                    InputID::DynamicRecord(input_hash) => {
+                        let candidate_hash = *InputID::dynamic_record(function_id, input, self.tvk, index)?.id();
+                        // Ensure the input hash matches.
+                        ensure!(*input_hash == candidate_hash, "Expected a locator input with the same hash");
+
+                        // Add the input hash to the message.
+                        message.push(candidate_hash);
+                    }
                 }
-
                 Ok(())
             },
         ) {
-            println!("Error: {error}");
             eprintln!("Request verification failed on input checks: {error}");
             return false;
-        }
-
-        // If the request is dynamic, append the dynamic message to the main message.
-        if self.is_dynamic() {
-            message.extend(dynamic_message);
         }
 
         // Verify the signature.
@@ -235,7 +197,7 @@ mod tests {
     fn test_sign_and_verify() {
         let rng = &mut TestRng::default();
 
-        for i in 0..ITERATIONS {
+        for _i in 0..ITERATIONS {
             // Sample a random private key and address.
             let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
             let address = Address::try_from(&private_key).unwrap();
@@ -271,32 +233,40 @@ mod tests {
             // Sample 'is_root'.
             let is_root = Uniform::rand(rng);
             // Sample 'program_checksum'.
-            let program_checksum = match i % 2 == 0 {
+            let program_checksum = match bool::rand(rng) {
                 true => Some(Field::rand(rng)),
                 false => None,
             };
-            // Sample the index and dynamic input types.
-            let (index, dynamic_input_types) = match i % 3 {
-                0 | 1 => (None, None),
-                2 => (Some(i as u16), Some(&input_types[..])),
-                _ => unreachable!(),
-            };
 
             // Compute the signed request.
-            let request = Request::sign(
-                &private_key,
-                program_id,
-                function_name,
-                inputs.into_iter(),
-                &input_types,
-                root_tvk,
-                is_root,
-                program_checksum,
-                index,
-                dynamic_input_types,
-                rng,
-            )
-            .unwrap();
+            let request = if bool::rand(rng) {
+                Request::sign(
+                    &private_key,
+                    program_id,
+                    function_name,
+                    inputs.into_iter(),
+                    &input_types,
+                    root_tvk,
+                    is_root,
+                    program_checksum,
+                    rng,
+                )
+                .unwrap()
+            } else {
+                Request::sign_dynamic(
+                    &private_key,
+                    program_id,
+                    function_name,
+                    inputs.into_iter(),
+                    &input_types,
+                    &input_types,
+                    root_tvk,
+                    is_root,
+                    program_checksum,
+                    rng,
+                )
+                .unwrap()
+            };
             assert!(request.verify(&input_types, is_root, program_checksum));
         }
     }

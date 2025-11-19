@@ -1058,7 +1058,7 @@ function compute:
             *transition.tpk(),
             *transition.tcm(),
             *transition.scm(),
-            transition.dynamic_inputs().map(|d| d.to_vec()),
+            transition.caller_inputs().map(|d| d.to_vec()),
         )
         .unwrap();
 
@@ -1300,12 +1300,10 @@ function compute:
             rng,
         )
         .unwrap();
-        assert_eq!(next_block.aborted_transaction_ids(), &vec![
-            deploy_1_tx_id,
-            deploy_2_tx_id,
-            deploy_3_tx_id,
-            deploy_4_tx_id
-        ]);
+        assert_eq!(
+            next_block.aborted_transaction_ids(),
+            &vec![deploy_1_tx_id, deploy_2_tx_id, deploy_3_tx_id, deploy_4_tx_id]
+        );
     }
 
     #[cfg(feature = "test")]

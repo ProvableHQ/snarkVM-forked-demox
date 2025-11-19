@@ -14,11 +14,7 @@
 // limitations under the License.
 
 use crate::{
-    InputStorage,
-    InputStore,
-    OutputStorage,
-    OutputStore,
-    TransitionStorage,
+    InputStorage, InputStore, OutputStorage, OutputStore, TransitionStorage,
     helpers::rocksdb::{self, DataMap, Database, MapID, TransitionInputMap, TransitionMap, TransitionOutputMap},
 };
 use console::{
@@ -50,7 +46,7 @@ pub struct TransitionDB<N: Network> {
     /// The signer commitments.
     scm_map: DataMap<N::TransitionID, Field<N>>,
     /// The dynamic input map.
-    dynamic_input_map: DataMap<N::TransitionID, Vec<Input<N>>>,
+    caller_input_map: DataMap<N::TransitionID, Vec<Input<N>>>,
 }
 
 #[rustfmt::skip]
@@ -63,7 +59,7 @@ impl<N: Network> TransitionStorage<N> for TransitionDB<N> {
     type TCMMap = DataMap<N::TransitionID, Field<N>>;
     type ReverseTCMMap = DataMap<Field<N>, N::TransitionID>;
     type SCMMap = DataMap<N::TransitionID, Field<N>>;
-    type DynamicInputMap = DataMap<N::TransitionID, Vec<Input<N>>>;
+    type CallerInputMap = DataMap<N::TransitionID, Vec<Input<N>>>;
 
     /// Initializes the transition storage.
     fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
@@ -77,7 +73,7 @@ impl<N: Network> TransitionStorage<N> for TransitionDB<N> {
             tcm_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Transition(TransitionMap::TCM))?,
             reverse_tcm_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(),  MapID::Transition(TransitionMap::ReverseTCM))?,
             scm_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Transition(TransitionMap::SCM))?,
-            dynamic_input_map: rocksdb::RocksDB::open_map(N::ID, storage, MapID::Transition(TransitionMap::Dynamic))?,
+            caller_input_map: rocksdb::RocksDB::open_map(N::ID, storage, MapID::Transition(TransitionMap::Caller))?,
         })
     }
 
@@ -121,9 +117,9 @@ impl<N: Network> TransitionStorage<N> for TransitionDB<N> {
         &self.scm_map
     }
 
-    /// Returns the dynamic input map.
-    fn dynamic_input_map(&self) -> &Self::DynamicInputMap {
-        &self.dynamic_input_map
+    /// Returns the caller input map.
+    fn caller_input_map(&self) -> &Self::CallerInputMap {
+        &self.caller_input_map
     }
 }
 

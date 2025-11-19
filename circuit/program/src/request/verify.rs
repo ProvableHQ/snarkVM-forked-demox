@@ -333,6 +333,7 @@ impl<A: Aleo> Request<A> {
                         // Ensure the expected hash matches the computed hash.
                         input_hash.is_equal(&A::hash_psd8(&preimage))
                     }
+                    // TODO (@d0cd)
                     // A dynamic record input is hashed (using `tvk`) to a field element.
                     InputID::DynamicRecord(input_hash) => {
                         // Add the input hash to the message.
@@ -346,7 +347,9 @@ impl<A: Aleo> Request<A> {
                             // Ensure the input is a dynamic record.
                             Value::Plaintext(..) => A::halt("Expected a dynamic record input, found a plaintext input"),
                             Value::Future(..) => A::halt("Expected a dynamic record input, found a future input"),
-                            Value::Record(..) => A::halt("Expected an dynamic record input, found a record input"),
+                            Value::Record(..) => {
+                                A::halt("Expected an dynamic record input, found a dynamic record input")
+                            }
                             Value::DynamicFuture(..) => {
                                 A::halt("Expected an dynamic record input, found a dynamic future input")
                             }
@@ -457,28 +460,35 @@ mod tests {
         // Sample 'is_root'.
         let is_root = true;
         // Sample 'program_checksum'.
-        let program_checksum = (set_program_checksum || dynamic).then(|| console::Field::from_u64(i as u64));
-        // Sample the index.
-        let index = if dynamic { Some(i as u16) } else { None };
-
-        // Construct the dynamic input types.
-        let dynamic_input_types = if dynamic { Some(&input_types[..]) } else { None };
+        let program_checksum = set_program_checksum.then(|| console::Field::from_u64(i as u64));
 
         // Compute the signed request.
-        let request = console::Request::sign(
-            &private_key,
-            program_id,
-            function_name,
-            inputs.iter(),
-            &input_types,
-            root_tvk,
-            is_root,
-            program_checksum,
-            index,
-            dynamic_input_types,
-            rng,
-        )?;
-        assert!(request.verify(&input_types, is_root, program_checksum, index));
+        let request = match dynamic {
+            false => console::Request::sign(
+                &private_key,
+                program_id,
+                function_name,
+                inputs.iter(),
+                &input_types,
+                root_tvk,
+                is_root,
+                program_checksum,
+                rng,
+            )?,
+            true => console::Request::sign_dynamic(
+                &private_key,
+                program_id,
+                function_name,
+                inputs.iter(),
+                &input_types,
+                &input_types,
+                root_tvk,
+                is_root,
+                program_checksum,
+                rng,
+            )?,
+        };
+        assert!(request.verify(&input_types, is_root, program_checksum));
 
         Ok((request, input_types, is_root, program_checksum))
     }

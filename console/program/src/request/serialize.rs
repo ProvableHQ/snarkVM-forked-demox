@@ -34,8 +34,8 @@ impl<N: Network> Serialize for Request<N> {
                 transition.serialize_field("tvk", &self.tvk)?;
                 transition.serialize_field("tcm", &self.tcm)?;
                 transition.serialize_field("scm", &self.scm)?;
-                if let Some(dynamic_input_ids) = &self.dynamic_input_ids {
-                    transition.serialize_field("dynamic_input_ids", dynamic_input_ids)?;
+                if let Some(caller_input_ids) = &self.caller_input_ids {
+                    transition.serialize_field("caller_input_ids", caller_input_ids)?;
                 }
                 transition.end()
             }
@@ -75,9 +75,9 @@ impl<'de, N: Network> Deserialize<'de> for Request<N> {
                     DeserializeExt::take_from_value::<D>(&mut request, "tcm")?,
                     // Retrieve the `scm`.
                     DeserializeExt::take_from_value::<D>(&mut request, "scm")?,
-                    // Retrieve the `dynamic_input_ids`, if they exist.
+                    // Retrieve the optional caller input IDs.
                     serde_json::from_value(
-                        request.get_mut("dynamic_input_ids").unwrap_or(&mut serde_json::Value::Null).take(),
+                        request.get_mut("caller_input_ids").unwrap_or(&mut serde_json::Value::Null).take(),
                     )
                     .map_err(de::Error::custom)?,
                 )))

@@ -56,8 +56,6 @@ impl<N: Network> Stack<N> {
             root_tvk,
             is_root,
             program_checksum,
-            None,
-            None,
             rng,
         )?;
         lap!(timer, "Compute the request");
@@ -114,8 +112,6 @@ impl<N: Network> Stack<N> {
             root_tvk,
             is_root,
             program_checksum,
-            None,
-            None,
             rng,
         )?;
         lap!(timer, "Compute the request");

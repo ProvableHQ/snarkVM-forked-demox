@@ -65,7 +65,6 @@ fn prepare_check_deployment<N: Network, A: snarkvm_circuit::Aleo<Network = N>>(
         root_tvk,
         is_root,
         program_checksum,
-        None, 
         rng,
     )
     .unwrap();

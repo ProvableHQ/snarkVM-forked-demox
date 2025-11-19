@@ -43,7 +43,7 @@ pub struct TransitionMemory<N: Network> {
     /// The signer commitments.
     scm_map: MemoryMap<N::TransitionID, Field<N>>,
     /// The dynamic input map.
-    dynamic_input_map: MemoryMap<N::TransitionID, Vec<Input<N>>>,
+    caller_input_map: MemoryMap<N::TransitionID, Vec<Input<N>>>,
 }
 
 #[rustfmt::skip]
@@ -56,7 +56,7 @@ impl<N: Network> TransitionStorage<N> for TransitionMemory<N> {
     type TCMMap = MemoryMap<N::TransitionID, Field<N>>;
     type ReverseTCMMap = MemoryMap<Field<N>, N::TransitionID>;
     type SCMMap = MemoryMap<N::TransitionID, Field<N>>;
-    type DynamicInputMap = MemoryMap<N::TransitionID, Vec<Input<N>>>;
+    type CallerInputMap = MemoryMap<N::TransitionID, Vec<Input<N>>>;
 
     /// Initializes the transition storage.
     fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
@@ -70,7 +70,7 @@ impl<N: Network> TransitionStorage<N> for TransitionMemory<N> {
             tcm_map: MemoryMap::default(),
             reverse_tcm_map: MemoryMap::default(),
             scm_map: MemoryMap::default(),
-            dynamic_input_map: MemoryMap::default(),
+            caller_input_map: MemoryMap::default(),
         })
     }
 
@@ -114,9 +114,9 @@ impl<N: Network> TransitionStorage<N> for TransitionMemory<N> {
         &self.scm_map
     }
 
-    /// Returns the dynamic input map.
-    fn dynamic_input_map(&self) -> &Self::DynamicInputMap {
-        &self.dynamic_input_map
+    /// Returns the caller input map.
+    fn caller_input_map(&self) -> &Self::CallerInputMap {
+        &self.caller_input_map
     }
 }
 

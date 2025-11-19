@@ -19,26 +19,13 @@ use console::{
     account::Field,
     network::prelude::*,
     program::{
-        DynamicFuture,
-        DynamicRecord,
-        Identifier,
-        Literal,
-        Plaintext,
-        ProgramID,
-        Register,
-        Request,
-        Value,
+        DynamicFuture, DynamicRecord, Identifier, InputID, Literal, Plaintext, ProgramID, Register, Request, Value,
         ValueType,
     },
+    types::{Group, U16},
 };
 use snarkvm_synthesizer_program::{
-    Call,
-    CallDynamic,
-    CallOperator,
-    Operand,
-    RegistersCircuit as _,
-    RegistersSigner as _,
-    RegistersTrait as _,
+    Call, CallDynamic, CallOperator, Operand, RegistersCircuit as _, RegistersSigner as _, RegistersTrait as _,
     StackTrait,
 };
 use snarkvm_utilities::dev_eprintln;

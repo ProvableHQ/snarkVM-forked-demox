@@ -75,14 +75,10 @@ impl<A: Aleo> Eject for InputID<A> {
             Self::Constant(field) => field.eject_mode(),
             Self::Public(field) => field.eject_mode(),
             Self::Private(field) => field.eject_mode(),
-            Self::Record(commitment, gamma, record_view_key, serial_number, tag) => {
-                Mode::combine(commitment.eject_mode(), [
-                    gamma.eject_mode(),
-                    record_view_key.eject_mode(),
-                    serial_number.eject_mode(),
-                    tag.eject_mode(),
-                ])
-            }
+            Self::Record(commitment, gamma, record_view_key, serial_number, tag) => Mode::combine(
+                commitment.eject_mode(),
+                [gamma.eject_mode(), record_view_key.eject_mode(), serial_number.eject_mode(), tag.eject_mode()],
+            ),
             Self::ExternalRecord(field) => field.eject_mode(),
             Self::DynamicRecord(field) => field.eject_mode(),
         }
@@ -154,9 +150,9 @@ pub struct Request<A: Aleo> {
     tcm: Field<A>,
     /// The signer commitment.
     scm: Field<A>,
-    /// The optional dynamic input IDs.
-    /// Note. These are only present if the request is dynamic.
-    dynamic_input_ids: Option<Vec<InputID<A>>>,
+    /// The optional caller input IDs.
+    //  Note. This field is intentionally excluded for the circuit representation and is only used to eject back to the console representation.
+    caller_input_ids: Option<Vec<console::InputID<A::Network>>>,
 }
 
 impl<A: Aleo> Inject for Request<A> {
@@ -253,7 +249,6 @@ impl<A: Aleo> Inject for Request<A> {
             false => Identifier::constant(*request.function_name()),
         };
 
-        // TODO (@d0cd): Check on ordering of variable instantiation.
         Self {
             signer: Address::new(mode, *request.signer()),
             network_id: U16::new(Mode::Constant, *request.network_id()),
@@ -266,10 +261,7 @@ impl<A: Aleo> Inject for Request<A> {
             tvk: Field::new(mode, *request.tvk()),
             tcm,
             scm,
-            dynamic_input_ids: request
-                .dynamic_input_ids()
-                .clone()
-                .map(|ids| ids.into_iter().map(|input_id| InputID::new(Mode::Public, input_id)).collect()),
+            caller_input_ids: request.caller_input_ids().clone(),
         }
     }
 }
@@ -330,14 +322,14 @@ impl<A: Aleo> Request<A> {
         &self.scm
     }
 
-    /// Returns whether or not the request is dynamic.
-    pub fn is_dynamic(&self) -> bool {
-        self.dynamic_input_ids.is_some()
+    /// Returns the caller input IDs.
+    pub const fn caller_input_ids(&self) -> &Option<Vec<console::InputID<A::Network>>> {
+        &self.caller_input_ids
     }
 
-    /// Returns the optional dynamic input IDs.
-    pub const fn dynamic_input_ids(&self) -> &Option<Vec<InputID<A>>> {
-        &self.dynamic_input_ids
+    /// Returns whether or not the request is dynamic.
+    pub fn is_dynamic(&self) -> bool {
+        self.caller_input_ids.is_some()
     }
 }
 
@@ -346,25 +338,21 @@ impl<A: Aleo> Eject for Request<A> {
 
     /// Ejects the mode of the request.
     fn eject_mode(&self) -> Mode {
-        // Get the modes of the individual components.
-        let mut modes = vec![
-            self.network_id.eject_mode(),
-            self.program_id.eject_mode(),
-            self.function_name.eject_mode(),
-            self.input_ids.eject_mode(),
-            self.inputs.eject_mode(),
-            self.signature.eject_mode(),
-            self.sk_tag.eject_mode(),
-            self.tvk.eject_mode(),
-            self.tcm.eject_mode(),
-            self.scm.eject_mode(),
-        ];
-        // Add the modes of the dynamic input IDs if they exist.
-        if let Some(dynamic_input_ids) = &self.dynamic_input_ids {
-            modes.push(dynamic_input_ids.eject_mode());
-        }
-        // Combine the modes.
-        Mode::combine(self.signer.eject_mode(), modes)
+        Mode::combine(
+            self.signer.eject_mode(),
+            [
+                self.network_id.eject_mode(),
+                self.program_id.eject_mode(),
+                self.function_name.eject_mode(),
+                self.input_ids.eject_mode(),
+                self.inputs.eject_mode(),
+                self.signature.eject_mode(),
+                self.sk_tag.eject_mode(),
+                self.tvk.eject_mode(),
+                self.tcm.eject_mode(),
+                self.scm.eject_mode(),
+            ],
+        )
     }
 
     /// Ejects the request as a primitive.
@@ -381,12 +369,7 @@ impl<A: Aleo> Eject for Request<A> {
             self.tvk.eject_value(),
             self.tcm.eject_value(),
             self.scm.eject_value(),
-            match &self.dynamic_input_ids {
-                None => None,
-                Some(dynamic_input_ids) => {
-                    Some(dynamic_input_ids.iter().map(|input_id| input_id.eject_value()).collect())
-                }
-            },
+            self.caller_input_ids().clone(),
         ))
     }
 }

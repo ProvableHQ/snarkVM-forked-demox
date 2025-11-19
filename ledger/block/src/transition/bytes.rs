@@ -101,7 +101,7 @@ impl<N: Network> ToBytes for Transition<N> {
     /// Writes the literal to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         // Write the version.
-        match self.dynamic_inputs.is_some() {
+        match self.caller_inputs.is_some() {
             false => 1u8.write_le(&mut writer)?,
             true => 2u8.write_le(&mut writer)?,
         }
@@ -129,9 +129,9 @@ impl<N: Network> ToBytes for Transition<N> {
         self.tcm.write_le(&mut writer)?;
         // Write the signer commitment.
         self.scm.write_le(&mut writer)?;
-        // Write the optional dynamic inputs.
-        if let Some(dynamic_inputs) = &self.dynamic_inputs {
-            dynamic_inputs.write_le(&mut writer)?;
+        // Write the optional caller inputs.
+        if let Some(caller_inputs) = &self.caller_inputs {
+            caller_inputs.write_le(&mut writer)?;
         }
 
         Ok(())

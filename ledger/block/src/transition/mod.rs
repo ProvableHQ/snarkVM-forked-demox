@@ -27,22 +27,8 @@ mod string;
 use console::{
     network::prelude::*,
     program::{
-        Ciphertext,
-        Identifier,
-        InputID,
-        OutputID,
-        ProgramID,
-        Record,
-        Register,
-        Request,
-        Response,
-        TRANSITION_DEPTH,
-        TransitionLeaf,
-        TransitionPath,
-        TransitionTree,
-        Value,
-        ValueType,
-        compute_function_id,
+        Ciphertext, Identifier, InputID, OutputID, ProgramID, Record, Register, Request, Response, TRANSITION_DEPTH,
+        TransitionLeaf, TransitionPath, TransitionTree, Value, ValueType, compute_function_id,
     },
     types::{Field, Group},
 };
@@ -65,9 +51,9 @@ pub struct Transition<N: Network> {
     tcm: Field<N>,
     /// The transition signer commitment.
     scm: Field<N>,
-    /// The optional dynamic inputs to the transition.
+    /// The optional caller inputs to the transition.
     /// Note. These are only present if and only if the transition is dynamic.
-    dynamic_inputs: Option<Vec<Input<N>>>,
+    caller_inputs: Option<Vec<Input<N>>>,
 }
 
 impl<N: Network> Transition<N> {
@@ -81,16 +67,16 @@ impl<N: Network> Transition<N> {
         tpk: Group<N>,
         tcm: Field<N>,
         scm: Field<N>,
-        dynamic_inputs: Option<Vec<Input<N>>>,
+        caller_inputs: Option<Vec<Input<N>>>,
     ) -> Result<Self> {
         // Compute the transition ID.
         let function_tree = Self::function_tree(&inputs, &outputs)?;
         let id = N::hash_bhp512(&(*function_tree.root(), tcm).to_bits_le())?;
         // Return the transition.
-        Ok(Self { id: id.into(), program_id, function_name, inputs, outputs, tpk, tcm, scm, dynamic_inputs })
+        Ok(Self { id: id.into(), program_id, function_name, inputs, outputs, tpk, tcm, scm, caller_inputs })
     }
 
-    /// Initializes a new transition from a request and response.
+    /// Initializes a new transition from a request, response, and optional dynamic input types.
     pub fn from(
         request: &Request<N>,
         response: &Response<N>,
@@ -111,8 +97,8 @@ impl<N: Network> Transition<N> {
         // Compute the function ID based on the whether the request and response are dynamic.
         let function_id = compute_function_id(&network_id, &program_id, &function_name, request.is_dynamic())?;
 
-        // A helper function to construct and verify inputs.
-        let construct_and_verify_inputs = |input_ids: &[InputID<N>], inputs: &[Value<N>]| -> Result<Vec<Input<N>>> {
+        // A helper function to construct and verify the inputs.
+        let construct_inputs = |input_ids: &[InputID<N>], inputs: &[Value<N>]| -> Result<Vec<Input<N>>> {
             input_ids
                 .iter()
                 .zip_eq(inputs)
@@ -165,7 +151,7 @@ impl<N: Network> Transition<N> {
         };
 
         // Construct and verify the inputs.
-        let inputs = construct_and_verify_inputs(request.input_ids(), request.inputs())?;
+        let inputs = construct_inputs(request.input_ids(), request.inputs())?;
 
         // Construct and verify the outputs.
         let outputs = response
@@ -302,9 +288,9 @@ impl<N: Network> Transition<N> {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        // Construct and verify the dynamic inputs, if they exist.
-        let dynamic_inputs = if let Some(dynamic_input_ids) = request.dynamic_input_ids() {
-            Some(construct_and_verify_inputs(dynamic_input_ids, request.inputs())?)
+        // Compute and verify the optional caller inputs.
+        let caller_inputs = if let Some(caller_input_ids) = request.caller_input_ids() {
+            Some(construct_inputs(caller_input_ids, request.inputs())?)
         } else {
             None
         };
@@ -316,7 +302,7 @@ impl<N: Network> Transition<N> {
         // Retrieve the `scm`.
         let scm = *request.scm();
         // Return the transition.
-        Self::new(program_id, function_name, inputs, outputs, tpk, tcm, scm, dynamic_inputs)
+        Self::new(program_id, function_name, inputs, outputs, tpk, tcm, scm, caller_inputs)
     }
 }
 
@@ -363,12 +349,12 @@ impl<N: Network> Transition<N> {
 
     /// Returns whether or not the transition is dynamic.
     pub fn is_dynamic(&self) -> bool {
-        self.dynamic_inputs.is_some()
+        self.caller_inputs.is_some()
     }
 
-    /// Returns the optional dynamic inputs.
-    pub fn dynamic_inputs(&self) -> Option<&[Input<N>]> {
-        self.dynamic_inputs.as_deref()
+    /// Returns the optional caller inputs.
+    pub fn caller_inputs(&self) -> Option<&[Input<N>]> {
+        self.caller_inputs.as_deref()
     }
 }
 

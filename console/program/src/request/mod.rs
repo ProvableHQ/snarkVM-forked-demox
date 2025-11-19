@@ -51,12 +51,9 @@ pub struct Request<N: Network> {
     tcm: Field<N>,
     /// The signer commitment.
     scm: Field<N>,
-    /// The optional dynamic input IDs.
+    /// The optional caller input IDs.
     /// Note. These are only present if and only if the request is dynamic.
-    dynamic_input_ids: Option<Vec<InputID<N>>>,
-    /// The optional index of the request in a batch.
-    /// Note. This is only present if and only if the request is dynamic.
-    index: Option<
+    caller_input_ids: Option<Vec<InputID<N>>>,
 }
 
 impl<N: Network>
@@ -89,7 +86,7 @@ impl<N: Network>
             tvk,
             tcm,
             scm,
-            dynamic_input_ids,
+            caller_input_ids,
         ): (
             Address<N>,
             U16<N>,
@@ -114,12 +111,12 @@ impl<N: Network>
                 inputs.len()
             ))
         }
-        // Ensure that the correct number of dynamic input IDs are provided.
-        if let Some(dynamic_input_ids) = &dynamic_input_ids {
-            if dynamic_input_ids.len() != input_ids.len() {
+        // Ensure that the correct number of caller input IDs are provided.
+        if let Some(caller_input_ids) = &caller_input_ids {
+            if caller_input_ids.len() != input_ids.len() {
                 N::halt(format!(
                     "Invalid request: mismatching number of dynamic input IDs ({}) and inputs ({})",
-                    dynamic_input_ids.len(),
+                    caller_input_ids.len(),
                     inputs.len()
                 ))
             }
@@ -141,7 +138,7 @@ impl<N: Network>
                 tvk,
                 tcm,
                 scm,
-                dynamic_input_ids,
+                caller_input_ids,
             }
         }
     }
@@ -215,14 +212,14 @@ impl<N: Network> Request<N> {
         &self.scm
     }
 
-    /// Returns whether or not the request is dynamic.
-    pub fn is_dynamic(&self) -> bool {
-        self.dynamic_input_ids.is_some()
+    /// Returns the optional caller input IDs.
+    pub const fn caller_input_ids(&self) -> &Option<Vec<InputID<N>>> {
+        &self.caller_input_ids
     }
 
-    /// Returns the optional dynamic input IDs.
-    pub const fn dynamic_input_ids(&self) -> &Option<Vec<InputID<N>>> {
-        &self.dynamic_input_ids
+    /// Returns whether or not the request is dynamic.
+    pub fn is_dynamic(&self) -> bool {
+        self.caller_input_ids.is_some()
     }
 }
 
@@ -272,20 +269,17 @@ mod test_helpers {
                 // Construct 'is_root'.
                 let is_root = Uniform::rand(rng);
                 // Sample the program checksum.
-                let program_checksum = match i % 2 == 0 {
+                let program_checksum = match bool::rand(rng) {
                     true => Some(Field::rand(rng)),
                     false => None,
                 };
-                // Sample the index and dynamic input types.
-                let (index, dynamic_input_types) = match i % 3 {
-                    0 | 1 => (None, None),
-                    2 => (Some(i as u16), Some(&input_types[..])),
-                    _ => unreachable!(),
-                };
 
                 // Compute the signed request.
-                let request =
-                    Request::sign(&private_key, program_id, function_name, inputs.into_iter(), &input_types, root_tvk, is_root, program_checksum, index, dynamic_input_types, rng).unwrap();
+                let request = if bool::rand(rng) {
+                    Request::sign(&private_key, program_id, function_name, inputs.into_iter(), &input_types, root_tvk, is_root, program_checksum, rng).unwrap()
+                } else {
+                    Request::sign_dynamic(&private_key, program_id, function_name, inputs.into_iter(), &input_types, &input_types, root_tvk, is_root, program_checksum, rng).unwrap()
+                };
                 assert!(request.verify(&input_types, is_root, program_checksum));
                 request
             })
