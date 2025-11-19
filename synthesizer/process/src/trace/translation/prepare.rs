@@ -42,7 +42,7 @@ impl<N: Network> Translation<N> {
                 );
 
                 // Identify which translation task corresopnds to the marked translation in translation_indices
-                let mut found = translation_tasks.iter().zip(record_translation_data.iter()).filter(|(_, data)| data.operand_index == *index).collect_vec();
+                let mut found = translation_tasks.iter().zip(record_translation_data.iter()).filter(|(_, data)| data.input_output_index == *index).collect_vec();
             
                 ensure!(found.len() != 0, "No translation task and data found for transition {} marked for translation", transition_id);
                 ensure!(found.len() <= 1, "Multiple translation tasks and data found for transition {} marked for translation", transition_id);
@@ -50,17 +50,17 @@ impl<N: Network> Translation<N> {
                 let (identified_task, identified_data) = found.pop().unwrap();
 
                 let TranslationTask { commitment, gamma, serial_number, record } = identified_task;
-                let RecordTranslationData { record_static, program_id, function_id, record_name, to_static_record, tvk, record_view_key, gamma: gamma_data, static_record_id, operand_index, proving_key } = identified_data;
+                let RecordTranslationData { record_static, program_id, function_id, record_name, record_consumed, tvk, record_view_key, gamma: gamma_data, static_record_id, input_output_index, proving_key } = identified_data;
                 
                 // Checks associated to translation case 1
                 ensure!(gamma_data.as_ref() == Some(gamma), "gamma value in translation task does not that in translation data for transition ID {} and register index {}", transition_id, index);
-                ensure!(!to_static_record, "Expected to_static_record = false in translation data for transition ID {} and register index {}", transition_id, index);
-                ensure!(operand_index == index, "Expected register index in translation data to be the same as the index in translation tasks for transition ID {} and register index {}", transition_id, index);
+                ensure!(!record_consumed, "Expected record_consumed = false in translation data for transition ID {} and register index {}", transition_id, index);
+                ensure!(input_output_index == index, "Expected register index in translation data to be the same as the index in translation tasks for transition ID {} and register index {}", transition_id, index);
 
                 // Preparing the TranslationAssignment data
                 let record_dynamic = DynamicRecord::<N>::from_record(&record_static)?;
-                let to_static_record = false;
-                let operand_index = *index;
+                let record_consumed = false;
+                let input_output_index = *index;
                 let id_static = static_record_id;
                 let id_dynamic = caller_dynamic_record_id;
 
@@ -73,10 +73,10 @@ impl<N: Network> Translation<N> {
                     function_id.clone(),
                     record_name.clone(),
                     record_dynamic.clone(),
-                    to_static_record,
+                    record_consumed,
                     translation_count,
                     tvk.clone(),
-                    operand_index,
+                    input_output_index,
                     id_dynamic.clone(),
                     id_static.clone(),
                     record_view_key.clone(),

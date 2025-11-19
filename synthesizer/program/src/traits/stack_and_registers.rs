@@ -50,12 +50,12 @@ pub struct RecordTranslationData<N: Network> {
     pub function_id: Field<N>,
     pub record_name: Identifier<N>,
     /// TODO (dynamic_dispatch) better nomenclature
-    pub to_static_record: bool,
+    pub record_consumed: bool,
     pub tvk: Field<N>,
     pub record_view_key: Field<N>,
     pub gamma: Option<Group<N>>,
     pub static_record_id: Field<N>,
-    pub operand_index: u16,
+    pub input_output_index: u16,
 }
 
 /// This trait is intended to be implemented only by `snarkvm_synthesizer_process::Stack`.

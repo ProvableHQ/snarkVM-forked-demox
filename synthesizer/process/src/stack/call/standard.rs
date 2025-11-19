@@ -460,9 +460,6 @@ impl<N: Network> CallTrait<N> for Call<N> {
                 .map(|input_id| circuit::InputID::new(circuit::Mode::Public, *input_id))
                 .collect::<Vec<_>>();
 
-            // TODO (Antonio) remove
-            println!("BEFORE CHECK INPUT IDS 1: inputs");
-
             // Ensure the candidate input IDs match their computed inputs.
             let (check_input_ids, _) = circuit::Request::check_input_ids::<false>(
                 &network_id,
@@ -480,9 +477,6 @@ impl<N: Network> CallTrait<N> for Call<N> {
             );
             A::assert(check_input_ids);
             lap!(timer, "Checked the input ids");
-
-            // TODO (Antonio) remove
-            println!("AFTER CHECK INPUT IDS 1: inputs");
 
             // Retrieve the output registers.
             let output_registers = function

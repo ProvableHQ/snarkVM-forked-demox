@@ -236,7 +236,7 @@ impl<N: Network> Deployment<N> {
         Ok(num_combined_variables)
     }
 
-    // TODO (Antonio) does this need to include constraints from translation circuits?
+    // TODO (dynamic_dispatch) does this need to include constraints from translation circuits?
     //                adding them is trivial
     /// Returns the sum of the constraint counts for all functions in this deployment.
     pub fn num_combined_constraints(&self) -> Result<u64> {

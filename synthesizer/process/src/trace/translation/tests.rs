@@ -30,7 +30,7 @@ use std::str::FromStr;
 
 fn translation_assignment_from_record_str(
     record_str: &str,
-    to_static_record: bool,
+    record_consumed: bool,
     function_id_opt: Option<Field<CurrentNetwork>>,
     rng: &mut TestRng,
 ) -> TranslationAssignment<CurrentNetwork> {
@@ -41,17 +41,17 @@ fn translation_assignment_from_record_str(
     let record_name = Identifier::<CurrentNetwork>::from_str("spacecraft").unwrap();
     let translation_count = Uniform::rand(rng);
     let tvk = Uniform::rand(rng);
-    let operand_index = Uniform::rand(rng);
+    let input_output_index = Uniform::rand(rng);
     let record_view_key = Uniform::rand(rng);
     let gamma = Uniform::rand(rng);
 
     // Dependent fields
     let record_dynamic = DynamicRecord::<CurrentNetwork>::from_record(&record_static).unwrap();
 
-    let id_dynamic = record_dynamic.to_id(function_id, tvk, U16::new(operand_index)).unwrap();
+    let id_dynamic = record_dynamic.to_id(function_id, tvk, U16::new(input_output_index)).unwrap();
     
     let commitment = record_static.to_commitment(&program_id, &record_name, &record_view_key).unwrap();
-    let id_static = if to_static_record {
+    let id_static = if record_consumed {
         Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::serial_number_from_gamma(&gamma, commitment).unwrap()
     } else {
         commitment
@@ -63,10 +63,10 @@ fn translation_assignment_from_record_str(
         function_id,
         record_name,
         record_dynamic,
-        to_static_record,
+        record_consumed,
         translation_count,
         tvk,
-        operand_index,
+        input_output_index,
         id_dynamic,
         id_static,
         record_view_key,
@@ -102,7 +102,6 @@ fn test_translation_simple() {
         _version: 1u8.public
     }"#;
 
-    // to_static_record = false
     let translation_assignment = translation_assignment_from_record_str(record_static_str, false, None, &mut rng);
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
     print_rc1s_data("simple");
@@ -115,7 +114,7 @@ fn test_translation_simple() {
         <CurrentAleo as circuit::Environment>::num_constraints(),
     );
 
-    // to_static_record = true
+    // record_consumed = true
     <CurrentAleo as circuit::Environment>::reset();
     let translation_assignment = translation_assignment_from_record_str(record_static_str, true, None, &mut rng);
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
@@ -172,7 +171,7 @@ fn test_translation_recursive() {
         _version: 1u8.public
     }"#;
 
-    // to_static_record = false
+    // record_consumed = false
     let translation_assignment = translation_assignment_from_record_str(record_static_str, false, None, &mut rng);
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
     print_rc1s_data("recursive");
@@ -185,7 +184,7 @@ fn test_translation_recursive() {
         <CurrentAleo as circuit::Environment>::num_constraints(),
     );
 
-    // to_static_record = true
+    // record_consumed = true
     <CurrentAleo as circuit::Environment>::reset();
     let translation_assignment = translation_assignment_from_record_str(record_static_str, true, None, &mut rng);
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
@@ -258,7 +257,7 @@ fn test_translation_complex() {
         _version: 1u8.public
     }"#;
 
-    // to_static_record = false
+    // record_consumed = false
     let translation_assignment = translation_assignment_from_record_str(record_static_str, false, None, &mut rng);
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
     print_rc1s_data("complex");
@@ -271,7 +270,7 @@ fn test_translation_complex() {
         <CurrentAleo as circuit::Environment>::num_constraints(),
     );
 
-    // to_static_record = true
+    // record_consumed = true
     <CurrentAleo as circuit::Environment>::reset();
     let translation_assignment = translation_assignment_from_record_str(record_static_str, true, None, &mut rng);
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
@@ -388,7 +387,7 @@ fn test_definition_invariance() {
     // Other fields which the circuit should be independent of are generated
     // randomly inside translation_assignment_from_record_str
 
-    // We also play around with the flag to_static_record, which should not affect the circuit
+    // We also play around with the flag record_consumed, which should not affect the circuit
     let translation_assignments = [
         translation_assignment_from_record_str(record_strings[0], false, function_id, &mut rng),
         translation_assignment_from_record_str(record_strings[1], false, function_id, &mut rng),

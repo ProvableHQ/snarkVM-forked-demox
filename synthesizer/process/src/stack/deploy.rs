@@ -136,7 +136,7 @@ impl<N: Network> Stack<N> {
             "The number of records in the program does not match the number of translation verifying keys"
         );
 
-        // TODO (Antonio) how does this check relate to translation verifying keys and consensus versions?
+        // TODO (dynamic_dispatch) how does this check relate to translation verifying keys and consensus versions?
         #[cfg(not(any(test, feature = "test")))]
         // Skip the certificate verification if the consensus version is before ConsensusVersion::V8.
         // Circuit synthesis was changed in a backwards incompatible way in ConsensusVersion::V8.
@@ -229,7 +229,9 @@ impl<N: Network> Stack<N> {
             // Compute the address.
             let address = Address::try_from(&private_key)?;
             
-            // TODO (Antonio) should stack::sample be used here instead of rand? Also, some small improvements can be made here, eg in principle private_key itself is not necessary
+            // TODO (dynamic_dispatch) should stack::sample be used here instead
+            // of rand? Also, some small improvements can be made here, eg in
+            // principle private_key itself is not necessary
             
             // Construct a TranslationAssignment:
             let program_id = self.program_id().clone();
@@ -239,11 +241,11 @@ impl<N: Network> Stack<N> {
             let record_dynamic = DynamicRecord::<N>::from_record(&record_static)?;
             let translation_count = Uniform::rand(rng);
             let tvk = Uniform::rand(rng);
-            let operand_index = Uniform::rand(rng);
+            let input_output_index = Uniform::rand(rng);
             let record_view_key = Uniform::rand(rng);
             let gamma = Uniform::rand(rng);
-            let id_dynamic = record_dynamic.to_id(function_id, tvk, U16::new(operand_index)).unwrap();
-            let to_static_record = Uniform::rand(rng);            
+            let id_dynamic = record_dynamic.to_id(function_id, tvk, U16::new(input_output_index)).unwrap();
+            let record_consumed = Uniform::rand(rng);            
             let commitment = record_static.to_commitment(&program_id, &record_name, &record_view_key).unwrap();
             let id_static = commitment;
 
@@ -255,10 +257,10 @@ impl<N: Network> Stack<N> {
                 function_id,
                 record_name,
                 record_dynamic,
-                to_static_record,
+                record_consumed,
                 translation_count,
                 tvk,
-                operand_index,
+                input_output_index,
                 id_dynamic,
                 id_static,
                 record_view_key,

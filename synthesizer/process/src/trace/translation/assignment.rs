@@ -44,7 +44,7 @@ pub struct TranslationAssignment<N: Network> {
     /// The dynamic record representing the static one.
     pub(super) record_dynamic: DynamicRecord<N>,
     /// True if translation is happening for an input to `dynamic.call` (static record is being produced) or an output of `dynamic.call` (static record is being consumed).
-    pub(super) to_static_record: bool,
+    pub(super) record_consumed: bool,
     /// The number of times a translation circuit has been invoked in the current batch.
     pub(super) translation_count: u16,
     /// The view key of the transaction which produces or consumes the dynamic record.
@@ -52,7 +52,7 @@ pub struct TranslationAssignment<N: Network> {
     /// Index of the input operand or output destination that contains the dynamic record.
     // Note that the first three dynamic call operands are reserved for
     // call-related data, *however* this operand index still starts at 0.
-    pub(super) operand_index: u16,
+    pub(super) input_output_index: u16,
     /// The ID of the dynamic record.
     pub(super) id_dynamic: Field<N>,
     /// The commitment (if producing `record_static`) or serial number (if consuming `record_static`) of the static record.
@@ -60,7 +60,7 @@ pub struct TranslationAssignment<N: Network> {
     /// The record view key of the static record.
     pub(super) record_view_key: Field<N>,
     /// The additional point used to produce the record commitment and serial number.
-    /// Irrelevant if `to_static_record` is false.
+    /// Irrelevant if `record_consumed` is false.
     pub(super) gamma: Group<N>,
 } 
 
@@ -72,10 +72,10 @@ impl<N: Network> TranslationAssignment<N> {
         function_id: Field<N>,
         record_name: Identifier<N>,
         record_dynamic: DynamicRecord<N>,
-        to_static_record: bool,
+        record_consumed: bool,
         translation_count: u16,
         tvk: Field<N>,
-        operand_index: u16,
+        input_output_index: u16,
         id_dynamic: Field<N>,
         id_static: Field<N>,
         record_view_key: Field<N>,
@@ -87,10 +87,10 @@ impl<N: Network> TranslationAssignment<N> {
             function_id,
             record_name,
             record_dynamic,
-            to_static_record,
+            record_consumed,
             translation_count,
             tvk,
-            operand_index,
+            input_output_index,
             id_dynamic,
             id_static,
             record_view_key,
@@ -118,7 +118,7 @@ impl<N: Network> TranslationAssignment<N> {
         // ******** Public inputs and field-name constants
 
         // Inject the translation-direction flag as `Mode::Public`.
-        let circuit_to_static_record = circuit::Boolean::<A>::new(circuit::Mode::Public, self.to_static_record);
+        let circuit_record_consumed = circuit::Boolean::<A>::new(circuit::Mode::Public, self.record_consumed);
 
         // Inject the calling function id as `Mode::Public`.
         let circuit_function_id = circuit::Field::<A>::new(circuit::Mode::Public, self.function_id);
@@ -128,7 +128,7 @@ impl<N: Network> TranslationAssignment<N> {
             circuit::U16::<A>::new(circuit::Mode::Public, console::types::U16::<N>::new(self.translation_count));
 
         // Inject the register index as `Mode::Public`.
-        let circuit_operand_index = circuit::U16::<A>::new(circuit::Mode::Public, console::types::U16::<N>::new(self.operand_index));
+        let circuit_input_output_index = circuit::U16::<A>::new(circuit::Mode::Public, console::types::U16::<N>::new(self.input_output_index));
         
         // Inject the commitment or serial number of the static record as `Mode::Public`.
         let circuit_id_static = circuit::Field::<A>::new(circuit::Mode::Public, self.id_static);
@@ -160,7 +160,7 @@ impl<N: Network> TranslationAssignment<N> {
         let actual_id_dynamic = circuit_record_dynamic.to_id(
             circuit_function_id,
             circuit_tvk,
-            circuit_operand_index,
+            circuit_input_output_index,
         );
 
         let circuit_static_commitment =
@@ -172,7 +172,7 @@ impl<N: Network> TranslationAssignment<N> {
         );
 
         let actual_id_static = circuit::Field::<A>::ternary(
-            &circuit_to_static_record,
+            &circuit_record_consumed,
             &circuit_static_serial_number,
             &circuit_static_commitment,
         );
@@ -217,8 +217,8 @@ impl<N: Network> TranslationAssignment<N> {
     /// ```ignore
     ///     cm = commit(static_record, [[program_id]], [[record_name]], record_view_key)
     ///     sn = serial_number(cm, gamma)
-    ///     internal_id_static_record = to_static_record ? sn : cm
-    ///     internal_id_dynamic_record = HashPSD8([[calling_function_id]] | dynamic_record | tvk | [[operand_index]])
+    ///     internal_id_static_record = record_consumed ? sn : cm
+    ///     internal_id_dynamic_record = HashPSD8([[calling_function_id]] | dynamic_record | tvk | [[input_output_index]])
     /// 
     ///     assert static_record.owner == dynamic_record.owner
     ///     assert static_record.nonce == dynamic_record.nonce

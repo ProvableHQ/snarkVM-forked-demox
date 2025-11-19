@@ -25,8 +25,7 @@ mod test_v10;
 #[cfg(feature = "test")]
 mod test_v11;
 
-// TODO (Antonio) uncomment
-// #[cfg(feature = "test")]
+#[cfg(feature = "test")]
 mod test_v12;
 
 #[cfg(feature = "test")]

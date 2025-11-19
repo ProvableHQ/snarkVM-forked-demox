@@ -15,12 +15,10 @@
 
 use super::*;
 
-use crate::vm::test_helpers::*;
+use crate::vm::test_helpers::{sample_vm_at_height, *};
 
 use anyhow::Result;
-use circuit::Aleo;
 use console::{
-    account::ViewKey,
     network::ConsensusVersion,
     program::{DynamicRecord, Identifier, OutputID, Value},
 };
@@ -29,8 +27,7 @@ use snarkvm_utilities::TestRng;
 
 fn get_main_field(output_id: OutputID<CurrentNetwork>) -> Field<CurrentNetwork> {
     match output_id {
-        OutputID::Constant(field) | OutputID::Public(field) | OutputID::Private(field) | OutputID::Record(field, _, _) | OutputID::ExternalRecord(field) | OutputID::Future(field) | OutputID::DynamicRecord(field) | OutputID::DynamicFuture(field) => field,
-        OutputID::Record(field, _, _) => field,
+        OutputID::Constant(field) | OutputID::Public(field) | OutputID::Private(field) | OutputID::Record(field, _, _) | OutputID::ExternalRecord(field) | OutputID::Future(field) | OutputID::DynamicRecord(field) | OutputID::DynamicFuture(field) => field
     }
 }
 
@@ -82,17 +79,17 @@ fn test_translation(
        output true as boolean.private;
 
     function consume_gas:
-       input r0 as gas.record;
+       input r0 as gas_container.record;
        call.dynamic {program_name_as_field} {network_as_field} {consume_dynamic_blob_function_field} with r0 (as dynamic.record) into r1 (as boolean.private);
-       outuput r0.liters as u64.public;
+       output r0.liters as u64.public;
 
     function nitrogen_pump:
        input r0 as u64.public;
-       cast 0group r0 false into r0 as gas.record;
-       output r1 as gas.record;
+       cast self.caller r0 false into r1 as gas_container.record;
+       output r1 as gas_container.record;
 
     function dynamic_pump:
-       call.dynamic {program_name_as_field} {network_as_field} {nitrogen_pump_function_field} with into r0 (as dynamic.record);
+       call.dynamic {program_name_as_field} {network_as_field} {nitrogen_pump_function_field} into r0 (as dynamic.record);
        output r0 as dynamic.record;
 
     constructor:
@@ -108,7 +105,68 @@ fn test_translation(
     // Initialize the caller.
     let alternative_caller_private_key = sample_genesis_private_key(rng);
     let caller_private_key = caller_private_key.unwrap_or_else(|| &alternative_caller_private_key);
-    let caller = Address::try_from(caller_private_key).unwrap();
+
+    // Initialize the VM.
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap(), rng);
+
+    // Deploy the program.
+    println!("Deploying program...");
+    let transaction = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
+    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    vm.add_next_block(&block).unwrap();
+
+    println!("Executing function: {root_function_name}...");
+
+    // Execute the "dynamic" function.
+    let transaction = vm.execute(
+        &caller_private_key,
+        ("flow.aleo", root_function_name),
+        input_values.into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    ).unwrap();
+
+    println!("Asserting output correctness...");
+    
+    let output_ids = transaction.transitions().last().unwrap().output_ids().collect_vec();
+
+    let public_outputs = transaction.transitions().last().unwrap().outputs().iter().filter_map(|output| match output {
+        Output::Public(_, Some(plaintext)) => Some(plaintext),
+        _ => None,
+    }).collect_vec();
+
+    if let Some(expected_public_outputs) = expected_public_outputs {
+        assert_eq!(public_outputs.into_iter().cloned().collect_vec(), expected_public_outputs);
+    }
+
+    if let Some(expected_output_ids) = expected_output_ids {
+        assert_eq!(output_ids.into_iter().cloned().collect_vec(), expected_output_ids.into_iter().map(get_main_field).collect_vec());
+    }
+
+    println!("Verifying transaction...");
+
+    vm.check_transaction(&transaction, None, rng).unwrap();
+    
+    let block = sample_next_block(&vm, &caller_private_key, &[transaction.clone()], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    vm.add_next_block(&block).unwrap();
+}
+
+// This test verifiers that a dynamic call to the `credits.transfer_public` function works as expected.
+#[test]
+fn test_dynamic_call_to_transfer_public() -> Result<()> {
+    let rng = &mut TestRng::default();
+
+    // Initialize a new caller.
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key)?;
 
     // Initialize the VM.
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12)?, rng);
@@ -163,15 +221,45 @@ constructor:
     )?;
 
     // Deploy the program.
-    println!("Deploying program...");
-    let transaction = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
-    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
+    println!("Deploying program: {}", program.id());
+    let transaction = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
     assert_eq!(block.aborted_transaction_ids().len(), 0);
-    vm.add_next_block(&block).unwrap();
+    vm.add_next_block(&block)?;
 
-    println!("Executing function: {root_function_name}...");
+    // Execute the "static" function.
+    //println!("Executing the `static` function...");
+    //let transaction = vm.execute(
+    //    &caller_private_key,
+    //    ("test_dcall_to_transfer_public.aleo", "static"),
+    //    vec![Value::from_str(&format!("{caller_address}"))?, Value::from_str("1234u64")?].into_iter(),
+    //    None,
+    //    0,
+    //    None,
+    //    rng,
+    //)?;
+    //vm.check_transaction(&transaction, None, rng)?;
+    //let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
+    //assert_eq!(block.transactions().num_accepted(), 1);
+    //assert_eq!(block.transactions().num_rejected(), 0);
+    //assert_eq!(block.aborted_transaction_ids().len(), 0);
+    //vm.add_next_block(&block)?;
+
+    // Get the program and function identifiers as fields and check that they are expected.
+    println!("Executing the `dynamic` function...");
+    let credits_as_field = Identifier::<CurrentNetwork>::from_str("credits")?.to_field()?;
+    let aleo_as_field = Identifier::<CurrentNetwork>::from_str("aleo")?.to_field()?;
+    let transfer_public_as_field = Identifier::<CurrentNetwork>::from_str("transfer_public")?.to_field()?;
+    println!("credits_as_field: {credits_as_field}");
+    println!("aleo_as_field: {aleo_as_field}");
+    println!("transfer_public_as_field: {transfer_public_as_field}");
+
+    let program_id_fields = ProgramID::<CurrentNetwork>::from_str("credits.aleo")?.to_fields()?;
+    assert_eq!(program_id_fields.len(), 2);
+    assert_eq!(program_id_fields[0], credits_as_field);
+    assert_eq!(program_id_fields[1], aleo_as_field);
 
     // Execute the "dynamic" function.
     let transaction = vm.execute(
@@ -189,324 +277,16 @@ constructor:
         0,
         None,
         rng,
-    ).unwrap();
-
-    println!("Asserting output correctness...");
-    
-    let output_ids = transaction.transitions().last().unwrap().output_ids().collect_vec();
-
-    let public_outputs = transaction.transitions().last().unwrap().outputs().iter().filter_map(|output| match output {
-        Output::Public(_, Some(plaintext)) => Some(plaintext),
-        _ => None,
-    }).collect_vec();
-
-    if let Some(expected_public_outputs) = expected_public_outputs {
-        assert_eq!(public_outputs.into_iter().cloned().collect_vec(), expected_public_outputs);
-    }
-
-    if let Some(expected_output_ids) = expected_output_ids {
-        assert_eq!(output_ids.into_iter().cloned().collect_vec(), expected_output_ids.into_iter().map(get_main_field).collect_vec());
-    }
-
-    println!("Verifying transaction...");
-
-    vm.check_transaction(&transaction, None, rng).unwrap();
-    
-    let block = sample_next_block(&vm, &caller_private_key, &[transaction.clone()], rng).unwrap();
+    )?;
+    vm.check_transaction(&transaction, None, rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
     assert_eq!(block.aborted_transaction_ids().len(), 0);
-    vm.add_next_block(&block).unwrap();
+    vm.add_next_block(&block)?;
+
+    Ok(())
 }
-
-// // This test verifiers that a dynamic call to the `credits.transfer_public` function works as expected.
-// #[test]
-// fn test_dynamic_call_to_transfer_public() -> Result<()> {
-//     let rng = &mut TestRng::default();
-
-//     // Initialize a new caller.
-//     let caller_private_key = sample_genesis_private_key(rng);
-//     let caller_address = Address::try_from(&caller_private_key)?;
-
-//     // Initialize the VM.
-//     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12)?, rng);
-
-//     // Define the program to be executed.
-//     let program = Program::from_str(
-//         r"
-// import credits.aleo;
-        
-// program test_dcall.aleo;
-
-// //function static:
-// //    input r0 as address.public;
-// //    input r1 as u64.public;
-// //    dcall credits transfer_public with r0 r1 (as address.public u64.public) into r2 (as dynamic.future);
-// //    async static r2 into r3;
-// //    output r3 as test_dcall.aleo/static.future;
-// //finalize static:
-// //    input r0 as dynamic.future;
-// //    await r0; 
-        
-// function dyn_dub_transfer_public:
-//     input r0 as field.public;
-//     input r1 as field.public;
-//     input r2 as field.public;
-//     input r3 as address.public;
-//     input r4 as u64.public;
-//     call.dynamic r0 r1 r2 with r3 r4 (as address.public u64.public) into r5 (as dynamic.future);
-//     call.dynamic r0 r1 r2 with r3 r4 (as address.public u64.public) into r6 (as dynamic.future);
-//     async dyn_dub_transfer_public r5 r6 into r7;
-//     output r7 as test_dcall.aleo/dyn_dub_transfer_public.future;
-// finalize dyn_dub_transfer_public:
-//     input r0 as dynamic.future;
-//     input r1 as dynamic.future;
-//     await r1;
-//     await r0;
-
-// function dynamic_transfer_private:
-//     input r0 as field.public;
-//     input r1 as field.public;
-//     input r2 as field.public;
-//     input r3 as dynamic.record;
-//     input r4 as address.public;
-//     input r5 as u64.public;
-//     call.dynamic r0 r1 r2 with r3 r4 r5 (as dynamic.record address.public u64.public) into r6 r7 (as dynamic.record dynamic.record);
-//     output r6 as dynamic.record;
-//     output r7 as dynamic.record;
-//     ",
-//     )?;
-
-//     // Deploy the program.
-//     println!("Deploying program: {}", program.id());
-//     let transaction = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
-//     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
-//     assert_eq!(block.transactions().num_accepted(), 1);
-//     assert_eq!(block.transactions().num_rejected(), 0);
-//     assert_eq!(block.aborted_transaction_ids().len(), 0);
-//     vm.add_next_block(&block)?;
-
-//     // Execute the "static" function.
-//     //println!("Executing the `static` function...");
-//     //let transaction = vm.execute(
-//     //    &caller_private_key,
-//     //    ("test_dcall_to_transfer_public.aleo", "static"),
-//     //    vec![Value::from_str(&format!("{caller_address}"))?, Value::from_str("1234u64")?].into_iter(),
-//     //    None,
-//     //    0,
-//     //    None,
-//     //    rng,
-//     //)?;
-//     //vm.check_transaction(&transaction, None, rng)?;
-//     //let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
-//     //assert_eq!(block.transactions().num_accepted(), 1);
-//     //assert_eq!(block.transactions().num_rejected(), 0);
-//     //assert_eq!(block.aborted_transaction_ids().len(), 0);
-//     //vm.add_next_block(&block)?;
-
-//     // Get the program and function identifiers as fields and check that they are expected.
-//     println!("Executing the `dynamic` function...");
-//     let credits_as_field = Identifier::<CurrentNetwork>::from_str("credits")?.to_field()?;
-//     let aleo_as_field = Identifier::<CurrentNetwork>::from_str("aleo")?.to_field()?;
-//     let transfer_public_as_field = Identifier::<CurrentNetwork>::from_str("transfer_public")?.to_field()?;
-//     println!("credits_as_field: {credits_as_field}");
-//     println!("aleo_as_field: {aleo_as_field}");
-//     println!("transfer_public_as_field: {transfer_public_as_field}");
-
-//     let program_id_fields = ProgramID::<CurrentNetwork>::from_str("credits.aleo")?.to_fields()?;
-//     assert_eq!(program_id_fields.len(), 2);
-//     assert_eq!(program_id_fields[0], credits_as_field);
-//     assert_eq!(program_id_fields[1], aleo_as_field);
-
-//     // Execute the "dynamic" function.
-//     let transaction = vm.execute(
-//         &caller_private_key,
-//         ("test_dynamic_call_to_transfer_public.aleo", "dynamic"),
-//         vec![
-//             Value::from_str(&format!("{credits_as_field}"))?,
-//             Value::from_str(&format!("{aleo_as_field}"))?,
-//             Value::from_str(&format!("{transfer_public_as_field}"))?,
-//             Value::from_str(&format!("{caller_address}"))?,
-//             Value::from_str("1234u64")?,
-//         ]
-//         .into_iter(),
-//         None,
-//         0,
-//         None,
-//         rng,
-//     )?;
-//     vm.check_transaction(&transaction, None, rng)?;
-//     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
-//     assert_eq!(block.transactions().num_accepted(), 1);
-//     assert_eq!(block.transactions().num_rejected(), 0);
-//     assert_eq!(block.aborted_transaction_ids().len(), 0);
-//     vm.add_next_block(&block)?;
-
-//     Ok(())
-// }
-
-// #[test]
-// fn test_universal_swap() {
-//     // Turn on trace logging.
-//     tracing_subscriber::fmt::init();
-//     // Define a mint_private function and constructor.
-//     let mint_private_function = r"
-
-// function mint_private:
-//     input r0 as u64.private;
-//     cast self.caller r0 into r1 as credits.record;
-//     cast self.caller r0 into r2 as credits.record;
-//     output r1 as credits.record;
-//     output r2 as credits.record;
-
-// constructor:
-//     assert.eq true true;
-// ";
-//     // Define the credits programs.
-//     let credits_program = Program::<CurrentNetwork>::credits().unwrap().to_string();
-//     let mut credits_a_program = credits_program.replace("credits.aleo", "credits_a.aleo");
-//     credits_a_program.push_str(mint_private_function);
-//     let credits_a_program = Program::from_str(&credits_a_program).unwrap();
-//     let mut credits_b_program = credits_program.replace("credits.aleo", "credits_b.aleo");
-//     credits_b_program.push_str(mint_private_function);
-//     let credits_b_program = Program::from_str(&credits_b_program).unwrap();
-
-//     // Define the swap program.
-//     let amm_program = Program::from_str(
-//         r"
-// import credits_a.aleo;
-// import credits_b.aleo;
-
-// program amm.aleo;
-
-// struct reserves:
-//   // corresponds to credits_a.aleo
-//   token_a as u64;
-//   // corresponds to credits_b.aleo
-//   token_b as u64;
-
-// mapping reserves_mapping:
-//   key as address.public;
-//   value as reserves.public;
-
-// function buy_token_b:
-//   input r0 as credits_a.aleo/credits.record;
-//   // Token a amount
-//   input r1 as u64.public;
-//   // Token b amount
-//   input r2 as u64.public;
-//   cast r1 r2 into r3 as reserves;
-//   call credits_a.aleo/transfer_private_to_public r0 aleo1rrj2mgall8mw57lcpkkvkxwqkawpc5rjarqm57w8gux2ahnt9sxqf0md56 r1 into r4 r5;
-//   call credits_b.aleo/transfer_public_to_private self.signer r2 into r6 r7;
-//   async buy_token_b r1 r2 r5 r7 into r8;
-//   // token_a change record
-//   output r4 as credits_a.aleo/credits.record;
-//   // token_b receiver record
-//   output r6 as credits_b.aleo/credits.record;
-//   output r8 as amm.aleo/buy_token_b.future;
-
-// finalize buy_token_b:
-//   // token_a amount
-//   input r0 as u64.public;
-//   // token_b amount
-//   input r1 as u64.public;
-//   input r2 as credits_a.aleo/transfer_private_to_public.future;
-//   input r3 as credits_b.aleo/transfer_public_to_private.future;
-//   await r2;
-//   await r3;
-//   // TODO: implement reserve update logic here.
-
-// constructor:
-//     assert.eq true true;
-// ",
-//     ).unwrap();
-
-//     // Initialize an RNG.
-//     let rng = &mut TestRng::default();
-
-//     // Initialize a new caller.
-//     let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
-//     let caller_view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
-
-//     // Initialize the VM at the V12 height.
-//     let v12_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap();
-//     let vm = crate::vm::test_helpers::sample_vm_at_height(v12_height, rng);
-
-//     // Deploy the program - one at a time so as not to surpass public payer limits.
-//     for program in [credits_a_program, credits_b_program, amm_program] {
-//         let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
-//         let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
-//         assert_eq!(block.transactions().num_accepted(), 1);
-//         assert_eq!(block.transactions().num_rejected(), 0);
-//         assert_eq!(block.aborted_transaction_ids().len(), 0);
-//         vm.add_next_block(&block).unwrap();
-//     }
-
-//     // Execute credits_a.aleo/mint_private to mint a few credits_a records.
-//     let execute_mint_a = vm.execute(&caller_private_key, ("credits_a.aleo", "mint_private"), vec![Value::from_str("100u64")].into_iter(), None, 0, None, rng).unwrap();
-//     // Execute credits_b.aleo/mint_private to mint a few credits_b records.
-//     let execute_mint_b = vm.execute(&caller_private_key, ("credits_b.aleo", "mint_private"), vec![Value::from_str("100u64")].into_iter(), None, 0, None, rng).unwrap();
-//     let block = sample_next_block(&vm, &caller_private_key, &[execute_mint_a, execute_mint_b], rng).unwrap();
-//     assert_eq!(block.transactions().num_accepted(), 2);
-//     assert_eq!(block.transactions().num_rejected(), 0);
-//     assert_eq!(block.aborted_transaction_ids().len(), 0);
-//     vm.add_next_block(&block).unwrap();
-    
-//     // Obtain the credits records.
-//     let records = block.records().map(|(_, record)| record.decrypt(&caller_view_key)).collect::<Result<Vec<_>>>().unwrap();
-//     // Split the records into credits_a and credits_b records.
-//     let (records_a, records_b) = records.split_at(2);
-
-//     // Create the AMM program address.
-//     let amm_address: Address<CurrentNetwork> = ProgramID::from_str("amm.aleo").unwrap().to_address().unwrap();
-//     let amm_address_value = Value::from_str(&amm_address.to_string()).unwrap();
-
-//     // Execute credits_a.aleo/transfer_private_to_public to give amm.aleo an initial balance of credits_a.
-//     let execute_transfer_a = vm.execute(&caller_private_key, ("credits_a.aleo", "transfer_private_to_public"), vec![Value::Record(records_a[0].clone()), amm_address_value.clone(), Value::from_str("100u64").unwrap()].into_iter(), None, 0, None, rng).unwrap();
-//     // Execute credits_b.aleo/transfer_private_to_public to give amm.aleo an initial balance of credits_b.
-//     let execute_transfer_b = vm.execute(&caller_private_key, ("credits_b.aleo", "transfer_private_to_public"), vec![Value::Record(records_b[0].clone()), amm_address_value.clone(), Value::from_str("100u64").unwrap()].into_iter(), None, 0, None, rng).unwrap();
-//     let block = sample_next_block(&vm, &caller_private_key, &[execute_transfer_a, execute_transfer_b], rng).unwrap();
-//     assert_eq!(block.transactions().num_accepted(), 2);
-//     assert_eq!(block.transactions().num_rejected(), 0);
-//     assert_eq!(block.aborted_transaction_ids().len(), 0);
-//     vm.add_next_block(&block).unwrap();
-    
-//     // Execute amm.aleo/buy_token_b to buy token_b.
-//     let execute_buy_token_b = vm.execute(&caller_private_key, ("amm.aleo", "buy_token_b"), vec![Value::Record(records_a[1].clone()), Value::from_str("100u64").unwrap(), Value::from_str("100u64").unwrap()].into_iter(), None, 0, None, rng).unwrap();
-//     let block = sample_next_block(&vm, &caller_private_key, &[execute_buy_token_b], rng).unwrap();
-//     assert_eq!(block.transactions().num_accepted(), 1);
-//     assert_eq!(block.transactions().num_rejected(), 0);
-//     assert_eq!(block.aborted_transaction_ids().len(), 0);
-//     vm.add_next_block(&block).unwrap();
-    
-//     // Obtain the credits_a change and credits_b receiver records.
-//     let (_change_record, _receiver_record) = block.records().map(|(_, record)| record.decrypt(&caller_view_key)).collect::<Result<Vec<_>>>().unwrap().split_at(1);
-// }
-
-/************************** Translation test cases ***************************/
-
-// TODO (dynamic_dispatch) remove the legend once working
-// Single-translation test cases (O: coded, P: passing)
-// O input static -> dynamic
-// O input dynamic -> static
-// O output static -> dynamic
-// x output dynamic -> static ! Cannot be tested directly since dynamic records cannot be directly instantiated. Tested as part of multi-translation tests below.
-// Double-translation test cases
-// - input dynamic -> dynamic (no translation; check dynamic-record InputID changes as expected)
-// - input static -> static (no translation)
-// Double-translation test cases (non-exhaustive)
-// - input static -> dynamic subsequently passed as input dynamic -> static
-// - output static -> dynamic subsequently passed as output dynamic -> static
-// Polimorphy
-// - input static-type-1 -> dynamic, then static-type-2 -> dynamic (e. g. controlled by a boolean private input)
-// - input static-type-1 + static-type2 -> dynamic, dynamic
-// Other chained cases (non-exhaustive)
-// - input static -> dynamic passed as static -> dynamic, output as dynamic -> static
-// - input static -> dynamic passed as static -> dynamic, output as dynamic (check dynamic-record OutputID changes as expected)
-// Key-fetching
-// - input static -> dynamic, input dynamic -> static, output static -> dynamic, output dynamic -> static all witht he same static definition: only one translation proving key should be fetched
-// - static {program_1 - record_name_1, program_1 - record_name_1, program_1 - record_name_2, program_2 - record_name_1, program_2 - record_name_2}: 4 translation proving keys should be fetched
-// TODO more...
 
 #[test]
 fn test_translation_input_static_dynamic() {
@@ -594,10 +374,10 @@ fn test_translation_output_static_dynamic() {
     // Input and expected output
     let caller_function_name = Identifier::<CurrentNetwork>::from_str("nitrogen_pump").unwrap();
     let caller_function_field = caller_function_name.to_field().unwrap();
-    let operand_index = U16::<CurrentNetwork>::from_str("0").unwrap();
+    let input_output_index = U16::<CurrentNetwork>::from_str("0").unwrap();
     let tvk = None::<Field<CurrentNetwork>>.unwrap();
 
-    let r0_dynamic_id = r0_dynamic.to_id(caller_function_field, tvk, operand_index).unwrap();
+    let r0_dynamic_id = r0_dynamic.to_id(caller_function_field, tvk, input_output_index).unwrap();
 
     test_translation(
         Some(&caller_private_key),
@@ -607,3 +387,6 @@ fn test_translation_output_static_dynamic() {
         None,
     );
 }
+
+// TODO (Antonio) fix "Expected an dynamic record input..."
+// TODO (Antonio) ask Victor if registers.record_translation_arguments() is still there, ow. fix everywhere

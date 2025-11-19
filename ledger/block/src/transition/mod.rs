@@ -84,9 +84,6 @@ impl<N: Network> Transition<N> {
         output_registers: &[Option<Register<N>>],
         record_translation_args: Option<Vec<Field<N>>>,
     ) -> Result<Self> {
-        // TODO (Antonio) remove
-        println!("*************** CREATING TRANSITION");
-        
         let network_id = *request.network_id();
         let program_id = *request.program_id();
         let function_name = *request.function_name();

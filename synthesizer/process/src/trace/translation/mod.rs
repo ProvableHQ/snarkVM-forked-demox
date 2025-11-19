@@ -116,8 +116,8 @@ impl<N: Network> Translation<N> {
         );
 
         if let Some(record_translation_arguments) = record_translation_arguments {
-            for (record_translation_argument, operand_index) in record_translation_arguments.iter() {
-                self.transition_indices.insert((*transition.id(), *record_translation_argument), *operand_index);
+            for (record_translation_argument, input_output_index) in record_translation_arguments.iter() {
+                self.transition_indices.insert((*transition.id(), *record_translation_argument), *input_output_index);
             }
         }
 
@@ -190,12 +190,12 @@ impl<N: Network> Translation<N> {
                                 bail!("No record translation argument found for the parent input");
                             };
                             let static_record_id = **child_input.id();
-                            let to_static_record = N::Field::one();
+                            let record_consumed = N::Field::one();
                             let translation_count_field = *Field::<N>::from_bits_le(&translation_count.to_bits_le())?;
                             let io_index_field = *Field::<N>::from_bits_le(&(io_index as u8).to_bits_le())?;
                             
                             batch_verifier_inputs.entry((*child_program_id, *record_identifier)).or_default().push(
-                                vec![translation_count_field, dynamic_record_fid, dynamic_record_id, static_record_id, to_static_record]
+                                vec![translation_count_field, dynamic_record_fid, dynamic_record_id, static_record_id, record_consumed]
                             );
                             translation_count += 1;
                         }
@@ -207,12 +207,12 @@ impl<N: Network> Translation<N> {
                             } else {
                                 bail!("No record translation argument found for the parent input");
                             };
-                            let to_static_record = N::Field::zero();
+                            let record_consumed = N::Field::zero();
                             let translation_count_field = *Field::<N>::from_bits_le(&translation_count.to_bits_le())?;
                             let io_index_field = *Field::<N>::from_bits_le(&(io_index as u8).to_bits_le())?;
                             
                             batch_verifier_inputs.entry((*child_program_id, *record_identifier)).or_default().push(
-                               vec![translation_count_field, dynamic_record_fid, dynamic_record_id, static_record_id, to_static_record]
+                               vec![translation_count_field, dynamic_record_fid, dynamic_record_id, static_record_id, record_consumed]
                             );
                             translation_count += 1;
                         }
@@ -235,12 +235,12 @@ impl<N: Network> Translation<N> {
                             } else {
                                 bail!("No record translation argument found for the parent output");
                             };
-                            let to_static_record = N::Field::one();
+                            let record_consumed = N::Field::one();
                             let translation_count_field = *Field::<N>::from_bits_le(&translation_count.to_bits_le())?;
                             let io_index_field = *Field::<N>::from_bits_le(&(io_index as u8).to_bits_le())?;
 
                             batch_verifier_inputs.entry((*child_program_id, *record_identifier)).or_default().push(
-                                vec![translation_count_field, dynamic_record_fid, dynamic_record_id, static_record_id, to_static_record]
+                                vec![translation_count_field, dynamic_record_fid, dynamic_record_id, static_record_id, record_consumed]
                             );
                             translation_count += 1;
                         }
@@ -252,12 +252,12 @@ impl<N: Network> Translation<N> {
                                 bail!("No record translation argument found for the parent output");
                             };
                             let static_record_id = **child_output.id();
-                            let to_static_record = N::Field::zero();
+                            let record_consumed = N::Field::zero();
                             let translation_count_field = *Field::<N>::from_bits_le(&translation_count.to_bits_le())?;
                             let io_index_field = *Field::<N>::from_bits_le(&(io_index as u8).to_bits_le())?;
                             
                             batch_verifier_inputs.entry((*child_program_id, *record_identifier)).or_default().push(
-                                vec![translation_count_field, dynamic_record_fid, dynamic_record_id, static_record_id, to_static_record]
+                                vec![translation_count_field, dynamic_record_fid, dynamic_record_id, static_record_id, record_consumed]
                             );
                             translation_count += 1;
                         }

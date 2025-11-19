@@ -24,30 +24,17 @@ impl<N: Network> Request<N> {
     pub fn verify(&self, input_types: &[ValueType<N>], is_root: bool, program_checksum: Option<Field<N>>) -> bool {
         // Verify the transition public key, transition view key, and transition commitment are well-formed.
         {
-
-            // TODO (Antonio) remove
-            println!("IN VERIFIER LAND INPUTS for function {}", self.function_name);
-            println!("    program_id: {:#?}", self.program_id);
-            println!("    function_name: {:#?}", self.function_name);
-            println!("    input_types: {:#?}", input_types);
-            println!("    is_root: {:#?}", is_root);
-            println!("    program_checksum: {:#?}", program_checksum);
-
             // Compute the transition commitment `tcm` as `Hash(tvk)`.
             match N::hash_psd2(&[self.tvk]) {
                 Ok(tcm) => {
                     // Ensure the computed transition commitment matches.
                     if tcm != self.tcm {
                         eprintln!("Invalid transition commitment in request.");
-                        // TODO (Antonio) remove
-                        println!("Invalid transition commitment in request.");
                         return false;
                     }
                 }
                 Err(error) => {
                     eprintln!("Failed to compute transition commitment in request verification: {error}");
-                    // TODO (Antonio) remove
-                    println!("Failed to compute transition commitment in request verification: {error}");
                     return false;
                 }
             }
@@ -64,8 +51,6 @@ impl<N: Network> Request<N> {
                 Ok(function_id) => function_id,
                 Err(error) => {
                     eprintln!("Failed to construct the function ID: {error}");
-                    // TODO (Antonio) remove
-                    println!("Failed to construct the function ID: {error}");
                     return false;
                 }
             };
@@ -188,15 +173,8 @@ impl<N: Network> Request<N> {
             },
         ) {
             eprintln!("[console:Request::verify] Request verification failed on input checks: {error}");
-            // TODO (Antonio) remove
-            println!("Request verification failed on input checks: {error}");
             return false;
         }
-
-        // TODO (Antonio) remove
-        println!("IN VERIFIER LAND MESSAGE for function {}: {:#?}", self.function_name, self.signature.verify(&self.signer, &message));
-        println!("Message: {:#?}", message);
-        println!("Signer: {:#?}", self.signer);
         
         // Verify the signature.
         let result = self.signature.verify(&self.signer, &message);

@@ -254,7 +254,6 @@ impl<A: Aleo> Request<A> {
                             Value::Plaintext(..) => A::halt(format!("[check_input_ids] (in function {}) Expected a record input, found a plaintext input", function_name_value)),
                             Value::Future(..) => A::halt(format!("[check_input_ids] (in function {}) Expected a record input, found a future input", function_name_value)),
                             Value::DynamicRecord(..) => {
-                                // TODO (Antonio) remove
                                 A::halt(format!("[check_input_ids] (in function {}) Expected a record input, found a dynamic record input", function_name_value))
                             }
                             Value::DynamicFuture(..) => {
