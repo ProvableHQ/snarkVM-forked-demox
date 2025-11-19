@@ -60,8 +60,11 @@ impl<N: Network> FromBytes for Request<N> {
 
         // Read the optional caller input IDs.
         let caller_input_ids = match version {
-            0 => None,
-            1 => Some((0..inputs_len).map(|_| FromBytes::read_le(&mut reader)).collect::<Result<Vec<_>, _>>()?),
+            1 => None,
+            2 => {
+                let num_caller_input_ids = u16::read_le(&mut reader)?;
+                Some((0..num_caller_input_ids).map(|_| FromBytes::read_le(&mut reader)).collect::<Result<Vec<_>, _>>()?)
+            },
             _ => return Err(error("Invalid request version")),
         };
 
@@ -129,6 +132,9 @@ impl<N: Network> ToBytes for Request<N> {
         self.scm.write_le(&mut writer)?;
         // Write the optional caller input IDs.
         if let Some(caller_input_ids) = &self.caller_input_ids {
+            u16::try_from(caller_input_ids.len())
+                .or_halt_with::<N>("Caller input IDs length exceeds u16")
+                .write_le(&mut writer)?;
             for caller_input_id in caller_input_ids {
                 caller_input_id.write_le(&mut writer)?;
             }
