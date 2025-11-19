@@ -147,9 +147,9 @@ impl<N: Network> Process<N> {
             // Retrieve the translation verifying keys for the transition's program.
             // TODO(dynamic_dispatch): minor perf issue: this can superfluously retrieve the verifying keys multiple times.
             for record_name in stack.program().records().keys() {
-                let translation_verifying_key = stack.get_translation_verifying_key(record_name).map_err(|_| 
+                let translation_verifying_key = stack.get_translation_verifying_key(record_name).map_err(|_| {
                     anyhow!("Translation verifying key not found for {}/{}", transition.program_id(), record_name)
-                )?;
+                })?;
                 translation_verifying_keys.insert((*transition.program_id(), *record_name), translation_verifying_key);
             }
 
@@ -211,8 +211,9 @@ impl<N: Network> Process<N> {
         let mut verifier_inputs: Vec<_> = verifier_inputs.values().cloned().collect();
 
         // Construct the batch of translation verifier inputs.
-        let batch_translation_inputs = Translation::prepare_verifier_inputs(&translation_verifying_keys, &transition_map, &call_graph)?;
-        
+        let batch_translation_inputs =
+            Translation::prepare_verifier_inputs(&translation_verifying_keys, &transition_map, &call_graph)?;
+
         // TODO(dynamic_dispatch): bring appropriate new measurement functions from execution_cost_for_authorization to here.
 
         for (verifying_key, batch_translation_inputs_for_record) in batch_translation_inputs.into_iter() {
@@ -290,13 +291,18 @@ impl<N: Network> Process<N> {
             // [Inputs] Extend the verifier inputs with the transition commitment of the external call.
             verifier_inputs.extend([**child_transition.tcm()]);
             // [Inputs] Extend the verifier inputs with the input IDs of the external call.
-            for ((parent_input_type, child_input_type), child_input) in parent_function.input_types().iter().zip(child_function.input_types().iter()).zip(child_transition.inputs().iter()) {
+            for ((parent_input_type, child_input_type), child_input) in parent_function
+                .input_types()
+                .iter()
+                .zip(child_function.input_types().iter())
+                .zip(child_transition.inputs().iter())
+            {
                 match (parent_input_type, child_input_type) {
                     // When translating from or to a dynamic record, the parent encodes their version of the record.
                     // NOTE: deployment verification ensures only dynamic calls can invoke these translations.
-                    (ValueType::DynamicRecord, ValueType::Record(_)) 
-                    | (ValueType::Record(_), ValueType::DynamicRecord) 
-                    | (ValueType::DynamicRecord, ValueType::ExternalRecord(_)) 
+                    (ValueType::DynamicRecord, ValueType::Record(_))
+                    | (ValueType::Record(_), ValueType::DynamicRecord)
+                    | (ValueType::DynamicRecord, ValueType::ExternalRecord(_))
                     | (ValueType::ExternalRecord(_), ValueType::DynamicRecord) => {
                         if let Some(record_id) = caller_input_ids.next() {
                             verifier_inputs.push(**record_id);
@@ -311,13 +317,18 @@ impl<N: Network> Process<N> {
                 }
             }
             // [Inputs] Extend the verifier inputs with the output IDs of the external call.
-            for ((parent_output_type, child_output_type), child_output_id) in parent_function.output_types().iter().zip(child_function.output_types().iter()).zip(child_transition.output_ids()) {
+            for ((parent_output_type, child_output_type), child_output_id) in parent_function
+                .output_types()
+                .iter()
+                .zip(child_function.output_types().iter())
+                .zip(child_transition.output_ids())
+            {
                 match (parent_output_type, child_output_type) {
                     // When translating from or to a dynamic record, the parent encodes their version of the record.
                     // NOTE: deployment verification ensures only dynamic calls can invoke these translations.
-                    (ValueType::DynamicRecord, ValueType::Record(_)) 
-                    | (ValueType::Record(_), ValueType::DynamicRecord) 
-                    | (ValueType::DynamicRecord, ValueType::ExternalRecord(_)) 
+                    (ValueType::DynamicRecord, ValueType::Record(_))
+                    | (ValueType::Record(_), ValueType::DynamicRecord)
+                    | (ValueType::DynamicRecord, ValueType::ExternalRecord(_))
                     | (ValueType::ExternalRecord(_), ValueType::DynamicRecord) => {
                         if let Some(record_id) = caller_input_ids.next() {
                             verifier_inputs.push(**record_id);
@@ -332,7 +343,7 @@ impl<N: Network> Process<N> {
                 }
             }
         }
-        
+
         ensure!(caller_input_ids.next().is_none(), "Extra record translation argument found for the parent transition");
 
         // [Inputs] Extend the verifier inputs with the output IDs.
@@ -370,25 +381,45 @@ impl<N: Network> Process<N> {
         &self,
         transitions: impl ExactSizeIterator<Item = &'a Transition<N>> + DoubleEndedIterator,
     ) -> Result<HashMap<N::TransitionID, Vec<N::TransitionID>>> {
+        // The transition type, static or dynamic.
+        enum Location<N: Network> {
+            Static(ProgramID<N>, Identifier<N>),
+            Dynamic,
+        }
         // Metadata for each transition the execution.
         struct TransitionMetadata<N: Network> {
             uid: usize,
-            pid: ProgramID<N>,
-            fname: Identifier<N>,
+            location: Location<N>,
             tid: Option<N::TransitionID>,
             children: Option<Vec<usize>>,
         }
 
         impl<N: Network> TransitionMetadata<N> {
-            fn new(counter: &mut usize, pid: ProgramID<N>, fname: Identifier<N>, tid: Option<N::TransitionID>) -> Self {
+            fn new_static(
+                counter: &mut usize,
+                pid: ProgramID<N>,
+                fname: Identifier<N>,
+                tid: Option<N::TransitionID>,
+            ) -> Self {
                 let uid = *counter;
                 *counter += 1;
-                Self { uid, pid, fname, tid, children: None }
+                Self { uid, location: Location::Static(pid, fname), tid, children: None }
+            }
+
+            fn new_dynamic(counter: &mut usize, tid: Option<N::TransitionID>) -> Self {
+                let uid = *counter;
+                *counter += 1;
+                Self { uid, location: Location::Dynamic, tid, children: None }
+            }
+
+            /// Returns 'true' if the transition is static.
+            fn is_static(&self) -> bool {
+                matches!(self.location, Location::Static(..))
             }
 
             /// Returns 'true' if the subgraph starting from this transition has been fully-indexed.
             fn is_complete(&self) -> bool {
-                self.tid.is_some() && self.children.is_some()
+                self.is_static() && self.tid.is_some() && self.children.is_some()
             }
         }
 
@@ -427,9 +458,6 @@ impl<N: Network> Process<N> {
         let mut traversal_stack: Vec<TransitionMetadata<N>> = Vec::new();
         // Initialize a counter to provide unique IDs for each transition.
         let mut counter = 0;
-        // Placeholder program id and function name for dynamic calls traversal.
-        let dynamic_pid = ProgramID::<N>::from_str("dynamic.aleo")?;
-        let dynamic_fname = Identifier::<N>::from_str("dynamic")?;
 
         // Iterate over each transition in reverse post-order, and populate the call graph.
         for transition in transitions.rev() {
@@ -439,7 +467,7 @@ impl<N: Network> Process<N> {
             match traversal_stack.last_mut() {
                 // If the stack is empty, then push the `transition` to the top of the stack.
                 None => {
-                    traversal_stack.push(TransitionMetadata::new(
+                    traversal_stack.push(TransitionMetadata::new_static(
                         &mut counter,
                         *transition.program_id(),
                         *transition.function_name(),
@@ -450,12 +478,20 @@ impl<N: Network> Process<N> {
                 Some(head) => {
                     // For dynamic calls, we skip the defense in depth check whether the transition is the expected one.
                     // As a result, a malicious re-ordering of dynamic transitions will fail opaquely during proof verification.
-                    let is_dynamic = head.pid == dynamic_pid && head.fname == dynamic_fname;
-                    match is_dynamic || (head.pid == *transition.program_id() && head.fname == *transition.function_name()) {
-                        true => head.tid = Some(*transition.id()),
-                        false => bail!("Invalid traversal - unexpected transition in the execution"),
+                    match (&head.location, transition.is_dynamic()) {
+                        (Location::Static(pid, fname), false) => {
+                            match pid == transition.program_id() && fname == transition.function_name() {
+                                true => head.tid = Some(*transition.id()),
+                                false => bail!("Invalid traversal - unexpcted transition in the execution"),
+                            }
+                        }
+                        (Location::Dynamic, true) => {
+                            head.tid = Some(*transition.id());
+                            head.location = Location::Static(*transition.program_id(), *transition.function_name());
+                        }
+                        _ => bail!("Invalid traversal - transition type mismatch"),
                     }
-                },
+                }
             }
 
             // Process the entry at the top of the stack. By the previous step, this entry has a transition ID.
@@ -465,11 +501,11 @@ impl<N: Network> Process<N> {
             if top.is_complete() {
                 // Note this unwrap is safe, for the same reason as above.
                 update_call_graph(traversal_stack.pop().unwrap(), &mut call_graph, &mut uid_to_tid)?;
-            } else {
+            } else if let Location::Static(top_pid, top_fname) = &top.location {
                 // Retrieve the stack.
-                let stack = self.get_stack(top.pid)?;
+                let stack = self.get_stack(top_pid)?;
                 // Retrieve the function from the stack.
-                let function = stack.get_function(&top.fname)?;
+                let function = stack.get_function(&top_fname)?;
                 // Collect the children of the current transition.
                 let mut children = Vec::new();
                 for instruction in function.instructions() {
@@ -478,18 +514,19 @@ impl<N: Network> Process<N> {
                             snarkvm_synthesizer_program::CallOperator::Locator(locator) => {
                                 (locator.program_id(), locator.resource())
                             }
-                            snarkvm_synthesizer_program::CallOperator::Resource(fname) => (&top.pid, fname),
+                            snarkvm_synthesizer_program::CallOperator::Resource(fname) => (top_pid, fname),
                         };
                         // Add the child to the traversal stack, only if it is a call to a transition.
                         if self.get_stack(pid)?.get_function(fname).is_ok() {
-                            children.push(TransitionMetadata::new(&mut counter, *pid, *fname, None));
+                            children.push(TransitionMetadata::new_static(&mut counter, *pid, *fname, None));
                         }
                     }
                     if let Instruction::CallDynamic(_) = instruction {
                         // Add the child to the traversal stack.
+                        // TODO (@d0cd) Refine comment.
                         // NOTE: for dynamic calls, the verifier doesn't have access to a locator or resource.
                         // However, the verifier can determine the program and function name directly from the DFS ordering of transitions in the Execution.
-                        children.push(TransitionMetadata::new(&mut counter, dynamic_pid, dynamic_fname, None));
+                        children.push(TransitionMetadata::new_dynamic(&mut counter, None));
                     }
                 }
 
@@ -503,6 +540,9 @@ impl<N: Network> Process<N> {
                 }
                 // Push the children to the top of the stack.
                 traversal_stack.extend(children);
+            } else {
+                // TODO (@d0cd)
+                todo!("Implement resolution here.")
             }
             // If the stack has complete metadata entries, then remove and add them to the call graph.
             while let Some(metadata) = traversal_stack.last() {

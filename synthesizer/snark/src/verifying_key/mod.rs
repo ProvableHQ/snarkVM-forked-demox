@@ -84,7 +84,12 @@ impl<N: Network> VerifyingKey<N> {
     ) -> Result<()> {
         // Ensure the number of instances to verify is within the limit.
         let num_instances = inputs.iter().map(|(_, inputs)| inputs.len()).sum::<usize>();
-        ensure!(num_instances <= N::MAX_BATCH_PROOF_INSTANCES, "Observed {} instances to prove, the limit is {}", num_instances, N::MAX_BATCH_PROOF_INSTANCES);
+        ensure!(
+            num_instances <= N::MAX_BATCH_PROOF_INSTANCES,
+            "Observed {} instances to prove, the limit is {}",
+            num_instances,
+            N::MAX_BATCH_PROOF_INSTANCES
+        );
 
         #[cfg(feature = "dev-print")]
         let timer = std::time::Instant::now();
