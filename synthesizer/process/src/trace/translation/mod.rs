@@ -41,20 +41,27 @@ use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]
 struct TranslationTask<N: Network> {
-    /// The commitment.
-    commitment: Field<N>,
-    /// The gamma value.
+    // TODO (dynamic_dispatch) document (same meaning as in TranslationAssignment)
+    record_static: Record<N, Plaintext<N>>,
+    program_id: ProgramID<N>,
+    function_id: Field<N>,
+    record_name: Identifier<N>,
+    record_dynamic: DynamicRecord<N>,
+    record_consumed: bool,
+    translation_count: u16,
+    tvk: Field<N>,
+    input_output_index: u16,
+    id_dynamic: Field<N>,
+    id_static: Field<N>,
+    record_view_key: Field<N>,
     gamma: Group<N>,
-    /// The serial number.
-    serial_number: Field<N>,
-    /// The record.
-    record: Record<N, Plaintext<N>>,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct Translation<N: Network> { 
+    // TODO (dynamic_dispatch) decide whether this should contain translation-only stuff
     /// A map of `transition IDs` to a list of `input tasks`.
-    translation_tasks: HashMap<N::TransitionID, (Vec<TranslationTask<N>>, Vec<RecordTranslationData<N>>)>,
+    translation_tasks: HashMap<N::TransitionID, Vec<TranslationAssignment<N>>>,
     // TODO (dynamic_dispatch) comment; A map from (transition id, caller dynamic record id) to index
     transition_indices:HashMap<(N::TransitionID, Field<N>), u16>
 }
@@ -71,13 +78,18 @@ impl<N: Network> Translation<N> {
         input_ids: &[InputID<N>],
         input_values: &[Value<N>],
         transition: &Transition<N>,
-        record_translation_arguments: Option<Vec<(Field<N>, u16)>>,
-        record_translation_data: Option<Vec<RecordTranslationData<N>>>,
     ) -> Result<()> {
+
+        let caller_inputs = transition.caller_inputs().unwrap_or_default();
+
         // Ensure the transition inputs, input IDs and input values are the same length.
         if input_ids.len() != transition.inputs().len() {
             bail!("Inclusion expected the same number of input IDs as transition inputs")
         }
+        if input_values.len() != transition.inputs().len() {
+            bail!("Translation expected the same number of inputs as transition inputs")
+        }
+        // TODO (dynamic_dispatch) decide whether caller_inputs contains all inputs or only translated ones
         if input_values.len() != transition.inputs().len() {
             bail!("Translation expected the same number of inputs as transition inputs")
         }
@@ -145,8 +157,7 @@ impl<N: Network> Translation<N> {
                 anyhow!("Transition not found in the call graph")
             )?;
 
-            let record_translation_arguments = parent_transition.record_translation_args().cloned().unwrap_or_default();
-            let mut record_translation_arguments_iter = record_translation_arguments.iter();
+            let record_translation_arguments = parent_transition.caller_inputs().unwrap_or_default().iter().map(|input| input.id());
 
             let parent_program_id = parent_transition.program_id();
             let parent_function_name = parent_transition.function_name();

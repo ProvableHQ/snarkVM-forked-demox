@@ -113,7 +113,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
             };
 
             // Set the (console) caller.
-            let console_caller = Some((*stack.program_id(), *registers.function_name().unwrap()));
+            let console_caller = Some(*stack.program_id());
             // Evaluate the function.
             let response = substack.evaluate_function::<A, R>(call_stack, console_caller, root_tvk, rng)?;
             // Load the outputs.
@@ -229,7 +229,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                 let inputs = inputs.eject_value();
 
                 // Set the (console) caller.
-                let console_caller = Some((*stack.program_id(), *registers.function_name().unwrap()));
+                let console_caller = Some(*stack.program_id());
                 // Check if the substack has a proving key or not.
                 let pk_missing = !substack.contains_proving_key(function.name());
 
