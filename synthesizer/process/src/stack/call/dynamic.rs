@@ -66,7 +66,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                 if is_credits_program && (is_fee_private || is_fee_public) {
                     bail!("Cannot perform an external call to 'credits.aleo/fee_private' or 'credits.aleo/fee_public'.")
                 } else {
-                    Some(stack.get_external_stack(&program_id)?)
+                    Some(stack.get_stack_unchecked(&program_id)?)
                 }
             }
             true => {
@@ -140,8 +140,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         }
                         (Value::DynamicRecord(dynamic_record), ValueType::Record(record_name)) => {
                             // Look up the owner visibility.
-                            let owner_is_private =
-                                substack.program().get_record(record_name)?.owner().is_private();
+                            let owner_is_private = substack.program().get_record(record_name)?.owner().is_private();
                             Ok(Value::Record(dynamic_record.to_record(owner_is_private)?))
                         }
                         (Value::DynamicFuture(dynamic_future), ValueType::Future(locator)) => {
@@ -609,15 +608,16 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         let caller_response_outputs = callee_response.dynamic_call_outputs()?;
 
                         // Anonymous helper to get a record translation proving key.
-                        let get_record_translation_proving_key = |program_id: &ProgramID<N>, record_name: &Identifier<N>| -> Result<ProvingKey<N>> {
-                            let record_stack = match program_id == stack.program_id() {
-                                true => stack,
-                                false => &stack.get_external_stack(&program_id)?,
+                        let get_record_translation_proving_key =
+                            |program_id: &ProgramID<N>, record_name: &Identifier<N>| -> Result<ProvingKey<N>> {
+                                let record_stack = match program_id == stack.program_id() {
+                                    true => stack,
+                                    false => &stack.get_stack_unchecked(&program_id)?,
+                                };
+                                // TODO(dynamic_dispatch): implement this
+                                // record_stack.get_translation_proving_key(record_name)
+                                record_stack.get_proving_key(record_name)
                             };
-                            // TODO(dynamic_dispatch): implement this
-                            // record_stack.get_translation_proving_key(record_name)
-                            record_stack.get_proving_key(record_name)
-                        };
                         let caller_console_input_ids = callee_request.caller_input_ids().clone().unwrap_or_default();
                         let callee_console_input_ids = callee_request.input_ids();
                         let caller_console_function_id = registers.function_id()?;
@@ -632,51 +632,93 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         let caller_console_inputs = inputs;
                         let callee_console_inputs = callee_request.inputs();
                         let mut translation_data = Vec::new();
-                        
+
                         // TODO: ensure all of the iterators are the same length.
-                        for (operand_index, (caller_input_value, caller_input_id, caller_input_type, callee_input_value, callee_input_id, callee_input_type)) in itertools::izip!(caller_console_inputs, caller_console_input_ids, caller_input_types, callee_console_inputs, callee_console_input_ids, callee_input_types).enumerate() {
-                            match (caller_input_value, caller_input_id, caller_input_type, callee_input_value, callee_input_id, callee_input_type) {
-                                (Value::Record(record), InputID::Record(_record_commitment, gamma, record_view_key, serial_number, _tag), ValueType::Record(record_name), Value::DynamicRecord(dynamic_record), InputID::DynamicRecord(dynamic_record_commitment), ValueType::DynamicRecord) => {
+                        for (
+                            operand_index,
+                            (
+                                caller_input_value,
+                                caller_input_id,
+                                caller_input_type,
+                                callee_input_value,
+                                callee_input_id,
+                                callee_input_type,
+                            ),
+                        ) in itertools::izip!(
+                            caller_console_inputs,
+                            caller_console_input_ids,
+                            caller_input_types,
+                            callee_console_inputs,
+                            callee_console_input_ids,
+                            callee_input_types
+                        )
+                        .enumerate()
+                        {
+                            match (
+                                caller_input_value,
+                                caller_input_id,
+                                caller_input_type,
+                                callee_input_value,
+                                callee_input_id,
+                                callee_input_type,
+                            ) {
+                                (
+                                    Value::Record(record),
+                                    InputID::Record(_record_commitment, gamma, record_view_key, serial_number, _tag),
+                                    ValueType::Record(record_name),
+                                    Value::DynamicRecord(dynamic_record),
+                                    InputID::DynamicRecord(dynamic_record_commitment),
+                                    ValueType::DynamicRecord,
+                                ) => {
                                     let program_id = *stack.program_id();
-                                    let translation_proving_key = get_record_translation_proving_key(&program_id, &record_name)?;
+                                    let translation_proving_key =
+                                        get_record_translation_proving_key(&program_id, &record_name)?;
                                     translation_data.push(RecordTranslationData {
                                         // TODO: consider using a mapping from (program_id, record_name) to (proving_key, other data)
-                                        translation_proving_key,                 // caller record proving key
-                                        record_static: record.clone(),           // caller static_record
-                                        record_dynamic: dynamic_record.clone(),  // callee dynamic_record
-                                        program_id,                              // callee program_id
+                                        translation_proving_key, // caller record proving key
+                                        record_static: record.clone(), // caller static_record
+                                        record_dynamic: dynamic_record.clone(), // callee dynamic_record
+                                        program_id,              // callee program_id
                                         function_id: callee_console_function_id, // callee function_id
-                                        record_name: *record_name,               // caller record_name
-                                        record_consumed: true,                  // misnomer, but yes it's the input direction
-                                        tvk: *callee_request.tvk(),              // callee tvk
-                                        record_view_key: Some(record_view_key),  // caller record_view_key
-                                        gamma: Some(gamma.clone()),              // caller gamma
-                                        static_record_id: serial_number,               // caller static_record_id
-                                        dynamic_record_id: *dynamic_record_commitment,  // callee dynamic_record_id
-                                        input_output_index: operand_index as u16,             // operand_index
+                                        record_name: *record_name, // caller record_name
+                                        record_consumed: true,   // misnomer, but yes it's the input direction
+                                        tvk: *callee_request.tvk(), // callee tvk
+                                        record_view_key: Some(record_view_key), // caller record_view_key
+                                        gamma: Some(gamma.clone()), // caller gamma
+                                        static_record_id: serial_number, // caller static_record_id
+                                        dynamic_record_id: *dynamic_record_commitment, // callee dynamic_record_id
+                                        input_output_index: operand_index as u16, // operand_index
                                     });
-                                },
-                                (Value::DynamicRecord(dynamic_record), InputID::DynamicRecord(dynamic_record_commitment), ValueType::DynamicRecord, Value::Record(record), InputID::Record(_record_commitment, gamma, record_view_key, serial_number, _tag), ValueType::Record(record_name)) => {
+                                }
+                                (
+                                    Value::DynamicRecord(dynamic_record),
+                                    InputID::DynamicRecord(dynamic_record_commitment),
+                                    ValueType::DynamicRecord,
+                                    Value::Record(record),
+                                    InputID::Record(_record_commitment, gamma, record_view_key, serial_number, _tag),
+                                    ValueType::Record(record_name),
+                                ) => {
                                     let program_id = *callee_request.program_id();
-                                    let translation_proving_key = get_record_translation_proving_key(&program_id, &record_name)?;
+                                    let translation_proving_key =
+                                        get_record_translation_proving_key(&program_id, &record_name)?;
                                     translation_data.push(RecordTranslationData {
                                         // TODO: consider using a mapping from (program_id, record_name) to (proving_key, other data)
-                                        translation_proving_key,                 // callee record proving key
-                                        record_static: record.clone(),           // callee static_record
-                                        record_dynamic: dynamic_record.clone(),  // caller dynamic_record
-                                        program_id,                              // callee program_id
+                                        translation_proving_key, // callee record proving key
+                                        record_static: record.clone(), // callee static_record
+                                        record_dynamic: dynamic_record.clone(), // caller dynamic_record
+                                        program_id,              // callee program_id
                                         function_id: caller_console_function_id, // caller function_id
-                                        record_name,                             // callee record_name
-                                        record_consumed: true,                  // misnomer, but yes it's the input direction
-                                        tvk: registers.tvk()?,                   // caller tvk
+                                        record_name,             // callee record_name
+                                        record_consumed: true,   // misnomer, but yes it's the input direction
+                                        tvk: registers.tvk()?,   // caller tvk
                                         record_view_key: Some(*record_view_key), // callee record_view_key
-                                        gamma: Some(*gamma),              // callee gamma
-                                        static_record_id: *serial_number,                // callee static_record_id
-                                        dynamic_record_id: dynamic_record_commitment,   // caller dynamic_record_id
-                                        input_output_index: operand_index as u16,             // callee operand_index
+                                        gamma: Some(*gamma),     // callee gamma
+                                        static_record_id: *serial_number, // callee static_record_id
+                                        dynamic_record_id: dynamic_record_commitment, // caller dynamic_record_id
+                                        input_output_index: operand_index as u16, // callee operand_index
                                     });
-                                },
-                                _ => { } // No translation to perform.
+                                }
+                                _ => {} // No translation to perform.
                             }
                         }
                         // Collect record outputs to translate.
@@ -686,9 +728,42 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         let callee_console_outputs = console_callee_response.outputs();
                         let callee_console_output_ids = console_callee_response.output_ids();
                         let callee_output_types = callee_function.output_types();
-                        for (operand_index, (caller_output_value, caller_output_id, caller_output_type, callee_output_value, callee_output_id, callee_output_type)) in itertools::izip!(caller_console_outputs, caller_console_output_ids, caller_output_types, callee_console_outputs, callee_console_output_ids, callee_output_types).enumerate() {
-                            match (caller_output_value, caller_output_id, caller_output_type, callee_output_value, callee_output_id, callee_output_type) {
-                                (Value::Record(record), OutputID::Record(record_commitment, _checksum, _sender_ciphertext), ValueType::Record(record_name), Value::DynamicRecord(dynamic_record), OutputID::DynamicRecord(dynamic_record_commitment), ValueType::DynamicRecord) => {
+                        for (
+                            operand_index,
+                            (
+                                caller_output_value,
+                                caller_output_id,
+                                caller_output_type,
+                                callee_output_value,
+                                callee_output_id,
+                                callee_output_type,
+                            ),
+                        ) in itertools::izip!(
+                            caller_console_outputs,
+                            caller_console_output_ids,
+                            caller_output_types,
+                            callee_console_outputs,
+                            callee_console_output_ids,
+                            callee_output_types
+                        )
+                        .enumerate()
+                        {
+                            match (
+                                caller_output_value,
+                                caller_output_id,
+                                caller_output_type,
+                                callee_output_value,
+                                callee_output_id,
+                                callee_output_type,
+                            ) {
+                                (
+                                    Value::Record(record),
+                                    OutputID::Record(record_commitment, _checksum, _sender_ciphertext),
+                                    ValueType::Record(record_name),
+                                    Value::DynamicRecord(dynamic_record),
+                                    OutputID::DynamicRecord(dynamic_record_commitment),
+                                    ValueType::DynamicRecord,
+                                ) => {
                                     // let program_id = *caller_request.program_id();
                                     // let translation_proving_key = get_record_translation_proving_key(program_id, &record_name)?;
                                     // translation_data.push(RecordTranslationData {
@@ -707,8 +782,15 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                     //     dynamic_record_id: *dynamic_record_commitment,   // callee dynamic_record_id
                                     //     operand_index: operand_index as u16,             // operand_index
                                     // });
-                                },
-                                (Value::DynamicRecord(dynamic_record), OutputID::DynamicRecord(dynamic_record_commitment), ValueType::DynamicRecord, Value::Record(record), OutputID::Record(record_commitment, _checksum, _sender_ciphertext), ValueType::Record(record_name)) => {
+                                }
+                                (
+                                    Value::DynamicRecord(dynamic_record),
+                                    OutputID::DynamicRecord(dynamic_record_commitment),
+                                    ValueType::DynamicRecord,
+                                    Value::Record(record),
+                                    OutputID::Record(record_commitment, _checksum, _sender_ciphertext),
+                                    ValueType::Record(record_name),
+                                ) => {
                                     // let program_id = *callee_request.program_id();
                                     // let translation_proving_key = get_record_translation_proving_key(&program_id, &record_name)?;
                                     // translation_data.push(RecordTranslationData {
@@ -727,8 +809,8 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                     //     dynamic_record_id: *dynamic_record_commitment,   // caller dynamic_record_id
                                     //     operand_index: operand_index as u16,             // callee operand_index
                                     // });
-                                },
-                                _ => { } // No translation to perform.
+                                }
+                                _ => {} // No translation to perform.
                             }
                         }
 
@@ -832,8 +914,11 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             lap!(timer, "Checked the outputs");
 
             // TODO (dynamic_dispatch) remove
-            println!("**INSIDE EXECUTE FOR FUNCTION {:?} PROCESS OUTPUTS FROM CALLBACK in mode: {:?}**", function_name, mode);
-            
+            println!(
+                "**INSIDE EXECUTE FOR FUNCTION {:?} PROCESS OUTPUTS FROM CALLBACK in mode: {:?}**",
+                function_name, mode
+            );
+
             // Return the circuit outputs.
             outputs
         };
@@ -846,7 +931,6 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         lap!(timer, "Assigned the outputs to registers");
 
         finish!(timer);
-
 
         // TODO (dynamic_dispatch) remove
         println!("**COMPLETED CALL DYNAMIC in mode: {:?}**", mode);
@@ -1049,7 +1133,7 @@ fn resolve_dynamic_target<'a, N: Network>(
 
     // Retrieve the optional external stack.
     let external_stack = match stack.program().id() == &program_id {
-        false => match stack.get_external_stack(&program_id) {
+        false => match stack.get_stack_unchecked(&program_id) {
             Ok(ext_stack) => Some(ext_stack),
             Err(_) if in_dummy_mode => {
                 return Ok(None);

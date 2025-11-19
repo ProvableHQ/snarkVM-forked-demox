@@ -188,7 +188,7 @@ impl<N: Network> Request<N> {
             tcm,
             scm,
             caller_input_ids: None,
-            caller_input_values: None,
+            caller_inputs: None,
         })
     }
 }

@@ -58,13 +58,13 @@ impl<N: Network> FromBytes for Request<N> {
         // Read the signer commitment.
         let scm = FromBytes::read_le(&mut reader)?;
 
-        // Read the optional caller input IDs.
-        let caller_input_ids = match version {
-            1 => None,
-            2 => {
-                let num_caller_input_ids = u16::read_le(&mut reader)?;
-                Some((0..num_caller_input_ids).map(|_| FromBytes::read_le(&mut reader)).collect::<Result<Vec<_>, _>>()?)
-            },
+        // Read the optional caller input IDs and caller inputs.
+        let (caller_input_ids, caller_inputs) = match version {
+            1 => (None, None),
+            2 => (
+                Some((0..inputs_len).map(|_| FromBytes::read_le(&mut reader)).collect::<Result<Vec<_>, _>>()?),
+                Some((0..inputs_len).map(|_| FromBytes::read_le(&mut reader)).collect::<Result<Vec<_>, _>>()?),
+            ),
             _ => return Err(error("Invalid request version")),
         };
 
@@ -81,8 +81,7 @@ impl<N: Network> FromBytes for Request<N> {
             tcm,
             scm,
             caller_input_ids,
-            // TODO (dynamic_dispatch) (de)serialise
-            None
+            caller_inputs,
         )))
     }
 }
@@ -132,14 +131,33 @@ impl<N: Network> ToBytes for Request<N> {
         self.tcm.write_le(&mut writer)?;
         // Write the signer commitment.
         self.scm.write_le(&mut writer)?;
-        // Write the optional caller input IDs.
-        if let Some(caller_input_ids) = &self.caller_input_ids {
-            u16::try_from(caller_input_ids.len())
-                .or_halt_with::<N>("Caller input IDs length exceeds u16")
-                .write_le(&mut writer)?;
-            for caller_input_id in caller_input_ids {
-                caller_input_id.write_le(&mut writer)?;
+
+        // Ensure the number of caller input IDs and caller inputs are consistent.
+        match (&self.caller_input_ids, &self.caller_inputs) {
+            (Some(caller_input_ids), Some(caller_inputs)) => {
+                // Ensure that the lengths match.
+                if caller_input_ids.len() != caller_inputs.len() {
+                    return Err(error("Invalid request: mismatching number of caller input IDs and caller inputs"));
+                }
+                // Ensre that the number of caller inputs match the number of inputs.
+                if caller_inputs.len() != self.inputs.len() {
+                    return Err(error("Invalid request: mismatching number of caller inputs and inputs"));
+                }
+                // Write the caller input IDs.
+                for caller_input_id in caller_input_ids {
+                    caller_input_id.write_le(&mut writer)?;
+                }
+                // Write the caller inputs.
+                for caller_input in caller_inputs {
+                    caller_input.write_le(&mut writer)?;
+                }
             }
+            (None, Some(_)) | (Some(_), None) => {
+                return Err(error(
+                    "Invalid request: caller input IDs and caller inputs must both be present or both be absent",
+                ));
+            }
+            _ => {}
         }
 
         Ok(())

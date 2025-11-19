@@ -214,7 +214,11 @@ impl<N: Network> StackTrait<N> for Stack<N> {
     }
 
     /// Inserts the given translation verifying key for the given record name.
-    fn insert_translation_verifying_key(&self, record_name: &Identifier<N>, verifying_key: VerifyingKey<N>) -> Result<()> {
+    fn insert_translation_verifying_key(
+        &self,
+        record_name: &Identifier<N>,
+        verifying_key: VerifyingKey<N>,
+    ) -> Result<()> {
         // Ensure the function name exists in the program.
         ensure!(
             self.program.contains_record(record_name),
@@ -300,6 +304,21 @@ impl<N: Network> StackTrait<N> for Stack<N> {
         );
         // Check that the program ID is imported by the program.
         ensure!(self.program.contains_import(program_id), "External program '{program_id}' is not imported.");
+        // Upgrade the weak reference to the process-level stack map and retrieve the external stack.
+        self.stacks
+            .upgrade()
+            .ok_or_else(|| anyhow!("Process-level stack map does not exist"))?
+            .read()
+            .get(program_id)
+            .cloned()
+            .ok_or_else(|| anyhow!("External stack for '{program_id}' does not exist"))
+    }
+
+    /// Returns the stack for the given program ID.
+    ///
+    /// Attention - this function does **NOT** check that the program is imported by the current program.
+    /// This function is only to be used for resolution during dynamic dispatch.
+    fn get_stack_unchecked(&self, program_id: &ProgramID<N>) -> Result<Arc<Stack<N>>> {
         // Upgrade the weak reference to the process-level stack map and retrieve the external stack.
         self.stacks
             .upgrade()

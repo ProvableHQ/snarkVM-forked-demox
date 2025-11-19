@@ -45,7 +45,11 @@ impl<N: Network> Request<N> {
 
         // Ensure the number of caller and callee inputs match.
         if caller_inputs.len() != inputs.len() {
-            bail!("Number of caller inputs ({}) doesn't match that of callee ones ({}).", caller_inputs.len(), inputs.len())
+            bail!(
+                "Number of caller inputs ({}) doesn't match that of callee ones ({}).",
+                caller_inputs.len(),
+                inputs.len()
+            )
         }
 
         // Parse the inputs.
@@ -203,7 +207,7 @@ impl<N: Network> Request<N> {
             tcm,
             scm,
             caller_input_ids: Some(caller_input_ids),
-            caller_input_values: Some(caller_inputs),
+            caller_inputs: Some(caller_inputs),
         })
     }
 }

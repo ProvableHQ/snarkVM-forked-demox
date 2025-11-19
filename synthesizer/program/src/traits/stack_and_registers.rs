@@ -21,19 +21,8 @@ use console::{
     network::Network,
     prelude::{Result, bail},
     program::{
-        Future,
-        Identifier,
-        Literal,
-        Locator,
-        Plaintext,
-        PlaintextType,
-        ProgramID,
-        DynamicRecord,
-        Record,
-        Register,
-        RegisterType,
-        Value,
-        ValueType,
+        DynamicRecord, Future, Identifier, Literal, Locator, Plaintext, PlaintextType, ProgramID, Record, Register,
+        RegisterType, Value, ValueType,
     },
     types::{Address, Field, U8, U16},
 };
@@ -105,7 +94,11 @@ pub trait StackTrait<N: Network> {
     fn insert_verifying_key(&self, function_name: &Identifier<N>, verifying_key: VerifyingKey<N>) -> Result<()>;
 
     /// Inserts the given translation verifying key for the given record name.
-    fn insert_translation_verifying_key(&self, record_name: &Identifier<N>, verifying_key: VerifyingKey<N>) -> Result<()>;
+    fn insert_translation_verifying_key(
+        &self,
+        record_name: &Identifier<N>,
+        verifying_key: VerifyingKey<N>,
+    ) -> Result<()>;
 
     /// Removes the verifying key for the given function name.
     fn remove_verifying_key(&self, function_name: &Identifier<N>);
@@ -158,6 +151,12 @@ pub trait StackTrait<N: Network> {
 
     /// Returns the external stack for the given program ID.
     fn get_external_stack(&self, program_id: &ProgramID<N>) -> Result<Arc<Self>>;
+
+    /// Returns the external stack for the given program ID, without checking that:
+    /// - the program ID is different from the current program ID.
+    /// - the program ID is imported by the current program.
+    /// This function is only to be used for resolution during dynamic dispatch.
+    fn get_stack_unchecked(&self, program_id: &ProgramID<N>) -> Result<Arc<Self>>;
 
     /// Returns the function with the given function name.
     fn get_function(&self, function_name: &Identifier<N>) -> Result<Function<N>>;

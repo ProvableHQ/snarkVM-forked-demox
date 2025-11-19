@@ -27,7 +27,14 @@ use snarkvm_utilities::TestRng;
 
 fn get_main_field(output_id: OutputID<CurrentNetwork>) -> Field<CurrentNetwork> {
     match output_id {
-        OutputID::Constant(field) | OutputID::Public(field) | OutputID::Private(field) | OutputID::Record(field, _, _) | OutputID::ExternalRecord(field) | OutputID::Future(field) | OutputID::DynamicRecord(field) | OutputID::DynamicFuture(field) => field
+        OutputID::Constant(field)
+        | OutputID::Public(field)
+        | OutputID::Private(field)
+        | OutputID::Record(field, _, _)
+        | OutputID::ExternalRecord(field)
+        | OutputID::Future(field)
+        | OutputID::DynamicRecord(field)
+        | OutputID::DynamicFuture(field) => field,
     }
 }
 
@@ -39,12 +46,13 @@ fn test_translation(
     expected_output_ids: Option<Vec<OutputID<CurrentNetwork>>>,
     expected_public_outputs: Option<Vec<Plaintext<CurrentNetwork>>>,
 ) {
-
     // Various parameters for dynamic.call instructions.
     let program_a_name_str = "flow";
-    let program_a_name_as_field = Identifier::<CurrentNetwork>::from_str(program_a_name_str).unwrap().to_field().unwrap();
+    let program_a_name_as_field =
+        Identifier::<CurrentNetwork>::from_str(program_a_name_str).unwrap().to_field().unwrap();
     let program_b_name_str = "gas_manager";
-    let program_b_name_as_field = Identifier::<CurrentNetwork>::from_str(program_b_name_str).unwrap().to_field().unwrap();
+    let program_b_name_as_field =
+        Identifier::<CurrentNetwork>::from_str(program_b_name_str).unwrap().to_field().unwrap();
     let network_as_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
 
     let get_liquid_liters_function_name = Identifier::<CurrentNetwork>::from_str("get_liquid_liters").unwrap();
@@ -55,7 +63,8 @@ fn test_translation(
     let consume_dynamic_blob_function_field = consume_dynamic_blob_function_name.to_field().unwrap();
     let nitrogen_pump_function_field = nitrogen_pump_function_name.to_field().unwrap();
 
-    let program_a_string = format!(r"
+    let program_a_string = format!(
+        r"
     program {program_a_name_str}.aleo;
 
     // Tries to consume a container passed as dynamic as a specifically liquid one
@@ -74,11 +83,11 @@ fn test_translation(
 
     constructor:
         assert.eq true true;
-    ");
+    "
+    );
 
-    let program_b_string = format!(r"
-    import {program_a_name_str}.aleo;
-
+    let program_b_string = format!(
+        r"
     program {program_b_name_str}.aleo;
 
     record liquid_container:
@@ -106,7 +115,8 @@ fn test_translation(
 
     constructor:
         assert.eq true true;
-    ");
+    "
+    );
 
     // Initialize a new program.
     let program_a = Program::<CurrentNetwork>::from_str(&program_a_string).unwrap();
@@ -142,37 +152,49 @@ fn test_translation(
     println!("Executing {root_program_name}/{root_function_name}...");
 
     // Execute the "dynamic" function.
-    let transaction = vm.execute(
-        &caller_private_key,
-        (root_program_name, root_function_name),
-        input_values.into_iter(),
-        None,
-        0,
-        None,
-        rng,
-    ).unwrap();
+    let transaction = vm
+        .execute(
+            &caller_private_key,
+            (root_program_name, root_function_name),
+            input_values.into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
 
     println!("Asserting output correctness...");
-    
+
     let output_ids = transaction.transitions().last().unwrap().output_ids().collect_vec();
 
-    let public_outputs = transaction.transitions().last().unwrap().outputs().iter().filter_map(|output| match output {
-        Output::Public(_, Some(plaintext)) => Some(plaintext),
-        _ => None,
-    }).collect_vec();
+    let public_outputs = transaction
+        .transitions()
+        .last()
+        .unwrap()
+        .outputs()
+        .iter()
+        .filter_map(|output| match output {
+            Output::Public(_, Some(plaintext)) => Some(plaintext),
+            _ => None,
+        })
+        .collect_vec();
 
     if let Some(expected_public_outputs) = expected_public_outputs {
         assert_eq!(public_outputs.into_iter().cloned().collect_vec(), expected_public_outputs);
     }
 
     if let Some(expected_output_ids) = expected_output_ids {
-        assert_eq!(output_ids.into_iter().cloned().collect_vec(), expected_output_ids.into_iter().map(get_main_field).collect_vec());
+        assert_eq!(
+            output_ids.into_iter().cloned().collect_vec(),
+            expected_output_ids.into_iter().map(get_main_field).collect_vec()
+        );
     }
 
     println!("Verifying transaction...");
 
     vm.check_transaction(&transaction, None, rng).unwrap();
-    
+
     let block = sample_next_block(&vm, &caller_private_key, &[transaction.clone()], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
@@ -195,8 +217,6 @@ fn test_dynamic_call_to_transfer_public() -> Result<()> {
     // Define the program to be executed.
     let program = Program::from_str(
         r"
-import credits.aleo;
-        
 program test_dcall.aleo;
 
 //function static:
@@ -338,50 +358,47 @@ constructor:
 
 #[test]
 fn test_translation_input_static_dynamic() {
-
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
     let caller_address = Address::try_from(&caller_private_key).unwrap();
 
-    let record_static_str = format!(r#"{{
+    let record_static_str = format!(
+        r#"{{
         owner: {}.private,
         liters: 22u64.public,
         flammable: false.private,
         _nonce: 0group.public,
         _version: 1u8.public
-    }}"#, caller_address);
+    }}"#,
+        caller_address
+    );
 
     // Construct the static and dynamic records.
-    let r0_static = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_str(&record_static_str).unwrap(); 
+    let r0_static = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_str(&record_static_str).unwrap();
 
     // Input and expected output
     let r0_value = Value::<CurrentNetwork>::Record(r0_static);
 
-    test_translation(
-        &caller_private_key,
-        "gas_manager.aleo",
-        "consume_gas",
-        &[r0_value],
-        None,
-        None,
-    );
+    test_translation(&caller_private_key, "gas_manager.aleo", "consume_gas", &[r0_value], None, None);
 }
 
 #[test]
 fn test_translation_input_dynamic_static() {
-
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
     let caller_address = Address::try_from(&caller_private_key).unwrap();
 
-    let record_static_str = format!(r#"{{
+    let record_static_str = format!(
+        r#"{{
         owner: {}.private,
         liters: 97u64.public,
         _nonce: 0group.public,
         _version: 1u8.public
-    }}"#, caller_address);
+    }}"#,
+        caller_address
+    );
 
     // Construct the static and dynamic records.
     let r0_static = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_str(&record_static_str).unwrap();
@@ -403,7 +420,6 @@ fn test_translation_input_dynamic_static() {
 
 #[test]
 fn test_translation_output_static_dynamic() {
-
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);

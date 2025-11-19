@@ -56,8 +56,7 @@ pub struct Request<N: Network> {
     caller_input_ids: Option<Vec<InputID<N>>>,
     /// The optional caller input values.
     /// Note. These are only present if and only if the request is dynamic.
-    // TODO (dynamic_dispatch) make sure this is properly handled, eg. in (de)serialisation
-    caller_input_values: Option<Vec<Value<N>>>,
+    caller_inputs: Option<Vec<Value<N>>>,
 }
 
 impl<N: Network>
@@ -92,7 +91,7 @@ impl<N: Network>
             tcm,
             scm,
             caller_input_ids,
-            caller_input_values,
+            caller_inputs,
         ): (
             Address<N>,
             U16<N>,
@@ -118,18 +117,29 @@ impl<N: Network>
                 inputs.len()
             ))
         }
-        // Ensure that the correct number of caller input IDs are provided.
-        if let Some(caller_input_ids) = &caller_input_ids {
-            if caller_input_ids.len() != input_ids.len() {
-                N::halt(format!(
-                    "Invalid request: mismatching number of dynamic input IDs ({}) and inputs ({})",
-                    caller_input_ids.len(),
-                    inputs.len()
-                ))
-            }
-        }
 
-        // TODO (@d0cd) check that the number of caller inputs matches that of caller input ids
+        match (caller_input_ids.as_ref(), caller_inputs.as_ref()) {
+            (Some(caller_input_ids), Some(caller_inputs)) => {
+                // Ensure that the number of caller inputs matches the number of caller input IDs.
+                if caller_inputs.len() != caller_input_ids.len() {
+                    N::halt(format!(
+                        "Invalid request: mismatching number of caller input IDs ({}) and caller inputs ({})",
+                        caller_input_ids.len(),
+                        caller_inputs.len()
+                    ))
+                }
+                // Ensure that the number of caller inputs matches the number of inputs.
+                if caller_inputs.len() != inputs.len() {
+                    N::halt(format!(
+                        "Invalid request: mismatching number of caller inputs ({}) and inputs ({})",
+                        caller_inputs.len(),
+                        inputs.len()
+                    ))
+                }
+            }
+            (None, None) => {}
+            _ => N::halt("Invalid request: mismatching presence of caller input IDs and caller inputs"),
+        }
 
         // Ensure the network ID is correct.
         if *network_id != N::ID {
@@ -148,7 +158,7 @@ impl<N: Network>
                 tcm,
                 scm,
                 caller_input_ids,
-                caller_input_values,
+                caller_inputs,
             }
         }
     }
@@ -227,10 +237,9 @@ impl<N: Network> Request<N> {
         &self.caller_input_ids
     }
 
-    // TODO (dynamic_dispatch) rename to caller_inputs
     /// Returns the optional caller input values.
-    pub const fn caller_input_values(&self) -> &Option<Vec<Value<N>>> {
-        &self.caller_input_values
+    pub const fn caller_inputs(&self) -> &Option<Vec<Value<N>>> {
+        &self.caller_inputs
     }
 
     /// Returns whether or not the request is dynamic.

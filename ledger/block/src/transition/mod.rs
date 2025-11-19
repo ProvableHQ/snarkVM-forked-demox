@@ -300,10 +300,10 @@ impl<N: Network> Transition<N> {
 
         // Compute and verify the optional caller inputs.
         let caller_inputs = if let Some(caller_input_ids) = request.caller_input_ids() {
-            let Some(caller_input_values) = request.caller_input_values() else {
+            let Some(caller_inputs) = request.caller_inputs() else {
                 bail!("Caller input values not present in dynamic request");
             };
-            Some(construct_inputs(caller_input_ids, caller_input_values)?)
+            Some(construct_inputs(caller_input_ids, caller_inputs)?)
         } else {
             None
         };
