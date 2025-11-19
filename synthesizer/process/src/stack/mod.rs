@@ -37,7 +37,7 @@ mod evaluate;
 mod execute;
 mod helpers;
 
-use crate::{CallMetrics, Process, Trace};
+use crate::{CallMetrics, Process, Trace, compute_function_id};
 use console::{
     account::{Address, PrivateKey},
     network::prelude::*,

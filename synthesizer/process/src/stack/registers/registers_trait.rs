@@ -66,40 +66,32 @@ impl<N: Network, A: circuit::Aleo<Network = N>> RegistersSigner<N> for Registers
         self.tvk = Some(tvk);
     }
 
-    /// Returns the record translation arguments.
+    /// Returns the record translation data.
     #[inline]
-    fn record_translation_arguments(&self) -> Option<&Vec<(Field<N>, u16)>> {
-        self.record_translation_arguments.as_ref()
+    fn record_translation_data(&self) -> Result<&Vec<RecordTranslationData<N>>> {
+        self.record_translation_data.as_ref().ok_or_else(|| anyhow!("Record translation data is not set in the registers."))
     }
 
-    /// Inserts a record translation argument.
+    /// Sets the record translation data.
     #[inline]
-    fn insert_record_translation_argument(&mut self, record_translation_argument: Field<N>, index: u16) {
-        self.record_translation_arguments.get_or_insert_with(Vec::new).push((record_translation_argument, index));
+    fn insert_record_translation_data(&mut self, new_record_translation_data: RecordTranslationData<N>) {
+        if let Some(record_translation_data) = &mut self.record_translation_data {
+            record_translation_data.push(new_record_translation_data);
+        } else {
+            self.record_translation_data = Some(vec![new_record_translation_data]);
+        }
     }
 
-    /// Returns the record translation arguments.
+    /// Returns the function id.
     #[inline]
-    fn record_translation_data(&self) -> Option<&Vec<RecordTranslationData<N>>> {
-        self.record_translation_data.as_ref()
+    fn function_id(&self) -> Result<Field<N>> {
+        self.function_id.ok_or_else(|| anyhow!("Caller function ID is not set in the registers."))
     }
 
-    /// Inserts the prover data for a record translation.
+    /// Sets the caller function id.
     #[inline]
-    fn insert_record_translation_data(&mut self, record_translation_data: RecordTranslationData<N>) {
-        self.record_translation_data.get_or_insert_with(Vec::new).push(record_translation_data);
-    }
-
-    /// Returns the transition function name.
-    #[inline]
-    fn function_name(&self) -> Option<&Identifier<N>> {
-        self.function_name.as_ref()
-    }
-
-    /// Sets the transition function name.
-    #[inline]
-    fn set_function_name(&mut self, function_name: Identifier<N>) {
-        self.function_name = Some(function_name);
+    fn set_function_id(&mut self, caller_function_id: Field<N>) {
+        self.function_id = Some(caller_function_id);
     }
 }
 

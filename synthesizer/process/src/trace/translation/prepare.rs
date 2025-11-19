@@ -50,7 +50,7 @@ impl<N: Network> Translation<N> {
                 let (identified_task, identified_data) = found.pop().unwrap();
 
                 let TranslationTask { commitment, gamma, serial_number, record } = identified_task;
-                let RecordTranslationData { record_static, program_id, function_id, record_name, record_consumed, tvk, record_view_key, gamma: gamma_data, static_record_id, input_output_index, proving_key } = identified_data;
+                let RecordTranslationData { record_static, program_id, function_id, record_name, record_consumed, tvk, record_view_key, gamma: gamma_data, static_record_id, input_output_index, translation_proving_key } = identified_data;
                 
                 // Checks associated to translation case 1
                 ensure!(gamma_data.as_ref() == Some(gamma), "gamma value in translation task does not that in translation data for transition ID {} and register index {}", transition_id, index);
@@ -65,7 +65,7 @@ impl<N: Network> Translation<N> {
                 let id_dynamic = caller_dynamic_record_id;
 
                 // TODO (dynamic_dispatch): is the clone cheap?
-                let batch = batched_inputs_inputs.entry((*program_id, *record_name)).or_insert((proving_key.clone(), vec![]));
+                let batch = batched_inputs_inputs.entry((*program_id, *record_name)).or_insert((translation_proving_key.clone(), vec![]));
 
                 batch.1.push(TranslationAssignment::new(
                     record_static.clone(),

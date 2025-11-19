@@ -232,8 +232,6 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
             self.reverse_tcm_map().remove(&tcm)?;
             // Remove `scm`.
             self.scm_map().remove(transition_id)?;
-            // Remove the record translation arguments.
-            self.record_translation_args_map().remove(transition_id)?;
             // Remove the `dynamic` flag.
             self.caller_input_map().remove(transition_id)?;
 
@@ -259,10 +257,6 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
         let tcm = self.tcm_map().get_confirmed(transition_id)?;
         // Retrieve `scm`.
         let scm = self.scm_map().get_confirmed(transition_id)?;
-        // Retrieve the record translation arguments.
-        // If it does not exist, then this transition was created before the record translation arguments were introduced.
-        // The correct value to use is `None`.
-        let record_translation_args = self.record_translation_args_map().get_confirmed(transition_id)?;
         // Retrieve the `dynamic` flag.
         // If it is does not exist, then this transition was created before the `dynamic` flag was introduced.
         // The correct value to use is `None`.
@@ -279,7 +273,6 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
                     tpk.into_owned(),
                     tcm.into_owned(),
                     scm.into_owned(),
-                    record_translation_args.map(|o| o.into_owned()),
                     dynamic.map(|o| o.into_owned()),
                 )?;
                 // Ensure the transition ID matches.
@@ -312,8 +305,6 @@ pub struct TransitionStore<N: Network, T: TransitionStorage<N>> {
     reverse_tcm: T::ReverseTCMMap,
     /// The map of signer commitments.
     scm: T::SCMMap,
-    /// The map of record translation arguments.
-    record_translation_args: T::RecordTranslationArgsMap,
     /// The `dynamic` map.
     dynamic_inputs: T::CallerInputMap,
     /// The transition storage.

@@ -238,6 +238,11 @@ impl<N: Network> Stack<N> {
         // If a program checksum was passed in, Inject it as `Mode::Public`.
         let program_checksum = program_checksum.map(|c| circuit::Field::<A>::new(circuit::Mode::Public, c));
 
+        // Compute the function id.
+        let function_id = compute_function_id(&U16::<N>::new(N::ID as u16), console_request.program_id(), console_request.function_name(), console_request.is_dynamic())?;
+        // Set the function id. // TODO(dynamic_dispatch): ensure we only have to compute it once, not again in call/dynamic.rs
+        registers.set_function_id(function_id);
+
         use circuit::{Eject, Inject};
 
         // Inject the transition public key `tpk` as `Mode::Public`.

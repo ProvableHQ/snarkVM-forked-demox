@@ -87,7 +87,7 @@ impl<N: Network> FromBytes for Transition<N> {
         };
 
         // Construct the candidate transition.
-        let transition = Self::new(program_id, function_name, inputs, outputs, tpk, tcm, scm, record_translation_arguments, dynamic)
+        let transition = Self::new(program_id, function_name, inputs, outputs, tpk, tcm, scm, dynamic)
             .map_err(|e| error(e.to_string()))?;
         // Ensure the transition ID matches the expected ID.
         match transition_id == *transition.id() {

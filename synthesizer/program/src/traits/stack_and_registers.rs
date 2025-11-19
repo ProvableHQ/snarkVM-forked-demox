@@ -28,6 +28,7 @@ use console::{
         Plaintext,
         PlaintextType,
         ProgramID,
+        DynamicRecord,
         Record,
         Register,
         RegisterType,
@@ -44,17 +45,18 @@ use snarkvm_synthesizer_snark::{ProvingKey, VerifyingKey};
 // TODO (dynamic_dispatch) change visibility of internals, add constructors
 #[derive(Clone, Debug)]
 pub struct RecordTranslationData<N: Network> {
-    pub proving_key: ProvingKey<N>,
+    pub translation_proving_key: ProvingKey<N>,
+    pub record_dynamic: DynamicRecord<N>,
     pub record_static: Record<N, Plaintext<N>>,
     pub program_id: ProgramID<N>,
     pub function_id: Field<N>,
     pub record_name: Identifier<N>,
-    /// TODO (dynamic_dispatch) better nomenclature
     pub record_consumed: bool,
     pub tvk: Field<N>,
-    pub record_view_key: Field<N>,
+    pub record_view_key: Option<Field<N>>,
     pub gamma: Option<Group<N>>,
     pub static_record_id: Field<N>,
+    pub dynamic_record_id: Field<N>,
     pub input_output_index: u16,
 }
 
@@ -232,23 +234,17 @@ pub trait RegistersSigner<N: Network>: RegistersTrait<N> {
     /// Sets the transition view key.
     fn set_tvk(&mut self, tvk: Field<N>);
 
-    /// Returns the record translation arguments.
-    fn record_translation_arguments(&self) -> Option<&Vec<(Field<N>, u16)>>;
-
-    /// Inserts a record translation argument.
-    fn insert_record_translation_argument(&mut self, record_translation_argument: Field<N>, index: u16);
-
     /// Returns the record translation data.
-    fn record_translation_data(&self) -> Option<&Vec<RecordTranslationData<N>>>;
+    fn record_translation_data(&self) -> Result<&Vec<RecordTranslationData<N>>>;
 
-    /// Inserts a record translation data.
-    fn insert_record_translation_data(&mut self, record_translation_data: RecordTranslationData<N>);
+    /// Sets the record translation data.
+    fn insert_record_translation_data(&mut self, new_record_translation_data: RecordTranslationData<N>);
 
-    /// Returns the transition function name.
-    fn function_name(&self) -> Option<&Identifier<N>>;
+    /// Returns the function id.
+    fn function_id(&self) -> Result<Field<N>>;
 
-    /// Sets the transition function name.
-    fn set_function_name(&mut self, function_name: Identifier<N>);
+    /// Sets the function id.
+    fn set_function_id(&mut self, caller_function_id: Field<N>);
 }
 
 pub trait RegistersTrait<N: Network> {

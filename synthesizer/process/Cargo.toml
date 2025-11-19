@@ -96,6 +96,9 @@ workspace = true
 workspace = true
 features = [ "serde" ]
 
+[dependencies.itertools]
+workspace = true
+
 [dependencies.locktick]
 workspace = true
 features = [ "parking_lot" ]

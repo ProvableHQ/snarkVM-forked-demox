@@ -23,10 +23,14 @@ use console::{
     types::{Address, Field},
 };
 use snarkvm_synthesizer_program::{Operand, RecordTranslationData, RegistersCircuit, RegistersSigner, RegistersTrait, StackTrait};
+use snarkvm_synthesizer_program::{Operand, RegistersCircuit, RegistersSigner, RegistersTrait, StackTrait, RecordTranslationData};
 
 use indexmap::IndexMap;
 
 #[derive(Clone)]
+/// Registers are a collection of console and circuit values used in a particular transition context.
+/// Besides the actual underlying function registers `console_registers` and `circuit_registers`,
+/// we also store console and circuit metadata.
 pub struct Registers<N: Network, A: circuit::Aleo<Network = N>> {
     /// The current call stack.
     call_stack: CallStack<N>,
@@ -52,12 +56,10 @@ pub struct Registers<N: Network, A: circuit::Aleo<Network = N>> {
     tvk: Option<Field<N>>,
     /// The transition view key, as a circuit.
     tvk_circuit: Option<circuit::Field<A>>,
-    /// The record translation arguments.
-    record_translation_arguments: Option<Vec<(Field<N>, u16)>>,
     /// The record translation data.
     record_translation_data: Option<Vec<RecordTranslationData<N>>>,
-    /// The transition function name.
-    function_name: Option<Identifier<N>>,
+    /// The function id.
+    function_id: Option<Field<N>>,
 }
 
 impl<N: Network, A: circuit::Aleo<Network = N>> Registers<N, A> {
@@ -89,9 +91,8 @@ impl<N: Network, A: circuit::Aleo<Network = N>> Registers<N, A> {
             caller_circuit: None,
             tvk: None,
             tvk_circuit: None,
-            record_translation_arguments: None,
             record_translation_data: None,
-            function_name: None,
+            function_id: None,
         }
     }
 
