@@ -366,6 +366,9 @@ where
         }
         let prover_state = AHPForR1CS::<_, SM>::init_prover(&circuits_to_constraints, zk_rng)?;
 
+        // TODO (dynamic_dispatch) remove
+        println!("****************** PROVING BATCH ******************");
+
         // extract information from the prover key and state to consume in further
         // calculations
         let mut batch_sizes = BTreeMap::new();
@@ -376,8 +379,26 @@ where
         let num_unique_circuits = keys_to_constraints.len();
         let mut circuit_ids = Vec::with_capacity(num_unique_circuits);
         for pk in keys_to_constraints.keys() {
+
+            // TODO (dynamic_dispatch) remove
+            println!(" - vk: {}", pk.circuit_verifying_key.id);
+
             let batch_size = prover_state.batch_size(&pk.circuit).ok_or(anyhow!("Batch size not found."))?;
             let public_input = prover_state.public_inputs(&pk.circuit).ok_or(anyhow!("Public input not found."))?;
+
+            for (j, input) in public_input.iter().enumerate() {
+                let mut tmp = vec![E::Fr::one()];
+                tmp.extend(input.to_vec());
+                while tmp.iter().last().unwrap() == &E::Fr::zero() {
+                    tmp.pop();
+                }
+                println!("    - public inputs: {}", j);
+
+                for (k, tmp_k) in tmp.iter().enumerate() {
+                    println!("        - input {}: {}", k, tmp_k);
+                }
+            }
+
             let padded_public_input =
                 prover_state.padded_public_inputs(&pk.circuit).ok_or(anyhow!("Padded public input not found."))?;
             let circuit_id = pk.circuit.id;
@@ -724,6 +745,9 @@ where
             }
         }
 
+        // TODO (dynamic_dispatch) remove
+        println!("****************** VERIFYING BATCH ******************");
+
         // collect values into structures for our calculations
         let mut max_num_constraints = 0;
         let mut max_num_variables = 0;
@@ -735,6 +759,17 @@ where
         let mut circuit_infos = BTreeMap::new();
         let mut circuit_ids = Vec::with_capacity(keys_to_inputs.len());
         for (&vk, &public_inputs_i) in keys_to_inputs.iter() {
+
+            // TODO (dynamic_dispatch) remove
+            println!(" - vk: {}", vk.id);
+            for (j, input) in public_inputs_i.iter().enumerate() {
+                println!("    - public input {} ({} elements):", j, input.borrow().len());
+
+                for (k, input_k) in input.borrow().iter().enumerate() {
+                    println!("        - input {}: {}", k, input_k);
+                }
+            }
+
             max_num_constraints = max_num_constraints.max(vk.circuit_info.num_constraints);
             max_num_variables = max_num_variables.max(vk.circuit_info.num_public_and_private_variables);
 
