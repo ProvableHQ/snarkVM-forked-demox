@@ -148,9 +148,6 @@ fn test_translation(
 
     println!("Executing function: {root_function_name}...");
 
-    // TODO (dynamic_dispatch) remove
-    println!("Executing {root_program_name}/{root_function_name}...");
-
     // Execute the "dynamic" function.
     let transaction = vm
         .execute(
@@ -299,15 +296,13 @@ fn test_complex_dynamic_graph_construction(
 
     /******************************* program 2 *******************************/
     let call_b_c_str = if call_b_c_dynamic { 
-        // format!("call.dynamic {program_0_name_field} {network_as_field} {function_c_name_field} r0 r1 into r2;")
-        "call zero.aleo/c r0 r1 into r2;".to_string()
+        format!("call.dynamic {program_0_name_field} {network_as_field} {function_c_name_field} with r0 r1 (as u8.private u8.private) into r2 (as u8.private);")
     } else {
         "call zero.aleo/c r0 r1 into r2;".to_string()
     };
     
     let call_b_d_str = if call_b_d_dynamic { 
-        // format!("call.dynamic {program_1_name_field} {network_as_field} {function_d_name_field} r1 r2 into r3;")        
-        "call one.aleo/d r1 r2 into r3;".to_string()
+        format!("call.dynamic {program_1_name_field} {network_as_field} {function_d_name_field} with r1 r2 (as u8.private u8.private) into r3 (as u8.private);")        
     } else {
         "call one.aleo/d r1 r2 into r3;".to_string()
     };
@@ -334,22 +329,19 @@ fn test_complex_dynamic_graph_construction(
     /******************************* program 3 *******************************/
 
     let call_e_b_str = if call_e_b_dynamic { 
-        // format!("call.dynamic {program_2_name_field} {network_as_field} {function_b_name_field} r0 r1 into r2;")
-        "call two.aleo/b r0 r1 into r2;".to_string()
+        format!("call.dynamic {program_2_name_field} {network_as_field} {function_b_name_field} with r0 r1 (as u8.private u8.private) into r2 (as u8.private);")
     } else {
         "call two.aleo/b r0 r1 into r2;".to_string()
     };
 
     let call_e_d_str = if call_e_d_dynamic { 
-        // format!("call.dynamic {program_1_name_field} {network_as_field} {function_d_name_field} r1 r2 into r3;")
-        "call one.aleo/d r1 r2 into r3;".to_string()
+        format!("call.dynamic {program_1_name_field} {network_as_field} {function_d_name_field} with r1 r2 (as u8.private u8.private) into r3 (as u8.private);")
     } else {
         "call one.aleo/d r1 r2 into r3;".to_string()
     };
 
     let call_e_c_str = if call_e_c_dynamic { 
-        //format!("call.dynamic {program_0_name_field} {network_as_field} {function_c_name_field} r1 r2 into r4;")
-        "call zero.aleo/c r1 r2 into r4;".to_string()
+        format!("call.dynamic {program_0_name_field} {network_as_field} {function_c_name_field} with r1 r2 (as u8.private u8.private) into r4 (as u8.private);")
     } else {
         "call zero.aleo/c r1 r2 into r4;".to_string()
     };
@@ -379,15 +371,13 @@ fn test_complex_dynamic_graph_construction(
     /******************************* program 4 *******************************/
 
     let call_a_b_str = if call_a_b_dynamic { 
-        // format!("call.dynamic {program_2_name_field} {network_as_field} {function_b_name_field} r0 r1 into r2;")
-        "call two.aleo/b r0 r1 into r2;".to_string()
+        format!("call.dynamic {program_2_name_field} {network_as_field} {function_b_name_field} with r0 r1 (as u8.private u8.private) into r2 (as u8.private);")
     } else {
         "call two.aleo/b r0 r1 into r2;".to_string()
     };
 
     let call_a_e_str = if call_a_e_dynamic { 
-        // format!("call.dynamic {program_3_name_field} {network_as_field} {function_e_name_field} r1 r2 into r3;")
-        "call three.aleo/e r1 r2 into r3;".to_string()
+        format!("call.dynamic {program_3_name_field} {network_as_field} {function_e_name_field} with r1 r2 (as u8.private u8.private) into r3 (as u8.private);")
     } else {
         "call three.aleo/e r1 r2 into r3;".to_string()
     };
@@ -438,15 +428,11 @@ fn test_complex_dynamic_graph_construction(
         vm.add_next_block(&block).unwrap();
     }
 
-    // TODO (Antonio) clean print
-    println!("**************** Executing program four::a...");
+    println!("Executing program four::a...");
 
     // Declare the input value.
     let r0 = Value::<CurrentNetwork>::from_str("1u8").unwrap();
     let r1 = Value::<CurrentNetwork>::from_str("2u8").unwrap();
-
-    // TODO (Antonio) output check
-    let output = Value::<CurrentNetwork>::from_str("17u8").unwrap();
 
     // Execute the "dynamic" function.
     let transaction = vm
@@ -461,19 +447,10 @@ fn test_complex_dynamic_graph_construction(
         )
         .unwrap();
 
-    // TODO (Antonio) clean print
-    for (index, transition) in transaction.transitions().enumerate() {
-        println!("    {}: {}", index, transition.function_name());
-    }
-    println!("**************** Reconstructing call graph...");
+    println!("Reconstructing call graph...");
+
     let transitions = transaction.transitions().collect_vec();
     let tids = transitions.iter().map(|transition| transition.id()).collect_vec();
-
-    // TODO (Antonio) remove
-    let call_graph = vm.process().read().construct_call_graph(transitions.iter().cloned()).unwrap();
-    for (index, transition) in transaction.transitions().enumerate() {
-        println!("    {}: {}", index, call_graph[transition.id()].iter().map(|tid| transaction.transitions().enumerate().find(|(_, t)| t.id() == tid).unwrap().0).join(", "));
-    }
 
     // Call tree                    transition index
     // "four::a"                    (9)
@@ -521,7 +498,7 @@ fn test_complex_dynamic_graph_construction(
     println!("Tenth check");
     assert_eq!(graph[tids[7]], &[]);
     
-    println!("Verifying transaction...");
+    println!("\n\n\n\n\n\n\n\n\nVerifying transaction...\n\n\n\n\n\n\n\n\n");
 
     vm.check_transaction(&transaction, None, rng).unwrap();
 
