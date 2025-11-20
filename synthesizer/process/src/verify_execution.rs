@@ -291,8 +291,8 @@ impl<N: Network> Process<N> {
             // [Inputs] Extend the verifier inputs with the transition commitment of the external call.
             verifier_inputs.extend([**child_transition.tcm()]);
             // [Inputs] Extend the verifier inputs with the input IDs of the external call.
-            let relevant_inputs = transition.caller_inputs().unwrap_or(transition.inputs());
-            verifier_inputs.extend(relevant_inputs.iter().flat_map(|input| input.verifier_inputs()));
+            let child_inputs = child_transition.caller_inputs().unwrap_or(child_transition.inputs());
+            verifier_inputs.extend(child_inputs.iter().flat_map(|input| input.verifier_inputs()));
             // [Inputs] Extend the verifier inputs with the output IDs of the external call.
             // TODO (dynamic_dispatch): decide whether these should actually be caller output IDs
             verifier_inputs.extend(child_transition.output_ids().map(|id| **id));
