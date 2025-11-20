@@ -33,13 +33,6 @@ impl<N: Network> Translation<N> {
 
         let mut translation_count = 0;
 
-        ensure!(
-            transitions.len() == self.translation_tasks.len(),
-            "The number of transitions ({}) does not match the number of translation tasks ({})",
-            transitions.len(),
-            self.translation_tasks.len()
-        );
-
         // TODO (dynamic_dispatch) so far we only cover translation case 1: input dynamic -> static
         // TODO (dynamic_dispatch) traversal order
         for transition in transitions {

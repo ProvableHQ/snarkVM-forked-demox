@@ -539,6 +539,12 @@ fn test_complex_dynamic_graph_construction_5() {
     test_complex_dynamic_graph_construction(false, true, true, false, false, false, false);
 }
 
+#[test]
+fn test_complex_dynamic_graph_construction_6() {
+    // All dynamic calls
+    test_complex_dynamic_graph_construction(false, true, false, false, false, false, false);
+}
+
 // This test verifiers that a dynamic call to the `credits.transfer_public` function works as expected.
 #[test]
 fn test_dynamic_call_to_transfer_public() -> Result<()> {

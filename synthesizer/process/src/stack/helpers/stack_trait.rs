@@ -356,28 +356,34 @@ impl<N: Network> StackTrait<N> for Stack<N> {
             );
             // Determine the number of calls for the function.
             for instruction in stack_ref.get_function_ref(&function_name)?.instructions() {
-                if let Instruction::Call(call) = instruction {
-                    // Determine if this is a function call.
-                    if call.is_function_call(&*stack_ref)? {
-                        // Increment by the number of calls.
-                        num_calls += 1;
-                        // Add the function to the queue.
-                        match call.operator() {
-                            CallOperator::Locator(locator) => {
-                                // If the locator matches the program ID of the provided stack, use it directly.
-                                // Otherwise, retrieve the external stack.
-                                let stack = if locator.program_id() == self.program().id() {
-                                    StackRef::Internal(self)
-                                } else {
-                                    StackRef::External(stack_ref.get_external_stack(locator.program_id())?)
-                                };
-                                queue.push((stack, *locator.resource()));
-                            }
-                            CallOperator::Resource(resource) => {
-                                queue.push((stack_ref.clone(), *resource));
+                match instruction {
+                    Instruction::Call(call) => {
+                        // Determine if this is a function call.
+                        if call.is_function_call(&*stack_ref)? {
+                            // Increment by the number of calls.
+                            num_calls += 1;
+                            // Add the function to the queue.
+                            match call.operator() {
+                                CallOperator::Locator(locator) => {
+                                    // If the locator matches the program ID of the provided stack, use it directly.
+                                    // Otherwise, retrieve the external stack.
+                                    let stack = if locator.program_id() == self.program().id() {
+                                        StackRef::Internal(self)
+                                    } else {
+                                        StackRef::External(stack_ref.get_external_stack(locator.program_id())?)
+                                    };
+                                    queue.push((stack, *locator.resource()));
+                                }
+                                CallOperator::Resource(resource) => {
+                                    queue.push((stack_ref.clone(), *resource));
+                                }
                             }
                         }
+                    },
+                    Instruction::CallDynamic(_) => {
+                        // TODO (dynamic_dispatch) redesign or complete - it is execution-specific
                     }
+                    _ => (),
                 }
             }
         }

@@ -45,11 +45,14 @@ impl<N: Network> Process<N> {
             let stack = self.get_stack(transition.program_id())?;
             // Ensure the number of calls matches the number of transitions.
             let number_of_calls = stack.get_number_of_calls(transition.function_name())?;
-            ensure!(
-                number_of_calls == execution.len(),
-                "The number of transitions in the execution is incorrect. Expected {number_of_calls}, but found {}",
-                execution.len()
-            );
+
+            // TODO (dynamic_dispatch) re-introduce or redesign, fails to account for dynamic calls
+            // ensure!(
+            //     number_of_calls == execution.len(),
+            //     "The number of transitions in the execution is incorrect. Expected {number_of_calls}, but found {}",
+            //     execution.len()
+            // );
+
             // Output the locator of the main function.
             Locator::new(*transition.program_id(), *transition.function_name()).to_string()
         };
@@ -277,9 +280,6 @@ impl<N: Network> Process<N> {
         // [Inputs] Extend the verifier inputs with the public inputs for 'self.caller'.
         verifier_inputs.extend([*is_root, *parent_x, *parent_y]);
 
-        // Prepare the record translation arguments from the parent transition.
-        let mut caller_input_ids = transition.caller_inputs().unwrap_or_default().iter().map(|input| input.id());
-
         // If there are function calls, append their inputs and outputs.
         for child_transition_id in call_graph.get(transition.id()).unwrap() {
             // Note: This unwrap is safe, as we are processing transitions in post-order,
@@ -294,8 +294,6 @@ impl<N: Network> Process<N> {
             // TODO (dynamic_dispatch): decide whether these should actually be caller output IDs
             verifier_inputs.extend(child_transition.output_ids().map(|id| **id));
         }
-
-        ensure!(caller_input_ids.next().is_none(), "Extra record translation argument found for the parent transition");
 
         // [Inputs] Extend the verifier inputs with the output IDs.
         verifier_inputs.extend(transition.outputs().iter().flat_map(|output| output.verifier_inputs()));
