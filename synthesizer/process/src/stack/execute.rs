@@ -494,7 +494,7 @@ impl<N: Network> Stack<N> {
         if let CallStack::Authorize(_, _, authorization) = registers.call_stack_ref() {
 
             // TODO (dynamic_dispatch) remove
-            println!("---- BEFORE");
+            // println!("---- BEFORE");
 
             // TODO (dynamic_dispatch) remove
             // println!("\n\n right before authorising caller {:?}**", caller_input_ids);
@@ -507,7 +507,7 @@ impl<N: Network> Stack<N> {
             let transition = Transition::from(&console_request, &response, &output_types, &output_registers)?;
             
             // TODO (dynamic_dispatch) remove
-            println!("---- AFTER");
+            // println!("---- AFTER");
             
             // Add the transition to the authorization.
             authorization.insert_transition(transition)?;

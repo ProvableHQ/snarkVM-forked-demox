@@ -211,7 +211,7 @@ impl<A: Aleo> Response<A> {
                             }
                         }
                     }
-                    // For an dynamic record output, compute the hash (using `tvk`) of the output.
+                    // For a dynamic record output, compute the hash (using `tvk`) of the output.
                     console::ValueType::DynamicRecord => {
                         // Prepare the index as a constant field element.
                         let output_index = Field::constant(console::Field::from_u16((num_inputs + index) as u16));

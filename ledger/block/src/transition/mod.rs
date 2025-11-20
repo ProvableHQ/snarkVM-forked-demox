@@ -89,7 +89,7 @@ impl<N: Network> Transition<N> {
         let num_inputs = request.inputs().len();
 
         // TODO (dynamic_dispatch) remove
-        println!("********** INSIDE FROM FOR FUNCTION {function_name:?}**");
+        // println!("********** INSIDE FROM FOR FUNCTION {function_name:?}**");
 
         // Ensure that the request and response are either both dynamic or both static.
         ensure!(
