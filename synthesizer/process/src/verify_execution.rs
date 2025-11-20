@@ -261,9 +261,6 @@ impl<N: Network> Process<N> {
         let stack = self.get_stack(parent)?;
         let parent_address = stack.program_address();
 
-        // Retrieve the function from the parent.
-        let parent_function = stack.get_function(transition.function_name())?;
-
         // Compute the x- and y-coordinate of `parent`.
         let (parent_x, parent_y) = parent_address.to_xy_coordinates();
 
