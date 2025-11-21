@@ -19,9 +19,9 @@ use crate::vm::test_helpers::{sample_vm_at_height, *};
 
 use anyhow::Result;
 use console::{
+    account::{Address, ViewKey},
     network::ConsensusVersion,
-    program::{DynamicRecord, Identifier, OutputID, Value, Entry},
-    account::{ViewKey, Address}
+    program::{DynamicRecord, Entry, Identifier, OutputID, Value},
 };
 use snarkvm_synthesizer_program::Program;
 use snarkvm_utilities::TestRng;
@@ -55,7 +55,6 @@ fn test_translation(
     expected_public_outputs: Option<Vec<Plaintext<CurrentNetwork>>>,
     rng: &mut TestRng,
 ) {
-
     let caller_view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
     let caller_address = Address::<CurrentNetwork>::try_from(caller_private_key).unwrap();
 
@@ -108,8 +107,10 @@ fn test_translation(
 
     // Preparing the record values for the hardcoded gas_record minter
     let (gas_owner, gas_liters, gas_flammable) = if let Some(gas_to_mint_record) = &gas_to_mint {
-        let liters_entry = gas_to_mint_record.data().get(&Identifier::<CurrentNetwork>::from_str("liters").unwrap()).unwrap();
-        let flammable_entry = gas_to_mint_record.data().get(&Identifier::<CurrentNetwork>::from_str("flammable").unwrap()).unwrap();
+        let liters_entry =
+            gas_to_mint_record.data().get(&Identifier::<CurrentNetwork>::from_str("liters").unwrap()).unwrap();
+        let flammable_entry =
+            gas_to_mint_record.data().get(&Identifier::<CurrentNetwork>::from_str("flammable").unwrap()).unwrap();
         let liters_value = match liters_entry {
             Entry::Public(plaintext) => plaintext.to_string(),
             _ => panic!("`liters` entry should be public"),
@@ -118,17 +119,9 @@ fn test_translation(
             Entry::Private(plaintext) => plaintext.to_string(),
             _ => panic!("`flammable` entry should be private"),
         };
-        (
-            caller_address.to_string(),
-            liters_value,
-            flammable_value,
-        )
+        (caller_address.to_string(), liters_value, flammable_value)
     } else {
-        (
-            "0field".to_string(),
-            "100u64".to_string(),
-            "false".to_string()
-        )
+        ("0field".to_string(), "100u64".to_string(), "false".to_string())
     };
 
     let program_b_string = format!(
@@ -207,22 +200,21 @@ fn test_translation(
     // );
 
     let computed_input_values = input_values.unwrap_or_else(|| {
-        
         println!("Minting gas_container record...");
         let transaction_mint = vm
-        .execute(
-            &caller_private_key,
-            (format!("{program_b_name_str}.aleo"), "hardcoded_gas_pump"),
-            Vec::<Value<CurrentNetwork>>::new().iter(),
-            None,
-            0,
-            None,
-            rng,
-        )
-        .unwrap();
+            .execute(
+                &caller_private_key,
+                (format!("{program_b_name_str}.aleo"), "hardcoded_gas_pump"),
+                Vec::<Value<CurrentNetwork>>::new().iter(),
+                None,
+                0,
+                None,
+                rng,
+            )
+            .unwrap();
 
         let mint_output = transaction_mint.transitions().next().unwrap().outputs().iter().next().unwrap();
-        
+
         let output_gas_record = match mint_output {
             Output::Record(_, _, record_ciphertext, _) => {
                 record_ciphertext.as_ref().unwrap().decrypt(&caller_view_key).unwrap()
@@ -610,7 +602,6 @@ fn test_complex_dynamic_graph_construction_internal(
 
 #[test]
 fn test_complex_dynamic_graph_construction() {
-
     let num_random_mixes = 3;
 
     // All static calls
@@ -782,7 +773,7 @@ constructor:
 // - test involve translation of the output of a call from a preexisting program to ensure signature-verification circuit hasn't changed
 // More
 
-#[test]
+//#[test]
 // fn test_translation_input_static_dynamic() {
 //     let rng = &mut TestRng::default();
 
