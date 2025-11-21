@@ -360,6 +360,20 @@ where
             bail!(SNARKError::EmptyBatch);
         }
 
+        // TODO (dynamic_dispatch) remove
+        // let new_keys_to_constraints: BTreeMap<&CircuitProvingKey<E, SM>, &[C]> = keys_to_constraints.iter().filter_map(|(pk, constraints)| 
+        //     if pk.circuit_verifying_key.id == CircuitId([7, 147, 33, 219, 195, 15, 70, 179, 237, 197, 104, 33, 114, 63, 35, 205, 12, 231, 49, 220, 42, 50, 251, 138, 180, 196, 23, 252, 57, 153, 134, 28]) {
+        //         Some((*pk, *constraints))
+        //     } else {
+        //         None
+        //     }
+        // ).collect();
+        // let mut keys_to_constraints = keys_to_constraints;
+        // if keys_to_constraints.len() == 4 {
+        //     keys_to_constraints = &new_keys_to_constraints;
+        //     println!("!!!! Varuna has trimmed the batches; remaining: {} batch with circuit id: {:?}", keys_to_constraints.len(), keys_to_constraints.keys().next().unwrap().circuit_verifying_key.id); 
+        // }
+
         let mut circuits_to_constraints = BTreeMap::new();
         for (pk, constraints) in keys_to_constraints {
             circuits_to_constraints.insert(pk.circuit.deref(), *constraints);
@@ -695,6 +709,9 @@ where
         )?;
         proof.check_batch_sizes()?;
         ensure!(proof.pc_proof.is_hiding() == SM::ZK);
+
+        // TODO (dynamic_dispatch) remove
+        println!(" //////// Varuna finished proving");
 
         end_timer!(prover_time);
         Ok(proof)

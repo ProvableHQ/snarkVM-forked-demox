@@ -685,7 +685,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         assert_eq!(
                             caller_input_types.len(),
                             caller_console_inputs.len(),
-                            "Caller input types and input types should have the same length ({} vs. {})",
+                            "Caller input types and inputs should have the same length ({} vs. {})",
                             caller_input_types.len(),
                             caller_console_inputs.len()
                         );
@@ -759,9 +759,6 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                     let translation_proving_key =
                                         get_record_translation_proving_key(&program_id, &record_name, rng)?;
 
-                                    // TODO (dynamic_dispatch) make sure this is correct; it is meant to perform the ID recomputation
-                                    let renewed_dynamic_record_id = dynamic_record.to_id(callee_console_function_id, registers.tvk()?, U16::new(operand_index as u16)).unwrap();
-
                                     // TODO (Antonio) remove; checking if the record translation data satisfies the translation circuit
                                     {
                                         let TMP = RecordTranslationData {
@@ -770,14 +767,14 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                             record_static: record.clone(), // callee static_record
                                             record_dynamic: dynamic_record.clone(), // caller dynamic_record
                                             program_id,              // callee program_id
-                                            function_id: callee_console_function_id, // always the callee function_id
+                                            function_id: callee_console_function_id,     // always the callee function_id
                                             record_name,             // callee record_name
                                             record_consumed: true,   // misnomer, but yes it's the input direction
-                                            tvk: registers.tvk()?,   // caller tvk
+                                            tvk: *callee_request.tvk(),   // tvk of the function where the dynamic record lives (caller)
                                             record_view_key: Some(*record_view_key), // callee record_view_key
                                             gamma: Some(*gamma),     // callee gamma
                                             static_record_id: *serial_number, // callee static_record_id
-                                            dynamic_record_id: renewed_dynamic_record_id, // caller dynamic_record_id
+                                            dynamic_record_id: dynamic_record_commitment, // caller dynamic_record_id
                                             input_output_index: operand_index as u16, // callee operand_index
                                         };
 
@@ -828,6 +825,9 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                         let console_leaf_hasher = console::algorithms::Poseidon8::<N>::setup("DynamicRecordLeafHasher").unwrap();
                                         let console_path_hasher =  console::algorithms::Poseidon2::<N>::setup("DynamicRecordPathHasher").unwrap();
 
+                                        // TODO (dynamic_dispatch) remove
+                                        println!("NUMBER of leaves");
+
                                         let leaves = record_static
                                             .data()
                                             .iter()
@@ -837,7 +837,6 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                                 leaf
                                             })
                                             .collect::<Vec<Vec<Field<N>>>>();
-
                                         
                                         use console::program::RecordDataTree;
 
@@ -871,11 +870,11 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                         function_id: callee_console_function_id, // always the callee function_id
                                         record_name,             // callee record_name
                                         record_consumed: true,   // misnomer, but yes it's the input direction
-                                        tvk: registers.tvk()?,   // caller tvk
+                                        tvk: *callee_request.tvk(),   // caller tvk
                                         record_view_key: Some(*record_view_key), // callee record_view_key
                                         gamma: Some(*gamma),     // callee gamma
                                         static_record_id: *serial_number, // callee static_record_id
-                                        dynamic_record_id: renewed_dynamic_record_id, // caller dynamic_record_id
+                                        dynamic_record_id: dynamic_record_commitment, // caller dynamic_record_id
                                         input_output_index: operand_index as u16, // callee operand_index
                                     });
                                 }
