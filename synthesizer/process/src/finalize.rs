@@ -132,13 +132,14 @@ impl<N: Network> Process<N> {
         let transition = execution.peek()?;
         // Retrieve the stack.
         let stack = self.get_stack(transition.program_id())?;
+        // TODO (dynamic_dispatch) re-introduce or redesign, fails to account for dynamic calls
         // Ensure the number of calls matches the number of transitions.
-        let number_of_calls = stack.get_number_of_calls(transition.function_name())?;
-        ensure!(
-            number_of_calls == execution.len(),
-            "The number of transitions in the execution is incorrect. Expected {number_of_calls}, but found {}",
-            execution.len()
-        );
+        // let number_of_calls = stack.get_number_of_calls(transition.function_name())?;
+        // ensure!(
+        //     number_of_calls == execution.len(),
+        //     "The number of transitions in the execution is incorrect. Expected {number_of_calls}, but found {}",
+        //     execution.len()
+        // );
         lap!(timer, "Verify the number of transitions");
 
         // Construct the call graph.
