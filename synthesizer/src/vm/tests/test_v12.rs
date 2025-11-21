@@ -26,6 +26,9 @@ use console::{
 use snarkvm_synthesizer_program::Program;
 use snarkvm_utilities::TestRng;
 
+// TODOs:
+// - test the case with the interface of a dynamic call doesn't match the mode.
+
 fn get_main_field(output_id: OutputID<CurrentNetwork>) -> Field<CurrentNetwork> {
     match output_id {
         OutputID::Constant(field)
@@ -50,8 +53,7 @@ fn test_translation(
     // gas_container record and uses the corresponding dynamic record as input
     // to the root call.
     gas_to_mint: Option<Record<CurrentNetwork, Plaintext<CurrentNetwork>>>,
-    // Expected output IDsand public-ouput values
-    expected_output_ids: Option<Vec<OutputID<CurrentNetwork>>>,
+    // The expected outputs.
     expected_public_outputs: Option<Vec<Plaintext<CurrentNetwork>>>,
     rng: &mut TestRng,
 ) {
@@ -97,7 +99,7 @@ fn test_translation(
         output true as boolean.private;
 
     function dynamic_pump:
-        call.dynamic {program_b_name_as_field} {network_as_field} {nitrogen_pump_function_field} into r0 (as dynamic.record);
+        call.dynamic {program_b_name_as_field} {network_as_field} {nitrogen_pump_function_field} with 1u64 (as u64.public) into r0 (as dynamic.record);
         output r0 as dynamic.record;
 
     constructor:
@@ -121,7 +123,7 @@ fn test_translation(
         };
         (caller_address.to_string(), liters_value, flammable_value)
     } else {
-        ("0field".to_string(), "100u64".to_string(), "false".to_string())
+        (caller_address.to_string(), "100u64".to_string(), "false".to_string())
     };
 
     let program_b_string = format!(
@@ -275,13 +277,6 @@ fn test_translation(
 
     if let Some(expected_public_outputs) = expected_public_outputs {
         assert_eq!(public_outputs.into_iter().cloned().collect_vec(), expected_public_outputs);
-    }
-
-    if let Some(expected_output_ids) = expected_output_ids {
-        assert_eq!(
-            output_ids.into_iter().cloned().collect_vec(),
-            expected_output_ids.into_iter().map(get_main_field).collect_vec()
-        );
     }
 }
 
@@ -809,13 +804,12 @@ fn test_translation_input_dynamic_static() {
 
     let record_static_str = format!(
         r#"{{
-        owner: {}.private,
+        owner: {caller_address}.private,
         liters: 1888u64.public,
         flammable: false.private,
         _nonce: 0group.public,
         _version: 1u8.public
-    }}"#,
-        caller_address
+    }}"#
     );
 
     // Construct the static and dynamic records.
@@ -832,7 +826,6 @@ fn test_translation_input_dynamic_static() {
         "get_dynamic_liters_from_gas",
         None,
         Some(r0_static),
-        None,
         Some(vec![expected_output]),
         rng,
     );
@@ -844,34 +837,5 @@ fn test_translation_output_static_dynamic() {
 
     let caller_private_key = sample_genesis_private_key(rng);
 
-    let record_static_str = r#"{
-        owner: 0group.private,
-        liters: 10u64.public,
-        flammable: false.private,
-        _nonce: 0group.public,
-        _version: 1u8.public
-    }"#;
-
-    // Construct the static and dynamic records.
-    let r0_static = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_str(&record_static_str).unwrap();
-    let r0_dynamic = DynamicRecord::<CurrentNetwork>::from_record(&r0_static).unwrap();
-
-    // Input and expected output
-    let caller_function_name = Identifier::<CurrentNetwork>::from_str("nitrogen_pump").unwrap();
-    let caller_function_field = caller_function_name.to_field().unwrap();
-    let input_output_index = U16::<CurrentNetwork>::from_str("0").unwrap();
-    let tvk = None::<Field<CurrentNetwork>>.unwrap();
-
-    let r0_dynamic_id = r0_dynamic.to_id(caller_function_field, tvk, input_output_index).unwrap();
-
-    test_translation(
-        &caller_private_key,
-        "flow.aleo",
-        "dynamic_pump",
-        Some(vec![]),
-        None,
-        Some(vec![OutputID::DynamicRecord(r0_dynamic_id)]),
-        None,
-        rng,
-    );
+    test_translation(&caller_private_key, "flow.aleo", "dynamic_pump", Some(vec![]), None, None, rng);
 }

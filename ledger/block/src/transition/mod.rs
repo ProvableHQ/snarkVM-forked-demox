@@ -27,23 +27,8 @@ mod string;
 use console::{
     network::prelude::*,
     program::{
-        Ciphertext,
-        DynamicRecord,
-        Identifier,
-        InputID,
-        OutputID,
-        ProgramID,
-        Record,
-        Register,
-        Request,
-        Response,
-        TRANSITION_DEPTH,
-        TransitionLeaf,
-        TransitionPath,
-        TransitionTree,
-        Value,
-        ValueType,
-        compute_function_id,
+        Ciphertext, DynamicRecord, Identifier, InputID, OutputID, ProgramID, Record, Register, Request, Response,
+        TRANSITION_DEPTH, TransitionLeaf, TransitionPath, TransitionTree, Value, ValueType, compute_function_id,
     },
     types::{Field, Group},
 };
@@ -350,12 +335,6 @@ impl<N: Network> Transition<N> {
             let Some(caller_output_types) = request.caller_output_types() else {
                 bail!("Expected caller output types to be present");
             };
-            let caller_function_id = compute_function_id(
-                &*caller_request.network_id(),
-                &*caller_request.program_id(),
-                &*caller_request.function_name(),
-            )?;
-            let caller_tvk = *caller_request.tvk();
             // Convert the outputs to the caller's context.
             Some(
                 response
@@ -366,9 +345,16 @@ impl<N: Network> Transition<N> {
                     .enumerate()
                     .map(|(output_index, ((output_value, caller_output_type), callee_output))| {
                         match (output_value, caller_output_type) {
-                            // Convert the record output to a dynamic record output to facilitate translation verification.
+                            // Convert the record output to a dynamic record output.
                             (Value::Record(record), ValueType::DynamicRecord) => {
                                 let caller_output_value = Value::DynamicRecord(DynamicRecord::from_record(record)?);
+                                construct_output(output_index, &None, &caller_output_value, caller_output_type, &None)
+                            }
+                            // Convert the dynamic record output to a record output.
+                            (Value::DynamicRecord(dynamic_record), ValueType::Record(_)) => {
+                                // TODO (@d0cd) We don't know the record output type here.
+                                todo!();
+                                let caller_output_value = Value::Record(dynamic_record.to_record(true)?);
                                 construct_output(output_index, &None, &caller_output_value, caller_output_type, &None)
                             }
                             // Otherwise, just return the output as is.
