@@ -22,42 +22,19 @@ pub fn compute_function_id<A: Aleo>(
     network_id: &U16<A>,
     program_id: &ProgramID<A>,
     function_name: &Identifier<A>,
-    is_dynamic: bool,
 ) -> Field<A> {
-    match is_dynamic {
-        false => A::hash_bhp1024(
-            &(
-                network_id,
-                program_id.name().size_in_bits(),
-                program_id.name(),
-                program_id.network().size_in_bits(),
-                program_id.network(),
-                function_name.size_in_bits(),
-                function_name,
-            )
-                .to_bits_le(),
-        ),
-        true => {
-            // Initialize the size in bits of a field as a console `U8`.
-            let field_size_in_bits = match u8::try_from(snarkvm_console_program::Field::<A::Network>::SIZE_IN_BITS) {
-                Ok(size) => snarkvm_console_program::U8::new(size),
-                Err(_) => A::halt("Field size in bits exceeds u8 maximum"),
-            };
-            // Compute the function ID.
-            A::hash_bhp1024(
-                &(
-                    network_id,
-                    U8::<A>::constant(field_size_in_bits),
-                    program_id.name().to_field(),
-                    U8::<A>::constant(field_size_in_bits),
-                    program_id.network().to_field(),
-                    U8::<A>::constant(field_size_in_bits),
-                    function_name.to_field(),
-                )
-                    .to_bits_le(),
-            )
-        }
-    }
+    A::hash_bhp1024(
+        &(
+            network_id,
+            program_id.name().size_in_bits(),
+            program_id.name(),
+            program_id.network().size_in_bits(),
+            program_id.network(),
+            function_name.size_in_bits(),
+            function_name,
+        )
+            .to_bits_le(),
+    )
 }
 
 #[cfg(test)]
@@ -76,7 +53,6 @@ mod tests {
         network_id: u16,
         program_id: &str,
         function_name: &str,
-        is_dynamic: bool,
         expected_count: UpdatableCount,
     ) -> Result<()> {
         // Initialize the console values.
@@ -89,7 +65,6 @@ mod tests {
             &console_network_id,
             &console_program_id,
             &console_function_name,
-            is_dynamic,
         )?;
 
         // Initialize the network ID as a constant.
@@ -110,7 +85,7 @@ mod tests {
         };
 
         Circuit::scope("compute_function_id", || {
-            let candidate = compute_function_id(&network_id, &program_id, &function_name, is_dynamic);
+            let candidate = compute_function_id(&network_id, &program_id, &function_name);
             assert_eq!(expected, candidate.eject_value());
             expected_count.assert_matches(
                 Circuit::num_constants_in_scope(),

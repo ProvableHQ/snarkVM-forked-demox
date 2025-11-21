@@ -280,7 +280,8 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             // Store the translation verifying keys and certificates.
             for (record_name, (verifying_key, certificate)) in deployment.translation_verifying_keys() {
                 // Store the verifying key.
-                self.translation_verifying_key_map().insert((program_id, *record_name, edition), verifying_key.clone())?;
+                self.translation_verifying_key_map()
+                    .insert((program_id, *record_name, edition), verifying_key.clone())?;
                 // Store the certificate.
                 self.translation_certificate_map().insert((program_id, *record_name, edition), certificate.clone())?;
             }
@@ -650,10 +651,14 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         // Retrieve the verifying keys and certificates.
         for record_name in program.records().keys() {
             // Retrieve the verifying key.
-            let Some(translation_verifying_key) =
-                self.translation_verifying_key_map().get_confirmed(&(program_id, *record_name, edition))?.map(|x| x.into_owned())
+            let Some(translation_verifying_key) = self
+                .translation_verifying_key_map()
+                .get_confirmed(&(program_id, *record_name, edition))?
+                .map(|x| x.into_owned())
             else {
-                bail!("Failed to get the translation verifying key for '{program_id}/{record_name}' (edition {edition})");
+                bail!(
+                    "Failed to get the translation verifying key for '{program_id}/{record_name}' (edition {edition})"
+                );
             };
             // Retrieve the translation certificate.
             let Some(certificate) =
@@ -666,7 +671,14 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         }
 
         // Return the deployment.
-        Ok(Some(Deployment::new(edition, program, verifying_keys, translation_verifying_keys, program_checksum, program_owner)?))
+        Ok(Some(Deployment::new(
+            edition,
+            program,
+            verifying_keys,
+            translation_verifying_keys,
+            program_checksum,
+            program_owner,
+        )?))
     }
 
     /// Returns the fee for the given `transaction ID`.

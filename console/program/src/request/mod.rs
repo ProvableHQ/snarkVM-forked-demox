@@ -322,15 +322,24 @@ mod test_helpers {
                     true => Some(Field::rand(rng)),
                     false => None,
                 };
-                // Sample the caller output types.
-                let caller_output_types = None;
-                // Sample 'caller_request'.
-                let caller_request = None;
 
                 // Compute the signed request.
                 let request = if bool::rand(rng) {
                     Request::sign(&private_key, program_id, function_name, inputs.into_iter(), &input_types, root_tvk, is_root, program_checksum, rng).unwrap()
                 } else {
+                    // Sample the caller request.
+                    let caller_request = Request::sign(
+                        &private_key,
+                        program_id,
+                        Identifier::from_str("caller_function").unwrap(),
+                        inputs.clone().into_iter(),
+                        &input_types,
+                        root_tvk,
+                        is_root,
+                        program_checksum,
+                        rng,
+                    ).unwrap();
+                    // Compute the dynamic signed request.
                     Request::sign_dynamic(
                         &private_key,
                         program_id,
@@ -339,7 +348,7 @@ mod test_helpers {
                         &input_types,
                         inputs.into_iter(),
                         &input_types,
-                        &caller_output_types,
+                        &[],
                         &caller_request,
                         root_tvk,
                         is_root,

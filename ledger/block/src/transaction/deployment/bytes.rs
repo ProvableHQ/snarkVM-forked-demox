@@ -134,7 +134,8 @@ impl<N: Network> ToBytes for Deployment<N> {
             certificate.write_le(&mut writer)?;
         }
         // Write the number of entries in the bundle.
-        (u16::try_from(self.translation_verifying_keys.len()).map_err(|e| error(e.to_string()))?).write_le(&mut writer)?;
+        (u16::try_from(self.translation_verifying_keys.len()).map_err(|e| error(e.to_string()))?)
+            .write_le(&mut writer)?;
         // Write each entry.
         for (record_name, (verifying_key, certificate)) in &self.translation_verifying_keys {
             // Write the record name.

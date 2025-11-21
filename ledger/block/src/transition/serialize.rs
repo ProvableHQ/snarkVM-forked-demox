@@ -78,7 +78,6 @@ impl<'de, N: Network> Deserialize<'de> for Transition<N> {
                         transition.get_mut("caller_outputs").unwrap_or(&mut serde_json::Value::Null).take(),
                     )
                     .map_err(de::Error::custom)?,
-
                 )
                 .map_err(de::Error::custom)?;
 

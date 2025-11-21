@@ -27,8 +27,23 @@ mod string;
 use console::{
     network::prelude::*,
     program::{
-        Ciphertext, Identifier, InputID, OutputID, ProgramID, Record, DynamicRecord, Register, Request, Response, TRANSITION_DEPTH,
-        TransitionLeaf, TransitionPath, TransitionTree, Value, ValueType, compute_function_id,
+        Ciphertext,
+        DynamicRecord,
+        Identifier,
+        InputID,
+        OutputID,
+        ProgramID,
+        Record,
+        Register,
+        Request,
+        Response,
+        TRANSITION_DEPTH,
+        TransitionLeaf,
+        TransitionPath,
+        TransitionTree,
+        Value,
+        ValueType,
+        compute_function_id,
     },
     types::{Field, Group},
 };
@@ -77,7 +92,18 @@ impl<N: Network> Transition<N> {
         let function_tree = Self::function_tree(&inputs, &outputs)?;
         let id = N::hash_bhp512(&(*function_tree.root(), tcm).to_bits_le())?;
         // Return the transition.
-        Ok(Self { id: id.into(), program_id, function_name, inputs, outputs, tpk, tcm, scm, caller_inputs, caller_outputs })
+        Ok(Self {
+            id: id.into(),
+            program_id,
+            function_name,
+            inputs,
+            outputs,
+            tpk,
+            tcm,
+            scm,
+            caller_inputs,
+            caller_outputs,
+        })
     }
 
     /// Initializes a new transition from a request, response, and optional dynamic outputs.
@@ -95,14 +121,14 @@ impl<N: Network> Transition<N> {
         // TODO (dynamic_dispatch) remove
         // println!("********** INSIDE FROM FOR FUNCTION {function_name:?}**");
 
-        // Ensure that the request and response are either both dynamic or both static.
-        ensure!(
-            request.is_dynamic() == response.is_dynamic(),
-            "The request and response must both be either dynamic or static"
-        );
+        // // Ensure that the request and response are either both dynamic or both static.
+        // ensure!(
+        //     request.is_dynamic() == response.is_dynamic(),
+        //     "The request and response must both be either dynamic or static"
+        // );
 
         // Compute the function ID based on the whether the request and response are dynamic.
-        let function_id = compute_function_id(&network_id, &program_id, &function_name, request.is_dynamic())?;
+        let function_id = compute_function_id(&network_id, &program_id, &function_name)?;
 
         // TODO (dynamic_dispatch) remove
         // println!("function_id: {function_id:?}");
@@ -165,7 +191,12 @@ impl<N: Network> Transition<N> {
         };
 
         // A helper function to construct and verify the outputs.
-        let construct_output = |index: usize, output_id: &Option<OutputID<N>>, output: &Value<N>, output_type: &ValueType<N>, output_register: &Option<Register<N>>| -> Result<Output<N>> {
+        let construct_output = |index: usize,
+                                output_id: &Option<OutputID<N>>,
+                                output: &Value<N>,
+                                output_type: &ValueType<N>,
+                                output_register: &Option<Register<N>>|
+         -> Result<Output<N>> {
             // Construct the transition output.
             match (output_id, output) {
                 (Some(OutputID::Constant(output_hash)), Value::Plaintext(plaintext)) => {
@@ -325,30 +356,39 @@ impl<N: Network> Transition<N> {
                 construct_output(output_index, &Some(output_id.clone()), output, output_type, output_register)
             })
             .collect::<Result<Vec<_>>>()?;
-        
+
         // Construct and verify the optional caller outputs.
         let caller_outputs = if let Some(caller_request) = request.caller_request() {
-            let Some(caller_output_types) = caller_request.caller_output_types() else {
+            let Some(caller_output_types) = request.caller_output_types() else {
                 bail!("Expected caller output types to be present");
             };
-            let caller_function_id = compute_function_id(&*caller_request.network_id(), &*caller_request.program_id(), &*caller_request.function_name(), caller_request.is_dynamic())?;
+            let caller_function_id = compute_function_id(
+                &*caller_request.network_id(),
+                &*caller_request.program_id(),
+                &*caller_request.function_name(),
+            )?;
             let caller_tvk = *caller_request.tvk();
             // Convert the outputs to the caller's context.
-            Some(response.outputs()
-                .iter()
-                .zip(caller_output_types.iter())
-                .zip(outputs.iter())
-                .enumerate()
-                .map(|(output_index, ((output_value, caller_output_type), callee_output))| match (output_value, caller_output_type) {
-                    // Convert the record output to a dynamic record output to facilitate translation verification.
-                    (Value::Record(record), ValueType::DynamicRecord) => {
-                        let caller_output_value = Value::DynamicRecord(DynamicRecord::from_record(record)?);
-                        construct_output(output_index, &None, &caller_output_value, caller_output_type, &None)
-                    }
-                    // Otherwise, just return the output as is.
-                    _ => Ok(callee_output.clone()),
-            })
-            .collect::<Result<Vec<_>>>()?)
+            Some(
+                response
+                    .outputs()
+                    .iter()
+                    .zip(caller_output_types.iter())
+                    .zip(outputs.iter())
+                    .enumerate()
+                    .map(|(output_index, ((output_value, caller_output_type), callee_output))| {
+                        match (output_value, caller_output_type) {
+                            // Convert the record output to a dynamic record output to facilitate translation verification.
+                            (Value::Record(record), ValueType::DynamicRecord) => {
+                                let caller_output_value = Value::DynamicRecord(DynamicRecord::from_record(record)?);
+                                construct_output(output_index, &None, &caller_output_value, caller_output_type, &None)
+                            }
+                            // Otherwise, just return the output as is.
+                            _ => Ok(callee_output.clone()),
+                        }
+                    })
+                    .collect::<Result<Vec<_>>>()?,
+            )
         } else {
             None
         };

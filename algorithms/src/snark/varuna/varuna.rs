@@ -379,7 +379,6 @@ where
         let num_unique_circuits = keys_to_constraints.len();
         let mut circuit_ids = Vec::with_capacity(num_unique_circuits);
         for pk in keys_to_constraints.keys() {
-
             // TODO (dynamic_dispatch) remove
             println!(" - vk: {}", pk.circuit_verifying_key.id);
 
@@ -759,7 +758,6 @@ where
         let mut circuit_infos = BTreeMap::new();
         let mut circuit_ids = Vec::with_capacity(keys_to_inputs.len());
         for (&vk, &public_inputs_i) in keys_to_inputs.iter() {
-
             // TODO (dynamic_dispatch) remove
             println!(" - vk: {}", vk.id);
             for (j, input) in public_inputs_i.iter().enumerate() {

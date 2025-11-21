@@ -31,10 +31,10 @@ impl<A: Aleo> Request<A> {
         root_tvk: Option<Field<A>>,
         is_root: Boolean<A>,
         program_checksum: Option<Field<A>>,
+        is_dynamic: bool,
     ) -> Boolean<A> {
         // Compute the function ID.
-        let function_id =
-            compute_function_id(&self.network_id, &self.program_id, &self.function_name, self.is_dynamic());
+        let function_id = compute_function_id(&self.network_id, &self.program_id, &self.function_name);
 
         // Compute 'is_root' as a field element.
         let is_root = Ternary::ternary(&is_root, &Field::<A>::one(), &Field::<A>::zero());
@@ -63,7 +63,7 @@ impl<A: Aleo> Request<A> {
             &self.tvk,
             &self.tcm,
             Some(&self.signature),
-            self.is_dynamic(),
+            None, // The function ID is intentionally not passed here to ensure that the existing circuit does not change.
         );
         // Append the input elements to the message.
         match append_to_message {
@@ -112,7 +112,9 @@ impl<A: Aleo> Request<A> {
             self.signature.challenge().is_equal(&candidate_challenge) & self.signer.is_equal(&candidate_address)
         };
 
-        dev_println!("In circuit::Request::verify: signature_checks: {signature_checks}, input_checks: {input_checks}, tpk_checks: {tpk_checks}");
+        dev_println!(
+            "In circuit::Request::verify: signature_checks: {signature_checks}, input_checks: {input_checks}, tpk_checks: {tpk_checks}"
+        );
 
         // Verify the signature, inputs, and `tpk` are valid.
         signature_checks & input_checks & tpk_checks
@@ -132,7 +134,7 @@ impl<A: Aleo> Request<A> {
         tvk: &Field<A>,
         tcm: &Field<A>,
         signature: Option<&Signature<A>>,
-        is_dynamic: bool,
+        function_id: Option<Field<A>>,
     ) -> (Boolean<A>, Option<Vec<Field<A>>>) {
         // Ensure the signature response matches the `CREATE_MESSAGE` flag.
         match CREATE_MESSAGE {
@@ -141,7 +143,10 @@ impl<A: Aleo> Request<A> {
         }
 
         // Compute the function ID.
-        let function_id = compute_function_id(network_id, program_id, function_name, is_dynamic);
+        let function_id = match function_id {
+            Some(function_id) => function_id,
+            None => compute_function_id(network_id, program_id, function_name),
+        };
 
         // For logging purposes.
         let function_name_value = function_name.eject_value();
@@ -466,8 +471,6 @@ mod tests {
         let is_root = true;
         // Sample 'program_checksum'.
         let program_checksum = set_program_checksum.then(|| console::Field::from_u64(i as u64));
-        // Sample 'caller_request'.
-        let caller_request = None;
 
         // Compute the signed request.
         let request = match dynamic {
@@ -482,21 +485,36 @@ mod tests {
                 program_checksum,
                 rng,
             )?,
-            true => console::Request::sign_dynamic(
-                &private_key,
-                program_id,
-                function_name,
-                inputs.clone().into_iter(),
-                &input_types,
-                inputs.into_iter(),
-                &input_types,
-                &input_types,
-                caller_request,
-                root_tvk,
-                is_root,
-                program_checksum,
-                rng,
-            )?,
+            true => {
+                // Sample a caller request.
+                let caller_request = console::Request::sign(
+                    &private_key,
+                    program_id,
+                    function_name,
+                    inputs.iter(),
+                    &input_types,
+                    root_tvk,
+                    is_root,
+                    program_checksum,
+                    rng,
+                )?;
+                // Construct the request.
+                console::Request::sign_dynamic(
+                    &private_key,
+                    program_id,
+                    function_name,
+                    inputs.clone().into_iter(),
+                    &input_types,
+                    inputs.into_iter(),
+                    &input_types,
+                    &input_types,
+                    &caller_request,
+                    root_tvk,
+                    is_root,
+                    program_checksum,
+                    rng,
+                )?
+            }
         };
         assert!(request.verify(&input_types, is_root, program_checksum));
 
@@ -526,7 +544,7 @@ mod tests {
 
             Circuit::scope(format!("Request {i}"), || {
                 let root_tvk = None;
-                let candidate = request.verify(&input_types, &tpk, root_tvk, is_root, program_checksum);
+                let candidate = request.verify(&input_types, &tpk, root_tvk, is_root, program_checksum, false);
                 assert!(candidate.eject_value());
                 count.assert_matches(
                     Circuit::num_constants_in_scope(),
@@ -558,6 +576,13 @@ mod tests {
             // Inject the request into a circuit.
             let request = Request::<Circuit>::new(mode, request);
 
+            // If the request is dynamic, compute the function ID.
+            let function_id = if dynamic {
+                Some(compute_function_id(&request.network_id(), &request.program_id(), &request.function_name()))
+            } else {
+                None
+            };
+
             Circuit::scope(format!("Request {i}"), || {
                 let (candidate, _) = Request::check_input_ids::<false>(
                     request.network_id(),
@@ -571,7 +596,7 @@ mod tests {
                     request.tvk(),
                     request.tcm(),
                     None,
-                    request.is_dynamic(),
+                    function_id,
                 );
                 assert!(candidate.eject_value());
                 expected_count.assert_matches(

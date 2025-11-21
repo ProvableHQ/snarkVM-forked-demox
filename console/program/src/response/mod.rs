@@ -67,10 +67,9 @@ impl<N: Network> Response<N> {
         outputs: Vec<Value<N>>,
         output_types: &[ValueType<N>],
         output_operands: &[Option<Register<N>>],
-        is_dynamic: bool,
     ) -> Result<Self> {
         // Compute the function ID.
-        let function_id = compute_function_id(network_id, program_id, function_name, is_dynamic)?;
+        let function_id = compute_function_id(network_id, program_id, function_name)?;
 
         // Compute the output IDs.
         let output_ids = outputs
@@ -283,7 +282,7 @@ impl<N: Network> Response<N> {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        Ok(Self { output_ids, outputs, is_dynamic })
+        Ok(Self { output_ids, outputs, is_dynamic: false })
     }
 
     /// Converts a response outputs into the expected output types for a dynamic call by:
@@ -295,8 +294,12 @@ impl<N: Network> Response<N> {
             .iter()
             .zip_eq(caller_output_types)
             .map(|(output, output_type)| match (output, output_type) {
-                (Value::Record(record), ValueType::DynamicRecord) => Ok(Value::DynamicRecord(DynamicRecord::from_record(record)?)),
-                (Value::Future(future), ValueType::DynamicFuture) => Ok(Value::DynamicFuture(DynamicFuture::from_future(future)?)),
+                (Value::Record(record), ValueType::DynamicRecord) => {
+                    Ok(Value::DynamicRecord(DynamicRecord::from_record(record)?))
+                }
+                (Value::Future(future), ValueType::DynamicFuture) => {
+                    Ok(Value::DynamicFuture(DynamicFuture::from_future(future)?))
+                }
                 _ => Ok(output.clone()),
             })
             .collect::<Result<Vec<_>>>()

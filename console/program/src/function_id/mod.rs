@@ -31,34 +31,19 @@ pub fn compute_function_id<N: Network>(
     network_id: &U16<N>,
     program_id: &ProgramID<N>,
     function_name: &Identifier<N>,
-    is_dynamic: bool,
 ) -> Result<Field<N>> {
-    match is_dynamic {
-        false => N::hash_bhp1024(
-            &(
-                *network_id,
-                U8::<N>::new(program_id.name().size_in_bits()),
-                program_id.name(),
-                U8::<N>::new(program_id.network().size_in_bits()),
-                program_id.network(),
-                U8::<N>::new(function_name.size_in_bits()),
-                function_name,
-            )
-                .to_bits_le(),
-        ),
-        true => N::hash_bhp1024(
-            &(
-                *network_id,
-                U8::<N>::new(u8::try_from(Field::<N>::SIZE_IN_BITS)?),
-                program_id.name().to_field()?,
-                U8::<N>::new(u8::try_from(Field::<N>::SIZE_IN_BITS)?),
-                program_id.network().to_field()?,
-                U8::<N>::new(u8::try_from(Field::<N>::SIZE_IN_BITS)?),
-                function_name.to_field()?,
-            )
-                .to_bits_le(),
-        ),
-    }
+    N::hash_bhp1024(
+        &(
+            *network_id,
+            U8::<N>::new(program_id.name().size_in_bits()),
+            program_id.name(),
+            U8::<N>::new(program_id.network().size_in_bits()),
+            program_id.network(),
+            U8::<N>::new(function_name.size_in_bits()),
+            function_name,
+        )
+            .to_bits_le(),
+    )
 }
 
 #[cfg(test)]

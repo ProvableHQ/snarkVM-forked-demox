@@ -69,7 +69,8 @@ impl<N: Network> Deployment<N> {
         program_owner: Option<Address<N>>,
     ) -> Result<Self> {
         // Construct the deployment.
-        let deployment = Self { edition, program, verifying_keys, translation_verifying_keys, program_checksum, program_owner };
+        let deployment =
+            Self { edition, program, verifying_keys, translation_verifying_keys, program_checksum, program_owner };
         // Ensure the deployment is ordered.
         deployment.check_is_ordered()?;
         // Return the deployment.
@@ -138,7 +139,8 @@ impl<N: Network> Deployment<N> {
         }
 
         // Ensure the function and translation verifying keys correspond.
-        for ((record_name, record), (name, _)) in self.program.records().iter().zip_eq(&self.translation_verifying_keys) {
+        for ((record_name, record), (name, _)) in self.program.records().iter().zip_eq(&self.translation_verifying_keys)
+        {
             // Ensure the record name is correct.
             if record_name != record.name() {
                 bail!("The record key is '{record_name}', but the record name is '{}'", record.name())
@@ -262,7 +264,9 @@ impl<N: Network> Deployment<N> {
         // Iterate over the translation verifying keys.
         for (_, (vk, _)) in &self.translation_verifying_keys {
             // Add the number of constraints.
-            num_combined_constraints = num_combined_constraints.checked_add(vk.circuit_info.num_constraints as u64).ok_or_else(|| anyhow!("Overflow when counting constraints for '{}'", self.program_id()))?;
+            num_combined_constraints = num_combined_constraints
+                .checked_add(vk.circuit_info.num_constraints as u64)
+                .ok_or_else(|| anyhow!("Overflow when counting constraints for '{}'", self.program_id()))?;
         }
         // Return the number of combined constraints.
         Ok(num_combined_constraints)
