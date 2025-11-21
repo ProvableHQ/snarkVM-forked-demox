@@ -63,6 +63,7 @@ impl<N: Network> Stack<N> {
 
             // Retrieve the proving key.
             let proving_key = self.get_translation_proving_key(record_name)?;
+            
             // Retrieve the verifying key.
             let verifying_key = self.get_translation_verifying_key(record_name)?;
             lap!(timer, "Retrieve the keys for translation circuit for {record_name}");

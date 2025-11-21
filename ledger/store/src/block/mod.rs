@@ -630,6 +630,13 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
 
     /// Returns a state path for the given `commitment`.
     fn get_state_path_for_commitment(&self, commitment: &Field<N>, block_tree: &BlockTree<N>) -> Result<StatePath<N>> {
+
+        // TODO (dynamic_dispatch) remove
+        println!("Available commitments:");
+        for commitment in self.transition_store().commitments() {
+            println!("    Commitment: {:?}", commitment);
+        }
+
         // Ensure the commitment exists.
         if !self.transition_store().contains_commitment(commitment)? {
             bail!("Commitment '{commitment}' does not exist");

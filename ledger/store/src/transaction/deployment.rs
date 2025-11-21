@@ -662,9 +662,9 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             };
             // Retrieve the translation certificate.
             let Some(certificate) =
-                self.certificate_map().get_confirmed(&(program_id, *record_name, edition))?.map(|x| x.into_owned())
+                self.translation_certificate_map().get_confirmed(&(program_id, *record_name, edition))?.map(|x| x.into_owned())
             else {
-                bail!("Failed to get the translationcertificate for '{program_id}/{record_name}' (edition {edition})");
+                bail!("Failed to get the translation certificate for '{program_id}/{record_name}' (edition {edition})");
             };
             // Add the verifying key and certificate to the deployment.
             translation_verifying_keys.push((*record_name, (translation_verifying_key, certificate)));

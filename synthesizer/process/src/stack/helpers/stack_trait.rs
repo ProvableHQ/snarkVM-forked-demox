@@ -129,6 +129,12 @@ impl<N: Network> StackTrait<N> for Stack<N> {
 
     /// Returns the translation proving key for the given record name.
     fn get_translation_proving_key(&self, record_name: &Identifier<N>) -> Result<ProvingKey<N>> {
+        // TODO (dynamic_dispatch) remove
+        println!("---- translation proving key query for program {:?}. status:", self.program.id());
+        for record_name in self.translation_proving_keys.read().keys() {
+            println!("   translation proving key for record: {:?} ***", record_name);
+        }
+
         // Return the translation proving key, if it exists.
         match self.translation_proving_keys.read().get(record_name) {
             Some(pk) => Ok(pk.clone()),
@@ -151,6 +157,9 @@ impl<N: Network> StackTrait<N> for Stack<N> {
 
     /// Inserts the given translation proving key for the given function name.
     fn insert_translation_proving_key(&self, record_name: &Identifier<N>, proving_key: ProvingKey<N>) -> Result<()> {
+        // TODO (dynamic_dispatch) remove
+        println!("*** Inserting translation proving key for program {:?}. record: {:?} ***", self.program.id(), record_name);
+
         // Ensure the record name exists in the program.
         ensure!(
             self.program.contains_record(record_name),

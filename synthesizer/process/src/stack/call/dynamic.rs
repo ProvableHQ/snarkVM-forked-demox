@@ -24,7 +24,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         registers: &mut Registers<N, A>,
         rng: &mut R,
     ) -> Result<()> {
-        let timer = timer!("Call::evaluate");
+        let timer = timer!("CallDynamic::evaluate");
 
         // Load the operands values.
         let inputs: Vec<_> = self.operands().iter().map(|operand| registers.load(stack, operand)).try_collect()?;
@@ -227,9 +227,11 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             CallStack::Evaluate(..) => "Evaluate",
             CallStack::PackageRun(..) => "PackageRun",
         };
-        println!("**ENTERING EXECUTE in mode: {:?}**", mode);
+        
+        // TODO (dynamic_dispatch) remove
+        // println!("**ENTERING EXECUTE in mode: {:?}**", mode);
 
-        let timer = timer!("Call::execute");
+        let timer = timer!("CallDynamic::execute");
 
         // Load the operands values.
         let inputs: Vec<_> =
@@ -618,13 +620,19 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
 
                         // Anonymous helper to get a record translation proving key.
                         let get_record_translation_proving_key =
-                            |program_id: &ProgramID<N>, record_name: &Identifier<N>| -> Result<ProvingKey<N>> {
+                            |program_id: &ProgramID<N>, record_name: &Identifier<N>, rng: &mut R| -> Result<ProvingKey<N>> {
                                 let record_stack = match program_id == stack.program_id() {
                                     true => stack,
                                     false => &stack.get_stack_unchecked(&program_id)?,
                                 };
+
+                                // TODO (dynamic_dispatch) this is meant to be the equivalent of the block witht he comment
+                                // "If the circuit is in `Synthesize` or `Execute` mode, synthesize the circuit key, if it does not exist." stack/execute.rs
+                                // Think whether this is the right approach
+                                record_stack.synthesize_translation_key::<A, R>(record_name, rng)?;
                                 record_stack.get_translation_proving_key(record_name)
                             };
+                            
                         let caller_console_input_ids = callee_request.caller_input_ids().clone().unwrap_or_default();
                         let callee_console_input_ids = callee_request.input_ids();
                         let caller_console_request = registers.request()?;
@@ -638,11 +646,58 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             callee_request.program_id(),
                             callee_request.function_name(),
                         )?;
-                        let caller_input_types = self.operand_types().into_iter().skip(3).collect::<Vec<_>>();
+
+                        let caller_input_types = self.operand_types();
                         let callee_input_types = callee_function.input_types();
                         let caller_console_inputs = inputs;
                         let callee_console_inputs = callee_request.inputs();
                         let mut translation_data = Vec::new();
+
+                        // TODO (dynamic_dispatch) some of these might be redundant with earlier checks (others are not, caught bug here)
+                        assert_eq!(
+                            caller_input_types.len(),
+                            callee_input_types.len(),
+                            "Caller and callee input types should have the same length ({} vs. {})",
+                            caller_input_types.len(),
+                            callee_input_types.len()
+                        );
+                        assert_eq!(
+                            caller_console_inputs.len(),
+                            callee_console_inputs.len(),
+                            "Caller and callee console inputs should have the same length ({} vs. {})",
+                            caller_console_inputs.len(),
+                            callee_console_inputs.len()
+                        );
+                        assert_eq!(
+                            caller_console_input_ids.len(),
+                            callee_console_input_ids.len(),
+                            "Caller and callee console input IDs should have the same length ({} vs. {})",
+                            caller_console_input_ids.len(),
+                            callee_console_input_ids.len()
+                        );
+                        assert_eq!(
+                            caller_input_types.len(),
+                            caller_console_input_ids.len(),
+                            "Caller input types and input IDs should have the same length ({} vs. {})",
+                            caller_input_types.len(),
+                            caller_console_input_ids.len()
+                        );
+                        assert_eq!(
+                            caller_input_types.len(),
+                            caller_console_inputs.len(),
+                            "Caller input types and input types should have the same length ({} vs. {})",
+                            caller_input_types.len(),
+                            caller_console_inputs.len()
+                        );
+
+                        // TODO (dynamic_dispatch) remove
+                        println!("* Mode: Execute, caller function: {:?}, callee function: {:?}**", caller_console_request.function_name(), callee_request.function_name());
+                        println!("   caller_console_inputs: {:?}", caller_console_inputs);
+                        println!("   caller_console_input_ids: {:?}", caller_console_input_ids);
+                        println!("   caller_input_types: {:?}", caller_input_types);
+                        println!("   callee_console_inputs: {:?}", callee_console_inputs);
+                        println!("   callee_console_input_ids: {:?}", callee_console_input_ids);
+                        println!("   callee_input_types: {:?}", callee_input_types);
 
                         // TODO: ensure all of the iterators are the same length.
                         for (
@@ -689,8 +744,8 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                 //         translation_proving_key, // caller record proving key
                                 //         record_static: record.clone(), // caller static_record
                                 //         record_dynamic: dynamic_record.clone(), // callee dynamic_record
-                                //         program_id,              // callee program_id
-                                //         function_id: callee_console_function_id, // callee function_id
+                                //         program_id,              // caller program_id
+                                //         function_id: caller_console_function_id, // caller function_id
                                 //         record_name: *record_name, // caller record_name
                                 //         record_consumed: true,   // misnomer, but yes it's the input direction
                                 //         tvk: *callee_request.tvk(), // callee tvk
@@ -709,9 +764,15 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                     InputID::Record(_record_commitment, gamma, record_view_key, serial_number, _tag),
                                     ValueType::Record(record_name),
                                 ) => {
+
+                                    // TODO (dynamic_dispatch) remove
+                                    println!(" - Dynamic record commitment: {dynamic_record_commitment}");
+                                    println!(" - Record commitment: {_record_commitment}");
+                                    println!(" - Record serial number: {serial_number}");
+
                                     let program_id = *callee_request.program_id();
                                     let translation_proving_key =
-                                        get_record_translation_proving_key(&program_id, &record_name)?;
+                                        get_record_translation_proving_key(&program_id, &record_name, rng)?;
                                     translation_data.push(RecordTranslationData {
                                         // TODO: consider using a mapping from (program_id, record_name) to (proving_key, other data)
                                         translation_proving_key, // callee record proving key
@@ -930,10 +991,10 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             lap!(timer, "Checked the outputs");
 
             // TODO (dynamic_dispatch) remove
-            println!(
-                "**INSIDE EXECUTE FOR FUNCTION {:?} PROCESS OUTPUTS FROM CALLBACK in mode: {:?}**",
-                function_name, mode
-            );
+            // println!(
+            //     "**INSIDE EXECUTE FOR FUNCTION {:?} PROCESS OUTPUTS FROM CALLBACK in mode: {:?}**",
+            //     function_name, mode
+            // );
 
             // Return the circuit outputs.
             outputs
@@ -949,7 +1010,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         finish!(timer);
 
         // TODO (dynamic_dispatch) remove
-        println!("**COMPLETED CALL DYNAMIC in mode: {:?}**", mode);
+        // println!("**COMPLETED CALL DYNAMIC in mode: {:?}**", mode);
 
         Ok(())
     }

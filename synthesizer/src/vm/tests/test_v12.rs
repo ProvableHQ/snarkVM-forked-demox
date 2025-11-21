@@ -20,7 +20,8 @@ use crate::vm::test_helpers::{sample_vm_at_height, *};
 use anyhow::Result;
 use console::{
     network::ConsensusVersion,
-    program::{DynamicRecord, Identifier, OutputID, Value},
+    program::{DynamicRecord, Identifier, OutputID, Value, Entry},
+    account::{ViewKey, Address}
 };
 use snarkvm_synthesizer_program::Program;
 use snarkvm_utilities::TestRng;
@@ -40,12 +41,22 @@ fn get_main_field(output_id: OutputID<CurrentNetwork>) -> Field<CurrentNetwork> 
 
 fn test_translation(
     caller_private_key: &PrivateKey<CurrentNetwork>,
+    // Program and function to call
     root_program_name: &str,
     root_function_name: &str,
+    // Inputs to the root call
     input_values: &[Value<CurrentNetwork>],
+    // If Some, precedes the root call with a transaction that mints the given gas_container record.
+    gas_to_mint: Option<Record<CurrentNetwork, Plaintext<CurrentNetwork>>>,
+    // Expected output IDsand public-ouput values
     expected_output_ids: Option<Vec<OutputID<CurrentNetwork>>>,
     expected_public_outputs: Option<Vec<Plaintext<CurrentNetwork>>>,
+    rng: &mut TestRng,
 ) {
+
+    let caller_view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
+    let caller_address = Address::<CurrentNetwork>::try_from(caller_private_key).unwrap();
+
     // Various parameters for dynamic.call instructions.
     let program_a_name_str = "flow";
     let program_a_name_as_field =
@@ -56,10 +67,12 @@ fn test_translation(
     let network_as_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
 
     let get_liquid_liters_function_name = Identifier::<CurrentNetwork>::from_str("get_liquid_liters").unwrap();
+    let get_gas_liters_function_name = Identifier::<CurrentNetwork>::from_str("get_gas_liters").unwrap();
     let consume_dynamic_blob_function_name = Identifier::<CurrentNetwork>::from_str("consume_dynamic_blob").unwrap();
     let nitrogen_pump_function_name = Identifier::<CurrentNetwork>::from_str("nitrogen_pump").unwrap();
 
     let get_liquid_liters_function_field = get_liquid_liters_function_name.to_field().unwrap();
+    let get_gas_liters_function_field = get_gas_liters_function_name.to_field().unwrap();
     let consume_dynamic_blob_function_field = consume_dynamic_blob_function_name.to_field().unwrap();
     let nitrogen_pump_function_field = nitrogen_pump_function_name.to_field().unwrap();
 
@@ -68,11 +81,16 @@ fn test_translation(
     program {program_a_name_str}.aleo;
 
     // Tries to consume a container passed as dynamic as a specifically liquid one
-    function get_dynamic_liters:
+    function get_dynamic_liters_from_liquid:
         input r0 as dynamic.record;
         call.dynamic {program_b_name_as_field} {network_as_field} {get_liquid_liters_function_field} with r0 (as dynamic.record) into r1 (as u64.public);
         output r1 as u64.public;
     
+    function get_dynamic_liters_from_gas:
+        input r0 as dynamic.record;
+        call.dynamic {program_b_name_as_field} {network_as_field} {get_gas_liters_function_field} with r0 (as dynamic.record) into r1 (as u64.public);
+        output r1 as u64.public;
+
     function consume_dynamic_blob:
         input r0 as dynamic.record;
         output true as boolean.private;
@@ -85,6 +103,31 @@ fn test_translation(
         assert.eq true true;
     "
     );
+
+    // Preparing the record values for the hardcoded gas_record minter
+    let (gas_owner, gas_liters, gas_flammable) = if let Some(gas_to_mint_record) = &gas_to_mint {
+        let liters_entry = gas_to_mint_record.data().get(&Identifier::<CurrentNetwork>::from_str("liters").unwrap()).unwrap();
+        let flammable_entry = gas_to_mint_record.data().get(&Identifier::<CurrentNetwork>::from_str("flammable").unwrap()).unwrap();
+        let liters_value = match liters_entry {
+            Entry::Public(plaintext) => plaintext.to_string(),
+            _ => panic!("`liters` entry should be public"),
+        };
+        let flammable_value = match flammable_entry {
+            Entry::Private(plaintext) => plaintext.to_string(),
+            _ => panic!("`flammable` entry should be private"),
+        };
+        (
+            caller_address.to_string(),
+            liters_value,
+            flammable_value,
+        )
+    } else {
+        (
+            "0field".to_string(),
+            "100u64".to_string(),
+            "false".to_string()
+        )
+    };
 
     let program_b_string = format!(
         r"
@@ -108,10 +151,18 @@ fn test_translation(
         input r0 as liquid_container.record;
         output r0.liters as u64.public;
 
+    function get_gas_liters:
+        input r0 as gas_container.record;
+        output r0.liters as u64.public;
+
     function nitrogen_pump:
         input r0 as u64.public;
         cast self.caller r0 false into r1 as gas_container.record;
         output r1 as gas_container.record;
+
+    function hardcoded_gas_pump:
+        cast {gas_owner} {gas_liters} {gas_flammable} into r0 as gas_container.record;
+        output r0 as gas_container.record;
 
     constructor:
         assert.eq true true;
@@ -122,8 +173,6 @@ fn test_translation(
     let program_a = Program::<CurrentNetwork>::from_str(&program_a_string).unwrap();
     let program_b = Program::<CurrentNetwork>::from_str(&program_b_string).unwrap();
 
-    let rng = &mut TestRng::default();
-
     // Initialize the VM.
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap(), rng);
 
@@ -131,7 +180,6 @@ fn test_translation(
     println!("Deploying program {program_a_name_str}...");
     let transaction_a = vm.deploy(&caller_private_key, &program_a, None, 0, None, rng).unwrap();
     let block_a = sample_next_block(&vm, &caller_private_key, &[transaction_a], rng).unwrap();
-
     assert_eq!(block_a.transactions().num_accepted(), 1);
     assert_eq!(block_a.transactions().num_rejected(), 0);
     assert_eq!(block_a.aborted_transaction_ids().len(), 0);
@@ -140,13 +188,65 @@ fn test_translation(
     println!("Deploying program {program_b_name_str}...");
     let transaction_b = vm.deploy(&caller_private_key, &program_b, None, 0, None, rng).unwrap();
     let block_b = sample_next_block(&vm, &caller_private_key, &[transaction_b], rng).unwrap();
-
     assert_eq!(block_b.transactions().num_accepted(), 1);
     assert_eq!(block_b.transactions().num_rejected(), 0);
     assert_eq!(block_b.aborted_transaction_ids().len(), 0);
     vm.add_next_block(&block_b).unwrap();
 
+    // TODO (Antonio) remove
+    let mut input_values_vec = Vec::new();
+
+    if gas_to_mint.is_some() {
+        println!("Minting gas_container record...");
+        let transaction_mint = vm
+        .execute(
+            &caller_private_key,
+            (format!("{program_b_name_str}.aleo"), "hardcoded_gas_pump"),
+            Vec::<Value<CurrentNetwork>>::new().iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+        let mint_output = transaction_mint.transitions().next().unwrap().outputs().iter().next().unwrap();
+        let output_gas_record = match mint_output {
+            Output::Record(commitment, checksum, record_ciphertext, _) => {
+                println!("    Minted record commitment: {commitment}");
+                println!("    Minted record checksum: {checksum}");
+                record_ciphertext.as_ref().unwrap().decrypt(&caller_view_key).unwrap()
+            }
+            _ => panic!("Minted record is not a record"),
+        };
+
+        // TODO (dynamic_dispatch) remove
+        println!("\n@@@@@ output_gas_record: {:?}", output_gas_record);
+
+        input_values_vec.push(Value::<CurrentNetwork>::Record(output_gas_record));
+
+        let block_mint = sample_next_block(&vm, &caller_private_key, &[transaction_mint], rng).unwrap();
+        assert_eq!(block_mint.transactions().num_accepted(), 1);
+        assert_eq!(block_mint.transactions().num_rejected(), 0);
+        assert_eq!(block_mint.aborted_transaction_ids().len(), 0);
+        vm.add_next_block(&block_mint).unwrap();
+    }
+
     println!("Executing function: {root_function_name}...");
+
+    // TODO (Antonio) remove
+    let mut input_values = input_values;
+    let mut refined_input_values = Vec::new();
+    if !input_values_vec.is_empty() {
+        match input_values_vec.iter().next().unwrap() {
+            Value::Record(record) => {
+                refined_input_values.push(Value::<CurrentNetwork>::DynamicRecord(DynamicRecord::from_record(&record).unwrap()));
+            }
+            _ => panic!("First input value is not a record"),
+        }
+        input_values = refined_input_values.as_slice();
+    }
+    println!(" @@ Input values: {:?}", input_values);
 
     // Execute the "dynamic" function.
     let transaction = vm
@@ -160,6 +260,15 @@ fn test_translation(
             rng,
         )
         .unwrap();
+
+    // TODO (Antonio) remove
+    panic!("Stop here");
+
+    let block = sample_next_block(&vm, &caller_private_key, &[transaction.clone()], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    vm.add_next_block(&block).unwrap();
 
     println!("Asserting output correctness...");
 
@@ -191,12 +300,6 @@ fn test_translation(
     println!("Verifying transaction...");
 
     vm.check_transaction(&transaction, None, rng).unwrap();
-
-    let block = sample_next_block(&vm, &caller_private_key, &[transaction.clone()], rng).unwrap();
-    assert_eq!(block.transactions().num_accepted(), 1);
-    assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 0);
-    vm.add_next_block(&block).unwrap();
 }
 
 // This test checks that the execution graph computed from an execution
@@ -221,7 +324,7 @@ fn test_translation(
 // The transitions must be included in the `Execution` in the order they finish.
 // The execution order is:
 //  - [c, d, b, c, d, b, d, c, e, a]
-fn test_complex_dynamic_graph_construction(
+fn test_complex_dynamic_graph_construction_internal(
     // In each of the arguments, call_X_Y_dynamic indicates whether the call to
     // function Y inside function X should be static or dynamic.
     call_a_b_dynamic: bool,
@@ -513,39 +616,21 @@ fn test_complex_dynamic_graph_construction(
 }
 
 #[test]
-fn test_complex_dynamic_graph_construction_1() {
+fn test_complex_dynamic_graph_construction() {
+
+    let num_random_mixes = 3;
+
     // All static calls
-    test_complex_dynamic_graph_construction(false, false, false, false, false, false, false);
-}
-
-#[test]
-fn test_complex_dynamic_graph_construction_2() {
+    test_complex_dynamic_graph_construction_internal(false, false, false, false, false, false, false);
     // All dynamic calls
-    test_complex_dynamic_graph_construction(true, true, true, true, true, true, true);
-}
+    test_complex_dynamic_graph_construction_internal(true, true, true, true, true, true, true);
 
-#[test]
-fn test_complex_dynamic_graph_construction_3() {
-    // All dynamic calls
-    test_complex_dynamic_graph_construction(true, false, false, true, true, true, false);
-}
-
-#[test]
-fn test_complex_dynamic_graph_construction_4() {
-    // All dynamic calls
-    test_complex_dynamic_graph_construction(false, false, false, true, false, true, false);
-}
-
-#[test]
-fn test_complex_dynamic_graph_construction_5() {
-    // All dynamic calls
-    test_complex_dynamic_graph_construction(false, true, true, false, false, false, false);
-}
-
-#[test]
-fn test_complex_dynamic_graph_construction_6() {
-    // All dynamic calls
-    test_complex_dynamic_graph_construction(false, true, false, false, false, false, false);
+    // Random static-/dynamic-call mixes
+    let rng = &mut TestRng::default();
+    for _ in 0..num_random_mixes {
+        let mix: [bool; 7] = rng.r#gen();
+        test_complex_dynamic_graph_construction_internal(mix[0], mix[1], mix[2], mix[3], mix[4], mix[5], mix[6]);
+    }
 }
 
 // This test verifiers that a dynamic call to the `credits.transfer_public` function works as expected.
@@ -726,14 +811,16 @@ fn test_translation_input_static_dynamic() {
     let r0_static = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_str(&record_static_str).unwrap();
 
     // Input and expected output
-    let r0_value = Value::<CurrentNetwork>::Record(r0_static);
+    let r0_value = Value::<CurrentNetwork>::Record(r0_static.clone());
 
-    test_translation(&caller_private_key, "gas_manager.aleo", "consume_gas", &[r0_value], None, None);
+    test_translation(&caller_private_key, "gas_manager.aleo", "consume_gas", &[r0_value], Some(r0_static), None, None, rng);
 }
 
 #[test]
 fn test_translation_input_dynamic_static() {
-    let rng = &mut TestRng::default();
+    // TODO (dynamic_dispatch) reset to default
+    // let rng = &mut TestRng::default();
+    let rng = &mut TestRng::from_seed(40);
 
     let caller_private_key = sample_genesis_private_key(rng);
     let caller_address = Address::try_from(&caller_private_key).unwrap();
@@ -741,7 +828,8 @@ fn test_translation_input_dynamic_static() {
     let record_static_str = format!(
         r#"{{
         owner: {}.private,
-        liters: 97u64.public,
+        liters: 1888u64.public,
+        flammable: false.private,
         _nonce: 0group.public,
         _version: 1u8.public
     }}"#,
@@ -754,15 +842,17 @@ fn test_translation_input_dynamic_static() {
 
     // Input and expected output
     let r0_value = Value::<CurrentNetwork>::DynamicRecord(r0_dynamic);
-    let expected_output = Plaintext::<CurrentNetwork>::from_str("97u64").unwrap();
+    let expected_output = Plaintext::<CurrentNetwork>::from_str("1888u64").unwrap();
 
     test_translation(
         &caller_private_key,
         "flow.aleo",
-        "get_dynamic_liters",
+        "get_dynamic_liters_from_gas",
         &[r0_value],
+        Some(r0_static),
         None,
         Some(vec![expected_output]),
+        rng,
     );
 }
 
@@ -797,7 +887,9 @@ fn test_translation_output_static_dynamic() {
         "flow.aleo",
         "dynamic_pump",
         &[],
+        None,
         Some(vec![OutputID::DynamicRecord(r0_dynamic_id)]),
         None,
+        rng,
     );
 }
