@@ -26,7 +26,8 @@ pub use translation::*;
 use circuit::Assignment;
 use console::{
     network::prelude::*,
-    program::{InputID, Locator, Value}, types::Field,
+    program::{InputID, Locator, Value},
+    types::Field,
 };
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use snarkvm_ledger_block::{Execution, Fee, Transition};
@@ -170,7 +171,9 @@ impl<N: Network> Trace<N> {
             .map_err(|_| anyhow!("Failed to set inclusion assignments"))?;
 
         let batched_translation_assignments = self.translation_tasks.prepare(&self.transitions, &self.call_graph)?;
-        self.translation_assignments.set(translation_assignments).map_err(|_| anyhow!("Failed to set translation assignments"))?;
+        self.translation_assignments
+            .set(translation_assignments)
+            .map_err(|_| anyhow!("Failed to set translation assignments"))?;
 
         self.global_state_root.set(global_state_root).map_err(|_| anyhow!("Failed to set global state root"))?;
         Ok(())
@@ -406,7 +409,10 @@ impl<N: Network> Trace<N> {
         }
 
         for (proving_key, assignments) in translation_assignments {
-            let circuit_assignments = assignments.into_iter().map(|assignment| assignment.to_circuit_assignment::<A>()).collect::<Result<Vec<Assignment<N::Field>>>>()?;
+            let circuit_assignments = assignments
+                .into_iter()
+                .map(|assignment| assignment.to_circuit_assignment::<A>())
+                .collect::<Result<Vec<Assignment<N::Field>>>>()?;
             // TODO (dynamic_dispatch): is the clone cheap?
             proving_tasks.push((proving_key.clone(), circuit_assignments));
         }

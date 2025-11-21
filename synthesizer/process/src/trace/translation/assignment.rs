@@ -62,7 +62,7 @@ pub struct TranslationAssignment<N: Network> {
     /// The additional point used to produce the record commitment and serial number.
     /// Irrelevant if `record_consumed` is false.
     pub(super) gamma: Group<N>,
-} 
+}
 
 impl<N: Network> TranslationAssignment<N> {
     /// Initializes a new translation assignment.
@@ -128,8 +128,9 @@ impl<N: Network> TranslationAssignment<N> {
             circuit::U16::<A>::new(circuit::Mode::Public, console::types::U16::<N>::new(self.translation_count));
 
         // Inject the register index as `Mode::Public`.
-        let circuit_input_output_index = circuit::U16::<A>::new(circuit::Mode::Public, console::types::U16::<N>::new(self.input_output_index));
-        
+        let circuit_input_output_index =
+            circuit::U16::<A>::new(circuit::Mode::Public, console::types::U16::<N>::new(self.input_output_index));
+
         // Inject the commitment or serial number of the static record as `Mode::Public`.
         let circuit_id_static = circuit::Field::<A>::new(circuit::Mode::Public, self.id_static);
 
@@ -156,12 +157,9 @@ impl<N: Network> TranslationAssignment<N> {
         let circuit_gamma = circuit::Group::<A>::new(circuit::Mode::Private, self.gamma);
 
         // ******** Computing the IDs of the dynamic and static records
-        
-        let actual_id_dynamic = circuit_record_dynamic.to_id(
-            circuit_function_id,
-            circuit_tvk,
-            circuit_input_output_index,
-        );
+
+        let actual_id_dynamic =
+            circuit_record_dynamic.to_id(circuit_function_id, circuit_tvk, circuit_input_output_index);
 
         let circuit_static_commitment =
             circuit_record_static.to_commitment(&circuit_program_id, &circuit_record_name, &circuit_record_view_key);
@@ -219,7 +217,7 @@ impl<N: Network> TranslationAssignment<N> {
     ///     sn = serial_number(cm, gamma)
     ///     internal_id_static_record = record_consumed ? sn : cm
     ///     internal_id_dynamic_record = HashPSD8([[calling_function_id]] | dynamic_record | tvk | [[input_output_index]])
-    /// 
+    ///
     ///     assert static_record.owner == dynamic_record.owner
     ///     assert static_record.nonce == dynamic_record.nonce
     ///     assert static_record.version == dynamic_record.version

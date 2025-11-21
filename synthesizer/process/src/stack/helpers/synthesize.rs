@@ -142,7 +142,7 @@ impl<N: Network> Stack<N> {
         let record_view_key = Uniform::rand(rng);
         let gamma = Uniform::rand(rng);
         let id_dynamic = record_dynamic.to_id(function_id, tvk, U16::new(input_output_index)).unwrap();
-        let record_consumed = Uniform::rand(rng);            
+        let record_consumed = Uniform::rand(rng);
         let commitment = record_static.to_commitment(&program_id, &record_name, &record_view_key).unwrap();
         let id_static = commitment;
 
@@ -164,9 +164,10 @@ impl<N: Network> Stack<N> {
 
         // Construct the translation circuit.
         let circuit_assignment = translation_assignment.to_circuit_assignment::<A>()?;
-        
+
         // Synthesize the proving and verifying key.
-        let (proving_key, verifying_key) = self.universal_srs.to_circuit_key(&record_name.to_string(), &circuit_assignment)?;
+        let (proving_key, verifying_key) =
+            self.universal_srs.to_circuit_key(&record_name.to_string(), &circuit_assignment)?;
         // Insert the proving key.
         self.insert_translation_proving_key(&record_name, proving_key)?;
         // Insert the verifying key.

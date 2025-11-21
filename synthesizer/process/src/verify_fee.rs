@@ -103,12 +103,7 @@ impl<N: Network> Process<N> {
         // Retrieve the network ID.
         let network_id = U16::new(N::ID);
         // Compute the function ID.
-        let function_id = compute_function_id(
-            &network_id,
-            fee.program_id(),
-            fee.function_name(),
-            false, /* `is_dynamic` is `false` because `fee_private` is expected to be called directly. */
-        )?;
+        let function_id = compute_function_id(&network_id, fee.program_id(), fee.function_name())?;
 
         // Ensure the fee contains 1 input record.
         ensure!(
@@ -198,12 +193,7 @@ impl<N: Network> Process<N> {
         // Retrieve the network ID.
         let network_id = U16::new(N::ID);
         // Compute the function ID.
-        let function_id = compute_function_id(
-            &network_id,
-            fee.program_id(),
-            fee.function_name(),
-            false, /* `is_dynamic` is `false` because `fee_public` is expected to be called directly. */
-        )?;
+        let function_id = compute_function_id(&network_id, fee.program_id(), fee.function_name())?;
 
         // Ensure the fee contains all public inputs.
         ensure!(

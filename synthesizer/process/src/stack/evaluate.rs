@@ -188,10 +188,7 @@ impl<N: Network> Stack<N> {
         lap!(timer, "Initialize the registers");
 
         // Ensure the request is well-formed.
-        ensure!(
-            request.verify(&function.input_types(), is_root, program_checksum),
-            "[Evaluate] Request is invalid"
-        );
+        ensure!(request.verify(&function.input_types(), is_root, program_checksum), "[Evaluate] Request is invalid");
         lap!(timer, "Verify the request");
 
         // Store the inputs.
@@ -278,7 +275,6 @@ impl<N: Network> Stack<N> {
             outputs,
             &function.output_types(),
             &output_registers,
-            request.is_dynamic(),
         )?;
         finish!(timer);
 

@@ -358,7 +358,6 @@ impl<N: Network> CallTrait<N> for Call<N> {
                             outputs,
                             &function.output_types(),
                             &output_registers,
-                            false,
                         )?;
 
                         // Return the request and response.
@@ -473,7 +472,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                 &tvk,
                 &tcm,
                 None,
-                false,
+                None,
             );
             A::assert(check_input_ids);
             lap!(timer, "Checked the input ids");
@@ -499,7 +498,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                 response.outputs().to_vec(),
                 &function.output_types(),
                 &output_registers,
-                false,
+                None,
             );
             lap!(timer, "Checked the outputs");
             // Return the circuit outputs.

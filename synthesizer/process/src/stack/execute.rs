@@ -256,7 +256,7 @@ impl<N: Network> Stack<N> {
         let caller = Ternary::ternary(&is_root, request.signer(), &parent);
 
         // Ensure the request has a valid signature, inputs, and transition view key.
-        A::assert(request.verify(&input_types, &tpk, Some(root_tvk), is_root, program_checksum));
+        A::assert(request.verify(&input_types, &tpk, Some(root_tvk), is_root, program_checksum, false));
         lap!(timer, "Verify the circuit request");
 
         // Set the transition signer.
@@ -443,7 +443,6 @@ impl<N: Network> Stack<N> {
             outputs,
             &output_types,
             &output_registers,
-            request.is_dynamic(),
         );
         lap!(timer, "Construct the response");
 
@@ -490,7 +489,6 @@ impl<N: Network> Stack<N> {
         }
         // If the circuit is in `Authorize` mode, then save the transition.
         if let CallStack::Authorize(_, _, authorization) = registers.call_stack_ref() {
-
             // TODO (dynamic_dispatch) remove
             // println!("---- BEFORE");
 
@@ -503,10 +501,10 @@ impl<N: Network> Stack<N> {
 
             // Construct the transition.
             let transition = Transition::from(&console_request, &response, &output_types, &output_registers)?;
-            
+
             // TODO (dynamic_dispatch) remove
             // println!("---- AFTER");
-            
+
             // Add the transition to the authorization.
             authorization.insert_transition(transition)?;
             lap!(timer, "Save the transition");
@@ -531,7 +529,7 @@ impl<N: Network> Stack<N> {
             registers.ensure_console_and_circuit_registers_match()?;
 
             // Construct the transition.
-            // TODO(perf): we already have the transition from the Authorization at this point. 
+            // TODO(perf): we already have the transition from the Authorization at this point.
             let transition = Transition::from(&console_request, &response, &output_types, &output_registers)?;
 
             // Retrieve the proving key.

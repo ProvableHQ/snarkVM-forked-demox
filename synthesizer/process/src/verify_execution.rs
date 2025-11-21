@@ -94,12 +94,7 @@ impl<N: Network> Process<N> {
             // Retrieve the network ID.
             let network_id = U16::new(N::ID);
             // Compute the function ID.
-            let function_id = compute_function_id(
-                &network_id,
-                transition.program_id(),
-                transition.function_name(),
-                transition.is_dynamic(),
-            )?;
+            let function_id = compute_function_id(&network_id, transition.program_id(), transition.function_name())?;
 
             // Ensure each input is valid.
             if transition
@@ -289,6 +284,11 @@ impl<N: Network> Process<N> {
             if child_transition.is_dynamic() {
                 verifier_inputs.extend(child_transition.program_id().to_fields()?.into_iter().map(|field| *field));
                 verifier_inputs.extend([*child_transition.function_name().to_field()?]);
+                verifier_inputs.extend([*compute_function_id(
+                    &U16::new(N::ID),
+                    child_transition.program_id(),
+                    child_transition.function_name(),
+                )?]);
             }
             // [Inputs] Extend the verifier inputs with the transition commitment of the external call.
             verifier_inputs.extend([**child_transition.tcm()]);
@@ -353,7 +353,11 @@ impl<N: Network> Process<N> {
         }
 
         impl<N: Network> TransitionMetadata<N> {
-            fn new(counter: &mut usize, locator: Option<(ProgramID<N>, Identifier<N>)>, tid: Option<N::TransitionID>) -> Self {
+            fn new(
+                counter: &mut usize,
+                locator: Option<(ProgramID<N>, Identifier<N>)>,
+                tid: Option<N::TransitionID>,
+            ) -> Self {
                 let uid = *counter;
                 *counter += 1;
                 Self { uid, locator, tid, children: None }
@@ -367,9 +371,9 @@ impl<N: Network> Process<N> {
 
         // A helper function to update the call graph, given transition metadata.
         let update_call_graph = |metadata: TransitionMetadata<N>,
-                                call_graph: &mut HashMap<N::TransitionID, Vec<N::TransitionID>>,
-                                uid_to_tid: &mut HashMap<usize, N::TransitionID>|
-        -> Result<()> {
+                                 call_graph: &mut HashMap<N::TransitionID, Vec<N::TransitionID>>,
+                                 uid_to_tid: &mut HashMap<usize, N::TransitionID>|
+         -> Result<()> {
             // Check that the transition metadata is complete.
             ensure!(metadata.is_complete(), "Invalid traversal - transition metadata is incomplete");
             // Update the call graph.
@@ -401,15 +405,13 @@ impl<N: Network> Process<N> {
         let mut counter = 0;
 
         let num_transitions = transitions.len();
-        
+
         // Iterate over each transition in reverse post-order, and populate the call graph.
         for transition in transitions.rev() {
-            
             // Now process the current `transition`.
             // At this point, the algorithm must maintain the following invariant:
             // - The stack is either empty, or the top entry is incomplete.
             match traversal_stack.last_mut() {
-
                 // If the stack is empty, then push the `transition` to the top of the stack.
                 None => {
                     traversal_stack.push(TransitionMetadata::new(
@@ -419,16 +421,16 @@ impl<N: Network> Process<N> {
                     ));
                 }
                 // If the stack is not empty, then add the current transition ID to the entry.
-                Some(head) => {                    
+                Some(head) => {
                     match head.locator {
                         Some((expected_pid, expected_fname)) => {
                             // Checking the pid and fname expected (from the static call instruction) against the actual transition.
                             ensure!(
-                                expected_pid == *transition.program_id() && expected_fname == *transition.function_name(),
+                                expected_pid == *transition.program_id()
+                                    && expected_fname == *transition.function_name(),
                                 "Invalid traversal - unexpected transition in the execution"
                             );
-
-                        },
+                        }
                         None => {
                             // Setting the pid and fname from the actual transition
                             head.locator = Some((*transition.program_id(), *transition.function_name()));
@@ -436,7 +438,7 @@ impl<N: Network> Process<N> {
                     }
 
                     head.tid = Some(*transition.id());
-                },
+                }
             }
 
             // Process the entry at the top of the stack. By the previous step, this entry has a transition ID.
@@ -447,7 +449,6 @@ impl<N: Network> Process<N> {
                 // Note this unwrap is safe, for the same reason as above.
                 update_call_graph(traversal_stack.pop().unwrap(), &mut call_graph, &mut uid_to_tid)?;
             } else {
-
                 // This unwrap is safe as the locator field is set after all possible paths of the match
                 let (caller_pid, caller_fname) = top.locator.as_ref().unwrap();
 
@@ -508,7 +509,7 @@ impl<N: Network> Process<N> {
             counter == num_transitions,
             "Invalid traversal - counter does not match the number of transitions in the execution"
         );
-        
+
         Ok(call_graph)
     }
 

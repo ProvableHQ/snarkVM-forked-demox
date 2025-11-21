@@ -28,7 +28,17 @@ use circuit::{Inject, traits::ToGroup};
 
 use console::{
     network::prelude::*,
-    program::{DynamicRecord, Record, InputID, Plaintext, ProgramID, Identifier, RECORD_DATA_TREE_DEPTH, Value, ValueType},
+    program::{
+        DynamicRecord,
+        Identifier,
+        InputID,
+        Plaintext,
+        ProgramID,
+        RECORD_DATA_TREE_DEPTH,
+        Record,
+        Value,
+        ValueType,
+    },
     types::{Field, Group},
 };
 use snarkvm_ledger_block::Transition;
@@ -38,7 +48,7 @@ use snarkvm_synthesizer_snark::VerifyingKey;
 use std::collections::HashMap;
 
 #[derive(Clone, Debug, Default)]
-pub struct Translation<N: Network> { 
+pub struct Translation<N: Network> {
     /// A map of `transition IDs` to a list of `input tasks`.
     translation_tasks: HashMap<N::TransitionID, Vec<RecordTranslationData<N>>>,
 }
@@ -60,7 +70,6 @@ impl<N: Network> Translation<N> {
         transition: &Transition<N>,
         record_translation_data: Result<&Vec<RecordTranslationData<N>>>,
     ) -> Result<()> {
-
         // TODO (dynamic_dispatch): Result isn't a good interface; also, decide whether always having a value for a valid key = TransitionID (even if empty) is a good choice
         self.translation_tasks.insert(*transition.id(), record_translation_data.cloned().unwrap_or_default());
 
@@ -81,8 +90,8 @@ impl<N: Network> Translation<N> {
 
         let mut translation_count = 0;
 
-       /*  for (parent, children) in call_graph.iter() {
-            let (parent_transition, parent_function) = transitions.get(parent).ok_or_else(|| 
+        /*  for (parent, children) in call_graph.iter() {
+            let (parent_transition, parent_function) = transitions.get(parent).ok_or_else(||
                 anyhow!("Transition not found in the call graph")
             )?;
 
@@ -106,7 +115,7 @@ impl<N: Network> Translation<N> {
                 let (child_transition, child_function) = transitions.get(child).ok_or_else(||
                     anyhow!("Transition not found in the call graph")
                 )?;
-                
+
                 let child_program_id = child_transition.program_id();
                 let child_function_name = child_transition.function_name();
 
@@ -133,7 +142,7 @@ impl<N: Network> Translation<N> {
                             let record_consumed = N::Field::one();
                             let translation_count_field = *Field::<N>::from_bits_le(&translation_count.to_bits_le())?;
                             let io_index_field = *Field::<N>::from_bits_le(&(io_index as u8).to_bits_le())?;
-                            
+
                             batch_verifier_inputs.entry((*child_program_id, *record_identifier)).or_default().push(
                                 vec![translation_count_field, dynamic_record_fid, dynamic_record_id, static_record_id, record_consumed]
                             );
@@ -150,7 +159,7 @@ impl<N: Network> Translation<N> {
                             let record_consumed = N::Field::zero();
                             let translation_count_field = *Field::<N>::from_bits_le(&translation_count.to_bits_le())?;
                             let io_index_field = *Field::<N>::from_bits_le(&(io_index as u8).to_bits_le())?;
-                            
+
                             batch_verifier_inputs.entry((*child_program_id, *record_identifier)).or_default().push(
                                vec![translation_count_field, dynamic_record_fid, dynamic_record_id, static_record_id, record_consumed]
                             );
@@ -195,7 +204,7 @@ impl<N: Network> Translation<N> {
                             let record_consumed = N::Field::zero();
                             let translation_count_field = *Field::<N>::from_bits_le(&translation_count.to_bits_le())?;
                             let io_index_field = *Field::<N>::from_bits_le(&(io_index as u8).to_bits_le())?;
-                            
+
                             batch_verifier_inputs.entry((*child_program_id, *record_identifier)).or_default().push(
                                 vec![translation_count_field, dynamic_record_fid, dynamic_record_id, static_record_id, record_consumed]
                             );

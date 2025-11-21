@@ -379,7 +379,7 @@ impl<N: Network> StackTrait<N> for Stack<N> {
                                 }
                             }
                         }
-                    },
+                    }
                     Instruction::CallDynamic(_) => {
                         // TODO (dynamic_dispatch) redesign or complete - it is execution-specific
                     }

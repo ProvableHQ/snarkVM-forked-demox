@@ -22,7 +22,14 @@ use console::{
     program::{Entry, Identifier, Literal, Plaintext, Register, Request, Value},
     types::{Address, Field},
 };
-use snarkvm_synthesizer_program::{Operand, RecordTranslationData, RegistersCircuit, RegistersSigner, RegistersTrait, StackTrait};
+use snarkvm_synthesizer_program::{
+    Operand,
+    RecordTranslationData,
+    RegistersCircuit,
+    RegistersSigner,
+    RegistersTrait,
+    StackTrait,
+};
 
 use indexmap::IndexMap;
 

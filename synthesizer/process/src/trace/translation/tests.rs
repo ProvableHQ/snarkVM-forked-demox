@@ -49,7 +49,7 @@ fn translation_assignment_from_record_str(
     let record_dynamic = DynamicRecord::<CurrentNetwork>::from_record(&record_static).unwrap();
 
     let id_dynamic = record_dynamic.to_id(function_id, tvk, U16::new(input_output_index)).unwrap();
-    
+
     let commitment = record_static.to_commitment(&program_id, &record_name, &record_view_key).unwrap();
     let id_static = if record_consumed {
         Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::serial_number_from_gamma(&gamma, commitment).unwrap()

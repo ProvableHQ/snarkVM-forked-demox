@@ -69,7 +69,9 @@ impl<N: Network, A: circuit::Aleo<Network = N>> RegistersSigner<N> for Registers
     /// Returns the record translation data.
     #[inline]
     fn record_translation_data(&self) -> Result<&Vec<RecordTranslationData<N>>> {
-        self.record_translation_data.as_ref().ok_or_else(|| anyhow!("Record translation data is not set in the registers."))
+        self.record_translation_data
+            .as_ref()
+            .ok_or_else(|| anyhow!("Record translation data is not set in the registers."))
     }
 
     /// Sets the record translation data.

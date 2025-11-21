@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{CallStack, InclusionVersion, Process, Trace, execution_cost, execution_cost_for_authorization, ToField};
+use crate::{CallStack, InclusionVersion, Process, ToField, Trace, execution_cost, execution_cost_for_authorization};
 use circuit::{Aleo, network::AleoV0};
 use console::{
     account::{Address, PrivateKey, ViewKey},

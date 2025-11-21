@@ -394,7 +394,8 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             target.substack().execute_function::<A, R>(call_stack, console_caller, root_tvk, rng)?;
 
                         // Convert the callee's outputs to the caller's context.
-                        let caller_response_outputs = callee_response.dynamic_call_outputs(callee_request.caller_output_types().as_ref().unwrap())?;
+                        let caller_response_outputs = callee_response
+                            .dynamic_call_outputs(callee_request.caller_output_types().as_ref().unwrap())?;
 
                         // Return the request verification inputs and response.
                         (request_verification_inputs, caller_response_outputs, None)
@@ -555,7 +556,8 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             target.substack().execute_function::<A, _>(call_stack, console_caller, root_tvk, rng)?;
 
                         // Convert the callee's outputs to the caller's context.
-                        let caller_response_outputs = callee_response.dynamic_call_outputs(callee_request.caller_output_types().as_ref().unwrap())?;
+                        let caller_response_outputs = callee_response
+                            .dynamic_call_outputs(callee_request.caller_output_types().as_ref().unwrap())?;
 
                         // Return the request verification inputs and response.
                         (request_verification_inputs, caller_response_outputs, None)
@@ -611,7 +613,8 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         }
 
                         // Convert the callee's outputs to the caller's context.
-                        let caller_response_outputs = callee_response.dynamic_call_outputs(callee_request.caller_output_types().as_ref().unwrap())?;
+                        let caller_response_outputs = callee_response
+                            .dynamic_call_outputs(callee_request.caller_output_types().as_ref().unwrap())?;
 
                         // Anonymous helper to get a record translation proving key.
                         let get_record_translation_proving_key =
@@ -625,12 +628,15 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         let caller_console_input_ids = callee_request.caller_input_ids().clone().unwrap_or_default();
                         let callee_console_input_ids = callee_request.input_ids();
                         let caller_console_request = registers.request()?;
-                        let caller_console_function_id = compute_function_id(&caller_console_request.network_id(), caller_console_request.program_id(), caller_console_request.function_name(), caller_console_request.is_dynamic())?;
+                        let caller_console_function_id = compute_function_id(
+                            &caller_console_request.network_id(),
+                            caller_console_request.program_id(),
+                            caller_console_request.function_name(),
+                        )?;
                         let callee_console_function_id = compute_function_id(
                             &U16::<N>::new(N::ID as u16),
                             callee_request.program_id(),
                             callee_request.function_name(),
-                            false,
                         )?;
                         let caller_input_types = self.operand_types().into_iter().skip(3).collect::<Vec<_>>();
                         let callee_input_types = callee_function.input_types();
@@ -728,7 +734,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         }
                         // Collect record outputs to translate.
                         let caller_console_outputs = caller_response_outputs.clone();
-                        let caller_console_output_ids: Vec<OutputID<N>> = vec![];  // TODO: we may need to add this to the Request or Response object.
+                        let caller_console_output_ids: Vec<OutputID<N>> = vec![]; // TODO: we may need to add this to the Request or Response object.
                         let caller_output_types = self.destination_types();
                         let callee_console_outputs = console_callee_response.outputs();
                         let callee_console_output_ids = console_callee_response.output_ids();
@@ -844,6 +850,11 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             let program_id = circuit::ProgramID::public(*request.program_id());
             // Inject the function name as `Mode::Public`.
             let function_name = circuit::Identifier::public(*request.function_name());
+            // Inject the function ID as `Mode::Public`.
+            let function_id = circuit::Field::new(
+                circuit::Mode::Public,
+                compute_function_id(request.network_id(), request.program_id(), request.function_name())?,
+            );
 
             // Ensure that the program and function names in the registers match the witnessed values.
             A::assert_eq(program_id.name(), program_name_as_field);
@@ -851,7 +862,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             A::assert_eq(&function_name, function_name_as_field);
 
             // Ensure the number of public variables remains the same.
-            ensure!(A::num_public() == num_public + 3, "Forbidden: 'call.dynamic' injected excess public variables");
+            ensure!(A::num_public() == num_public + 4, "Forbidden: 'call.dynamic' injected excess public variables");
 
             // Inject the `signer` (from the request) as `Mode::Private`.
             let signer = circuit::Address::new(circuit::Mode::Private, *request.signer());
@@ -886,7 +897,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                 &tvk,
                 &tcm,
                 None,
-                true,
+                Some(function_id.clone()),
             );
             A::assert(check_input_ids);
             lap!(timer, "Checked the input ids");
@@ -914,7 +925,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                 caller_response_outputs,
                 self.destination_types(),
                 &output_registers,
-                true,
+                Some(function_id),
             );
             lap!(timer, "Checked the outputs");
 

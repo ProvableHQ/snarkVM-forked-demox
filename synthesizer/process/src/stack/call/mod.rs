@@ -13,20 +13,37 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{CallStack, Registers, Stack, stack::Address, compute_function_id};
+use crate::{CallStack, Registers, Stack, compute_function_id, stack::Address};
 use aleo_std::prelude::{finish, lap, timer};
 use console::{
     account::Field,
     network::prelude::*,
     program::{
-        DynamicFuture, DynamicRecord, Identifier, InputID, OutputID, Literal, Plaintext, ProgramID, Register, Request, Value,
+        DynamicFuture,
+        DynamicRecord,
+        Identifier,
+        InputID,
+        Literal,
+        OutputID,
+        Plaintext,
+        ProgramID,
+        Register,
+        Request,
+        Value,
         ValueType,
     },
     types::{Group, U16},
 };
 use snarkvm_synthesizer_program::{
-    Call, CallDynamic, CallOperator, Operand, RegistersCircuit as _, RegistersSigner as _, RegistersTrait as _,
-    StackTrait, RecordTranslationData,
+    Call,
+    CallDynamic,
+    CallOperator,
+    Operand,
+    RecordTranslationData,
+    RegistersCircuit as _,
+    RegistersSigner as _,
+    RegistersTrait as _,
+    StackTrait,
 };
 use snarkvm_synthesizer_snark::ProvingKey;
 use snarkvm_utilities::dev_eprintln;

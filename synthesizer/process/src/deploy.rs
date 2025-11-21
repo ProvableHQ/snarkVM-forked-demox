@@ -66,7 +66,7 @@ impl<N: Network> Process<N> {
         }
 
         lap!(timer, "Insert the translation verifying keys");
-        
+
         // Add the stack to the process.
         self.add_stack(stack);
 

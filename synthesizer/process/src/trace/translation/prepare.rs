@@ -26,9 +26,9 @@ impl<N: Network> Translation<N> {
         call_graph: &HashMap<N::TransitionID, Vec<N::TransitionID>>,
         // TODO (dynamic_dispatch) Consider using pointers or Arcs to proving keys
     ) -> Result<Vec<(ProvingKey<N>, Vec<TranslationAssignment<N>>)>> {
-
         // Initialize a vector for the batched assignments.
-        let mut batched_assignments: HashMap<(ProgramID<N>, Identifier<N>), Vec<TranslationAssignment<N>>> = HashMap::new();
+        let mut batched_assignments: HashMap<(ProgramID<N>, Identifier<N>), Vec<TranslationAssignment<N>>> =
+            HashMap::new();
         let mut proving_keys: HashMap<(ProgramID<N>, Identifier<N>), ProvingKey<N>> = HashMap::new();
 
         let mut translation_count = 0;
@@ -36,7 +36,6 @@ impl<N: Network> Translation<N> {
         // TODO (dynamic_dispatch) so far we only cover translation case 1: input dynamic -> static
         // TODO (dynamic_dispatch) traversal order
         for transition in transitions {
-
             let transition_id = transition.id();
 
             let Some(translation_tasks) = self.translation_tasks.get(transition_id) else {
@@ -61,7 +60,7 @@ impl<N: Network> Translation<N> {
                 } = translation_task;
 
                 // TODO (dynamic_dispatch) add here consistency checks with the Transition object?
-                
+
                 let Some(gamma_value) = gamma.as_ref() else {
                     bail!(
                         "gamma is None in the input-record translation for transition ID {} and index {}",
@@ -69,7 +68,7 @@ impl<N: Network> Translation<N> {
                         input_output_index
                     );
                 };
-                
+
                 let Some(record_view_key_value) = record_view_key.as_ref() else {
                     bail!(
                         "record_view_key is None in record translation for transition ID {} and index {}",
@@ -78,7 +77,7 @@ impl<N: Network> Translation<N> {
                     );
                 };
                 // Checks associated to input-record translation
-                
+
                 ensure!(
                     record_consumed,
                     "Expected record_consumed = true in input-record translation for transition ID {} and index {}",
@@ -87,14 +86,19 @@ impl<N: Network> Translation<N> {
                 );
 
                 let input_output_index_value = U16::new(*input_output_index);
-                
+
                 let id_static = record_static.to_commitment(program_id, record_name, record_view_key_value)?;
                 let id_dynamic = record_dynamic.to_id(*function_id, *tvk, input_output_index_value)?;
 
                 let batch = &mut batched_assignments.entry((*program_id, *record_name)).or_insert(vec![]);
 
                 if let Some(previous_key) = proving_keys.get(&(*program_id, *record_name)) {
-                    ensure!(previous_key == translation_proving_key, "Proving key mismatch for record {}/{}", program_id, record_name);
+                    ensure!(
+                        previous_key == translation_proving_key,
+                        "Proving key mismatch for record {}/{}",
+                        program_id,
+                        record_name
+                    );
                 } else {
                     proving_keys.insert((*program_id, *record_name), translation_proving_key.clone());
                 }
@@ -120,7 +124,10 @@ impl<N: Network> Translation<N> {
         }
 
         // Replace program ID + record name by proving key
-        Ok(batched_assignments.into_iter().map(|(key, value)| (proving_keys.get(&key).unwrap().clone(), value)).collect())
+        Ok(batched_assignments
+            .into_iter()
+            .map(|(key, value)| (proving_keys.get(&key).unwrap().clone(), value))
+            .collect())
     }
 
     // TODO (dynamic_dispatch) should this really be the same as prepare?
