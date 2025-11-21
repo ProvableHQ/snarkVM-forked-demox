@@ -112,7 +112,7 @@ impl<N: Network> Trace<N> {
 
         // Insert the transition into the inclusion and translation tasks.
         self.inclusion_tasks.insert_transition(input_ids, transition)?;
-        self.translation_tasks.insert_transition(input_ids, input_values, transition, record_translation_data)?;
+        self.translation_tasks.insert_transition(*transition.id(), record_translation_data)?;
         // Construct the locator.
         let locator = Locator::new(*transition.program_id(), *transition.function_name());
         // Insert the assignment (and proving key if the entry does not exist), for the specified locator.
@@ -164,13 +164,13 @@ impl<N: Network> Trace<N> {
     pub fn prepare(&mut self, query: &dyn QueryTrait<N>) -> Result<()> {
         // Compute the inclusion and translation assignments.
         let (inclusion_assignments, global_state_root) = self.inclusion_tasks.prepare(&self.transitions, query)?;
-        let translation_assignments = self.translation_tasks.prepare(&self.transitions, &self.call_graph)?;
+        let translation_assignments = self.translation_tasks.prepare(&self.transitions)?;
+
         // Store the inclusion and translation assignments and global state root.
         self.inclusion_assignments
             .set(inclusion_assignments)
             .map_err(|_| anyhow!("Failed to set inclusion assignments"))?;
 
-        let batched_translation_assignments = self.translation_tasks.prepare(&self.transitions, &self.call_graph)?;
         self.translation_assignments
             .set(translation_assignments)
             .map_err(|_| anyhow!("Failed to set translation assignments"))?;

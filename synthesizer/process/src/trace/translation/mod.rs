@@ -62,16 +62,11 @@ impl<N: Network> Translation<N> {
     /// Inserts the transition to build state for the translation task.
     pub fn insert_transition(
         &mut self,
-        // TODO (dynamic_dispatch) seemingly unnecessary
-        input_ids: &[InputID<N>],
-        // TODO (dynamic_dispatch) seemingly unnecessary
-        input_values: &[Value<N>],
-        // TODO (dynamic_dispatch) seemingly only ID needed
-        transition: &Transition<N>,
+        transition_id: N::TransitionID,
         record_translation_data: Result<&Vec<RecordTranslationData<N>>>,
     ) -> Result<()> {
         // TODO (dynamic_dispatch): Result isn't a good interface; also, decide whether always having a value for a valid key = TransitionID (even if empty) is a good choice
-        self.translation_tasks.insert(*transition.id(), record_translation_data.cloned().unwrap_or_default());
+        self.translation_tasks.insert(transition_id, record_translation_data.cloned().unwrap_or_default());
 
         Ok(())
     }
@@ -100,37 +95,37 @@ impl<N: Network> Translation<N> {
 
         let mut translation_count = 0;
 
-        for transition in transitions.values().rev() {
-            if let Some(caller_inputs) = transition.caller_inputs() {
+        // for transition in transitions.values().rev() {
+        //     if let Some(caller_inputs) = transition.caller_inputs() {
 
-                let child_program_id = transition.program_id();
-                let child_function_name = transition.function_name();
-                let child_function_id = crate::compute_function_id(&console::types::U16::new(N::ID), child_program_id, child_function_name)?;
+        //         let child_program_id = transition.program_id();
+        //         let child_function_name = transition.function_name();
+        //         let child_function_id = crate::compute_function_id(&console::types::U16::new(N::ID), child_program_id, child_function_name)?;
 
-                // TODO: fix the next 6 lines
-                ensure!(dynamic_call.operand_types().len() == child_transition.inputs().len(), "The number of call operands {} does not match the number of function inputs {}", dynamic_call.operand_types().len(), child_transition.inputs().len());
-                ensure!(dynamic_call.operand_types().len() == child_function.input_types().len(), "The number of call operands {} does not match the number of function input types {}", dynamic_call.operand_types().len(), child_function.input_types().len());
-                ensure!(dynamic_call.operand_types().len() == caller_inputs.len(), "The number of call operands {} does not match the number of parent caller inputs {}", dynamic_call.operand_types().len(), caller_inputs.len());
-                for (io_index, (call_operand_type, child_input, child_input_type, caller_input)) in itertools::izip!(dynamic_call.operand_types(), child_transition.inputs(), child_function.input_types(), caller_inputs).enumerate() {
-                    match (call_operand_type, child_input_type, child_input) {
-                        (ValueType::DynamicRecord, ValueType::Record(record_identifier), Input::Record(serial_number, _)) => {
-                            let dynamic_record_fid = *child_function_id;
-                            let dynamic_record_id = **caller_input;
-                            let static_record_id = **serial_number;
-                            let record_consumed = N::Field::one();
-                            let translation_count_field = *console::types::U16::<N>::new(translation_count).to_field()?;
-                            let io_index_field = *console::types::U16::<N>::new(io_index as u16).to_field()?;
+        //         // TODO: fix the next 6 lines
+        //         ensure!(dynamic_call.operand_types().len() == child_transition.inputs().len(), "The number of call operands {} does not match the number of function inputs {}", dynamic_call.operand_types().len(), child_transition.inputs().len());
+        //         ensure!(dynamic_call.operand_types().len() == child_function.input_types().len(), "The number of call operands {} does not match the number of function input types {}", dynamic_call.operand_types().len(), child_function.input_types().len());
+        //         ensure!(dynamic_call.operand_types().len() == caller_inputs.len(), "The number of call operands {} does not match the number of parent caller inputs {}", dynamic_call.operand_types().len(), caller_inputs.len());
+        //         for (io_index, (call_operand_type, child_input, child_input_type, caller_input)) in itertools::izip!(dynamic_call.operand_types(), child_transition.inputs(), child_function.input_types(), caller_inputs).enumerate() {
+        //             match (call_operand_type, child_input_type, child_input) {
+        //                 (ValueType::DynamicRecord, ValueType::Record(record_identifier), Input::Record(serial_number, _)) => {
+        //                     let dynamic_record_fid = *child_function_id;
+        //                     let dynamic_record_id = **caller_input;
+        //                     let static_record_id = **serial_number;
+        //                     let record_consumed = N::Field::one();
+        //                     let translation_count_field = *console::types::U16::<N>::new(translation_count).to_field()?;
+        //                     let io_index_field = *console::types::U16::<N>::new(io_index as u16).to_field()?;
 
-                            batch_verifier_inputs.entry((*child_program_id, record_identifier)).or_default().push(
-                                vec![record_consumed, dynamic_record_fid, translation_count_field, io_index_field, static_record_id, dynamic_record_id]
-                            );
-                            translation_count += 1;
-                        }
-                        _ => { } // No translation to perform.
-                    }
-                }
-            }
-        }
+        //                     batch_verifier_inputs.entry((*child_program_id, record_identifier)).or_default().push(
+        //                         vec![record_consumed, dynamic_record_fid, translation_count_field, io_index_field, static_record_id, dynamic_record_id]
+        //                     );
+        //                     translation_count += 1;
+        //                 }
+        //                 _ => { } // No translation to perform.
+        //             }
+        //         }
+        //     }
+        // }
 
         // for (parent, children) in call_graph.iter() {
         //     let (parent_transition, parent_function) = transitions.get(parent).ok_or_else(||

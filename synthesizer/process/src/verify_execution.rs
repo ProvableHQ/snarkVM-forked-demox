@@ -68,7 +68,7 @@ impl<N: Network> Process<N> {
         let mut verifier_inputs = HashMap::new();
 
         // Initialize a map of transition IDs to references of the transition.
-        let mut transition_map = IndexMap::new();
+        let mut transition_map = HashMap::new();
 
         // Initialize a map of (program ID, record identifier) to translation verifying keys.
         let mut translation_verifying_keys = HashMap::new();

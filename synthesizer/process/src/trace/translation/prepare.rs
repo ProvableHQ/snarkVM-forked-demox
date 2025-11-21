@@ -23,7 +23,6 @@ impl<N: Network> Translation<N> {
     pub fn prepare(
         &self,
         transitions: &[Transition<N>],
-        call_graph: &HashMap<N::TransitionID, Vec<N::TransitionID>>,
         // TODO (dynamic_dispatch) Consider using pointers or Arcs to proving keys
     ) -> Result<Vec<(ProvingKey<N>, Vec<TranslationAssignment<N>>)>> {
 
@@ -134,8 +133,7 @@ impl<N: Network> Translation<N> {
     pub async fn prepare_async(
         &self,
         transitions: &[Transition<N>],
-        call_graph: &HashMap<N::TransitionID, Vec<N::TransitionID>>,
     ) -> Result<Vec<(ProvingKey<N>, Vec<TranslationAssignment<N>>)>> {
-        self.prepare(transitions, call_graph)
+        self.prepare(transitions)
     }
 }
