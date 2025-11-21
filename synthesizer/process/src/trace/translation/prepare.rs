@@ -27,12 +27,6 @@ impl<N: Network> Translation<N> {
         // TODO (dynamic_dispatch) Consider using pointers or Arcs to proving keys
     ) -> Result<Vec<(ProvingKey<N>, Vec<TranslationAssignment<N>>)>> {
 
-        // TODO (dynamic_dispatch) remove
-        println!(" ** In prepare: number of translation tasks: {}", self.translation_tasks.len());
-        for (transition_id, translation_tasks) in &self.translation_tasks {
-            println!(" - transition tasks with ID {:?}: {}", transition_id, translation_tasks.len());
-        }
-
         // Initialize a vector for the batched assignments.
         let mut batched_assignments: HashMap<(ProgramID<N>, Identifier<N>), Vec<TranslationAssignment<N>>> =
             HashMap::new();
@@ -45,18 +39,11 @@ impl<N: Network> Translation<N> {
         for transition in transitions {
             let transition_id = transition.id();
 
-            // TODO (dynamic_dispatch) remove
-            println!(" **** In prepare: entering transition loop");
-
-
             let Some(translation_tasks) = self.translation_tasks.get(transition_id) else {
                 bail!("Translation tasks not found for transition ID {}", transition_id);
             };
 
             for translation_task in translation_tasks {
-
-                // TODO (dynamic_dispatch) remove
-                println!(" ******* In prepare: entering translation task loop");
 
                 let RecordTranslationData {
                     translation_proving_key,
@@ -91,6 +78,7 @@ impl<N: Network> Translation<N> {
                         input_output_index
                     );
                 };
+
                 // Checks associated to input-record translation
 
                 ensure!(
@@ -99,18 +87,6 @@ impl<N: Network> Translation<N> {
                     transition_id,
                     input_output_index
                 );
-
-                let input_output_index_value = U16::new(*input_output_index);
-
-                let id_static = record_static.to_commitment(program_id, record_name, record_view_key_value)?;
-
-                // TODO (dynamic_dispatch) remove
-                println!("During prepare, computing dynamic record ID with");
-                                        println!("   function_id: {:?}", function_id);
-                                        println!("   tvk: {:?}", tvk);
-                                        println!("   input_output_index: {:?}", input_output_index);
-
-                let id_dynamic = record_dynamic.to_id(*function_id, *tvk, input_output_index_value)?;
 
                 let batch = &mut batched_assignments.entry((*program_id, *record_name)).or_insert(vec![]);
 
@@ -125,76 +101,6 @@ impl<N: Network> Translation<N> {
                     proving_keys.insert((*program_id, *record_name), translation_proving_key.clone());
                 }
 
-                // TODO (dynamic_dispatch) remove
-                {
-                    // Nomenclature from TranslationAssignment
-                    let id_static = static_record_id;
-                    let id_dynamic = dynamic_record_id;
-
-                    // Circuit checks
-                    let actual_id_dynamic =
-                        record_dynamic.to_id(*function_id, *tvk, U16::new(*input_output_index)).unwrap();
-
-                    let actual_static_commitment =
-                        record_static.to_commitment(program_id, record_name, &record_view_key.unwrap()).unwrap();
-
-                    // TODO (Antonio) remove
-                    println!(" *************** IN CONSOLE LAND: COMPUTING STATIC COMMITMENT WITH");
-                    println!("   - program_id: {:?}", program_id);
-                    println!("   - record_name: {:?}", record_name);
-                    println!("   - record_view_key: {:?}", record_view_key.unwrap());
-                    println!("   OBTAINED: {:?}", actual_static_commitment);
-
-                    let actual_static_serial_number = Record::<N, Plaintext<N>>::serial_number_from_gamma(
-                        &gamma.unwrap(),
-                        actual_static_commitment.clone(),
-                    ).unwrap();
-
-                    let actual_id_static = if *record_consumed {
-                        actual_static_serial_number
-                    } else {
-                        actual_static_commitment
-                    };
-
-                    // // ******** Merkelizing the static-record data
-
-                    let console_leaf_hasher = console::algorithms::Poseidon8::<N>::setup("DynamicRecordLeafHasher").unwrap();
-                    let console_path_hasher =  console::algorithms::Poseidon2::<N>::setup("DynamicRecordPathHasher").unwrap();
-
-                    // TODO (dynamic_dispatch) remove
-                    println!("NUMBER of leaves");
-
-                    let leaves = record_static
-                        .data()
-                        .iter()
-                        .map(|(identifier, entry)| {
-                            let mut leaf = vec![identifier.to_field().unwrap()];
-                            leaf.extend(entry.to_fields().unwrap());
-                            leaf
-                        })
-                        .collect::<Vec<Vec<Field<N>>>>();
-                    
-                    use console::program::RecordDataTree;
-
-                    let tree =
-                        RecordDataTree::<N>::new(&console_leaf_hasher, &console_path_hasher, &leaves).unwrap();
-                    let data_root = tree.root();
-                    
-                    println!("Starting checks (record consumed: {})", record_consumed);
-                    assert_eq!(record_static.owner().to_group(), record_dynamic.owner().to_group());
-                    println!("Prepare passed check 1");
-                    assert_eq!(record_static.nonce(), record_dynamic.nonce());
-                    println!("Prepare passed check 2");
-                    assert_eq!(record_static.version(), record_dynamic.version());
-                    println!("Prepare passed check 3");
-                    assert_eq!(data_root, record_dynamic.root());
-                    println!("Prepare passed check 4");
-                    assert_eq!(actual_id_static, *id_static);
-                    println!("Prepare passed check 5");
-                    assert_eq!(actual_id_dynamic, *dynamic_record_id);
-                    // panic!("Prepare passed final check");
-                }
-
                 batch.push(TranslationAssignment::new(
                     record_static.clone(),
                     program_id.clone(),
@@ -205,19 +111,14 @@ impl<N: Network> Translation<N> {
                     translation_count,
                     tvk.clone(),
                     *input_output_index,
-                    id_dynamic.clone(),
-                    id_static.clone(),
+                    *dynamic_record_id,
+                    *static_record_id,
                     record_view_key_value.clone(),
                     gamma_value.clone(),
                 ));
 
                 translation_count += 1;
             }
-        }
-
-        // TODO (dynamic_dispatch) remove
-        for (program_id, record_name) in batched_assignments.keys() {
-            println!("~~~~ Program ID: {:?}, Record Name: {:?}, proving key: {:?}", program_id, record_name, proving_keys.get(&(*program_id, *record_name)).unwrap().circuit_verifying_key.id);
         }
 
         // Replace program ID + record name by proving key

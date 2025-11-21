@@ -118,20 +118,8 @@ impl<N: Network> Transition<N> {
         let function_name = *request.function_name();
         let num_inputs = request.inputs().len();
 
-        // TODO (dynamic_dispatch) remove
-        // println!("********** INSIDE FROM FOR FUNCTION {function_name:?}**");
-
-        // // Ensure that the request and response are either both dynamic or both static.
-        // ensure!(
-        //     request.is_dynamic() == response.is_dynamic(),
-        //     "The request and response must both be either dynamic or static"
-        // );
-
         // Compute the function ID based on the whether the request and response are dynamic.
         let function_id = compute_function_id(&network_id, &program_id, &function_name)?;
-
-        // TODO (dynamic_dispatch) remove
-        // println!("function_id: {function_id:?}");
 
         // A helper function to construct and verify the inputs.
         let construct_inputs = |input_ids: &[InputID<N>], inputs: &[Value<N>]| -> Result<Vec<Input<N>>> {

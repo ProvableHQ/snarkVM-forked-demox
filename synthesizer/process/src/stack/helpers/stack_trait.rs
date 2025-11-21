@@ -151,10 +151,6 @@ impl<N: Network> StackTrait<N> for Stack<N> {
 
     /// Inserts the given translation proving key for the given function name.
     fn insert_translation_proving_key(&self, record_name: &Identifier<N>, proving_key: ProvingKey<N>) -> Result<()> {
-
-        // TODO (dynamic_dispatch) remove
-        println!(" +++++++ Inserting translation proving {:?} / {:?} = {:?}", self.program.id(), record_name, proving_key.circuit_verifying_key.id);
-
         // Ensure the record name exists in the program.
         ensure!(
             self.program.contains_record(record_name),

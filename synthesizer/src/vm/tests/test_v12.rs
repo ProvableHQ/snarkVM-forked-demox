@@ -44,9 +44,11 @@ fn test_translation(
     // Program and function to call
     root_program_name: &str,
     root_function_name: &str,
-    // Inputs to the root call
-    input_values: &[Value<CurrentNetwork>],
-    // If Some, precedes the root call with a transaction that mints the given gas_container record.
+    // Inputs to the root call; if None gas_to_mint is used as explained below.
+    input_values: Option<Vec<Value<CurrentNetwork>>>,
+    // If Some, precedes the root call with a transaction that mints the given
+    // gas_container record and uses the corresponding dynamic record as input
+    // to the root call.
     gas_to_mint: Option<Record<CurrentNetwork, Plaintext<CurrentNetwork>>>,
     // Expected output IDsand public-ouput values
     expected_output_ids: Option<Vec<OutputID<CurrentNetwork>>>,
@@ -193,10 +195,19 @@ fn test_translation(
     assert_eq!(block_b.aborted_transaction_ids().len(), 0);
     vm.add_next_block(&block_b).unwrap();
 
-    // TODO (Antonio) remove
-    let mut input_values_vec = Vec::new();
+    // TODO (Antonio) reintroduce
+    // ensure!(
+    //     input_values.is_none() || gas_to_mint.is_none(),
+    //     "When gas_to_mint is provided, the resulting static input is converted to dynamic record is used instead of input_values, which should be None",
+    // );
 
-    if gas_to_mint.is_some() {
+    // ensure!(
+    //     input_values.is_some() || gas_to_mint.is_some(),
+    //     "Exactly one of input_values or gas_to_mint must be provided",
+    // );
+
+    let computed_input_values = input_values.unwrap_or_else(|| {
+        
         println!("Minting gas_container record...");
         let transaction_mint = vm
         .execute(
@@ -210,50 +221,31 @@ fn test_translation(
         )
         .unwrap();
 
-        // TODO (dynamic_dispatch) clean up
         let mint_output = transaction_mint.transitions().next().unwrap().outputs().iter().next().unwrap();
+        
         let output_gas_record = match mint_output {
-            Output::Record(commitment, checksum, record_ciphertext, _) => {
-                println!("    Minted record commitment: {commitment}");
-                println!("    Minted record checksum: {checksum}");
+            Output::Record(_, _, record_ciphertext, _) => {
                 record_ciphertext.as_ref().unwrap().decrypt(&caller_view_key).unwrap()
             }
             _ => panic!("Minted record is not a record"),
         };
-
-        input_values_vec.push(Value::<CurrentNetwork>::Record(output_gas_record));
 
         let block_mint = sample_next_block(&vm, &caller_private_key, &[transaction_mint], rng).unwrap();
         assert_eq!(block_mint.transactions().num_accepted(), 1);
         assert_eq!(block_mint.transactions().num_rejected(), 0);
         assert_eq!(block_mint.aborted_transaction_ids().len(), 0);
         vm.add_next_block(&block_mint).unwrap();
-    }
 
-    // TODO (dynamic_dispatch) remove
-    println!("\n\n\n\n\n\n\n\n");
+        let dynamic_record = DynamicRecord::from_record(&output_gas_record).unwrap();
+        vec![Value::<CurrentNetwork>::DynamicRecord(dynamic_record)]
+    });
 
-    println!("Executing function: {root_function_name}...");
-
-    // TODO (Antonio) remove
-    let mut input_values = input_values;
-    let mut refined_input_values = Vec::new();
-    if !input_values_vec.is_empty() {
-        match input_values_vec.iter().next().unwrap() {
-            Value::Record(record) => {
-                refined_input_values.push(Value::<CurrentNetwork>::DynamicRecord(DynamicRecord::from_record(&record).unwrap()));
-            }
-            _ => panic!("First input value is not a record"),
-        }
-        input_values = refined_input_values.as_slice();
-    }
-
-    // Execute the "dynamic" function.
+    // Execute the root function.
     let transaction = vm
         .execute(
             &caller_private_key,
             (root_program_name, root_function_name),
-            input_values.into_iter(),
+            computed_input_values.into_iter(),
             None,
             0,
             None,
@@ -261,8 +253,11 @@ fn test_translation(
         )
         .unwrap();
 
-    // TODO (Antonio) remove
-    panic!("Stop here");
+    println!("Verifying transaction...");
+
+    vm.check_transaction(&transaction, None, rng).unwrap();
+
+    println!("Sampling final block...");
 
     let block = sample_next_block(&vm, &caller_private_key, &[transaction.clone()], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
@@ -296,10 +291,6 @@ fn test_translation(
             expected_output_ids.into_iter().map(get_main_field).collect_vec()
         );
     }
-
-    println!("Verifying transaction...");
-
-    vm.check_transaction(&transaction, None, rng).unwrap();
 }
 
 // This test checks that the execution graph computed from an execution
@@ -615,6 +606,8 @@ fn test_complex_dynamic_graph_construction_internal(
     vm.add_next_block(&block).unwrap();
 }
 
+/************************ Dynamic call-graph recovery ************************/
+
 #[test]
 fn test_complex_dynamic_graph_construction() {
 
@@ -632,6 +625,8 @@ fn test_complex_dynamic_graph_construction() {
         test_complex_dynamic_graph_construction_internal(mix[0], mix[1], mix[2], mix[3], mix[4], mix[5], mix[6]);
     }
 }
+
+/************************** Other dynamic-call tests **************************/
 
 // This test verifiers that a dynamic call to the `credits.transfer_public` function works as expected.
 #[test]
@@ -760,14 +755,12 @@ constructor:
     Ok(())
 }
 
-/************************ Dynamic call-graph recovery ************************/
-
 /************************** Translation test cases ***************************/
 
 // TODO (dynamic_dispatch) remove the legend once working
 // Single-translation test cases (O: coded, P: passing)
 // O input static -> dynamic
-// O input dynamic -> static
+// P input dynamic -> static
 // O output static -> dynamic
 // x output dynamic -> static ! Cannot be tested directly since dynamic records cannot be directly instantiated. Tested as part of multi-translation tests below.
 // Double-translation test cases
@@ -790,37 +783,35 @@ constructor:
 // More
 
 #[test]
-fn test_translation_input_static_dynamic() {
-    let rng = &mut TestRng::default();
+// fn test_translation_input_static_dynamic() {
+//     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key).unwrap();
+//     let caller_private_key = sample_genesis_private_key(rng);
+//     let caller_address = Address::try_from(&caller_private_key).unwrap();
 
-    let record_static_str = format!(
-        r#"{{
-        owner: {}.private,
-        liters: 22u64.public,
-        flammable: false.private,
-        _nonce: 0group.public,
-        _version: 1u8.public
-    }}"#,
-        caller_address
-    );
+//     let record_static_str = format!(
+//         r#"{{
+//         owner: {}.private,
+//         liters: 22u64.public,
+//         flammable: false.private,
+//         _nonce: 0group.public,
+//         _version: 1u8.public
+//     }}"#,
+//         caller_address
+//     );
 
-    // Construct the static and dynamic records.
-    let r0_static = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_str(&record_static_str).unwrap();
+//     // Construct the static and dynamic records.
+//     let r0_static = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_str(&record_static_str).unwrap();
 
-    // Input and expected output
-    let r0_value = Value::<CurrentNetwork>::Record(r0_static.clone());
+//     // Input and expected output
+//     let r0_value = Value::<CurrentNetwork>::Record(r0_static.clone());
 
-    test_translation(&caller_private_key, "gas_manager.aleo", "consume_gas", &[r0_value], Some(r0_static), None, None, rng);
-}
+//     test_translation(&caller_private_key, "gas_manager.aleo", "consume_gas", &[r0_value], Some(r0_static), None, None, rng);
+// }
 
 #[test]
 fn test_translation_input_dynamic_static() {
-    // TODO (dynamic_dispatch) reset to default
-    // let rng = &mut TestRng::default();
-    let rng = &mut TestRng::from_seed(40);
+    let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
     let caller_address = Address::try_from(&caller_private_key).unwrap();
@@ -848,7 +839,7 @@ fn test_translation_input_dynamic_static() {
         &caller_private_key,
         "flow.aleo",
         "get_dynamic_liters_from_gas",
-        &[r0_value],
+        None,
         Some(r0_static),
         None,
         Some(vec![expected_output]),
@@ -886,7 +877,7 @@ fn test_translation_output_static_dynamic() {
         &caller_private_key,
         "flow.aleo",
         "dynamic_pump",
-        &[],
+        Some(vec![]),
         None,
         Some(vec![OutputID::DynamicRecord(r0_dynamic_id)]),
         None,

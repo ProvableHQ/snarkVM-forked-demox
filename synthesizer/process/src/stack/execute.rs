@@ -489,21 +489,8 @@ impl<N: Network> Stack<N> {
         }
         // If the circuit is in `Authorize` mode, then save the transition.
         if let CallStack::Authorize(_, _, authorization) = registers.call_stack_ref() {
-            // TODO (dynamic_dispatch) remove
-            // println!("---- BEFORE");
-
-            // TODO (dynamic_dispatch) remove
-            // println!("\n\n right before authorising caller {:?}**", caller_input_ids);
-            // println!("\n right before authorising caller {:?}**", caller_input_types);
-            // println!("\n right before authorising callee VALUES {:?}**", caller_inputs);
-            // println!("\n right before authorising callee TYPES {:?}**", input_types);
-            // println!("\n right before authorising callee VALUES {:?}**\n\n", inputs);
-
             // Construct the transition.
             let transition = Transition::from(&console_request, &response, &output_types, &output_registers)?;
-
-            // TODO (dynamic_dispatch) remove
-            // println!("---- AFTER");
 
             // Add the transition to the authorization.
             authorization.insert_transition(transition)?;

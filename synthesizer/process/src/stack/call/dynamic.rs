@@ -218,19 +218,6 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
     ) -> Result<()> {
         use circuit::Eject;
 
-        // TODO (dynamic_dispatch) remove
-        let mode = match registers.call_stack_ref() {
-            CallStack::Authorize(..) => "Authorize",
-            CallStack::Execute(..) => "Execute",
-            CallStack::CheckDeployment(..) => "CheckDeployment",
-            CallStack::Synthesize(..) => "Synthesize",
-            CallStack::Evaluate(..) => "Evaluate",
-            CallStack::PackageRun(..) => "PackageRun",
-        };
-        
-        // TODO (dynamic_dispatch) remove
-        // println!("**ENTERING EXECUTE in mode: {:?}**", mode);
-
         let timer = timer!("CallDynamic::execute");
 
         // Load the operands values.
@@ -759,108 +746,6 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                     let translation_proving_key =
                                         get_record_translation_proving_key(&program_id, &record_name, rng)?;
 
-                                    // TODO (Antonio) remove; checking if the record translation data satisfies the translation circuit
-                                    {
-                                        let TMP = RecordTranslationData {
-                                            // TODO: consider using a mapping from (program_id, record_name) to (proving_key, other data)
-                                            translation_proving_key: translation_proving_key.clone(), // callee record proving key
-                                            record_static: record.clone(), // callee static_record
-                                            record_dynamic: dynamic_record.clone(), // caller dynamic_record
-                                            program_id,              // callee program_id
-                                            function_id: callee_console_function_id,     // always the callee function_id
-                                            record_name,             // callee record_name
-                                            record_consumed: true,   // misnomer, but yes it's the input direction
-                                            tvk: *callee_request.tvk(),   // tvk of the function where the dynamic record lives (caller)
-                                            record_view_key: Some(*record_view_key), // callee record_view_key
-                                            gamma: Some(*gamma),     // callee gamma
-                                            static_record_id: *serial_number, // callee static_record_id
-                                            dynamic_record_id: dynamic_record_commitment, // caller dynamic_record_id
-                                            input_output_index: operand_index as u16, // callee operand_index
-                                        };
-
-                                        let RecordTranslationData {
-                                            translation_proving_key,
-                                            record_dynamic,
-                                            record_static,
-                                            program_id,
-                                            function_id,
-                                            record_name,
-                                            record_consumed,
-                                            tvk,
-                                            record_view_key,
-                                            gamma,
-                                            static_record_id,
-                                            dynamic_record_id,
-                                            input_output_index,
-                                        } = TMP;
-
-                                        // Nomenclature from TranslationAssignment
-                                        let id_static = static_record_id;
-                                        let id_dynamic = dynamic_record_id;
-
-                                        println!("During checks, computing dynamic record ID with");
-                                        println!("   function_id: {:?}", function_id);
-                                        println!("   tvk: {:?}", tvk);
-                                        println!("   input_output_index: {:?}", input_output_index);
-                                        // Circuit checks
-                                        let actual_id_dynamic =
-                                            record_dynamic.to_id(function_id, tvk, U16::new(input_output_index)).unwrap();
-
-                                        let actual_static_commitment =
-                                            record_static.to_commitment(&program_id, &record_name, &record_view_key.unwrap()).unwrap();
-
-                                        let actual_static_serial_number = Record::<N, Plaintext<N>>::serial_number_from_gamma(
-                                            &gamma.unwrap(),
-                                            actual_static_commitment.clone(),
-                                        ).unwrap();
-
-                                        let actual_id_static = if record_consumed {
-                                            actual_static_serial_number
-                                        } else {
-                                            actual_static_commitment
-                                        };
-
-                                        // // ******** Merkelizing the static-record data
-
-                                        let console_leaf_hasher = console::algorithms::Poseidon8::<N>::setup("DynamicRecordLeafHasher").unwrap();
-                                        let console_path_hasher =  console::algorithms::Poseidon2::<N>::setup("DynamicRecordPathHasher").unwrap();
-
-                                        // TODO (dynamic_dispatch) remove
-                                        println!("NUMBER of leaves");
-
-                                        let leaves = record_static
-                                            .data()
-                                            .iter()
-                                            .map(|(identifier, entry)| {
-                                                let mut leaf = vec![identifier.to_field().unwrap()];
-                                                leaf.extend(entry.to_fields().unwrap());
-                                                leaf
-                                            })
-                                            .collect::<Vec<Vec<Field<N>>>>();
-                                        
-                                        use console::program::RecordDataTree;
-
-                                        let tree =
-                                            RecordDataTree::<N>::new(&console_leaf_hasher, &console_path_hasher, &leaves).unwrap();
-                                        let data_root = tree.root();
-
-                                        // // ******** Assertions
-
-                                        println!("Starting checks (record consumed: {})", record_consumed);
-                                        assert_eq!(record_static.owner().to_group(), record_dynamic.owner().to_group());
-                                        println!("Passed check 1");
-                                        assert_eq!(record_static.nonce(), record_dynamic.nonce());
-                                        println!("Passed check 2");
-                                        assert_eq!(record_static.version(), record_dynamic.version());
-                                        println!("Passed check 3");
-                                        assert_eq!(data_root, record_dynamic.root());
-                                        println!("Passed check 4");
-                                        assert_eq!(actual_id_static, id_static);
-                                        println!("Passed check 5");
-                                        assert_eq!(actual_id_dynamic, dynamic_record_id);
-                                        println!("Passed final check");
-                                    }
-
                                     translation_data.push(RecordTranslationData {
                                         // TODO: consider using a mapping from (program_id, record_name) to (proving_key, other data)
                                         translation_proving_key, // callee record proving key
@@ -1078,12 +963,6 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             );
             lap!(timer, "Checked the outputs");
 
-            // TODO (dynamic_dispatch) remove
-            // println!(
-            //     "**INSIDE EXECUTE FOR FUNCTION {:?} PROCESS OUTPUTS FROM CALLBACK in mode: {:?}**",
-            //     function_name, mode
-            // );
-
             // Return the circuit outputs.
             outputs
         };
@@ -1096,9 +975,6 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         lap!(timer, "Assigned the outputs to registers");
 
         finish!(timer);
-
-        // TODO (dynamic_dispatch) remove
-        // println!("**COMPLETED CALL DYNAMIC in mode: {:?}**", mode);
 
         Ok(())
     }

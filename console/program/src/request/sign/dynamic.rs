@@ -70,14 +70,6 @@ impl<N: Network> Request<N> {
         }
         let caller_inputs = parsed_caller_inputs;
 
-        // TODO (dynamic_dispatch) remove
-        // println!("inputs: {inputs:?}");
-        // println!("input_types: {input_types:?}");
-        // println!("caller_input_types: {caller_input_types:?}");
-        // println!("private_key: {private_key:?}");
-        // println!("program_id: {program_id:?}");
-        // println!("function_name: {function_name:?}");
-
         // Retrieve `sk_sig`.
         let sk_sig = private_key.sk_sig();
 

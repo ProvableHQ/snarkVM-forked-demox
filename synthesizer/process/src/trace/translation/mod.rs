@@ -70,8 +70,6 @@ impl<N: Network> Translation<N> {
         transition: &Transition<N>,
         record_translation_data: Result<&Vec<RecordTranslationData<N>>>,
     ) -> Result<()> {
-        // TODO (dynamic_dispatch) remove
-        println!("\n\n ********* INSERTING TRANSLATION TASK \n\n *********");
         // TODO (dynamic_dispatch): Result isn't a good interface; also, decide whether always having a value for a valid key = TransitionID (even if empty) is a good choice
         self.translation_tasks.insert(*transition.id(), record_translation_data.cloned().unwrap_or_default());
 
@@ -84,6 +82,17 @@ impl<N: Network> Translation<N> {
         transitions: &HashMap<N::TransitionID, (&Transition<N>, Function<N>)>,
         call_graph: &HashMap<N::TransitionID, Vec<N::TransitionID>>,
     ) -> Result<Vec<(VerifyingKey<N>, Vec<Vec<N::Field>>)>> {
+/* 
+        let circuit_record_consumed = circuit::Boolean::<A>::new(circuit::Mode::Public, self.record_consumed);
+        let circuit_function_id = circuit::Field::<A>::new(circuit::Mode::Public, self.function_id);
+        let _circuit_translation_count =
+            circuit::U16::<A>::new(circuit::Mode::Public, console::types::U16::<N>::new(self.translation_count));
+        let circuit_input_output_index =
+            circuit::U16::<A>::new(circuit::Mode::Public, console::types::U16::<N>::new(self.input_output_index));
+        let circuit_id_static = circuit::Field::<A>::new(circuit::Mode::Public, self.id_static);
+        let circuit_id_dynamic = circuit::Field::<A>::new(circuit::Mode::Public, self.id_dynamic);
+ */
+
         // Determine the number of transitions.
         let num_transitions = transitions.len();
 
