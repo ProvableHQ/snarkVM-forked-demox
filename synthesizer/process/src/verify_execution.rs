@@ -158,10 +158,31 @@ impl<N: Network> Process<N> {
             // Ensure the input and output types are equivalent to the ones defined in the function.
             // We only need to check that the variant type matches because we already check the hashes in
             // the `Input::verify` and `Output::verify` functions.
-            let transition_input_variants = transition.inputs().iter().map(Input::variant).collect::<Vec<_>>();
-            let transition_output_variants = transition.outputs().iter().map(Output::variant).collect::<Vec<_>>();
-            ensure!(function.input_variants() == transition_input_variants, "The input variants do not match");
-            ensure!(function.output_variants() == transition_output_variants, "The output variants do not match");
+            for (function_input, transition_input) in function.input_types().iter().zip_eq(transition.inputs().iter()) {
+                match (function_input, transition_input) {
+                    (ValueType::Constant(..), Input::Constant(..))
+                    | (ValueType::Public(..), Input::Public(..))
+                    | (ValueType::Private(..), Input::Private(..))
+                    | (ValueType::Record(..), Input::Record(..))
+                    | (ValueType::ExternalRecord(..), Input::ExternalRecord(..))
+                    | (ValueType::DynamicRecord, Input::DynamicRecord(..)) => {}
+                    _ => bail!("The input variants do not match"),
+                }
+            }
+            for (function_output, transition_output) in
+                function.output_types().iter().zip_eq(transition.outputs().iter())
+            {
+                match (function_output, transition_output) {
+                    (ValueType::Constant(..), Output::Constant(..))
+                    | (ValueType::Public(..), Output::Public(..))
+                    | (ValueType::Private(..), Output::Private(..))
+                    | (ValueType::Record(..), Output::Record(..))
+                    | (ValueType::ExternalRecord(..), Output::ExternalRecord(..))
+                    | (ValueType::Future(..), Output::Future(..))
+                    | (ValueType::DynamicRecord, Output::DynamicRecord(..)) => {}
+                    _ => bail!("The output variants do not match"),
+                }
+            }
 
             // Retrieve the parent program ID.
             // Note: The last transition in the execution does not have a parent, by definition.
