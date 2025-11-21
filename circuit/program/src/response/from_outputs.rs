@@ -138,8 +138,10 @@ impl<A: Aleo> Response<A> {
 
                         // Prepare the index as a constant field element.
                         let output_index = Field::constant(console::Field::from_u64(output_register.locator()));
+                        println!("!!! Output index for record encryption: {}", output_index.eject_value());
                         // Compute the encryption randomizer as `HashToScalar(tvk || index)`.
                         let randomizer = A::hash_to_scalar_psd2(&[tvk.clone(), output_index]);
+                        println!("!!! Randomizer for record encryption: {}", randomizer.eject_value());
 
                         // Encrypt the record, using the randomizer.
                         let (encrypted_record, record_view_key) = record.encrypt_symmetric(&randomizer);
@@ -147,6 +149,7 @@ impl<A: Aleo> Response<A> {
                         // Compute the record commitment.
                         let commitment =
                             record.to_commitment(program_id, &Identifier::constant(*record_name), &record_view_key);
+                        println!("!!! Commitment for record output: {}", commitment.eject_value());
 
                         // Compute the record checksum, as the hash of the encrypted record.
                         let checksum = A::hash_bhp1024(&encrypted_record.to_bits_le());

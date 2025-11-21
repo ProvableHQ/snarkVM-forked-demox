@@ -17,21 +17,8 @@ use crate::{Opcode, Operand, RegistersCircuit, RegistersSigner, RegistersTrait, 
 use console::{
     network::prelude::*,
     program::{
-        ArrayType,
-        Entry,
-        EntryType,
-        Identifier,
-        Literal,
-        LiteralType,
-        Locator,
-        Owner,
-        Plaintext,
-        PlaintextType,
-        Record,
-        Register,
-        RegisterType,
-        Value,
-        ValueType,
+        ArrayType, Entry, EntryType, Identifier, Literal, LiteralType, Locator, Owner, Plaintext, PlaintextType,
+        Record, Register, RegisterType, Value, ValueType,
     },
     types::Field,
 };
@@ -310,10 +297,13 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
 
                 // Prepare the index as a field element.
                 let index = Field::from_u64(self.destination.locator());
+                println!("$$$ index: {}", index);
                 // Compute the randomizer as `HashToScalar(tvk || index)`.
                 let randomizer = N::hash_to_scalar_psd2(&[registers.tvk()?, index])?;
+                println!("$$$ randomizer: {}", randomizer);
                 // Compute the nonce from the randomizer.
                 let nonce = N::g_scalar_multiply(&randomizer);
+                println!("$$$ nonce: {}", nonce);
 
                 // Construct the version.
                 // Attention: The record version is currently on Version 1. If the record version is updated, change this value.

@@ -128,7 +128,12 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
 
                 // Convert the inputs to the callee's context.
                 // TODO (@d0cd): Do we need to check that they match? I think no because `CallDynamic::output_types should have`
-                ensure!(inputs.len() == input_types.len(), "[evaluate Authorize] Expected {} inputs, but {} were provided.", input_types.len(), inputs.len());
+                ensure!(
+                    inputs.len() == input_types.len(),
+                    "[evaluate Authorize] Expected {} inputs, but {} were provided.",
+                    input_types.len(),
+                    inputs.len()
+                );
                 let callee_inputs = inputs
                     .iter()
                     .zip(input_types.iter())
@@ -200,7 +205,12 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         lap!(timer, "Computed outputs");
 
         // Assign the outputs to the destination registers.
-        ensure!(outputs.len() == self.destinations().len(), "[evaluate Dynamic] Expected {} outputs, but {} were provided.", self.destinations().len(), outputs.len());
+        ensure!(
+            outputs.len() == self.destinations().len(),
+            "[evaluate Dynamic] Expected {} outputs, but {} were provided.",
+            self.destinations().len(),
+            outputs.len()
+        );
         for (output, register) in outputs.into_iter().zip(&self.destinations()) {
             // Assign the output to the register.
             registers.store(stack, register, output)?;
@@ -317,7 +327,12 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         }
                         // Convert the inputs to the callee's context.
                         // TODO (@d0cd): Do we need to check that they match? I think no because `CallDynamic::output_types should have`
-                        ensure!(inputs.len() == input_types.len(), "[execute Authorize] Expected {} inputs, but {} were provided.", input_types.len(), inputs.len());
+                        ensure!(
+                            inputs.len() == input_types.len(),
+                            "[execute Authorize] Expected {} inputs, but {} were provided.",
+                            input_types.len(),
+                            inputs.len()
+                        );
                         let callee_inputs = inputs
                             .iter()
                             .zip(input_types.iter())
@@ -483,7 +498,12 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         }
                         // Convert the inputs to the callee's context.
                         // TODO (@d0cd): Do we need to check that they match? I think no because `CallDynamic::output_types should have`
-                        ensure!(inputs.len() == input_types.len(), "[execute PackageRun] Expected {} inputs, but {} were provided.", input_types.len(), inputs.len());
+                        ensure!(
+                            inputs.len() == input_types.len(),
+                            "[execute PackageRun] Expected {} inputs, but {} were provided.",
+                            input_types.len(),
+                            inputs.len()
+                        );
                         let callee_inputs = inputs
                             .iter()
                             .zip(input_types.iter())
@@ -610,20 +630,22 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             .dynamic_call_outputs(callee_request.caller_output_types().as_ref().unwrap())?;
 
                         // Anonymous helper to get a record translation proving key.
-                        let get_record_translation_proving_key =
-                            |program_id: &ProgramID<N>, record_name: &Identifier<N>, rng: &mut R| -> Result<ProvingKey<N>> {
-                                let record_stack = match program_id == stack.program_id() {
-                                    true => stack,
-                                    false => &stack.get_stack_unchecked(&program_id)?,
-                                };
-
-                                // TODO (dynamic_dispatch) this is meant to be the equivalent of the block witht he comment
-                                // "If the circuit is in `Synthesize` or `Execute` mode, synthesize the circuit key, if it does not exist." stack/execute.rs
-                                // Think whether this is the right approach
-                                record_stack.synthesize_translation_key::<A, R>(record_name, rng)?;
-                                record_stack.get_translation_proving_key(record_name)
+                        let get_record_translation_proving_key = |program_id: &ProgramID<N>,
+                                                                  record_name: &Identifier<N>,
+                                                                  rng: &mut R|
+                         -> Result<ProvingKey<N>> {
+                            let record_stack = match program_id == stack.program_id() {
+                                true => stack,
+                                false => &stack.get_stack_unchecked(&program_id)?,
                             };
-                            
+
+                            // TODO (dynamic_dispatch) this is meant to be the equivalent of the block witht he comment
+                            // "If the circuit is in `Synthesize` or `Execute` mode, synthesize the circuit key, if it does not exist." stack/execute.rs
+                            // Think whether this is the right approach
+                            record_stack.synthesize_translation_key::<A, R>(record_name, rng)?;
+                            record_stack.get_translation_proving_key(record_name)
+                        };
+
                         let caller_console_input_ids = callee_request.caller_input_ids().clone().unwrap_or_default();
                         let callee_console_input_ids = callee_request.input_ids();
                         let caller_console_request = registers.request()?;
@@ -759,7 +781,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                         function_id: callee_console_function_id, // always the callee function_id
                                         record_name,             // callee record_name
                                         record_consumed: true,   // misnomer, but yes it's the input direction
-                                        tvk: *callee_request.tvk(),   // caller tvk
+                                        tvk: *callee_request.tvk(), // caller tvk
                                         record_view_key: Some(*record_view_key), // callee record_view_key
                                         gamma: Some(*gamma),     // callee gamma
                                         static_record_id: *serial_number, // callee static_record_id
@@ -840,24 +862,35 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                     OutputID::Record(record_commitment, _checksum, _sender_ciphertext),
                                     ValueType::Record(record_name),
                                 ) => {
-                                    // let program_id = *callee_request.program_id();
-                                    // let translation_proving_key = get_record_translation_proving_key(&program_id, &record_name)?;
-                                    // translation_data.push(RecordTranslationData {
-                                    //     // TODO: consider using a mapping from (program_id, record_name) to (proving_key, other data)
-                                    //     translation_proving_key,                 // callee record proving key
-                                    //     record_static: record.clone(),           // callee static_record
-                                    //     record_dynamic: dynamic_record.clone(),  // caller dynamic_record
-                                    //     program_id,                              // callee program_id
-                                    //     function_id: caller_console_function_id, // caller function_id
-                                    //     record_name,                             // callee record_name
-                                    //     to_static_record: true,                  // misnomer, but yes it's the input direction
-                                    //     tvk: registers.tvk()?,                   // caller tvk
-                                    //     record_view_key: None,
-                                    //     gamma: None,
-                                    //     static_record_id: *record_commitment,            // callee static_record_id
-                                    //     dynamic_record_id: *dynamic_record_commitment,   // caller dynamic_record_id
-                                    //     operand_index: operand_index as u16,             // callee operand_index
-                                    // });
+                                    let program_id = *callee_request.program_id();
+                                    let translation_proving_key =
+                                        get_record_translation_proving_key(&program_id, &record_name, rng)?;
+                                    translation_data.push(RecordTranslationData {
+                                        // TODO: consider using a mapping from (program_id, record_name) to (proving_key, other data)
+                                        translation_proving_key, // callee record proving key
+                                        record_static: record.clone(), // callee static_record
+                                        record_dynamic: dynamic_record.clone(), // caller dynamic_record
+                                        program_id,              // callee program_id
+                                        function_id: callee_console_function_id, // The callee function_id
+                                        record_name,             // callee record_name
+                                        record_consumed: false,  // misnomer, but yes it's the input direction
+                                        tvk: callee_request.tvk()?, // callee tvk
+                                        record_view_key: {
+                                            registers.view
+                                            // Prepare the index as a field element.
+                                            let index = Field::from_u64(self.destination.locator());
+                                            // Compute the randomizer as `HashToScalar(tvk || index)`.
+                                            let randomizer = N::hash_to_scalar_psd2(&[callee_request.tvk()?, index])?;
+                                            // Compute the record view key.
+                                            let rvk = **record.owner() * randomizer;
+
+                                            Some(rvk)
+                                        },
+                                        gamma: None,
+                                        static_record_id: *record_commitment, // callee static_record_id
+                                        dynamic_record_id: *dynamic_record_commitment, // caller dynamic_record_id
+                                        input_output_index: num_inputs + operand_index as u16, // callee operand_index
+                                    });
                                 }
                                 _ => {} // No translation to perform.
                             }
@@ -972,7 +1005,12 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         };
 
         // Assign the outputs to the destination registers.
-        ensure!(outputs.len() == self.destinations().len(), "[execute Dynamic] Expected {} outputs, but {} were provided.", self.destinations().len(), outputs.len());
+        ensure!(
+            outputs.len() == self.destinations().len(),
+            "[execute Dynamic] Expected {} outputs, but {} were provided.",
+            self.destinations().len(),
+            outputs.len()
+        );
         for (output, register) in outputs.into_iter().zip(&self.destinations()) {
             // Assign the output to the register.
             registers.store_circuit(stack, register, output)?;
