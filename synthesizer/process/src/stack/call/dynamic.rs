@@ -874,22 +874,31 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                         function_id: callee_console_function_id, // The callee function_id
                                         record_name,             // callee record_name
                                         record_consumed: false,  // misnomer, but yes it's the input direction
-                                        tvk: callee_request.tvk()?, // callee tvk
+                                        tvk: *callee_request.tvk(), // callee tvk
                                         record_view_key: {
-                                            registers.view
+                                            // Get the output index.
+                                            let Some(Operand::Register(register)) = target
+                                                .substack()
+                                                .get_function_ref(target.function_name())?
+                                                .outputs()
+                                                .get_index(operand_index)
+                                                .map(|op| op.operand())
+                                            else {
+                                                bail!("Expected output to be a register");
+                                            };
                                             // Prepare the index as a field element.
-                                            let index = Field::from_u64(self.destination.locator());
+                                            let index = Field::from_u64(register.locator());
                                             // Compute the randomizer as `HashToScalar(tvk || index)`.
-                                            let randomizer = N::hash_to_scalar_psd2(&[callee_request.tvk()?, index])?;
+                                            let randomizer = N::hash_to_scalar_psd2(&[*callee_request.tvk(), index])?;
                                             // Compute the record view key.
-                                            let rvk = **record.owner() * randomizer;
+                                            let rvk = (*record.owner().to_group() * randomizer).to_x_coordinate();
 
                                             Some(rvk)
                                         },
                                         gamma: None,
                                         static_record_id: *record_commitment, // callee static_record_id
-                                        dynamic_record_id: *dynamic_record_commitment, // caller dynamic_record_id
-                                        input_output_index: num_inputs + operand_index as u16, // callee operand_index
+                                        dynamic_record_id: dynamic_record_commitment, // caller dynamic_record_id
+                                        input_output_index: (num_inputs + operand_index) as u16, // callee operand_index
                                     });
                                 }
                                 _ => {} // No translation to perform.
