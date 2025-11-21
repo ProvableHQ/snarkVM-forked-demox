@@ -285,10 +285,19 @@ impl<N: Network> Process<N> {
             // Note: This unwrap is safe, as we are processing transitions in post-order,
             // which implies that all child transition IDs have been added to `transition_map`.
             let (child_transition, _) = transition_map.get(child_transition_id).unwrap();
+            // [Inputs] Extend the verifier inputs with the program ID and function name if the child transition is dynamic.
+            if child_transition.is_dynamic() {
+                verifier_inputs.extend(child_transition.program_id().to_fields()?.into_iter().map(|field| *field));
+                verifier_inputs.extend([*child_transition.function_name().to_field()?]);
+            }
             // [Inputs] Extend the verifier inputs with the transition commitment of the external call.
             verifier_inputs.extend([**child_transition.tcm()]);
             // [Inputs] Extend the verifier inputs with the input IDs of the external call.
-            let child_inputs = child_transition.caller_inputs().unwrap_or(child_transition.inputs());
+            let child_inputs = match (child_transition.is_dynamic(), child_transition.caller_inputs()) {
+                (true, Some(caller_inputs)) => caller_inputs,
+                (true, None) => bail!("Dynamic transition has no caller inputs"),
+                (false, _) => child_transition.inputs(),
+            };
             verifier_inputs.extend(child_inputs.iter().flat_map(|input| input.verifier_inputs()));
             // [Inputs] Extend the verifier inputs with the output IDs of the external call.
             // TODO (dynamic_dispatch): decide whether these should actually be caller output IDs
