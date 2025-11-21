@@ -172,6 +172,8 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                     &function.input_types(),
                     inputs.iter(),
                     self.operand_types(),
+                    self.destination_types(),
+                    registers.request()?,
                     root_tvk,
                     is_root,
                     program_checksum,
@@ -188,7 +190,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             // Evaluate the function.
             let response = substack.evaluate_function::<A, R>(call_stack, console_caller, root_tvk, rng)?;
             // Convert the callee's outputs to the caller's context.
-            response.dynamic_call_outputs()?
+            response.dynamic_call_outputs(self.destination_types())?
         }
         // Else, throw an error.
         else {
@@ -369,6 +371,8 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             input_types,
                             inputs.iter(),
                             self.operand_types(),
+                            self.destination_types(),
+                            registers.request()?,
                             root_tvk,
                             is_root,
                             program_checksum,
@@ -390,7 +394,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             target.substack().execute_function::<A, R>(call_stack, console_caller, root_tvk, rng)?;
 
                         // Convert the callee's outputs to the caller's context.
-                        let caller_response_outputs = callee_response.dynamic_call_outputs()?;
+                        let caller_response_outputs = callee_response.dynamic_call_outputs(callee_request.caller_output_types().as_ref().unwrap())?;
 
                         // Return the request verification inputs and response.
                         (request_verification_inputs, caller_response_outputs, None)
@@ -530,6 +534,8 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             input_types,
                             inputs.iter(),
                             self.operand_types(),
+                            self.destination_types(),
+                            registers.request()?,
                             root_tvk,
                             is_root,
                             program_checksum,
@@ -549,7 +555,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             target.substack().execute_function::<A, _>(call_stack, console_caller, root_tvk, rng)?;
 
                         // Convert the callee's outputs to the caller's context.
-                        let caller_response_outputs = callee_response.dynamic_call_outputs()?;
+                        let caller_response_outputs = callee_response.dynamic_call_outputs(callee_request.caller_output_types().as_ref().unwrap())?;
 
                         // Return the request verification inputs and response.
                         (request_verification_inputs, caller_response_outputs, None)
@@ -605,7 +611,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         }
 
                         // Convert the callee's outputs to the caller's context.
-                        let caller_response_outputs = callee_response.dynamic_call_outputs()?;
+                        let caller_response_outputs = callee_response.dynamic_call_outputs(callee_request.caller_output_types().as_ref().unwrap())?;
 
                         // Anonymous helper to get a record translation proving key.
                         let get_record_translation_proving_key =
@@ -618,7 +624,8 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             };
                         let caller_console_input_ids = callee_request.caller_input_ids().clone().unwrap_or_default();
                         let callee_console_input_ids = callee_request.input_ids();
-                        let caller_console_function_id = registers.function_id()?;
+                        let caller_console_request = registers.request()?;
+                        let caller_console_function_id = compute_function_id(&caller_console_request.network_id(), caller_console_request.program_id(), caller_console_request.function_name(), caller_console_request.is_dynamic())?;
                         let callee_console_function_id = compute_function_id(
                             &U16::<N>::new(N::ID as u16),
                             callee_request.program_id(),
@@ -721,7 +728,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         }
                         // Collect record outputs to translate.
                         let caller_console_outputs = caller_response_outputs.clone();
-                        let caller_console_output_ids: Vec<OutputID<N>> = vec![]; // TODO: we may need to add this to the Request or Response object.
+                        let caller_console_output_ids: Vec<OutputID<N>> = vec![];  // TODO: we may need to add this to the Request or Response object.
                         let caller_output_types = self.destination_types();
                         let callee_console_outputs = console_callee_response.outputs();
                         let callee_console_output_ids = console_callee_response.output_ids();
