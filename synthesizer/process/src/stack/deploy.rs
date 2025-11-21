@@ -230,11 +230,12 @@ impl<N: Network> Stack<N> {
         }
 
         // Iterate through the program records and produce translation assignments.
+        ensure!(deployment.program().records().len() == deployment.translation_verifying_keys().len(), "The number of records in the program does not match the number of translation verifying keys");
         let translation_names_assignments = deployment
             .program()
             .records()
             .iter()
-            .zip_eq(deployment.translation_verifying_keys())
+            .zip(deployment.translation_verifying_keys())
             .map(|((record_name, record_type), (_, (verifying_key, _)))| {
                 // Initialize a private key.
                 let private_key = PrivateKey::new(rng)?;
@@ -345,7 +346,8 @@ impl<N: Network> Stack<N> {
         )?;
 
         // Verify the translation certificates.
-        cfg_into_iter!(translation_names_assignments).zip_eq(deployment.translation_verifying_keys()).try_for_each(
+        ensure!(translation_names_assignments.len() == deployment.translation_verifying_keys().len(), "The number of records in the program does not match the number of translation verifying keys");
+        cfg_into_iter!(translation_names_assignments).zip(deployment.translation_verifying_keys()).try_for_each(
             |((record_name, translation_assignment), (_, (verifying_key, certificate)))| {
                 // Synthesize the circuit.
                 match translation_assignment.to_circuit_assignment::<A>() {

@@ -128,9 +128,10 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
 
                 // Convert the inputs to the callee's context.
                 // TODO (@d0cd): Do we need to check that they match? I think no because `CallDynamic::output_types should have`
+                ensure!(inputs.len() == input_types.len(), "[evaluate Authorize] Expected {} inputs, but {} were provided.", input_types.len(), inputs.len());
                 let callee_inputs = inputs
                     .iter()
-                    .zip_eq(input_types.iter())
+                    .zip(input_types.iter())
                     .map(|(input, input_type)| match (input, input_type) {
                         (Value::Record(record), ValueType::DynamicRecord) => {
                             Ok(Value::DynamicRecord(DynamicRecord::from_record(&record)?))
@@ -199,7 +200,8 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         lap!(timer, "Computed outputs");
 
         // Assign the outputs to the destination registers.
-        for (output, register) in outputs.into_iter().zip_eq(&self.destinations()) {
+        ensure!(outputs.len() == self.destinations().len(), "[evaluate Dynamic] Expected {} outputs, but {} were provided.", self.destinations().len(), outputs.len());
+        for (output, register) in outputs.into_iter().zip(&self.destinations()) {
             // Assign the output to the register.
             registers.store(stack, register, output)?;
         }
@@ -315,9 +317,10 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         }
                         // Convert the inputs to the callee's context.
                         // TODO (@d0cd): Do we need to check that they match? I think no because `CallDynamic::output_types should have`
+                        ensure!(inputs.len() == input_types.len(), "[execute Authorize] Expected {} inputs, but {} were provided.", input_types.len(), inputs.len());
                         let callee_inputs = inputs
                             .iter()
-                            .zip_eq(input_types.iter())
+                            .zip(input_types.iter())
                             .map(|(input, input_type)| match (input, input_type) {
                                 (Value::Record(record), ValueType::DynamicRecord) => {
                                     Ok(Value::DynamicRecord(DynamicRecord::from_record(&record)?))
@@ -480,9 +483,10 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         }
                         // Convert the inputs to the callee's context.
                         // TODO (@d0cd): Do we need to check that they match? I think no because `CallDynamic::output_types should have`
+                        ensure!(inputs.len() == input_types.len(), "[execute PackageRun] Expected {} inputs, but {} were provided.", input_types.len(), inputs.len());
                         let callee_inputs = inputs
                             .iter()
-                            .zip_eq(input_types.iter())
+                            .zip(input_types.iter())
                             .map(|(input, input_type)| match (input, input_type) {
                                 (Value::Record(record), ValueType::DynamicRecord) => {
                                     Ok(Value::DynamicRecord(DynamicRecord::from_record(&record)?))
@@ -968,7 +972,8 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         };
 
         // Assign the outputs to the destination registers.
-        for (output, register) in outputs.into_iter().zip_eq(&self.destinations()) {
+        ensure!(outputs.len() == self.destinations().len(), "[execute Dynamic] Expected {} outputs, but {} were provided.", self.destinations().len(), outputs.len());
+        for (output, register) in outputs.into_iter().zip(&self.destinations()) {
             // Assign the output to the register.
             registers.store_circuit(stack, register, output)?;
         }

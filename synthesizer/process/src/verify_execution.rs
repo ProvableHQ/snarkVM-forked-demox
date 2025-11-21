@@ -68,7 +68,7 @@ impl<N: Network> Process<N> {
         let mut verifier_inputs = HashMap::new();
 
         // Initialize a map of transition IDs to references of the transition.
-        let mut transition_map = HashMap::new();
+        let mut transition_map = IndexMap::new();
 
         // Initialize a map of (program ID, record identifier) to translation verifying keys.
         let mut translation_verifying_keys = HashMap::new();
@@ -158,7 +158,8 @@ impl<N: Network> Process<N> {
             // Ensure the input and output types are equivalent to the ones defined in the function.
             // We only need to check that the variant type matches because we already check the hashes in
             // the `Input::verify` and `Output::verify` functions.
-            for (function_input, transition_input) in function.input_types().iter().zip_eq(transition.inputs().iter()) {
+            ensure!(function.input_types().len() == transition.inputs().len(), "The number of transition inputs is incorrect");
+            for (function_input, transition_input) in function.input_types().iter().zip(transition.inputs().iter()) {
                 match (function_input, transition_input) {
                     (ValueType::Constant(..), Input::Constant(..))
                     | (ValueType::Public(..), Input::Public(..))
@@ -169,8 +170,9 @@ impl<N: Network> Process<N> {
                     _ => bail!("The input variants do not match"),
                 }
             }
+            ensure!(function.input_types().len() == transition.inputs().len(), "[verify Execution] Expected {} inputs, but {} were provided.", function.input_types().len(), transition.inputs().len());
             for (function_output, transition_output) in
-                function.output_types().iter().zip_eq(transition.outputs().iter())
+                function.output_types().iter().zip(transition.outputs().iter())
             {
                 match (function_output, transition_output) {
                     (ValueType::Constant(..), Output::Constant(..))

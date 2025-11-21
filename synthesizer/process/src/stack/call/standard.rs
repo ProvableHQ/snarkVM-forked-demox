@@ -126,7 +126,8 @@ impl<N: Network> CallTrait<N> for Call<N> {
         lap!(timer, "Computed outputs");
 
         // Assign the outputs to the destination registers.
-        for (output, register) in outputs.into_iter().zip_eq(&self.destinations()) {
+        ensure!(outputs.len() == self.destinations().len(), "[evaluate Standard] Expected {} outputs, but {} were provided.", self.destinations().len(), outputs.len());
+        for (output, register) in outputs.into_iter().zip(&self.destinations()) {
             // Assign the output to the register.
             registers.store(stack, register, output)?;
         }
@@ -398,7 +399,8 @@ impl<N: Network> CallTrait<N> for Call<N> {
                         // Retrieve the next request (without popping it).
                         let request = authorization.peek_next()?;
                         // Ensure the inputs match the original inputs.
-                        request.inputs().iter().zip_eq(&inputs).try_for_each(|(request_input, input)| {
+                        ensure!(request.inputs().len() == inputs.len(), "[execute Standard] Expected {} inputs, but {} were provided.", request.inputs().len(), inputs.len());
+                        request.inputs().iter().zip(&inputs).try_for_each(|(request_input, input)| {
                             ensure!(request_input == input, "Inputs do not match in a 'call' instruction.");
                             Ok(())
                         })?;
@@ -510,7 +512,8 @@ impl<N: Network> CallTrait<N> for Call<N> {
         };
 
         // Assign the outputs to the destination registers.
-        for (output, register) in outputs.into_iter().zip_eq(&self.destinations()) {
+        ensure!(outputs.len() == self.destinations().len(), "[execute Standard] Expected {} outputs, but {} were provided.", self.destinations().len(), outputs.len());
+        for (output, register) in outputs.into_iter().zip(&self.destinations()) {
             // Assign the output to the register.
             registers.store_circuit(stack, register, output)?;
         }

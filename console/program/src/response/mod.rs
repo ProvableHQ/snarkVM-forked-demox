@@ -290,9 +290,10 @@ impl<N: Network> Response<N> {
     /// - converting all future outputs to dynamic future outputs.
     /// - leaving all other outputs unchanged.
     pub fn dynamic_call_outputs(&self, caller_output_types: &[ValueType<N>]) -> Result<Vec<Value<N>>> {
+        ensure!(self.outputs.len() == caller_output_types.len(), "Expected {} outputs, but {} were provided.", caller_output_types.len(), self.outputs.len());
         self.outputs
             .iter()
-            .zip_eq(caller_output_types)
+            .zip(caller_output_types)
             .map(|(output, output_type)| match (output, output_type) {
                 (Value::Record(record), ValueType::DynamicRecord) => {
                     Ok(Value::DynamicRecord(DynamicRecord::from_record(record)?))
