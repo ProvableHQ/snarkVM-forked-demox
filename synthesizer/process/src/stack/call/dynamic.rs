@@ -660,34 +660,34 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                 callee_input_id,
                                 callee_input_type,
                             ) {
-                                (
-                                    Value::Record(record),
-                                    InputID::Record(_record_commitment, gamma, record_view_key, serial_number, _tag),
-                                    ValueType::Record(record_name),
-                                    Value::DynamicRecord(dynamic_record),
-                                    InputID::DynamicRecord(dynamic_record_commitment),
-                                    ValueType::DynamicRecord,
-                                ) => {
-                                    let program_id = *stack.program_id();
-                                    let translation_proving_key =
-                                        get_record_translation_proving_key(&program_id, &record_name)?;
-                                    translation_data.push(RecordTranslationData {
-                                        // TODO: consider using a mapping from (program_id, record_name) to (proving_key, other data)
-                                        translation_proving_key, // caller record proving key
-                                        record_static: record.clone(), // caller static_record
-                                        record_dynamic: dynamic_record.clone(), // callee dynamic_record
-                                        program_id,              // callee program_id
-                                        function_id: callee_console_function_id, // callee function_id
-                                        record_name: *record_name, // caller record_name
-                                        record_consumed: true,   // misnomer, but yes it's the input direction
-                                        tvk: *callee_request.tvk(), // callee tvk
-                                        record_view_key: Some(record_view_key), // caller record_view_key
-                                        gamma: Some(gamma.clone()), // caller gamma
-                                        static_record_id: serial_number, // caller static_record_id
-                                        dynamic_record_id: *dynamic_record_commitment, // callee dynamic_record_id
-                                        input_output_index: operand_index as u16, // operand_index
-                                    });
-                                }
+                                // (
+                                //     Value::Record(record),
+                                //     InputID::Record(_record_commitment, gamma, record_view_key, serial_number, _tag),
+                                //     ValueType::Record(record_name),
+                                //     Value::DynamicRecord(dynamic_record),
+                                //     InputID::DynamicRecord(dynamic_record_commitment),
+                                //     ValueType::DynamicRecord,
+                                // ) => {
+                                //     let program_id = *stack.program_id();
+                                //     let translation_proving_key =
+                                //         get_record_translation_proving_key(&program_id, &record_name)?;
+                                //     translation_data.push(RecordTranslationData {
+                                //         // TODO: consider using a mapping from (program_id, record_name) to (proving_key, other data)
+                                //         translation_proving_key, // caller record proving key
+                                //         record_static: record.clone(), // caller static_record
+                                //         record_dynamic: dynamic_record.clone(), // callee dynamic_record
+                                //         program_id,              // callee program_id
+                                //         function_id: callee_console_function_id, // callee function_id
+                                //         record_name: *record_name, // caller record_name
+                                //         record_consumed: true,   // misnomer, but yes it's the input direction
+                                //         tvk: *callee_request.tvk(), // callee tvk
+                                //         record_view_key: Some(record_view_key), // caller record_view_key
+                                //         gamma: Some(gamma.clone()), // caller gamma
+                                //         static_record_id: serial_number, // caller static_record_id
+                                //         dynamic_record_id: *dynamic_record_commitment, // callee dynamic_record_id
+                                //         input_output_index: operand_index as u16, // operand_index
+                                //     });
+                                // }
                                 (
                                     Value::DynamicRecord(dynamic_record),
                                     InputID::DynamicRecord(dynamic_record_commitment),
