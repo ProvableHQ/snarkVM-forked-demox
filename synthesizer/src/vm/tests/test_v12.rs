@@ -210,6 +210,7 @@ fn test_translation(
         )
         .unwrap();
 
+        // TODO (dynamic_dispatch) clean up
         let mint_output = transaction_mint.transitions().next().unwrap().outputs().iter().next().unwrap();
         let output_gas_record = match mint_output {
             Output::Record(commitment, checksum, record_ciphertext, _) => {
@@ -220,9 +221,6 @@ fn test_translation(
             _ => panic!("Minted record is not a record"),
         };
 
-        // TODO (dynamic_dispatch) remove
-        println!("\n@@@@@ output_gas_record: {:?}", output_gas_record);
-
         input_values_vec.push(Value::<CurrentNetwork>::Record(output_gas_record));
 
         let block_mint = sample_next_block(&vm, &caller_private_key, &[transaction_mint], rng).unwrap();
@@ -231,6 +229,9 @@ fn test_translation(
         assert_eq!(block_mint.aborted_transaction_ids().len(), 0);
         vm.add_next_block(&block_mint).unwrap();
     }
+
+    // TODO (dynamic_dispatch) remove
+    println!("\n\n\n\n\n\n\n\n");
 
     println!("Executing function: {root_function_name}...");
 
@@ -246,7 +247,6 @@ fn test_translation(
         }
         input_values = refined_input_values.as_slice();
     }
-    println!(" @@ Input values: {:?}", input_values);
 
     // Execute the "dynamic" function.
     let transaction = vm

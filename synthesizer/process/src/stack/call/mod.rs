@@ -31,6 +31,7 @@ use console::{
         Request,
         Value,
         ValueType,
+        Record,
     },
     types::{Group, U16},
 };

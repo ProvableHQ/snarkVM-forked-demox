@@ -142,6 +142,9 @@ impl<A: Aleo> Request<A> {
             false => assert!(signature.is_none()),
         }
 
+        // TODO (dynamic_dispatch) remove
+        println!(" !!! Inside check_input_ids, function name: {}", function_name);
+
         // Compute the function ID.
         let function_id = match function_id {
             Some(function_id) => function_id,
@@ -364,6 +367,12 @@ impl<A: Aleo> Request<A> {
                                 A::halt(format!("[check_input_ids] (in function {function_name_value}) Expected a dynamic record input, found a dynamic future input"))
                             }
                         };
+
+                        // TODO (dynamic_dispatch) remove
+                        println!(" - Inside check_input_ids, computing dynamic record ID:");
+                        println!("   - function_id: {:?}", function_id);
+                        println!("   - tvk: {:?}", tvk);
+                        println!("   - index: {:?}", index);
 
                         // Prepare the index as a constant field element.
                         let input_index = Field::constant(console::Field::from_u16(index as u16));

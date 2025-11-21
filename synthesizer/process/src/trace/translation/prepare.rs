@@ -26,6 +26,13 @@ impl<N: Network> Translation<N> {
         call_graph: &HashMap<N::TransitionID, Vec<N::TransitionID>>,
         // TODO (dynamic_dispatch) Consider using pointers or Arcs to proving keys
     ) -> Result<Vec<(ProvingKey<N>, Vec<TranslationAssignment<N>>)>> {
+
+        // TODO (dynamic_dispatch) remove
+        println!(" ** In prepare: number of translation tasks: {}", self.translation_tasks.len());
+        for (transition_id, translation_tasks) in &self.translation_tasks {
+            println!(" - transition tasks with ID {:?}: {}", transition_id, translation_tasks.len());
+        }
+
         // Initialize a vector for the batched assignments.
         let mut batched_assignments: HashMap<(ProgramID<N>, Identifier<N>), Vec<TranslationAssignment<N>>> =
             HashMap::new();
@@ -38,11 +45,19 @@ impl<N: Network> Translation<N> {
         for transition in transitions {
             let transition_id = transition.id();
 
+            // TODO (dynamic_dispatch) remove
+            println!(" **** In prepare: entering transition loop");
+
+
             let Some(translation_tasks) = self.translation_tasks.get(transition_id) else {
                 bail!("Translation tasks not found for transition ID {}", transition_id);
             };
 
             for translation_task in translation_tasks {
+
+                // TODO (dynamic_dispatch) remove
+                println!(" ******* In prepare: entering translation task loop");
+
                 let RecordTranslationData {
                     translation_proving_key,
                     record_dynamic,
@@ -88,6 +103,13 @@ impl<N: Network> Translation<N> {
                 let input_output_index_value = U16::new(*input_output_index);
 
                 let id_static = record_static.to_commitment(program_id, record_name, record_view_key_value)?;
+
+                // TODO (dynamic_dispatch) remove
+                println!("During prepare, computing dynamic record ID with");
+                                        println!("   function_id: {:?}", function_id);
+                                        println!("   tvk: {:?}", tvk);
+                                        println!("   input_output_index: {:?}", input_output_index);
+
                 let id_dynamic = record_dynamic.to_id(*function_id, *tvk, input_output_index_value)?;
 
                 let batch = &mut batched_assignments.entry((*program_id, *record_name)).or_insert(vec![]);

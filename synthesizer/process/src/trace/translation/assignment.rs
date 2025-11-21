@@ -37,7 +37,7 @@ pub struct TranslationAssignment<N: Network> {
     pub(super) record_static: Record<N, Plaintext<N>>,
     /// The ID of the program where the static record is defined.
     pub(super) program_id: ProgramID<N>,
-    /// The function ID of the caller.
+    /// The function ID of the callee.
     pub(super) function_id: Field<N>,
     /// The name of the static record.
     pub(super) record_name: Identifier<N>,
@@ -216,7 +216,7 @@ impl<N: Network> TranslationAssignment<N> {
     ///     cm = commit(static_record, [[program_id]], [[record_name]], record_view_key)
     ///     sn = serial_number(cm, gamma)
     ///     internal_id_static_record = record_consumed ? sn : cm
-    ///     internal_id_dynamic_record = HashPSD8([[calling_function_id]] | dynamic_record | tvk | [[input_output_index]])
+    ///     internal_id_dynamic_record = HashPSD8([[callee_function_id]] | dynamic_record | tvk | [[input_output_index]])
     ///
     ///     assert static_record.owner == dynamic_record.owner
     ///     assert static_record.nonce == dynamic_record.nonce

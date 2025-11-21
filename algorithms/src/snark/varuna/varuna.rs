@@ -379,25 +379,9 @@ where
         let num_unique_circuits = keys_to_constraints.len();
         let mut circuit_ids = Vec::with_capacity(num_unique_circuits);
         for pk in keys_to_constraints.keys() {
-            // TODO (dynamic_dispatch) remove
-            // println!(" - vk: {}", pk.circuit_verifying_key.id);
 
             let batch_size = prover_state.batch_size(&pk.circuit).ok_or(anyhow!("Batch size not found."))?;
             let public_input = prover_state.public_inputs(&pk.circuit).ok_or(anyhow!("Public input not found."))?;
-
-            // TODO (Antonio) remove
-            // for (j, input) in public_input.iter().enumerate() {
-            //     let mut tmp = vec![E::Fr::one()];
-            //     tmp.extend(input.to_vec());
-            //     while tmp.iter().last().unwrap() == &E::Fr::zero() {
-            //         tmp.pop();
-            //     }
-            //     println!("    - public inputs: {}", j);
-
-            //     for (k, tmp_k) in tmp.iter().enumerate() {
-            //         println!("        - input {}: {}", k, tmp_k);
-            //     }
-            // }
 
             let padded_public_input =
                 prover_state.padded_public_inputs(&pk.circuit).ok_or(anyhow!("Padded public input not found."))?;

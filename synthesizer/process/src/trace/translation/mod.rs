@@ -70,6 +70,8 @@ impl<N: Network> Translation<N> {
         transition: &Transition<N>,
         record_translation_data: Result<&Vec<RecordTranslationData<N>>>,
     ) -> Result<()> {
+        // TODO (dynamic_dispatch) remove
+        println!("\n\n ********* INSERTING TRANSLATION TASK \n\n *********");
         // TODO (dynamic_dispatch): Result isn't a good interface; also, decide whether always having a value for a valid key = TransitionID (even if empty) is a good choice
         self.translation_tasks.insert(*transition.id(), record_translation_data.cloned().unwrap_or_default());
 
