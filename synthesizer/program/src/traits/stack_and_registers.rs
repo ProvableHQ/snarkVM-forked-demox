@@ -56,7 +56,7 @@ pub struct RecordTranslationData<N: Network> {
     pub tvk: Field<N>,
     // TODO (dynamic_dispatch) this shouldn't be an option: translation circuits always compute the record commitment
     pub record_view_key: Option<Field<N>>,
-    pub gamma: Option<Group<N>>,
+    pub gamma: Group<N>,
     pub static_record_id: Field<N>,
     pub dynamic_record_id: Field<N>,
     pub input_output_index: u16,

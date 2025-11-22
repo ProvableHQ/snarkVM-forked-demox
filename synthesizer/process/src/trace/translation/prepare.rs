@@ -25,7 +25,6 @@ impl<N: Network> Translation<N> {
         transitions: &[Transition<N>],
         // TODO (dynamic_dispatch) Consider using pointers or Arcs to proving keys
     ) -> Result<Vec<(ProvingKey<N>, Vec<TranslationAssignment<N>>)>> {
-
         // Initialize a vector for the batched assignments.
         let mut batched_assignments: HashMap<(ProgramID<N>, Identifier<N>), Vec<TranslationAssignment<N>>> =
             HashMap::new();
@@ -44,7 +43,6 @@ impl<N: Network> Translation<N> {
             };
 
             for translation_task in translation_tasks {
-
                 let RecordTranslationData {
                     translation_proving_key,
                     record_dynamic,
@@ -62,15 +60,6 @@ impl<N: Network> Translation<N> {
                 } = translation_task;
 
                 // TODO (dynamic_dispatch) add here consistency checks with the Transition object?
-
-                let Some(gamma_value) = gamma.as_ref() else {
-                    bail!(
-                        "gamma is None in the input-record translation for transition ID {} and index {}",
-                        transition_id,
-                        input_output_index
-                    );
-                };
-
                 let Some(record_view_key_value) = record_view_key.as_ref() else {
                     bail!(
                         "record_view_key is None in record translation for transition ID {} and index {}",
@@ -80,14 +69,6 @@ impl<N: Network> Translation<N> {
                 };
 
                 // Checks associated to input-record translation
-
-                ensure!(
-                    record_consumed,
-                    "Expected record_consumed = true in input-record translation for transition ID {} and index {}",
-                    transition_id,
-                    input_output_index
-                );
-
                 let batch = &mut batched_assignments.entry((*program_id, *record_name)).or_insert(vec![]);
 
                 if let Some(previous_key) = proving_keys.get(&(*program_id, *record_name)) {
@@ -114,7 +95,7 @@ impl<N: Network> Translation<N> {
                     *dynamic_record_id,
                     *static_record_id,
                     record_view_key_value.clone(),
-                    gamma_value.clone(),
+                    *gamma,
                 ));
 
                 translation_count += 1;

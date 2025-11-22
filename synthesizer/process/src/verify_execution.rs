@@ -148,9 +148,9 @@ impl<N: Network> Process<N> {
 
                 // TODO (dynamic_dispatch) do better (e.g with .entry)
                 if !translation_verifying_keys.contains_key(&key) {
-                    let translation_verifying_key = stack.get_translation_verifying_key(record_name).map_err(|_| {
-                        anyhow!("Translation verifying key not found for {}/{}", key.0, key.1)
-                    })?;
+                    let translation_verifying_key = stack
+                        .get_translation_verifying_key(record_name)
+                        .map_err(|_| anyhow!("Translation verifying key not found for {}/{}", key.0, key.1))?;
                     translation_verifying_keys.insert(key, translation_verifying_key);
                 }
             }
@@ -162,7 +162,10 @@ impl<N: Network> Process<N> {
             // Ensure the input and output types are equivalent to the ones defined in the function.
             // We only need to check that the variant type matches because we already check the hashes in
             // the `Input::verify` and `Output::verify` functions.
-            ensure!(function.input_types().len() == transition.inputs().len(), "The number of transition inputs is incorrect");
+            ensure!(
+                function.input_types().len() == transition.inputs().len(),
+                "The number of transition inputs is incorrect"
+            );
             for (function_input, transition_input) in function.input_types().iter().zip(transition.inputs().iter()) {
                 match (function_input, transition_input) {
                     (ValueType::Constant(..), Input::Constant(..))
@@ -174,9 +177,13 @@ impl<N: Network> Process<N> {
                     _ => bail!("The input variants do not match"),
                 }
             }
-            ensure!(function.input_types().len() == transition.inputs().len(), "[verify Execution] Expected {} inputs, but {} were provided.", function.input_types().len(), transition.inputs().len());
-            for (function_output, transition_output) in
-                function.output_types().iter().zip(transition.outputs().iter())
+            ensure!(
+                function.input_types().len() == transition.inputs().len(),
+                "[verify Execution] Expected {} inputs, but {} were provided.",
+                function.input_types().len(),
+                transition.inputs().len()
+            );
+            for (function_output, transition_output) in function.output_types().iter().zip(transition.outputs().iter())
             {
                 match (function_output, transition_output) {
                     (ValueType::Constant(..), Output::Constant(..))
@@ -236,8 +243,13 @@ impl<N: Network> Process<N> {
         let mut verifier_inputs: Vec<_> = verifier_inputs.values().cloned().collect();
 
         // Construct the batch of translation verifier inputs.
-        let batch_translation_inputs =
-            Translation::prepare_verifier_inputs(execution.transitions(), &transition_map, &translation_verifying_keys)?;
+        let batch_translation_inputs = Translation::prepare_verifier_inputs(
+            execution.transitions(),
+            &transition_map,
+            &translation_verifying_keys,
+        )?;
+
+        println!("[verify_execution.rs] Prepared {} translation verifier inputs.", batch_translation_inputs.len());
 
         // TODO(dynamic_dispatch): bring appropriate new measurement functions from execution_cost_for_authorization to here.
 
@@ -328,7 +340,12 @@ impl<N: Network> Process<N> {
             verifier_inputs.extend(child_inputs.iter().flat_map(|input| input.verifier_inputs()));
             // [Inputs] Extend the verifier inputs with the output IDs of the external call.
             // TODO (dynamic_dispatch): decide whether these should actually be caller output IDs
-            verifier_inputs.extend(child_transition.output_ids().map(|id| **id));
+            let output_ids = match (child_transition.is_dynamic(), child_transition.caller_outputs()) {
+                (false, _) => child_transition.output_ids().map(|id| **id).collect::<Vec<_>>(),
+                (true, None) => bail!("Dynamic transition has no caller outputs"),
+                (true, Some(caller_outputs)) => caller_outputs.iter().map(|output| **output.id()).collect::<Vec<_>>(),
+            };
+            verifier_inputs.extend(output_ids);
         }
 
         // [Inputs] Extend the verifier inputs with the output IDs.

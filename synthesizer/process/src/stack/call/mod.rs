@@ -27,11 +27,12 @@ use console::{
         OutputID,
         Plaintext,
         ProgramID,
+        Record,
         Register,
         Request,
+        Response,
         Value,
         ValueType,
-        Record,
     },
     types::{Group, U16},
 };

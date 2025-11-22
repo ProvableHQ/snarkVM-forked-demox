@@ -124,10 +124,12 @@ impl<N: Network> TranslationAssignment<N> {
         let circuit_function_id = circuit::Field::<A>::new(circuit::Mode::Public, self.function_id);
 
         // Inject the translation count as `Mode::Public`.
+        // TODO (@d0cd) This can be optimized by just injecting a field element.
         let _circuit_translation_count =
             circuit::U16::<A>::new(circuit::Mode::Public, console::types::U16::<N>::new(self.translation_count));
 
         // Inject the register index as `Mode::Public`.
+        // TODO (@d0cd) This can be optimized by just injecting a field element.
         let circuit_input_output_index =
             circuit::U16::<A>::new(circuit::Mode::Public, console::types::U16::<N>::new(self.input_output_index));
 

@@ -232,7 +232,7 @@ fn test_translation(
         let dynamic_record = DynamicRecord::from_record(&output_gas_record).unwrap();
         vec![Value::<CurrentNetwork>::DynamicRecord(dynamic_record)]
     });
-    
+
     println!("Executing root function {root_program_name}/{root_function_name}...");
 
     // Execute the root function.

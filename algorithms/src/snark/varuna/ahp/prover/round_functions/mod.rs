@@ -65,7 +65,11 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         }
 
         if randomizing_assignments.len() != circuits_to_constraints.len() {
-            return Err(AHPError::AnyhowError(anyhow::anyhow!("[prover Init] Expected {} randomizing assignments, but {} were provided.", circuits_to_constraints.len(), randomizing_assignments.len())));
+            return Err(AHPError::AnyhowError(anyhow::anyhow!(
+                "[prover Init] Expected {} randomizing assignments, but {} were provided.",
+                circuits_to_constraints.len(),
+                randomizing_assignments.len()
+            )));
         }
         let indices_and_assignments = circuits_to_constraints
             .iter()

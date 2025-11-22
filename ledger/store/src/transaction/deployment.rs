@@ -661,8 +661,10 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
                 );
             };
             // Retrieve the translation certificate.
-            let Some(certificate) =
-                self.translation_certificate_map().get_confirmed(&(program_id, *record_name, edition))?.map(|x| x.into_owned())
+            let Some(certificate) = self
+                .translation_certificate_map()
+                .get_confirmed(&(program_id, *record_name, edition))?
+                .map(|x| x.into_owned())
             else {
                 bail!("Failed to get the translation certificate for '{program_id}/{record_name}' (edition {edition})");
             };

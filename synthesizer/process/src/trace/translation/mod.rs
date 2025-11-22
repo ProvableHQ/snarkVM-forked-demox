@@ -43,7 +43,7 @@ use console::{
     },
     types::{Field, Group},
 };
-use snarkvm_ledger_block::{Transition, Input, Output};
+use snarkvm_ledger_block::{Input, Output, Transition};
 use snarkvm_synthesizer_program::{Function, Instruction, RecordTranslationData};
 use snarkvm_synthesizer_snark::VerifyingKey;
 
@@ -92,10 +92,11 @@ impl<N: Network> Translation<N> {
         // Traversal order only affects the translation count appearing as a public input in the translation circuit.
         // Order is irrelevant as long as it is consistent between the prover and verifier. (cf. Translation::prepare)
         for transition in transitions {
-
-            let (_, callee_function_core) = transition_map.get(transition.id()).ok_or_else(|| 
-                anyhow!("Transition {} from execution not found transition map", transition.id()))?;
-            let callee_function_id = compute_function_id(&U16::<N>::new(N::ID), transition.program_id(), transition.function_name())?;
+            let (_, callee_function_core) = transition_map
+                .get(transition.id())
+                .ok_or_else(|| anyhow!("Transition {} from execution not found transition map", transition.id()))?;
+            let callee_function_id =
+                compute_function_id(&U16::<N>::new(N::ID), transition.program_id(), transition.function_name())?;
 
             ensure!(
                 transition.caller_inputs().is_some() == transition.caller_outputs().is_some(),
@@ -105,7 +106,8 @@ impl<N: Network> Translation<N> {
                 if transition.caller_outputs().is_some() { "Some" } else { "None" }
             );
 
-            if let Some(caller_inputs) = transition.caller_inputs() {
+            // Prepare the input translation tasks
+            let num_inputs = if let Some(caller_inputs) = transition.caller_inputs() {
                 // TODO (dynamic_dispatch): confirm the input types don't have to be matched against the function definiction, as we were doing before (e. g. because that's already checked elsewhere)
                 // TODO (antonio): cf above
                 // TODO (vicsn): cf above
@@ -129,24 +131,33 @@ impl<N: Network> Translation<N> {
                     transition.inputs().len(),
                 );
 
-                for (input_output_index, (caller_input, callee_input, callee_input_type)) in izip!(
-                    caller_inputs.iter(),
-                    transition.inputs().iter(),
-                    callee_input_types.iter()
-                ).enumerate() {
+                for (input_output_index, (caller_input, callee_input, callee_input_type)) in
+                    izip!(caller_inputs.iter(), transition.inputs().iter(), callee_input_types.iter()).enumerate()
+                {
                     match (caller_input, callee_input, callee_input_type) {
-                        (Input::DynamicRecord(dynamic_record_id), Input::Record(serial_number, _), ValueType::Record(record_name)) => {
-
+                        (
+                            Input::DynamicRecord(dynamic_record_id),
+                            Input::Record(serial_number, _),
+                            ValueType::Record(record_name),
+                        ) => {
                             let field_record_consumed = N::Field::one();
                             let field_function_id = *callee_function_id;
                             // TODO (dynamic_dispatch) is there a better way to do this? .to_fields() yields one field element
                             // TODO (dynamic_dispatch) separately: should this be to_bits_le or to_bits_be?
-                            let fields_translation_count = translation_count.to_bits_le().into_iter().map(|bit: bool| if bit { N::Field::one() } else { N::Field::zero() }).collect_vec();
-                            let fields_input_output_index = (input_output_index as u16).to_bits_le().into_iter().map(|bit: bool| if bit { N::Field::one() } else { N::Field::zero() }).collect_vec();
+                            let fields_translation_count = translation_count
+                                .to_bits_le()
+                                .into_iter()
+                                .map(|bit: bool| if bit { N::Field::one() } else { N::Field::zero() })
+                                .collect_vec();
+                            let fields_input_output_index = (input_output_index as u16)
+                                .to_bits_le()
+                                .into_iter()
+                                .map(|bit: bool| if bit { N::Field::one() } else { N::Field::zero() })
+                                .collect_vec();
 
                             let field_id_static = **serial_number;
                             let field_id_dynamic = **dynamic_record_id;
- 
+
                             let verifier_inputs = [
                                 vec![
                                     // Initial constant 1
@@ -156,25 +167,27 @@ impl<N: Network> Translation<N> {
                                 ],
                                 fields_translation_count,
                                 fields_input_output_index,
-                                vec![
-                                    field_id_static,
-                                    field_id_dynamic,
-                                ],
-                            ].into_iter().flatten().collect_vec();
+                                vec![field_id_static, field_id_dynamic],
+                            ]
+                            .into_iter()
+                            .flatten()
+                            .collect_vec();
 
-                            batch_verifier_inputs.entry((*transition.program_id(), *record_name)).or_default().push(
-                                verifier_inputs
-                            );
+                            batch_verifier_inputs
+                                .entry((*transition.program_id(), *record_name))
+                                .or_default()
+                                .push(verifier_inputs);
 
                             translation_count += 1;
-                        },
+                        }
                         (Input::Record(..), Input::DynamicRecord(..), ValueType::DynamicRecord) => {
                             bail!("Translation of (static) input Records to Dynamic Records is not supported");
-                        },
+                        }
                         // TODO (dynamic_dispatch): if this check is redundant with other ones already in place, remove it
                         _ => {
                             ensure!(
-                                caller_input.variant() == callee_input.variant() && callee_input.variant() == callee_input_type.variant(),
+                                caller_input.variant() == callee_input.variant()
+                                    && callee_input.variant() == callee_input_type.variant(),
                                 "Mismatch between caller input {}, (callee) input {} and (callee) input type {} in transition {} (index: {})",
                                 caller_input,
                                 callee_input,
@@ -185,15 +198,111 @@ impl<N: Network> Translation<N> {
                         }
                     }
                 }
+
+                caller_inputs.len()
+            } else {
+                0
+            };
+
+            // Prepare the output translation tasks.
+            if let Some(caller_outputs) = transition.caller_outputs() {
+                ensure!(
+                    caller_outputs.len() == transition.outputs().len(),
+                    "The number of caller outputs does not match the number of outputs in transition {}: ({} vs. {})",
+                    transition.id(),
+                    caller_outputs.len(),
+                    transition.outputs().len(),
+                );
+
+                let callee_output_types = callee_function_core.output_types();
+
+                ensure!(
+                    callee_output_types.len() == transition.outputs().len(),
+                    "The number of outputs types does not match the number of outputs in transition {}: ({} vs. {})",
+                    transition.id(),
+                    callee_output_types.len(),
+                    transition.outputs().len(),
+                );
+
+                for (input_output_index, (caller_output, callee_output, callee_output_type)) in
+                    izip!(caller_outputs.iter(), transition.outputs().iter(), callee_output_types.iter()).enumerate()
+                {
+                    match (caller_output, callee_output, callee_output_type) {
+                        (
+                            Output::DynamicRecord(dynamic_record_id),
+                            Output::Record(commitment, _, _, _),
+                            ValueType::Record(record_name),
+                        ) => {
+                            let field_record_consumed = N::Field::zero();
+                            let field_function_id = *callee_function_id;
+                            // TODO (dynamic_dispatch) is there a better way to do this? .to_fields() yields one field element
+                            // TODO (dynamic_dispatch) separately: should this be to_bits_le or to_bits_be?
+                            let fields_translation_count = translation_count
+                                .to_bits_le()
+                                .into_iter()
+                                .map(|bit: bool| if bit { N::Field::one() } else { N::Field::zero() })
+                                .collect_vec();
+                            let fields_input_output_index = ((input_output_index + num_inputs) as u16)
+                                .to_bits_le()
+                                .into_iter()
+                                .map(|bit: bool| if bit { N::Field::one() } else { N::Field::zero() })
+                                .collect_vec();
+
+                            let field_id_static = **commitment;
+                            let field_id_dynamic = **dynamic_record_id;
+
+                            let verifier_inputs = [
+                                vec![
+                                    // Initial constant 1
+                                    N::Field::one(),
+                                    field_record_consumed,
+                                    field_function_id,
+                                ],
+                                fields_translation_count,
+                                fields_input_output_index,
+                                vec![field_id_static, field_id_dynamic],
+                            ]
+                            .into_iter()
+                            .flatten()
+                            .collect_vec();
+
+                            batch_verifier_inputs
+                                .entry((*transition.program_id(), *record_name))
+                                .or_default()
+                                .push(verifier_inputs);
+
+                            translation_count += 1;
+                        }
+                        (Output::Record(..), Output::DynamicRecord(..), ValueType::DynamicRecord) => {
+                            bail!("Translation of output dynamic records to static record is not supported yet");
+                        }
+                        // TODO (dynamic_dispatch): if this check is redundant with other ones already in place, remove it
+                        _ => {
+                            ensure!(
+                                caller_output.variant() == callee_output.variant()
+                                    && callee_output.variant() == callee_output_type.variant(),
+                                "Mismatch between caller output {}, (callee) output {} and (callee) output type {} in transition {} (index: {})",
+                                caller_output,
+                                callee_output,
+                                callee_output_type,
+                                transition.id(),
+                                input_output_index
+                            )
+                        }
+                    }
+                }
             }
         }
 
-        let batch_with_verifying_keys = batch_verifier_inputs.into_iter().map(|(key, inputs)| {
-            let verifying_key = translation_verifying_keys.get(&key).ok_or_else(||
-                anyhow!("Translation verifying key not found for {}/{}", key.0, key.1)
-            )?;
-            Ok((verifying_key.clone(), inputs))
-        }).collect::<Result<Vec<(VerifyingKey<N>, Vec<Vec<N::Field>>)>>>()?;
+        let batch_with_verifying_keys = batch_verifier_inputs
+            .into_iter()
+            .map(|(key, inputs)| {
+                let verifying_key = translation_verifying_keys
+                    .get(&key)
+                    .ok_or_else(|| anyhow!("Translation verifying key not found for {}/{}", key.0, key.1))?;
+                Ok((verifying_key.clone(), inputs))
+            })
+            .collect::<Result<Vec<(VerifyingKey<N>, Vec<Vec<N::Field>>)>>>()?;
 
         Ok(batch_with_verifying_keys)
     }

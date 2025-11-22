@@ -139,9 +139,13 @@ impl<N: Network> Deployment<N> {
         }
 
         // Ensure the function and translation verifying keys correspond.
-        ensure!(self.program.records().len() == self.translation_verifying_keys.len(), "Expected {} records, but {} were provided.", self.program.records().len(), self.translation_verifying_keys.len());
-        for ((record_name, record), (name, _)) in self.program.records().iter().zip(&self.translation_verifying_keys)
-        {
+        ensure!(
+            self.program.records().len() == self.translation_verifying_keys.len(),
+            "Expected {} records, but {} were provided.",
+            self.program.records().len(),
+            self.translation_verifying_keys.len()
+        );
+        for ((record_name, record), (name, _)) in self.program.records().iter().zip(&self.translation_verifying_keys) {
             // Ensure the record name is correct.
             if record_name != record.name() {
                 bail!("The record key is '{record_name}', but the record name is '{}'", record.name())

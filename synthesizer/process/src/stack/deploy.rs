@@ -63,7 +63,7 @@ impl<N: Network> Stack<N> {
 
             // Retrieve the proving key.
             let proving_key = self.get_translation_proving_key(record_name)?;
-            
+
             // Retrieve the verifying key.
             let verifying_key = self.get_translation_verifying_key(record_name)?;
             lap!(timer, "Retrieve the keys for translation circuit for {record_name}");
@@ -230,7 +230,10 @@ impl<N: Network> Stack<N> {
         }
 
         // Iterate through the program records and produce translation assignments.
-        ensure!(deployment.program().records().len() == deployment.translation_verifying_keys().len(), "The number of records in the program does not match the number of translation verifying keys");
+        ensure!(
+            deployment.program().records().len() == deployment.translation_verifying_keys().len(),
+            "The number of records in the program does not match the number of translation verifying keys"
+        );
         let translation_names_assignments = deployment
             .program()
             .records()
@@ -346,7 +349,10 @@ impl<N: Network> Stack<N> {
         )?;
 
         // Verify the translation certificates.
-        ensure!(translation_names_assignments.len() == deployment.translation_verifying_keys().len(), "The number of records in the program does not match the number of translation verifying keys");
+        ensure!(
+            translation_names_assignments.len() == deployment.translation_verifying_keys().len(),
+            "The number of records in the program does not match the number of translation verifying keys"
+        );
         cfg_into_iter!(translation_names_assignments).zip(deployment.translation_verifying_keys()).try_for_each(
             |((record_name, translation_assignment), (_, (verifying_key, certificate)))| {
                 // Synthesize the circuit.

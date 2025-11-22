@@ -381,7 +381,7 @@ where
 
             let padded_public_input =
                 prover_state.padded_public_inputs(&pk.circuit).ok_or(anyhow!("Padded public input not found."))?;
-            
+
             let circuit_id = pk.circuit.id;
             batch_sizes.insert(circuit_id, batch_size);
             circuit_infos.insert(circuit_id, &pk.circuit_verifying_key.circuit_info);
@@ -714,7 +714,12 @@ where
         proof.check_batch_sizes()?;
         let batch_sizes_vec = proof.batch_sizes();
         let mut batch_sizes = BTreeMap::new();
-        ensure!(keys_to_inputs.len() == batch_sizes_vec.len(), "[verify batch] Expected {} keys to inputs, but {} were provided.", batch_sizes_vec.len(), keys_to_inputs.len());
+        ensure!(
+            keys_to_inputs.len() == batch_sizes_vec.len(),
+            "[verify batch] Expected {} keys to inputs, but {} were provided.",
+            batch_sizes_vec.len(),
+            keys_to_inputs.len()
+        );
         for (i, (vk, public_inputs_i)) in keys_to_inputs.iter().enumerate() {
             batch_sizes.insert(vk.id, batch_sizes_vec[i]);
 
@@ -842,9 +847,24 @@ where
             LabeledCommitment::new_with_info(&third_round_info["h_1"], comms.h_1),
         ];
 
-        ensure!(comms.g_a_commitments.len() == comms.g_b_commitments.len(), "[verify Batch] Expected {} g_a commitments to match {} g_b commitments.", comms.g_b_commitments.len(), comms.g_a_commitments.len());
-        ensure!(comms.g_a_commitments.len() == comms.g_c_commitments.len(), "[verify Batch] Expected {} g_a commitments to match {} g_c commitments.", comms.g_c_commitments.len(), comms.g_a_commitments.len());
-        ensure!(comms.g_a_commitments.len() == circuit_ids.len(), "[verify Batch] Expected {} g_a commitments to match {} circuit ids.", circuit_ids.len(), comms.g_a_commitments.len());
+        ensure!(
+            comms.g_a_commitments.len() == comms.g_b_commitments.len(),
+            "[verify Batch] Expected {} g_a commitments to match {} g_b commitments.",
+            comms.g_b_commitments.len(),
+            comms.g_a_commitments.len()
+        );
+        ensure!(
+            comms.g_a_commitments.len() == comms.g_c_commitments.len(),
+            "[verify Batch] Expected {} g_a commitments to match {} g_c commitments.",
+            comms.g_c_commitments.len(),
+            comms.g_a_commitments.len()
+        );
+        ensure!(
+            comms.g_a_commitments.len() == circuit_ids.len(),
+            "[verify Batch] Expected {} g_a commitments to match {} circuit ids.",
+            circuit_ids.len(),
+            comms.g_a_commitments.len()
+        );
         let fourth_round_info =
             AHPForR1CS::<E::Fr, SM>::fourth_round_polynomial_info(circuit_infos.clone().into_iter());
         let fourth_commitments = comms
@@ -954,7 +974,12 @@ where
         // degree bounds because we know the committed index polynomial has the
         // correct degree.
 
-        ensure!(circuit_commitments.len() == circuit_ids.len(), "[verify Batch] Expected {} circuit commitments, but {} were provided.", circuit_ids.len(), circuit_commitments.len());
+        ensure!(
+            circuit_commitments.len() == circuit_ids.len(),
+            "[verify Batch] Expected {} circuit commitments, but {} were provided.",
+            circuit_ids.len(),
+            circuit_commitments.len()
+        );
         let commitments: Vec<_> = circuit_commitments
             .into_iter()
             .flatten()

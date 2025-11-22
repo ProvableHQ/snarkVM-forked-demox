@@ -96,7 +96,12 @@ impl<N: Network> Request<N> {
         let mut input_ids = Vec::with_capacity(inputs.len());
 
         // Prepare the inputs.
-        ensure!(inputs.len() == input_types.len(), "Expected {} inputs, but {} were provided.", input_types.len(), inputs.len());
+        ensure!(
+            inputs.len() == input_types.len(),
+            "Expected {} inputs, but {} were provided.",
+            input_types.len(),
+            inputs.len()
+        );
         for (index, (input, input_type)) in inputs.iter().zip(input_types).enumerate() {
             // Convert index to u16.
             let index = u16::try_from(index).or_halt_with::<N>("Input index exceeds u16");

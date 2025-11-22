@@ -626,8 +626,28 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         }
 
                         // Convert the callee's outputs to the caller's context.
-                        let caller_response_outputs = callee_response
-                            .dynamic_call_outputs(callee_request.caller_output_types().as_ref().unwrap())?;
+                        // TODO (@d0cd). This is an inelgant way to pass around this data. Redesign, including translation data preparation below.
+                        let caller_response = Response::new(
+                            callee_request.signer(),
+                            callee_request.network_id(),
+                            callee_request.program_id(),
+                            callee_request.function_name(),
+                            callee_request.inputs().len(),
+                            callee_request.tvk(),
+                            callee_request.tcm(),
+                            callee_response.dynamic_call_outputs(self.destination_types())?,
+                            self.destination_types(),
+                            &target
+                                .substack()
+                                .get_function_ref(target.function_name())?
+                                .outputs()
+                                .iter()
+                                .map(|output| match output.operand() {
+                                    Operand::Register(register) => Some(register.clone()),
+                                    _ => None,
+                                })
+                                .collect::<Vec<_>>(),
+                        )?;
 
                         // Anonymous helper to get a record translation proving key.
                         let get_record_translation_proving_key = |program_id: &ProgramID<N>,
@@ -783,7 +803,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                         record_consumed: true,   // misnomer, but yes it's the input direction
                                         tvk: *callee_request.tvk(), // caller tvk
                                         record_view_key: Some(*record_view_key), // callee record_view_key
-                                        gamma: Some(*gamma),     // callee gamma
+                                        gamma: *gamma,           // callee gamma
                                         static_record_id: *serial_number, // callee static_record_id
                                         dynamic_record_id: dynamic_record_commitment, // caller dynamic_record_id
                                         input_output_index: operand_index as u16, // callee operand_index
@@ -793,12 +813,50 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             }
                         }
                         // Collect record outputs to translate.
-                        let caller_console_outputs = caller_response_outputs.clone();
-                        let caller_console_output_ids: Vec<OutputID<N>> = vec![]; // TODO: we may need to add this to the Request or Response object.
+                        let caller_console_outputs = caller_response.outputs().clone();
+                        let caller_console_output_ids = caller_response.output_ids().clone();
                         let caller_output_types = self.destination_types();
                         let callee_console_outputs = console_callee_response.outputs();
                         let callee_console_output_ids = console_callee_response.output_ids();
                         let callee_output_types = callee_function.output_types();
+
+                        // Check that all the lengths are the same.
+                        assert_eq!(
+                            caller_console_outputs.len(),
+                            callee_console_outputs.len(),
+                            "Caller and callee console outputs should have the same length ({} vs. {})",
+                            caller_console_outputs.len(),
+                            callee_console_outputs.len()
+                        );
+                        assert_eq!(
+                            caller_console_outputs.len(),
+                            caller_console_output_ids.len(),
+                            "Caller console outputs and output IDs should have the same length ({} vs. {})",
+                            caller_console_outputs.len(),
+                            caller_console_output_ids.len()
+                        );
+                        assert_eq!(
+                            caller_console_outputs.len(),
+                            caller_output_types.len(),
+                            "Caller console outputs and output types should have the same length ({} vs. {})",
+                            caller_console_outputs.len(),
+                            caller_output_types.len()
+                        );
+                        assert_eq!(
+                            callee_console_outputs.len(),
+                            callee_output_types.len(),
+                            "Callee console outputs and output types should have the same length ({} vs. {})",
+                            callee_console_outputs.len(),
+                            callee_output_types.len()
+                        );
+                        assert_eq!(
+                            callee_console_outputs.len(),
+                            callee_console_output_ids.len(),
+                            "Callee console outputs and output IDs should have the same length ({} vs. {})",
+                            callee_console_outputs.len(),
+                            callee_console_output_ids.len()
+                        );
+
                         for (
                             operand_index,
                             (
@@ -895,18 +953,18 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
 
                                             Some(rvk)
                                         },
-                                        gamma: None,
+                                        gamma: Group::zero(), // Use a zero value for gamma, since we don't need it to compute the serial number.
                                         static_record_id: *record_commitment, // callee static_record_id
-                                        dynamic_record_id: dynamic_record_commitment, // caller dynamic_record_id
+                                        dynamic_record_id: *dynamic_record_commitment, // caller dynamic_record_id
                                         input_output_index: (num_inputs + operand_index) as u16, // callee operand_index
                                     });
                                 }
-                                _ => {} // No translation to perform.
+                                outputs => {} // No translation to perform.
                             }
                         }
 
                         // Return the caller's request and response.
-                        (callee_request_verification_inputs, caller_response_outputs, Some(translation_data))
+                        (callee_request_verification_inputs, caller_response.outputs().to_vec(), Some(translation_data))
                     }
                 }
             };
