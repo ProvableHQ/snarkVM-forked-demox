@@ -71,7 +71,7 @@ impl<N: Network> Process<N> {
         let mut transition_map = HashMap::new();
 
         // Initialize a map of (program ID, record identifier) to translation verifying keys.
-        let mut translation_verifying_keys = HashMap::new();
+        let mut translation_verifying_keys: HashMap<(ProgramID<N>, Identifier<N>), VerifyingKey<N>> = HashMap::new();
 
         // Verify each transition.
         for transition in execution.transitions() {
@@ -143,12 +143,16 @@ impl<N: Network> Process<N> {
                 false => None,
             };
             // Retrieve the translation verifying keys for the transition's program.
-            // TODO(dynamic_dispatch): minor perf issue: this can superfluously retrieve the verifying keys multiple times.
             for record_name in stack.program().records().keys() {
-                let translation_verifying_key = stack.get_translation_verifying_key(record_name).map_err(|_| {
-                    anyhow!("Translation verifying key not found for {}/{}", transition.program_id(), record_name)
-                })?;
-                translation_verifying_keys.insert((*transition.program_id(), *record_name), translation_verifying_key);
+                let key = (*transition.program_id(), *record_name);
+
+                // TODO (dynamic_dispatch) do better (e.g with .entry)
+                if !translation_verifying_keys.contains_key(&key) {
+                    let translation_verifying_key = stack.get_translation_verifying_key(record_name).map_err(|_| {
+                        anyhow!("Translation verifying key not found for {}/{}", key.0, key.1)
+                    })?;
+                    translation_verifying_keys.insert(key, translation_verifying_key);
+                }
             }
 
             // Ensure the number of inputs and outputs match the expected number in the function.
@@ -233,7 +237,7 @@ impl<N: Network> Process<N> {
 
         // Construct the batch of translation verifier inputs.
         let batch_translation_inputs =
-            Translation::prepare_verifier_inputs(&translation_verifying_keys, &transition_map, &call_graph)?;
+            Translation::prepare_verifier_inputs(execution.transitions(), &transition_map, &translation_verifying_keys)?;
 
         // TODO(dynamic_dispatch): bring appropriate new measurement functions from execution_cost_for_authorization to here.
 

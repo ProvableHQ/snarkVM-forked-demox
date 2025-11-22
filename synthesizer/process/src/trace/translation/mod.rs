@@ -36,8 +36,10 @@ use console::{
         ProgramID,
         RECORD_DATA_TREE_DEPTH,
         Record,
+        U16,
         Value,
         ValueType,
+        compute_function_id,
     },
     types::{Field, Group},
 };
@@ -46,6 +48,8 @@ use snarkvm_synthesizer_program::{Function, Instruction, RecordTranslationData};
 use snarkvm_synthesizer_snark::VerifyingKey;
 
 use std::collections::HashMap;
+
+use itertools::izip;
 
 #[derive(Clone, Debug, Default)]
 pub struct Translation<N: Network> {
@@ -73,141 +77,122 @@ impl<N: Network> Translation<N> {
 
     /// Returns the verifier public inputs for the given call graph and transitions.
     pub fn prepare_verifier_inputs<'a>(
+        transitions: impl ExactSizeIterator<Item = &'a Transition<N>>,
+        // Used to retrieve record names
+        transition_map: &HashMap<N::TransitionID, (&Transition<N>, Function<N>)>,
         translation_verifying_keys: &HashMap<(ProgramID<N>, Identifier<N>), VerifyingKey<N>>,
-        transitions: &HashMap<N::TransitionID, (&Transition<N>, Function<N>)>,
-        _call_graph: &HashMap<N::TransitionID, Vec<N::TransitionID>>,
     ) -> Result<Vec<(VerifyingKey<N>, Vec<Vec<N::Field>>)>> {
         // Determine the number of transitions.
         let num_transitions = transitions.len();
 
-        // Initialize a vector for the batch verifier inputs.
-        /* 
-            let circuit_record_consumed = circuit::Boolean::<A>::new(circuit::Mode::Public, self.record_consumed);
-            let circuit_function_id = circuit::Field::<A>::new(circuit::Mode::Public, self.function_id);
-            let _circuit_translation_count =
-                circuit::U16::<A>::new(circuit::Mode::Public, console::types::U16::<N>::new(self.translation_count));
-            let circuit_input_output_index =
-                circuit::U16::<A>::new(circuit::Mode::Public, console::types::U16::<N>::new(self.input_output_index));
-            let circuit_id_static = circuit::Field::<A>::new(circuit::Mode::Public, self.id_static);
-            let circuit_id_dynamic = circuit::Field::<A>::new(circuit::Mode::Public, self.id_dynamic);
-        */
         let mut batch_verifier_inputs: HashMap<(ProgramID<N>, Identifier<N>), Vec<Vec<N::Field>>> = HashMap::new();
 
-        let mut translation_count = 0;
+        let mut translation_count: u16 = 0;
 
-        // for transition in transitions.values().rev() {
-        //     if let Some(caller_inputs) = transition.caller_inputs() {
+        // Traversal order only affects the translation count appearing as a public input in the translation circuit.
+        // Order is irrelevant as long as it is consistent between the prover and verifier. (cf. Translation::prepare)
+        for transition in transitions {
 
-        //         let child_program_id = transition.program_id();
-        //         let child_function_name = transition.function_name();
-        //         let child_function_id = crate::compute_function_id(&console::types::U16::new(N::ID), child_program_id, child_function_name)?;
+            let (_, callee_function_core) = transition_map.get(transition.id()).ok_or_else(|| 
+                anyhow!("Transition {} from execution not found transition map", transition.id()))?;
+            let callee_function_id = compute_function_id(&U16::<N>::new(N::ID), transition.program_id(), transition.function_name())?;
 
-        //         // TODO: fix the next 6 lines
-        //         ensure!(dynamic_call.operand_types().len() == child_transition.inputs().len(), "The number of call operands {} does not match the number of function inputs {}", dynamic_call.operand_types().len(), child_transition.inputs().len());
-        //         ensure!(dynamic_call.operand_types().len() == child_function.input_types().len(), "The number of call operands {} does not match the number of function input types {}", dynamic_call.operand_types().len(), child_function.input_types().len());
-        //         ensure!(dynamic_call.operand_types().len() == caller_inputs.len(), "The number of call operands {} does not match the number of parent caller inputs {}", dynamic_call.operand_types().len(), caller_inputs.len());
-        //         for (io_index, (call_operand_type, child_input, child_input_type, caller_input)) in itertools::izip!(dynamic_call.operand_types(), child_transition.inputs(), child_function.input_types(), caller_inputs).enumerate() {
-        //             match (call_operand_type, child_input_type, child_input) {
-        //                 (ValueType::DynamicRecord, ValueType::Record(record_identifier), Input::Record(serial_number, _)) => {
-        //                     let dynamic_record_fid = *child_function_id;
-        //                     let dynamic_record_id = **caller_input;
-        //                     let static_record_id = **serial_number;
-        //                     let record_consumed = N::Field::one();
-        //                     let translation_count_field = *console::types::U16::<N>::new(translation_count).to_field()?;
-        //                     let io_index_field = *console::types::U16::<N>::new(io_index as u16).to_field()?;
+            ensure!(
+                transition.caller_inputs().is_some() == transition.caller_outputs().is_some(),
+                "The caller inputs and caller outputs should either both be Some or both be None, but found a discrepancy in transition {}: caller inputs = {}, caller outputs = {}",
+                transition.id(),
+                if transition.caller_inputs().is_some() { "Some" } else { "None" },
+                if transition.caller_outputs().is_some() { "Some" } else { "None" }
+            );
 
-        //                     batch_verifier_inputs.entry((*child_program_id, record_identifier)).or_default().push(
-        //                         vec![record_consumed, dynamic_record_fid, translation_count_field, io_index_field, static_record_id, dynamic_record_id]
-        //                     );
-        //                     translation_count += 1;
-        //                 }
-        //                 _ => { } // No translation to perform.
-        //             }
-        //         }
-        //     }
-        // }
+            if let Some(caller_inputs) = transition.caller_inputs() {
+                // TODO (dynamic_dispatch): confirm the input types don't have to be matched against the function definiction, as we were doing before (e. g. because that's already checked elsewhere)
+                // TODO (antonio): cf above
+                // TODO (vicsn): cf above
+                // TODO (d0cd): cf above
 
-        // for (parent, children) in call_graph.iter() {
-        //     let (parent_transition, parent_function) = transitions.get(parent).ok_or_else(||
-        //         anyhow!("Transition not found in the call graph")
-        //     )?;
+                ensure!(
+                    caller_inputs.len() == transition.inputs().len(),
+                    "The number of caller inputs does not match the number of inputs in transition {}: ({} vs. {})",
+                    transition.id(),
+                    caller_inputs.len(),
+                    transition.inputs().len(),
+                );
 
-        //     let parent_program_id = parent_transition.program_id();
-        //     let parent_function_name = parent_transition.function_name();
+                let callee_input_types = callee_function_core.input_types();
 
-        //     let call_instructions = parent_function.instructions().iter().filter(|instruction| {
-        //         matches!(instruction, Instruction::Call(_) | Instruction::CallDynamic(_))
-        //     }).collect_vec();
+                ensure!(
+                    callee_input_types.len() == transition.inputs().len(),
+                    "The number of input types does not match the number of inputs in transition {}: ({} vs. {})",
+                    transition.id(),
+                    callee_input_types.len(),
+                    transition.inputs().len(),
+                );
 
-        //     ensure!(
-        //         call_instructions.len() == children.len(),
-        //         "The number of call instructions {} does not match the number of children {}",
-        //         call_instructions.len(),
-        //         children.len()
-        //     );
+                for (input_output_index, (caller_input, callee_input, callee_input_type)) in izip!(
+                    caller_inputs.iter(),
+                    transition.inputs().iter(),
+                    callee_input_types.iter()
+                ).enumerate() {
+                    match (caller_input, callee_input, callee_input_type) {
+                        (Input::DynamicRecord(dynamic_record_id), Input::Record(serial_number, _), ValueType::Record(record_name)) => {
 
-        //     for (child, call_instruction) in children.iter().zip(call_instructions.iter()) {
-        //         let (child_transition, child_function) = transitions.get(child).ok_or_else(||
-        //             anyhow!("Transition not found in the call graph")
-        //         )?;
+                            let field_record_consumed = N::Field::one();
+                            let field_function_id = *callee_function_id;
+                            // TODO (dynamic_dispatch) is there a better way to do this? .to_fields() yields one field element
+                            // TODO (dynamic_dispatch) separately: should this be to_bits_le or to_bits_be?
+                            let fields_translation_count = translation_count.to_bits_le().into_iter().map(|bit: bool| if bit { N::Field::one() } else { N::Field::zero() }).collect_vec();
+                            let fields_input_output_index = (input_output_index as u16).to_bits_le().into_iter().map(|bit: bool| if bit { N::Field::one() } else { N::Field::zero() }).collect_vec();
 
-        //         let parent_caller_inputs = parent_transition.caller_inputs().unwrap_or_default().iter().map(|input| input.id());
-        //         let parent_caller_outputs = parent_transition.caller_outputs().unwrap_or_default().iter().map(|output| output.id());
+                            // TODO (Antonio) remove
+                            println!(" @@@@@ fields_translation_count: {}", fields_translation_count.len());
+                            println!(" @@@@@ fields_input_output_index: {}", fields_input_output_index.len());
 
-        //         let child_program_id = child_transition.program_id();
-        //         let child_function_name = child_transition.function_name();
-        //         let child_function_id = crate::compute_function_id(&console::types::U16::new(N::ID), child_program_id, child_function_name)?;
+                            let field_id_static = **serial_number;
+                            let field_id_dynamic = **dynamic_record_id;
+ 
+                            let verifier_inputs = [
+                                vec![
+                                    N::Field::one(),
+                                    field_record_consumed,
+                                    field_function_id,
+                                ],
+                                fields_translation_count,
+                                fields_input_output_index,
+                                vec![
+                                    field_id_static,
+                                    field_id_dynamic,
+                                ],
+                            ].into_iter().flatten().collect_vec();
 
-        //         let Instruction::CallDynamic(dynamic_call) = call_instruction else {
-        //             // Only dynamic calls can invoke a translation from a dynamic to a static record.
-        //             continue;
-        //         };
+                            // TODO (Antonio) remove
+                            println!(" @@@@@ verifier_inputs: {}", verifier_inputs.len());
 
-        //         // Determine if any record translation proofs are required.
-        //         ensure!(dynamic_call.operand_types().len() == child_transition.inputs().len(), "The number of call operands {} does not match the number of function inputs {}", dynamic_call.operand_types().len(), child_transition.inputs().len());
-        //         ensure!(dynamic_call.operand_types().len() == child_function.input_types().len(), "The number of call operands {} does not match the number of function input types {}", dynamic_call.operand_types().len(), child_function.input_types().len());
-        //         ensure!(dynamic_call.operand_types().len() == parent_caller_inputs.len(), "The number of call operands {} does not match the number of parent caller inputs {}", dynamic_call.operand_types().len(), parent_caller_inputs.len());
-        //         for (io_index, (call_operand_type, child_input, child_input_type, parent_caller_input)) in itertools::izip!(dynamic_call.operand_types(), child_transition.inputs(), child_function.input_types(), parent_caller_inputs).enumerate() {
-        //             match (call_operand_type, child_input_type, child_input) {
-        //                 (ValueType::DynamicRecord, ValueType::Record(record_identifier), Input::Record(serial_number, _)) => {
-        //                     let dynamic_record_fid = *child_function_id;
-        //                     let dynamic_record_id = **parent_caller_input;
-        //                     let static_record_id = **serial_number;
-        //                     let record_consumed = N::Field::one();
-        //                     let translation_count_field = *console::types::U16::<N>::new(translation_count).to_field()?;
-        //                     let io_index_field = *console::types::U16::<N>::new(io_index as u16).to_field()?;
+                            batch_verifier_inputs.entry((*transition.program_id(), *record_name)).or_default().push(
+                                verifier_inputs
+                            );
 
-        //                     batch_verifier_inputs.entry((*child_program_id, record_identifier)).or_default().push(
-        //                         vec![record_consumed, dynamic_record_fid, translation_count_field, io_index_field, static_record_id, dynamic_record_id]
-        //                     );
-        //                     translation_count += 1;
-        //                 }
-        //                 _ => { } // No translation to perform.
-        //             }
-        //         }
-        //         ensure!(dynamic_call.destination_types().len() == child_transition.outputs().len(), "The number of call destinations {} does not match the number of function outputs {}", dynamic_call.destination_types().len(), child_transition.outputs().len());
-        //         ensure!(dynamic_call.destination_types().len() == child_function.output_types().len(), "The number of call destinations {} does not match the number of function output types {}", dynamic_call.destination_types().len(), child_function.output_types().len());
-        //         ensure!(dynamic_call.destination_types().len() == parent_caller_outputs.len(), "The number of call destinations {} does not match the number of parent caller outputs {}", dynamic_call.destination_types().len(), parent_caller_outputs.len());
-        //         for (io_index, (call_destination_type, child_output, child_output_type, parent_caller_output)) in itertools::izip!(dynamic_call.destination_types(), child_transition.outputs(), child_function.output_types(), parent_caller_outputs).enumerate() {
-        //             match (call_destination_type, child_output_type, child_output) {
-        //                 (ValueType::DynamicRecord, ValueType::Record(record_identifier), Output::Record(commitment, ..)) => {
-        //                     let dynamic_record_fid = *child_function_id;
-        //                     let dynamic_record_id = **parent_caller_output;
-        //                     let static_record_id = **commitment;
-        //                     let record_consumed = N::Field::one();
-        //                     let translation_count_field = *console::types::U16::<N>::new(translation_count).to_field()?;
-        //                     let io_index_field = *console::types::U16::<N>::new((child_transition.inputs().len() + io_index) as u16).to_field()?;
-
-        //                     batch_verifier_inputs.entry((*child_program_id, record_identifier)).or_default().push(
-        //                         vec![record_consumed, dynamic_record_fid, translation_count_field, io_index_field, static_record_id, dynamic_record_id]
-        //                     );
-        //                     translation_count += 1;
-        //                 }
-        //                 _ => { } // No translation to perform.
-        //             }
-        //         }
-        //     }
-        // }
+                            translation_count += 1;
+                        },
+                        (Input::Record(..), Input::DynamicRecord(..), ValueType::DynamicRecord) => {
+                            bail!("Translation of (static) input Records to Dynamic Records is not supported");
+                        },
+                        // TODO (dynamic_dispatch): if this check is redundant with other ones already in place, remove it
+                        _ => {
+                            ensure!(
+                                caller_input.variant() == callee_input.variant() && callee_input.variant() == callee_input_type.variant(),
+                                "Mismatch between caller input {}, (callee) input {} and (callee) input type {} in transition {} (index: {})",
+                                caller_input,
+                                callee_input,
+                                callee_input_type,
+                                transition.id(),
+                                input_output_index
+                            )
+                        }
+                    }
+                }
+            }
+        }
 
         let batch_with_verifying_keys = batch_verifier_inputs.into_iter().map(|(key, inputs)| {
             let verifying_key = translation_verifying_keys.get(&key).ok_or_else(||

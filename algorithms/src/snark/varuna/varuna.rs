@@ -366,6 +366,11 @@ where
         }
         let prover_state = AHPForR1CS::<_, SM>::init_prover(&circuits_to_constraints, zk_rng)?;
 
+        // TODO (Antonio) remove
+        if keys_to_constraints.len() == 4 {
+            println!(" **** Prove batch");
+        }
+
         // extract information from the prover key and state to consume in further
         // calculations
         let mut batch_sizes = BTreeMap::new();
@@ -376,12 +381,27 @@ where
         let num_unique_circuits = keys_to_constraints.len();
         let mut circuit_ids = Vec::with_capacity(num_unique_circuits);
         for pk in keys_to_constraints.keys() {
-
             let batch_size = prover_state.batch_size(&pk.circuit).ok_or(anyhow!("Batch size not found."))?;
             let public_input = prover_state.public_inputs(&pk.circuit).ok_or(anyhow!("Public input not found."))?;
 
             let padded_public_input =
                 prover_state.padded_public_inputs(&pk.circuit).ok_or(anyhow!("Padded public input not found."))?;
+
+            // TODO (Antonio) remove
+            if keys_to_constraints.len() == 4 {
+                println!("    **** for verifying key {}", pk.circuit_verifying_key.id);
+                for (i, pipi) in public_input.iter().enumerate() {
+                    println!("        **** public input {i}");
+
+                    let mut pipiclean = vec![E::Fr::one()];
+                    pipiclean.extend_from_slice(&pipi);
+
+                    for (j, pjpj) in pipiclean.iter().enumerate() {
+                        println!("           ({}) {}", j, pjpj);
+                    }
+                }
+            }
+            
             let circuit_id = pk.circuit.id;
             batch_sizes.insert(circuit_id, batch_size);
             circuit_infos.insert(circuit_id, &pk.circuit_verifying_key.circuit_info);
@@ -727,6 +747,11 @@ where
             }
         }
 
+        // TODO (Antonio) remove
+        if keys_to_inputs.len() == 4 {
+            println!(" **** Verify batch");
+        }
+
         // collect values into structures for our calculations
         let mut max_num_constraints = 0;
         let mut max_num_variables = 0;
@@ -740,6 +765,18 @@ where
         for (&vk, &public_inputs_i) in keys_to_inputs.iter() {
             max_num_constraints = max_num_constraints.max(vk.circuit_info.num_constraints);
             max_num_variables = max_num_variables.max(vk.circuit_info.num_public_and_private_variables);
+
+            // TODO (Antonio) remove
+            if keys_to_inputs.len() == 4 {
+                println!("    **** for verifying key {}", vk.id);
+                for (i, pipi) in public_inputs_i.iter().enumerate() {
+                    println!("        **** public input {i}");
+
+                    for (j, pjpj) in pipi.borrow().iter().enumerate() {
+                        println!("           ({}) {}", j, pjpj);
+                    }
+                }
+            }
 
             let non_zero_domains = AHPForR1CS::<_, SM>::cmp_non_zero_domains(&vk.circuit_info, max_non_zero_domain)?;
             max_non_zero_domain = non_zero_domains.max_non_zero_domain;
