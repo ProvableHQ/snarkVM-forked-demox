@@ -144,15 +144,12 @@ impl<N: Network> Translation<N> {
                             let fields_translation_count = translation_count.to_bits_le().into_iter().map(|bit: bool| if bit { N::Field::one() } else { N::Field::zero() }).collect_vec();
                             let fields_input_output_index = (input_output_index as u16).to_bits_le().into_iter().map(|bit: bool| if bit { N::Field::one() } else { N::Field::zero() }).collect_vec();
 
-                            // TODO (Antonio) remove
-                            println!(" @@@@@ fields_translation_count: {}", fields_translation_count.len());
-                            println!(" @@@@@ fields_input_output_index: {}", fields_input_output_index.len());
-
                             let field_id_static = **serial_number;
                             let field_id_dynamic = **dynamic_record_id;
  
                             let verifier_inputs = [
                                 vec![
+                                    // Initial constant 1
                                     N::Field::one(),
                                     field_record_consumed,
                                     field_function_id,
@@ -164,9 +161,6 @@ impl<N: Network> Translation<N> {
                                     field_id_dynamic,
                                 ],
                             ].into_iter().flatten().collect_vec();
-
-                            // TODO (Antonio) remove
-                            println!(" @@@@@ verifier_inputs: {}", verifier_inputs.len());
 
                             batch_verifier_inputs.entry((*transition.program_id(), *record_name)).or_default().push(
                                 verifier_inputs
