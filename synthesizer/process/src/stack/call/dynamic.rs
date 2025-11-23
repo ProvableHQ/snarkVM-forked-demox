@@ -1060,11 +1060,14 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                 inputs.len(),
                 &tvk,
                 &tcm,
-                caller_response_outputs,
+                caller_response_outputs.clone(),
                 self.destination_types(),
                 &output_registers,
                 Some(function_id),
             );
+            for ((caller_output, output), output_type) in caller_response_outputs.iter().zip(outputs.iter()).zip(self.destination_types()) {
+                println!("[Execute] caller_output: {:?}, output: {:?}, output_type: {:?}", caller_output, output.eject_value(), output_type);
+            }
             lap!(timer, "Checked the outputs");
 
             // Return the circuit outputs.

@@ -363,7 +363,9 @@ impl<N: Network> Transition<N> {
                             // Convert the record output to a dynamic record output.
                             (Value::Record(record), ValueType::DynamicRecord) => {
                                 let caller_output_value = Value::DynamicRecord(DynamicRecord::from_record(record)?);
-                                construct_output(output_index, &None, &caller_output_value, caller_output_type, &None)
+                                let output = construct_output(output_index, &None, &caller_output_value, caller_output_type, &None);
+                                println!("[Construct output] caller_output_value: {:?}, caller_output_type: {:?}, output: {:?}", caller_output_value, caller_output_type, output);
+                                output
                             }
                             // Convert the dynamic record output to a record output.
                             (Value::DynamicRecord(dynamic_record), ValueType::Record(_)) => {

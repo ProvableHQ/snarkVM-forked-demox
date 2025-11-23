@@ -285,44 +285,6 @@ impl<N: Network> Stack<N> {
                         gamma,
                     ),
                 ))
-
-                // TODO (dynamic_dispatch): does the verifying key need to be tested here, for instance in terms of constraint/variable bounds?
-
-                // TODO (dynamic_dispatch): ensure none of this needs to be done in the case of translation circuit keys
-                // // Compute the request, with a burner private key.
-                // let request = Request::sign(
-                //     &burner_private_key,
-                //     *program_id,
-                //     *function.name(),
-                //     inputs.into_iter(),
-                //     &input_types,
-                //     root_tvk,
-                //     is_root,
-                //     program_checksum,
-                //     Some(false), // `dynamic` is false because this is a root request.
-                //     rng,
-                // )?;
-                // lap!(timer, "Compute the request for {}", function.name());
-
-                // // Initialize the assignments.
-                // let assignments = Assignments::<N>::default();
-                // Initialize the constraint limit. Account for the constraint added after synthesis that makes the Varuna zerocheck hiding.
-                // let Some(constraint_limit) = verifying_key.circuit_info.num_constraints.checked_sub(1) else {
-                //     // Since a deployment must always pay non-zero fee, it must always have at least one constraint.
-                //     bail!("The constraint limit of 0 for function '{}' is invalid", function.name());
-                // };
-                // // Retrieve the variable limit.
-                // let variable_limit = verifying_key.num_variables();
-                // // Initialize the call stack.
-                // let call_stack = CallStack::CheckDeployment(
-                //     vec![request],
-                //     burner_private_key,
-                //     assignments.clone(),
-                //     Some(constraint_limit as u64),
-                //     Some(variable_limit),
-                // );
-                // // Append the function name, callstack, and assignments.
-                // call_stacks.push((function.name(), call_stack, assignments));
             })
             .collect::<Result<Vec<_>>>()?;
 

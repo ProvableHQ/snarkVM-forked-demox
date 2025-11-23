@@ -276,6 +276,11 @@ impl<N: Network> Translation<N> {
                         (Output::Record(..), Output::DynamicRecord(..), ValueType::DynamicRecord) => {
                             bail!("Translation of output dynamic records to static record is not supported yet");
                         }
+                        (Output::DynamicFuture(..), Output::Future(..), ValueType::Future(_)) => {
+                            // TODO(@vicsn): do we need to perform checks here?
+                            // Futures are allowed to be represented as dynamic futures.
+                            continue;
+                        }
                         // TODO (dynamic_dispatch): if this check is redundant with other ones already in place, remove it
                         _ => {
                             ensure!(

@@ -329,6 +329,7 @@ impl<N: Network> Process<N> {
                     child_transition.function_name(),
                 )?]);
             }
+            println!("child_transition.tcm(): {:?}", **child_transition.tcm());
             // [Inputs] Extend the verifier inputs with the transition commitment of the external call.
             verifier_inputs.extend([**child_transition.tcm()]);
             // [Inputs] Extend the verifier inputs with the input IDs of the external call.
@@ -337,14 +338,15 @@ impl<N: Network> Process<N> {
                 (true, None) => bail!("Dynamic transition has no caller inputs"),
                 (false, _) => child_transition.inputs(),
             };
+            println!("child_inputs: {:?}", child_inputs.iter().flat_map(|input| input.verifier_inputs()).collect::<Vec<_>>());
             verifier_inputs.extend(child_inputs.iter().flat_map(|input| input.verifier_inputs()));
             // [Inputs] Extend the verifier inputs with the output IDs of the external call.
-            // TODO (dynamic_dispatch): decide whether these should actually be caller output IDs
             let output_ids = match (child_transition.is_dynamic(), child_transition.caller_outputs()) {
                 (false, _) => child_transition.output_ids().map(|id| **id).collect::<Vec<_>>(),
                 (true, None) => bail!("Dynamic transition has no caller outputs"),
                 (true, Some(caller_outputs)) => caller_outputs.iter().map(|output| **output.id()).collect::<Vec<_>>(),
             };
+            println!("child outputs: {:?}", output_ids);
             verifier_inputs.extend(output_ids);
         }
 
