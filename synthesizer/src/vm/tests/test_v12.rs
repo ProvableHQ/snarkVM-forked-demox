@@ -665,7 +665,7 @@ function dynamic_transfer_pub_to_priv:
     input r0 as field.public;
     input r1 as field.public;
     input r2 as field.public;
-    input r3 as address.public;
+    input r3 as address.private;
     input r4 as u64.public;
     call.dynamic r0 r1 r2 with r3 r4 (as address.private u64.public) into r5 r6 (as dynamic.record dynamic.future);
     async dynamic_transfer_pub_to_priv r6 into r7;
@@ -680,8 +680,8 @@ function dynamic_transfer_private:
     input r1 as field.public;
     input r2 as field.public;
     input r3 as dynamic.record;
-    input r4 as address.public;
-    input r5 as u64.public;
+    input r4 as address.private;
+    input r5 as u64.private;
     call.dynamic r0 r1 r2 with r3 r4 r5 (as dynamic.record address.private u64.private) into r6 r7 (as dynamic.record dynamic.record);
     output r6 as dynamic.record;
     output r7 as dynamic.record;
@@ -792,11 +792,12 @@ constructor:
     vm.add_next_block(&block)?;
 
     // Collect the record
+    ensure!(block.records().collect_vec().len() == 1, "Expected 1 record, got {}", block.records().collect_vec().len());
     let record = block.records().collect_vec().last().unwrap().1.decrypt(&caller_view_key).unwrap();
     let dynamic_record = DynamicRecord::<CurrentNetwork>::from_record(&record).unwrap();
-    println!("record: {record}");
 
     // Execute 'dynamic_transfer_private'.
+    println!("Executing 'dynamic_transfer_private'...");
     let transaction = vm.execute(
         &caller_private_key,
         ("test_dcall.aleo", "dynamic_transfer_private"),
@@ -804,7 +805,7 @@ constructor:
             Value::from_str(&format!("{credits_as_field}"))?,
             Value::from_str(&format!("{aleo_as_field}"))?,
             Value::from_str(&format!("{transfer_private_field}"))?,
-            Value::from_str(&format!("{dynamic_record}"))?,
+            Value::<CurrentNetwork>::DynamicRecord(dynamic_record),
             Value::from_str(&format!("{caller_address}"))?,
             Value::from_str("1u64")?,
         ]
