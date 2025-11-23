@@ -616,24 +616,29 @@ fn test_complex_dynamic_graph_construction() {
 
 /************************** Other dynamic-call tests **************************/
 
-// This test verifiers that a dynamic call to the `credits.transfer_public` function works as expected.
+// This test verifiers that a dynamic call to the `credits` functions work as expected.
 #[test]
-fn test_dynamic_call_to_transfer_public() -> Result<()> {
+fn test_dynamic_calls_to_credits_aleo() -> Result<()> {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
     let caller_private_key = sample_genesis_private_key(rng);
+    let caller_view_key = ViewKey::try_from(&caller_private_key)?;
     let caller_address = Address::try_from(&caller_private_key)?;
+
+    let test_dcall_program_id = ProgramID::<CurrentNetwork>::from_str("test_dcall.aleo").unwrap();
+    let test_dcall_program_address = test_dcall_program_id.to_address()?;
 
     // Define the program to be executed.
     let program = Program::from_str(
         r"
 program test_dcall.aleo;
 
+// This static variant fails to parse because we can't parse identifiers as literals yet
 // function static:
 //    input r0 as address.public;
 //    input r1 as u64.public;
-//    call.dynamic credits aleo transfer_public with r0 r1 (as address.public u64.public) into r2 (as dynamic.future);
+//    call.dynamic credits aleo transfer_public_as_signer with r0 r1 (as address.public u64.public) into r2 (as dynamic.future);
 //    async static r2 into r3;
 //    output r3 as test_dcall.aleo/static.future;
 // finalize static:
@@ -656,6 +661,20 @@ finalize two_transfer_publics:
     await r1;
     await r0;
 
+function dynamic_transfer_pub_to_priv:
+    input r0 as field.public;
+    input r1 as field.public;
+    input r2 as field.public;
+    input r3 as address.public;
+    input r4 as u64.public;
+    call.dynamic r0 r1 r2 with r3 r4 (as address.private u64.public) into r5 r6 (as dynamic.record dynamic.future);
+    async dynamic_transfer_pub_to_priv r6 into r7;
+    output r5 as dynamic.record;
+    output r7 as test_dcall.aleo/dynamic_transfer_pub_to_priv.future;
+finalize dynamic_transfer_pub_to_priv:
+    input r0 as dynamic.future;
+    await r0;
+
 function dynamic_transfer_private:
     input r0 as field.public;
     input r1 as field.public;
@@ -663,7 +682,7 @@ function dynamic_transfer_private:
     input r3 as dynamic.record;
     input r4 as address.public;
     input r5 as u64.public;
-    call.dynamic r0 r1 r2 with r3 r4 r5 (as dynamic.record address.public u64.public) into r6 r7 (as dynamic.record dynamic.record);
+    call.dynamic r0 r1 r2 with r3 r4 r5 (as dynamic.record address.private u64.private) into r6 r7 (as dynamic.record dynamic.record);
     output r6 as dynamic.record;
     output r7 as dynamic.record;
 
@@ -688,6 +707,7 @@ constructor:
     assert_eq!(block.aborted_transaction_ids().len(), 0);
     vm.add_next_block(&block)?;
 
+    // TODO: Uncomment this once we can parse identifiers as literals.
     // Execute the "static" function.
     // println!("Executing the `static` function...");
     // let transaction = vm.execute(
@@ -710,24 +730,51 @@ constructor:
     println!("Executing the `dynamic` function...");
     let credits_as_field = Identifier::<CurrentNetwork>::from_str("credits")?.to_field()?;
     let aleo_as_field = Identifier::<CurrentNetwork>::from_str("aleo")?.to_field()?;
-    let transfer_public_as_field = Identifier::<CurrentNetwork>::from_str("transfer_public")?.to_field()?;
+    let transfer_public_as_signer_field = Identifier::<CurrentNetwork>::from_str("transfer_public_as_signer")?.to_field()?;
+    let transfer_public_to_private_field = Identifier::<CurrentNetwork>::from_str("transfer_public_to_private")?.to_field()?;
+    let transfer_private_field = Identifier::<CurrentNetwork>::from_str("transfer_private")?.to_field()?;
     println!("credits_as_field: {credits_as_field}");
     println!("aleo_as_field: {aleo_as_field}");
-    println!("transfer_public_as_field: {transfer_public_as_field}");
+    println!("transfer_public_as_signer_field: {transfer_public_as_signer_field}");
+    println!("transfer_public_to_private_field: {transfer_public_to_private_field}");
 
     let program_id_fields = ProgramID::<CurrentNetwork>::from_str("credits.aleo")?.to_fields()?;
     assert_eq!(program_id_fields.len(), 2);
     assert_eq!(program_id_fields[0], credits_as_field);
     assert_eq!(program_id_fields[1], aleo_as_field);
 
-    // Execute the "dynamic" function.
+    // Execute 'two_transfer_publics'.
     let transaction = vm.execute(
         &caller_private_key,
         ("test_dcall.aleo", "two_transfer_publics"),
         vec![
             Value::from_str(&format!("{credits_as_field}"))?,
             Value::from_str(&format!("{aleo_as_field}"))?,
-            Value::from_str(&format!("{transfer_public_as_field}"))?,
+            Value::from_str(&format!("{transfer_public_as_signer_field}"))?,
+            Value::from_str(&format!("{test_dcall_program_address}"))?,
+            Value::from_str("1000000u64")?,
+        ]
+        .into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    )?;
+    vm.check_transaction(&transaction, None, rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 1);
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    vm.add_next_block(&block)?;
+
+    // Execute 'dynamic_transfer_public_to_private'.
+    let transaction = vm.execute(
+        &caller_private_key,
+        ("test_dcall.aleo", "dynamic_transfer_pub_to_priv"),
+        vec![
+            Value::from_str(&format!("{credits_as_field}"))?,
+            Value::from_str(&format!("{aleo_as_field}"))?,
+            Value::from_str(&format!("{transfer_public_to_private_field}"))?,
             Value::from_str(&format!("{caller_address}"))?,
             Value::from_str("1234u64")?,
         ]
@@ -743,6 +790,40 @@ constructor:
     assert_eq!(block.transactions().num_rejected(), 0);
     assert_eq!(block.aborted_transaction_ids().len(), 0);
     vm.add_next_block(&block)?;
+
+    // Collect the record
+    let record = block.records().collect_vec().last().unwrap().1.decrypt(&caller_view_key).unwrap();
+    let dynamic_record = DynamicRecord::<CurrentNetwork>::from_record(&record).unwrap();
+    println!("record: {record}");
+
+    // Execute 'dynamic_transfer_private'.
+    let transaction = vm.execute(
+        &caller_private_key,
+        ("test_dcall.aleo", "dynamic_transfer_private"),
+        vec![
+            Value::from_str(&format!("{credits_as_field}"))?,
+            Value::from_str(&format!("{aleo_as_field}"))?,
+            Value::from_str(&format!("{transfer_private_field}"))?,
+            Value::from_str(&format!("{dynamic_record}"))?,
+            Value::from_str(&format!("{caller_address}"))?,
+            Value::from_str("1u64")?,
+        ]
+        .into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    )?;
+    vm.check_transaction(&transaction, None, rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 1);
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    vm.add_next_block(&block)?;
+
+    // Collect the record
+    let records = block.records().collect_vec();
+    println!("records: {records:?}");
 
     Ok(())
 }

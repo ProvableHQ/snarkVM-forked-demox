@@ -21,6 +21,7 @@ use console::{
     network::Network,
     prelude::{Result, bail},
     program::{
+        DynamicFuture,
         DynamicRecord,
         Future,
         Identifier,
