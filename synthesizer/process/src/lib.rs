@@ -47,6 +47,7 @@ use console::{
     account::PrivateKey,
     network::prelude::*,
     program::{
+        DynamicFuture,
         Identifier,
         Literal,
         Locator,
@@ -57,7 +58,6 @@ use console::{
         Response,
         Value,
         ValueType,
-        DynamicFuture,
         compute_function_id,
     },
     types::{Field, U16, U64},

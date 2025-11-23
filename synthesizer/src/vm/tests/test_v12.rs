@@ -696,7 +696,11 @@ constructor:
 
     let credits_record_name = Identifier::<CurrentNetwork>::from_str("credits").unwrap();
     let credits_program_id = ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap();
-    vm.process().write().synthesize_translation_key::<CurrentAleo, _>(&credits_program_id, &credits_record_name, rng)?;
+    vm.process().write().synthesize_translation_key::<CurrentAleo, _>(
+        &credits_program_id,
+        &credits_record_name,
+        rng,
+    )?;
 
     // Deploy the program.
     println!("Deploying program: {}", program.id());
@@ -730,8 +734,10 @@ constructor:
     println!("Executing the `dynamic` function...");
     let credits_as_field = Identifier::<CurrentNetwork>::from_str("credits")?.to_field()?;
     let aleo_as_field = Identifier::<CurrentNetwork>::from_str("aleo")?.to_field()?;
-    let transfer_public_as_signer_field = Identifier::<CurrentNetwork>::from_str("transfer_public_as_signer")?.to_field()?;
-    let transfer_public_to_private_field = Identifier::<CurrentNetwork>::from_str("transfer_public_to_private")?.to_field()?;
+    let transfer_public_as_signer_field =
+        Identifier::<CurrentNetwork>::from_str("transfer_public_as_signer")?.to_field()?;
+    let transfer_public_to_private_field =
+        Identifier::<CurrentNetwork>::from_str("transfer_public_to_private")?.to_field()?;
     let transfer_private_field = Identifier::<CurrentNetwork>::from_str("transfer_private")?.to_field()?;
     println!("credits_as_field: {credits_as_field}");
     println!("aleo_as_field: {aleo_as_field}");

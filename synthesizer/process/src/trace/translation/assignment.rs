@@ -229,10 +229,10 @@ impl<N: Network> TranslationAssignment<N> {
     /// ```
     pub fn to_circuit_assignment<A: circuit::Aleo<Network = N>>(&self) -> Result<circuit::Assignment<N::Field>> {
         self.to_circuit_assignment_internal::<A>()?;
-        Stack::log_circuit::<A>(format_args!(
-            "Translation circuit for dynamic record with nonce {}",
-            self.record_static.nonce()
-        ), "TranslationAssignment".to_string());
+        Stack::log_circuit::<A>(
+            format_args!("Translation circuit for dynamic record with nonce {}", self.record_static.nonce()),
+            "TranslationAssignment".to_string(),
+        );
         Ok(A::eject_assignment_and_reset())
     }
 }

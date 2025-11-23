@@ -320,22 +320,31 @@ impl<N: Network> Process<N> {
         let parent_function = transition_map.get(&transition.id()).map(|(_, function)| function.clone());
         use snarkvm_synthesizer_program::{Call, CallOperator};
         let parent_function_calls = match parent_function {
-            Some(function) => function.instructions().iter().filter(|instruction| matches!(instruction, Instruction::CallDynamic(_) | Instruction::Call(_))).map(|instruction| Some(instruction.clone())).collect::<Vec<_>>(),
+            Some(function) => function
+                .instructions()
+                .iter()
+                .filter(|instruction| matches!(instruction, Instruction::CallDynamic(_) | Instruction::Call(_)))
+                .map(|instruction| Some(instruction.clone()))
+                .collect::<Vec<_>>(),
             None => vec![None; child_transition_ids.len()],
         };
-        ensure!(parent_function_calls.len() == child_transition_ids.len(), "The number of parent function calls and child transition IDs do not match");
-        // TODO(@vicsn): in case we stick to encoding and using *all* of the caller_{inputs, outputs} instead of just the dynamic ones, 
+        ensure!(
+            parent_function_calls.len() == child_transition_ids.len(),
+            "The number of parent function calls and child transition IDs do not match"
+        );
+        // TODO(@vicsn): in case we stick to encoding and using *all* of the caller_{inputs, outputs} instead of just the dynamic ones,
         // we'll have to assert they equal the child's inputs/outputs.
         for (child_transition_id, parent_function_call) in child_transition_ids.iter().zip(parent_function_calls) {
             // Note: This unwrap is safe, as we are processing transitions in post-order,
             // which implies that all child transition IDs have been added to `transition_map`.
             let (child_transition, _) = transition_map.get(child_transition_id).unwrap();
-            let child_function_id = compute_function_id(
-                &U16::new(N::ID),
-                child_transition.program_id(),
+            let child_function_id =
+                compute_function_id(&U16::new(N::ID), child_transition.program_id(), child_transition.function_name())?;
+            println!(
+                "Child function: {} in program.id {}",
                 child_transition.function_name(),
-            )?;
-            println!("Child function: {} in program.id {}", child_transition.function_name(), child_transition.program_id());
+                child_transition.program_id()
+            );
             // [Inputs] Extend the verifier inputs with the program ID and function name if the child transition is dynamic.
             if child_transition.is_dynamic() {
                 verifier_inputs.extend(child_transition.program_id().to_fields()?.into_iter().map(|field| *field));
@@ -356,7 +365,10 @@ impl<N: Network> Process<N> {
                 (false, _) => child_transition.inputs(),
             };
             let num_inputs = child_transition.inputs().len();
-            println!("child_inputs: {:?}", child_inputs.iter().flat_map(|input| input.verifier_inputs()).collect::<Vec<_>>());
+            println!(
+                "child_inputs: {:?}",
+                child_inputs.iter().flat_map(|input| input.verifier_inputs()).collect::<Vec<_>>()
+            );
             verifier_inputs.extend(child_inputs.iter().flat_map(|input| input.verifier_inputs()));
             // [Inputs] Extend the verifier inputs with the output IDs of the external call.
             let output_ids = match (child_transition.is_dynamic(), child_transition.caller_outputs()) {
@@ -367,8 +379,13 @@ impl<N: Network> Process<N> {
                         bail!("Parent function call is not a dynamic call: {:?}", parent_function_call);
                     };
                     let mut caller_output_ids = vec![];
-                    ensure!(caller_outputs.len() == dynamic_call.destination_types().len(), "The number of caller outputs and dynamic call outputs do not match");
-                    for (index, (caller_output, caller_destination_type)) in caller_outputs.iter().zip(dynamic_call.destination_types().iter()).enumerate() {
+                    ensure!(
+                        caller_outputs.len() == dynamic_call.destination_types().len(),
+                        "The number of caller outputs and dynamic call outputs do not match"
+                    );
+                    for (index, (caller_output, caller_destination_type)) in
+                        caller_outputs.iter().zip(dynamic_call.destination_types().iter()).enumerate()
+                    {
                         match (caller_output, caller_destination_type) {
                             // In the case of a DynamicFuture, the verifier computes the hash of the dynamic future directly.
                             (Output::Future(id, future), ValueType::DynamicFuture) => {
@@ -395,7 +412,7 @@ impl<N: Network> Process<N> {
                         }
                     }
                     caller_output_ids
-                },
+                }
             };
             println!("child outputs: {:?}", output_ids);
             verifier_inputs.extend(output_ids);

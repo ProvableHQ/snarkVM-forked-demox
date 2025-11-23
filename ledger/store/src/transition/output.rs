@@ -110,7 +110,6 @@ pub trait OutputStorage<N: Network>: Clone + Send + Sync {
             || self.external_record_map().is_atomic_in_progress()
             || self.future_map().is_atomic_in_progress()
             || self.dynamic_record_map().is_atomic_in_progress()
-            // || self.dynamic_future_map().is_atomic_in_progress()
     }
 
     /// Checkpoints the atomic batch.
@@ -126,7 +125,6 @@ pub trait OutputStorage<N: Network>: Clone + Send + Sync {
         self.external_record_map().atomic_checkpoint();
         self.future_map().atomic_checkpoint();
         self.dynamic_record_map().atomic_checkpoint();
-        // self.dynamic_future_map().atomic_checkpoint();
     }
 
     /// Clears the latest atomic batch checkpoint.
