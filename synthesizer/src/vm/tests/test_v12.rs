@@ -694,14 +694,6 @@ constructor:
     // Initialize the VM.
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12)?, rng);
 
-    let credits_record_name = Identifier::<CurrentNetwork>::from_str("credits").unwrap();
-    let credits_program_id = ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap();
-    vm.process().write().synthesize_translation_key::<CurrentAleo, _>(
-        &credits_program_id,
-        &credits_record_name,
-        rng,
-    )?;
-
     // Deploy the program.
     println!("Deploying program: {}", program.id());
     let transaction = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;

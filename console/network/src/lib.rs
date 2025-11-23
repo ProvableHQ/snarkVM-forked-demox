@@ -339,6 +339,17 @@ pub trait Network:
     /// Returns the `verifying key` for the inclusion circuit.
     fn inclusion_verifying_key() -> &'static Arc<VarunaVerifyingKey<Self>>;
 
+    #[cfg(not(feature = "wasm"))]
+    /// Returns the `proving key` for the translation circuit.
+    fn translation_credits_proving_key() -> &'static Arc<VarunaProvingKey<Self>>;
+
+    #[cfg(feature = "wasm")]
+    /// Returns the `proving key` for the translation circuit.
+    fn translation_credits_proving_key(bytes: Option<Vec<u8>>) -> &'static Arc<VarunaProvingKey<Self>>;
+
+    /// Returns the `verifying key` for the translation circuit.
+    fn translation_credits_verifying_key() -> &'static Arc<VarunaVerifyingKey<Self>>;
+
     /// Returns the powers of `G`.
     fn g_powers() -> &'static Vec<Group<Self>>;
 

@@ -148,10 +148,25 @@ impl<N: Network> Process<N> {
 
                 // TODO (dynamic_dispatch) do better (e.g with .entry)
                 if !translation_verifying_keys.contains_key(&key) {
-                    let translation_verifying_key = stack
-                        .get_translation_verifying_key(record_name)
-                        .map_err(|_| anyhow!("Translation verifying key not found for {}/{}", key.0, key.1))?;
-                    translation_verifying_keys.insert(key, translation_verifying_key);
+                    if key
+                        == (
+                            ProgramID::<N>::from_str("credits.aleo").unwrap(),
+                            Identifier::<N>::from_str("credits").unwrap(),
+                        )
+                    {
+                        let verifying_key = N::translation_credits_verifying_key().clone();
+                        // Retrieve the number of public and private variables.
+                        // Note: This number does *NOT* include the number of constants. This is safe because
+                        // this program is never deployed, as it is a first-class citizen of the protocol.
+                        let num_variables = verifying_key.circuit_info.num_public_and_private_variables as u64;
+                        // Insert the translation verifying key.
+                        translation_verifying_keys.insert(key, VerifyingKey::<N>::new(verifying_key, num_variables));
+                    } else {
+                        let translation_verifying_key = stack
+                            .get_translation_verifying_key(record_name)
+                            .map_err(|_| anyhow!("Translation verifying key not found for {}/{}", key.0, key.1))?;
+                        translation_verifying_keys.insert(key, translation_verifying_key);
+                    }
                 }
             }
 
