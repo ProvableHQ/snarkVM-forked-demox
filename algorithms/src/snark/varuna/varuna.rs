@@ -397,7 +397,7 @@ where
 
         let circuit_commitments =
             keys_to_constraints.keys().map(|pk| pk.circuit_verifying_key.circuit_commitments.as_slice());
-
+        dev_println!("inputs_and_batch_sizes: {inputs_and_batch_sizes:?}");
         let mut sponge = Self::init_sponge(fs_parameters, &inputs_and_batch_sizes, circuit_commitments.clone());
 
         // --------------------------------------------------------------------
@@ -648,6 +648,7 @@ where
 
         // Compute the AHP verifier's query set.
         let (query_set, verifier_state) = AHPForR1CS::<_, SM>::verifier_query_set(verifier_state);
+        dev_println!("Final challenge gamma: {:?}", verifier_state.gamma);
         let lc_s = AHPForR1CS::<_, SM>::construct_linear_combinations(
             &public_inputs,
             &polynomials,
@@ -886,6 +887,7 @@ where
         let fifth_commitments = [LabeledCommitment::new_with_info(&fifth_round_info["h_2"], comms.h_2)];
 
         let circuit_commitments = keys_to_inputs.keys().map(|vk| vk.circuit_commitments.as_slice());
+        dev_println!("inputs_and_batch_sizes: {inputs_and_batch_sizes:?}");
         let mut sponge = Self::init_sponge(fs_parameters, &inputs_and_batch_sizes, circuit_commitments.clone());
 
         // --------------------------------------------------------------------
@@ -1046,7 +1048,7 @@ where
         end_timer!(pc_time);
 
         if !evaluations_are_correct {
-            dev_eprintln!("SonicKZG10::Check failed using final challenge: {:?}", verifier_state.gamma);
+            dev_eprintln!("SonicKZG10::Check failed using final challenge gamma: {:?}", verifier_state.gamma);
         }
 
         end_timer!(verifier_time, || format!(

@@ -333,6 +333,8 @@ impl Network for MainnetV0 {
         })
     }
 
+    // TODO (dynamic_dispatch) add the credits translation keys.
+
     /// Returns the powers of `G`.
     fn g_powers() -> &'static Vec<Group<Self>> {
         &GENERATOR_G

@@ -625,21 +625,18 @@ fn test_dynamic_call_to_transfer_public() -> Result<()> {
     let caller_private_key = sample_genesis_private_key(rng);
     let caller_address = Address::try_from(&caller_private_key)?;
 
-    // Initialize the VM.
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12)?, rng);
-
     // Define the program to be executed.
     let program = Program::from_str(
         r"
 program test_dcall.aleo;
 
-//function static:
+// function static:
 //    input r0 as address.public;
 //    input r1 as u64.public;
-//    dcall credits transfer_public with r0 r1 (as address.public u64.public) into r2 (as dynamic.future);
+//    call.dynamic credits aleo transfer_public with r0 r1 (as address.public u64.public) into r2 (as dynamic.future);
 //    async static r2 into r3;
 //    output r3 as test_dcall.aleo/static.future;
-//finalize static:
+// finalize static:
 //    input r0 as dynamic.future;
 //    await r0; 
         
@@ -675,6 +672,13 @@ constructor:
     ",
     )?;
 
+    // Initialize the VM.
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12)?, rng);
+
+    let credits_record_name = Identifier::<CurrentNetwork>::from_str("credits").unwrap();
+    let credits_program_id = ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap();
+    vm.process().write().synthesize_translation_key::<CurrentAleo, _>(&credits_program_id, &credits_record_name, rng)?;
+
     // Deploy the program.
     println!("Deploying program: {}", program.id());
     let transaction = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
@@ -685,8 +689,8 @@ constructor:
     vm.add_next_block(&block)?;
 
     // Execute the "static" function.
-    //println!("Executing the `static` function...");
-    //let transaction = vm.execute(
+    // println!("Executing the `static` function...");
+    // let transaction = vm.execute(
     //    &caller_private_key,
     //    ("test_dcall_to_transfer_public.aleo", "static"),
     //    vec![Value::from_str(&format!("{caller_address}"))?, Value::from_str("1234u64")?].into_iter(),
@@ -694,13 +698,13 @@ constructor:
     //    0,
     //    None,
     //    rng,
-    //)?;
-    //vm.check_transaction(&transaction, None, rng)?;
-    //let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
-    //assert_eq!(block.transactions().num_accepted(), 1);
-    //assert_eq!(block.transactions().num_rejected(), 0);
-    //assert_eq!(block.aborted_transaction_ids().len(), 0);
-    //vm.add_next_block(&block)?;
+    // )?;
+    // vm.check_transaction(&transaction, None, rng)?;
+    // let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
+    // assert_eq!(block.transactions().num_accepted(), 1);
+    // assert_eq!(block.transactions().num_rejected(), 0);
+    // assert_eq!(block.aborted_transaction_ids().len(), 0);
+    // vm.add_next_block(&block)?;
 
     // Get the program and function identifiers as fields and check that they are expected.
     println!("Executing the `dynamic` function...");

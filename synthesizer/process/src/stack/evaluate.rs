@@ -154,7 +154,7 @@ impl<N: Network> Stack<N> {
         };
         let tvk = *request.tvk();
         // Retrieve the program checksum, if the program has a constructor or if the request is dynamic.
-        let program_checksum = match self.program().contains_constructor() || request.is_dynamic() {
+        let program_checksum = match self.program().contains_constructor() {
             true => Some(self.program_checksum_as_field()?),
             false => None,
         };
