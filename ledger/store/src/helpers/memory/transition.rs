@@ -347,7 +347,7 @@ impl<N: Network> OutputStorage<N> for OutputMemory<N> {
     }
 
     /// Returns the dynamic record map.
-    fn dynamic_record_map(&self) -> &Self::ExternalRecordMap {
+    fn dynamic_record_map(&self) -> &Self::DynamicRecordMap {
         &self.dynamic_record
     }
 

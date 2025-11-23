@@ -345,7 +345,7 @@ impl<N: Network> OutputStorage<N> for OutputDB<N> {
         &self.future
     }
 
-    fn dynamic_record_map(&self) -> &Self::ExternalRecordMap {
+    fn dynamic_record_map(&self) -> &Self::DynamicRecordMap {
         &self.dynamic_record
     }
 
