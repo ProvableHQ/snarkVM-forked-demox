@@ -114,6 +114,20 @@ pub enum CallStack<N: Network> {
     PackageRun(Vec<Request<N>>, PrivateKey<N>, Assignments<N>),
 }
 
+// impl to_string for CallStack<N>
+impl<N: Network> CallStack<N> {
+    fn type_as_string(&self) -> String {
+        match self {
+            CallStack::Authorize(..) => "Authorize".to_string(),
+            CallStack::Synthesize(..) => "Synthesize".to_string(),
+            CallStack::CheckDeployment(..) => "CheckDeployment".to_string(),
+            CallStack::Evaluate(..) => "Evaluate".to_string(),
+            CallStack::Execute(..) => "Execute".to_string(),
+            CallStack::PackageRun(..) => "PackageRun".to_string(),
+        }
+    }
+}
+
 impl<N: Network> CallStack<N> {
     /// Initializes a call stack as `Self::Evaluate`.
     pub fn evaluate(authorization: Authorization<N>) -> Result<Self> {

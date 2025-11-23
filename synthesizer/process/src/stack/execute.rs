@@ -216,7 +216,12 @@ impl<N: Network> Stack<N> {
             false => None,
         };
 
+        let call_stack_type = call_stack.type_as_string();
+
         // Ensure the request is well-formed.
+        println!("[Execute] console_request.verify input_types: {:?}", input_types);
+        println!("[Execute] console_request.verify program_checksum: {:?}", program_checksum);
+        println!("[Execute] console_request.verify is_root: {:?}", console_is_root);
         ensure!(
             console_request.verify(&input_types, console_is_root, program_checksum),
             "[Execute] Request is invalid"
@@ -276,7 +281,7 @@ impl<N: Network> Stack<N> {
 
         lap!(timer, "Initialize the registers");
 
-        Self::log_circuit::<A>("Request");
+        Self::log_circuit::<A>("Request", call_stack_type.clone());
 
         // Retrieve the number of constraints for verifying the request in the circuit.
         let num_request_constraints = A::num_constraints();
@@ -417,7 +422,7 @@ impl<N: Network> Stack<N> {
             })
             .collect::<Vec<_>>();
 
-        Self::log_circuit::<A>(format!("Function '{}()'", function.name()));
+        Self::log_circuit::<A>(format!("Function '{}()'", function.name()), call_stack_type.clone());
 
         // Retrieve the number of constraints for executing the function in the circuit.
         let num_function_constraints = A::num_constraints().saturating_sub(num_request_constraints);
@@ -446,13 +451,13 @@ impl<N: Network> Stack<N> {
         );
         lap!(timer, "Construct the response");
 
-        Self::log_circuit::<A>("Response");
+        Self::log_circuit::<A>("Response", call_stack_type.clone());
 
         // Retrieve the number of constraints for verifying the response in the circuit.
         let num_response_constraints =
             A::num_constraints().saturating_sub(num_request_constraints).saturating_sub(num_function_constraints);
 
-        Self::log_circuit::<A>("Complete");
+        Self::log_circuit::<A>("Complete", call_stack_type.clone());
 
         // Eject the response.
         let response = response.eject_value();
@@ -567,7 +572,7 @@ impl<N: Network> Stack<N> {
 impl<N: Network> Stack<N> {
     /// Prints the current state of the circuit.
     #[allow(unused_variables)]
-    pub(crate) fn log_circuit<A: circuit::Aleo<Network = N>>(scope: impl std::fmt::Display) {
+    pub(crate) fn log_circuit<A: circuit::Aleo<Network = N>>(scope: impl std::fmt::Display, call_stack_type: String) {
         #[cfg(debug_assertions)]
         {
             use snarkvm_utilities::dev_println;
@@ -583,7 +588,7 @@ impl<N: Network> Stack<N> {
 
             // Print the log.
             dev_println!(
-                "{is_satisfied} {scope:width$} (Constant: {num_constant}, Public: {num_public}, Private: {num_private}, Constraints: {num_constraints}, NonZeros: {num_nonzeros:?})",
+                "{is_satisfied} {call_stack_type:width$} {scope:width$} (Constant: {num_constant}, Public: {num_public}, Private: {num_private}, Constraints: {num_constraints}, NonZeros: {num_nonzeros:?})",
                 width = 20
             );
         }

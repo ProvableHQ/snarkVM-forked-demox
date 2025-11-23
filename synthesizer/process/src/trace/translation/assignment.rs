@@ -232,7 +232,7 @@ impl<N: Network> TranslationAssignment<N> {
         Stack::log_circuit::<A>(format_args!(
             "Translation circuit for dynamic record with nonce {}",
             self.record_static.nonce()
-        ));
+        ), "TranslationAssignment".to_string());
         Ok(A::eject_assignment_and_reset())
     }
 }
