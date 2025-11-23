@@ -935,3 +935,224 @@ fn test_translation_output_static_dynamic() {
 
     test_translation(&caller_private_key, "flow.aleo", "dynamic_pump", Some(vec![]), None, None, rng);
 }
+
+#[test]
+fn test_universal_swap() {
+    // Turn on trace logging.
+    tracing_subscriber::fmt::init();
+    // Define a mint_private function and constructor.
+    let mint_private_function = r"
+function mint_private:
+    input r0 as u64.private;
+    cast self.caller r0 into r1 as credits.record;
+    cast self.caller r0 into r2 as credits.record;
+    output r1 as credits.record;
+    output r2 as credits.record;
+constructor:
+    assert.eq true true;
+";
+    // Define the credits programs.
+    let credits_program = Program::<CurrentNetwork>::credits().unwrap().to_string();
+    let mut credits_a_program = credits_program.replace("credits.aleo", "credits_a.aleo");
+    credits_a_program.push_str(mint_private_function);
+    let credits_a_program = Program::from_str(&credits_a_program).unwrap();
+    let mut credits_b_program = credits_program.replace("credits.aleo", "credits_b.aleo");
+    credits_b_program.push_str(mint_private_function);
+    let credits_b_program = Program::from_str(&credits_b_program).unwrap();
+
+    // Define the swap program.
+    let amm_program = Program::from_str(
+        r"
+program amm.aleo;
+
+struct reserves:
+    // corresponds to credits_a.aleo
+    token_a as u64;
+    // corresponds to credits_b.aleo
+    token_b as u64;
+
+mapping reserves_mapping:
+    key as address.public;
+    value as reserves.public;
+
+function buy_token_b:
+    // credits_a
+    input r0 as field.public;
+    // credits_b
+    input r1 as field.public;
+    // aleo
+    input r2 as field.public;
+    // transfer_private_to_public function
+    input r3 as field.public;
+    // transfer_public_to_private function
+    input r4 as field.public;
+    // credits_a record
+    input r5 as dynamic.record;
+    // Token a amount to send
+    input r6 as u64.public;
+    // Token b amount to receive
+    input r7 as u64.public;
+    cast r6 r7 into r8 as reserves;
+    call.dynamic r0 r2 r3 with r5 aleo1rrj2mgall8mw57lcpkkvkxwqkawpc5rjarqm57w8gux2ahnt9sxqf0md56 r6 (as dynamic.record address.public u64.public) into r9 r10 (as dynamic.record dynamic.future);
+    call.dynamic r1 r2 r4 with self.signer r6 (as address.private u64.public) into r11 r12 (as dynamic.record dynamic.future);
+    async buy_token_b r6 r7 r10 r12 into r13;
+    // token_a change record
+    output r9 as dynamic.record;
+    // token_b receiver record
+    output r11 as dynamic.record;
+    output r13 as amm.aleo/buy_token_b.future;
+
+finalize buy_token_b:
+    // token_a amount
+    input r0 as u64.public;
+    // token_b amount
+    input r1 as u64.public;
+    input r2 as dynamic.future;
+    input r3 as dynamic.future;
+    await r2;
+    await r3;
+    // TODO: implement reserve update logic here.
+
+constructor:
+    assert.eq true true;
+",
+    ).unwrap();
+
+    // Initialize an RNG.
+    let rng = &mut TestRng::default();
+
+    // Initialize a new caller.
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
+
+    // Initialize the VM at the V12 height.
+    let v12_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap();
+    let vm = crate::vm::test_helpers::sample_vm_at_height(v12_height, rng);
+
+    // Deploy the program - one at a time so as not to surpass public payer limits.
+    for program in [credits_a_program, credits_b_program, amm_program] {
+        let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
+        let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
+        assert_eq!(block.transactions().num_accepted(), 1);
+        assert_eq!(block.transactions().num_rejected(), 0);
+        assert_eq!(block.aborted_transaction_ids().len(), 0);
+        vm.add_next_block(&block).unwrap();
+    }
+
+    // Execute credits_a.aleo/mint_private to mint a few credits_a records.
+    let execute_mint_a = vm
+        .execute(
+            &caller_private_key,
+            ("credits_a.aleo", "mint_private"),
+            vec![Value::from_str("100u64")].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    // Execute credits_b.aleo/mint_private to mint a few credits_b records.
+    let execute_mint_b = vm
+        .execute(
+            &caller_private_key,
+            ("credits_b.aleo", "mint_private"),
+            vec![Value::from_str("100u64")].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    let block = sample_next_block(&vm, &caller_private_key, &[execute_mint_a, execute_mint_b], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 2);
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    vm.add_next_block(&block).unwrap();
+
+    // Obtain the credits records.
+    let records =
+        block.records().map(|(_, record)| record.decrypt(&caller_view_key)).collect::<Result<Vec<_>>>().unwrap();
+    // Split the records into credits_a and credits_b records.
+    let (records_a, records_b) = records.split_at(2);
+
+    // Create the AMM program address.
+    let amm_address: Address<CurrentNetwork> = ProgramID::from_str("amm.aleo").unwrap().to_address().unwrap();
+    let amm_address_value = Value::from_str(&amm_address.to_string()).unwrap();
+
+    // Execute credits_a.aleo/transfer_private_to_public to give amm.aleo an initial balance of credits_a.
+    let execute_transfer_a = vm
+        .execute(
+            &caller_private_key,
+            ("credits_a.aleo", "transfer_private_to_public"),
+            vec![Value::Record(records_a[0].clone()), amm_address_value.clone(), Value::from_str("100u64").unwrap()]
+                .into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    // Execute credits_b.aleo/transfer_private_to_public to give amm.aleo an initial balance of credits_b.
+    let execute_transfer_b = vm
+        .execute(
+            &caller_private_key,
+            ("credits_b.aleo", "transfer_private_to_public"),
+            vec![Value::Record(records_b[0].clone()), amm_address_value.clone(), Value::from_str("100u64").unwrap()]
+                .into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    let block = sample_next_block(&vm, &caller_private_key, &[execute_transfer_a, execute_transfer_b], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 2);
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    vm.add_next_block(&block).unwrap();
+
+    let dynamic_record_a = DynamicRecord::<CurrentNetwork>::from_record(&records_a[1].clone()).unwrap();
+    let credits_a_as_field = Identifier::<CurrentNetwork>::from_str("credits_a").unwrap().to_field().unwrap();
+    let credits_b_as_field = Identifier::<CurrentNetwork>::from_str("credits_b").unwrap().to_field().unwrap();
+    let aleo_as_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+    let transfer_private_to_public_field =
+        Identifier::<CurrentNetwork>::from_str("transfer_private_to_public").unwrap().to_field().unwrap();
+    let transfer_public_to_private_field =
+        Identifier::<CurrentNetwork>::from_str("transfer_public_to_private").unwrap().to_field().unwrap();
+
+    // Execute amm.aleo/buy_token_b to buy token_b.
+    let execute_buy_token_b = vm
+        .execute(
+            &caller_private_key,
+            ("amm.aleo", "buy_token_b"),
+            vec![
+                Value::from_str(&format!("{credits_a_as_field}")).unwrap(),
+                Value::from_str(&format!("{credits_b_as_field}")).unwrap(),
+                Value::from_str(&format!("{aleo_as_field}")).unwrap(),
+                Value::from_str(&format!("{transfer_private_to_public_field}")).unwrap(),
+                Value::from_str(&format!("{transfer_public_to_private_field}")).unwrap(),
+                Value::<CurrentNetwork>::DynamicRecord(dynamic_record_a),
+                Value::from_str("100u64").unwrap(),
+                Value::from_str("100u64").unwrap(),
+            ]
+            .into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    let block = sample_next_block(&vm, &caller_private_key, &[execute_buy_token_b], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    vm.add_next_block(&block).unwrap();
+
+    // Obtain the credits_a change and credits_b receiver records.
+    let (_change_record, _receiver_record) = block
+        .records()
+        .map(|(_, record)| record.decrypt(&caller_view_key))
+        .collect::<Result<Vec<_>>>()
+        .unwrap()
+        .split_at(1);
+}
