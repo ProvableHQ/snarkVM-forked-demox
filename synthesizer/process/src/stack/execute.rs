@@ -219,9 +219,6 @@ impl<N: Network> Stack<N> {
         let call_stack_type = call_stack.type_as_string();
 
         // Ensure the request is well-formed.
-        println!("[Execute] console_request.verify input_types: {:?}", input_types);
-        println!("[Execute] console_request.verify program_checksum: {:?}", program_checksum);
-        println!("[Execute] console_request.verify is_root: {:?}", console_is_root);
         ensure!(
             console_request.verify(&input_types, console_is_root, program_checksum),
             "[Execute] Request is invalid"

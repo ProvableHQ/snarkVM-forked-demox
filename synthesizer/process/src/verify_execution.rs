@@ -264,8 +264,6 @@ impl<N: Network> Process<N> {
             &translation_verifying_keys,
         )?;
 
-        println!("[verify_execution.rs] Prepared {} translation verifier inputs.", batch_translation_inputs.len());
-
         // TODO(dynamic_dispatch): bring appropriate new measurement functions from execution_cost_for_authorization to here.
 
         for (verifying_key, batch_translation_inputs_for_record) in batch_translation_inputs.into_iter() {
@@ -330,7 +328,6 @@ impl<N: Network> Process<N> {
         verifier_inputs.extend([*is_root, *parent_x, *parent_y]);
 
         // If there are function calls, append their inputs and outputs.
-        println!("Parent function: {} in program.id {}", transition.function_name(), transition.program_id());
         let child_transition_ids = call_graph.get(transition.id()).unwrap();
         let parent_function = transition_map.get(&transition.id()).map(|(_, function)| function.clone());
         use snarkvm_synthesizer_program::{Call, CallOperator};
@@ -355,11 +352,7 @@ impl<N: Network> Process<N> {
             let (child_transition, _) = transition_map.get(child_transition_id).unwrap();
             let child_function_id =
                 compute_function_id(&U16::new(N::ID), child_transition.program_id(), child_transition.function_name())?;
-            println!(
-                "Child function: {} in program.id {}",
-                child_transition.function_name(),
-                child_transition.program_id()
-            );
+
             // [Inputs] Extend the verifier inputs with the program ID and function name if the child transition is dynamic.
             if child_transition.is_dynamic() {
                 verifier_inputs.extend(child_transition.program_id().to_fields()?.into_iter().map(|field| *field));
@@ -370,7 +363,6 @@ impl<N: Network> Process<N> {
                     child_transition.function_name(),
                 )?]);
             }
-            println!("child_transition.tcm(): {:?}", **child_transition.tcm());
             // [Inputs] Extend the verifier inputs with the transition commitment of the external call.
             verifier_inputs.extend([**child_transition.tcm()]);
             // [Inputs] Extend the verifier inputs with the input IDs of the external call.
@@ -380,10 +372,7 @@ impl<N: Network> Process<N> {
                 (false, _) => child_transition.inputs(),
             };
             let num_inputs = child_transition.inputs().len();
-            println!(
-                "child_inputs: {:?}",
-                child_inputs.iter().flat_map(|input| input.verifier_inputs()).collect::<Vec<_>>()
-            );
+
             verifier_inputs.extend(child_inputs.iter().flat_map(|input| input.verifier_inputs()));
             // [Inputs] Extend the verifier inputs with the output IDs of the external call.
             let output_ids = match (child_transition.is_dynamic(), child_transition.caller_outputs()) {
@@ -429,7 +418,6 @@ impl<N: Network> Process<N> {
                     caller_output_ids
                 }
             };
-            println!("child outputs: {:?}", output_ids);
             verifier_inputs.extend(output_ids);
         }
 
