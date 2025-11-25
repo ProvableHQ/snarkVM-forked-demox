@@ -33,58 +33,38 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         let Value::Plaintext(Plaintext::Literal(Literal::Field(program_name_as_field), _)) = &inputs[0] else {
             bail!("Expected the first operand of `call.dynamic` to be a 'Field' literal.")
         };
-        let program_name = Identifier::from_field(program_name_as_field)?;
 
         // Get the program network.
         let Value::Plaintext(Plaintext::Literal(Literal::Field(program_network_id), _)) = &inputs[1] else {
             bail!("Expected the second operand of `call.dynamic` to be a 'Field' literal.")
         };
-        let program_network = Identifier::from_field(program_network_id)?;
-
-        // Construct the program ID.
-        let program_id = ProgramID::try_from((program_name, program_network))?;
 
         // Get the function name.
         let Value::Plaintext(Plaintext::Literal(Literal::Field(function_name_as_field), _)) = &inputs[2] else {
             bail!("Expected the third operand of `call.dynamic` to be a 'Field' literal.")
         };
-        let function_name = Identifier::from_field(function_name_as_field)?;
 
         // Separate the remaining inputs as the function inputs.
         let inputs = &inputs[3..];
 
-        // Retrieve the optional external stack and resource.
-        let external_stack = match stack.program().id() == &program_id {
-            // Retrieve the call stack and resource from the locator.
-            false => {
-                // Check the external call locator.
-                let is_credits_program = &program_id.to_string() == "credits.aleo";
-                let is_fee_private = function_name.to_string() == "fee_private";
-                let is_fee_public = &function_name.to_string() == "fee_public";
+        // Resolve the program and function.
+        let target = resolve_dynamic_target(
+            registers.call_stack_ref(),
+            stack,
+            program_name_as_field,
+            program_network_id,
+            function_name_as_field,
+        )?;
 
-                // Ensure the external call is not to 'credits.aleo/fee_private' or 'credits.aleo/fee_public'.
-                if is_credits_program && (is_fee_private || is_fee_public) {
-                    bail!("Cannot perform an external call to 'credits.aleo/fee_private' or 'credits.aleo/fee_public'.")
-                } else {
-                    Some(stack.get_stack_unchecked(&program_id)?)
-                }
-            }
-            true => {
-                // TODO (howardwu): Revisit this decision to forbid calling internal functions. A record cannot be spent again.
-                //  But there are legitimate uses for passing a record through to an internal function.
-                //  We could invoke the internal function without a state transition, but need to match visibility.
-                // TODO (@d0cd): Resolve recursion with records.
-                if stack.program().contains_function(&function_name) {
-                    bail!("Cannot dynamically evaluate a local '{function_name}' ")
-                }
-                None
-            }
+        // Get the target (in evaluate mode, we must have a valid target).
+        let Some(target) = target else {
+            bail!("Failed to resolve the target of the dynamic call in 'evaluate' mode.")
         };
-        // Retrieve the substack.
-        let substack = match &external_stack {
-            Some(external_stack) => external_stack.as_ref(),
-            None => stack,
-        };
+
+        // Retrieve the program ID, function name, and substack from the resolved target.
+        let program_id = target.program_id();
+        let function_name = target.function_name();
+        let substack = target.substack();
         lap!(timer, "Retrieved the substack");
 
         // If the operator is a closure, retrieve the closure and compute the output.

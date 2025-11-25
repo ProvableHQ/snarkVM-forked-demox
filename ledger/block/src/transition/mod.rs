@@ -358,15 +358,17 @@ impl<N: Network> Transition<N> {
                     .zip(caller_output_types.iter())
                     .zip(outputs.iter())
                     .enumerate()
-                    .map(|(output_index, ((output_value, caller_output_type), callee_output))| {
-                        match (output_value, caller_output_type) {
-                            // Convert the record output (whether external or not) to a dynamic record output.
+                    .map(|(output_index, ((callee_output_value, caller_output_type), callee_output))| {
+                        match (callee_output_value, caller_output_type) {
+                            // Convert the record output to a dynamic record output.
                             (Value::Record(record), ValueType::DynamicRecord) => {
                                 let caller_output_value = Value::DynamicRecord(DynamicRecord::from_record(record)?);
-                                let output = construct_output(output_index, &None, &caller_output_value, caller_output_type, &None);
-                                println!("[Construct output] caller_output_value: {:?}, caller_output_type: {:?}, output: {:?}", caller_output_value, caller_output_type, output);
-                                output
-                            },
+                                construct_output(output_index, &None, &caller_output_value, caller_output_type, &None)
+                            }
+                            // Convert the dynamic record output to a record output.
+                            (_, ValueType::Record(_) | ValueType::ExternalRecord(_)) => {
+                                bail!("A dynamic call cannot return a static record to the caller.")
+                            }
                             // Otherwise, just return the output as is.
                             _ => Ok(callee_output.clone()),
                         }

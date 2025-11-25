@@ -182,34 +182,15 @@ impl<N: Network> Process<N> {
                 "The number of transition inputs is incorrect"
             );
             for (function_input, transition_input) in function.input_types().iter().zip(transition.inputs().iter()) {
-                match (function_input, transition_input) {
-                    (ValueType::Constant(..), Input::Constant(..))
-                    | (ValueType::Public(..), Input::Public(..))
-                    | (ValueType::Private(..), Input::Private(..))
-                    | (ValueType::Record(..), Input::Record(..))
-                    | (ValueType::ExternalRecord(..), Input::ExternalRecord(..))
-                    | (ValueType::DynamicRecord, Input::DynamicRecord(..)) => {}
-                    _ => bail!("The input variants do not match"),
-                }
+                ensure!(transition_input.is_type(function_input), "The input variants do not match");
             }
             ensure!(
-                function.input_types().len() == transition.inputs().len(),
-                "[verify Execution] Expected {} inputs, but {} were provided.",
-                function.input_types().len(),
-                transition.inputs().len()
+                function.output_types().len() == transition.outputs().len(),
+                "The number of transition outputs is incorrect"
             );
             for (function_output, transition_output) in function.output_types().iter().zip(transition.outputs().iter())
             {
-                match (function_output, transition_output) {
-                    (ValueType::Constant(..), Output::Constant(..))
-                    | (ValueType::Public(..), Output::Public(..))
-                    | (ValueType::Private(..), Output::Private(..))
-                    | (ValueType::Record(..), Output::Record(..))
-                    | (ValueType::ExternalRecord(..), Output::ExternalRecord(..))
-                    | (ValueType::Future(..), Output::Future(..))
-                    | (ValueType::DynamicRecord, Output::DynamicRecord(..)) => {}
-                    _ => bail!("The output variants do not match"),
-                }
+                ensure!(transition_output.is_type(function_output), "The output variants do not match");
             }
 
             // Retrieve the parent program ID.

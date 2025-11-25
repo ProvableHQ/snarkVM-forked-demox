@@ -13,6 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod recursion;
+
 use super::*;
 
 use crate::vm::test_helpers::{sample_vm_at_height, *};
@@ -80,11 +82,9 @@ fn test_translation(
 
     // Various parameters for dynamic.call instructions.
     let program_a_name_str = "flow";
-    let program_a_field =
-        Identifier::<CurrentNetwork>::from_str(program_a_name_str).unwrap().to_field().unwrap();
+    let program_a_name_field = Identifier::<CurrentNetwork>::from_str(program_a_name_str).unwrap().to_field().unwrap();
     let program_b_name_str = "gas_manager";
-    let program_b_field =
-        Identifier::<CurrentNetwork>::from_str(program_b_name_str).unwrap().to_field().unwrap();
+    let program_b_name_field = Identifier::<CurrentNetwork>::from_str(program_b_name_str).unwrap().to_field().unwrap();
     let network_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
 
     let get_liquid_liters_function_name = Identifier::<CurrentNetwork>::from_str("get_liquid_liters").unwrap();
@@ -641,7 +641,8 @@ fn test_dynamic_calls_to_credits_aleo() -> Result<()> {
     let test_dcall_program_address = test_dcall_program_id.to_address()?;
 
     // Define the program to be executed.
-    let program = Program::from_str(r"
+    let program = Program::from_str(
+        r"
             program test_dcall.aleo;
 
             // This static variant fails to parse because we can't parse identifiers as literals yet
@@ -1060,7 +1061,6 @@ fn test_universal_swap() {
 
 #[test]
 fn test_conditional_execution() {
-
     let constants_program_name = Identifier::<CurrentNetwork>::from_str("constants").unwrap();
     let constants_program_field = constants_program_name.to_field().unwrap();
 
@@ -1077,9 +1077,10 @@ fn test_conditional_execution() {
     let five_function_field = five_function_name.to_field().unwrap();
 
     let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
- 
+
     // Define the swap program.
-    let constants_program_str = format!(r"
+    let constants_program_str = format!(
+        r"
         program constants.aleo;
 
         function {three_function_name}:
@@ -1094,7 +1095,8 @@ fn test_conditional_execution() {
     );
 
     // Define the swap program.
-    let other_constants_program_str = format!(r"
+    let other_constants_program_str = format!(
+        r"
         program other_constants.aleo;
 
         function {five_function_name}:
@@ -1103,10 +1105,11 @@ fn test_conditional_execution() {
         constructor:
             assert.eq true true;
         ",
-     );
+    );
 
     // Define the swap program.
-    let conditional_program_str = format!(r"
+    let conditional_program_str = format!(
+        r"
         import constants.aleo;
 
         program conditional_program.aleo;
@@ -1167,7 +1170,8 @@ fn test_conditional_execution() {
                 Value::from_str("true").unwrap(),
                 Value::from_str(&format!("{constants_program_field}")).unwrap(),
                 Value::from_str(&format!("{three_function_field}")).unwrap(),
-            ].into_iter(),
+            ]
+            .into_iter(),
             None,
             0,
             None,
@@ -1184,7 +1188,8 @@ fn test_conditional_execution() {
                 Value::from_str("true").unwrap(),
                 Value::from_str(&format!("{constants_program_field}")).unwrap(),
                 Value::from_str(&format!("{four_function_field}")).unwrap(),
-            ].into_iter(),
+            ]
+            .into_iter(),
             None,
             0,
             None,
@@ -1201,7 +1206,8 @@ fn test_conditional_execution() {
                 Value::from_str("false").unwrap(),
                 Value::from_str(&format!("{constants_program_field}")).unwrap(),
                 Value::from_str(&format!("{four_function_field}")).unwrap(),
-            ].into_iter(),
+            ]
+            .into_iter(),
             None,
             0,
             None,
@@ -1211,106 +1217,7 @@ fn test_conditional_execution() {
 
     add_and_test(&vm, &caller_private_key, &[execute_1, execute_2, execute_3], rng);
 
-    // TODO (dynamic_dispatch): do we have a way to check the output without finalize blocks?    
-}
-
-#[test]
-fn test_dynamic_recursive_calls() {
-
-    let recursive_calls_program_name = Identifier::<CurrentNetwork>::from_str("recursive_calls").unwrap();
-    let recursive_calls_program_field = recursive_calls_program_name.to_field().unwrap();
-
-    let fibonacci_function_name = Identifier::<CurrentNetwork>::from_str("fibonacci").unwrap();
-    let fibonacci_function_field = fibonacci_function_name.to_field().unwrap();
-
-    let base_function_name = Identifier::<CurrentNetwork>::from_str("base").unwrap();
-    let base_function_field = base_function_name.to_field().unwrap();
-
-    let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
- 
-    // Define the swap program.
-    let recursive_calls_program_str = format!(r"
-        program {recursive_calls_program_name}.aleo; 
-
-        // The recursive case for Fibonacci numbers.
-        function {fibonacci_function_name}:
-            input r0 as u64.private;
-
-            // Determine whether the input is zero or one.
-            is.eq r0 0u64 into r1;
-            is.eq r0 1u64 into r2;
-            or r1 r2 into r3;
-
-            // Subtract 1 and 2 from the current index for the recursive cases.
-            sub r0 1u64 into r4;
-            sub r0 2u64 into r5;
-
-            // Select the inputs and function based on whether we are handling the recursive case or base case.
-            ternary r3 r0 r4 into r6;
-            ternary r3 r0 r5 into r7;
-            ternary r3 {base_function_field} {fibonacci_function_field} into r8;
-
-            // Call fibonnaci(r0 - 1)
-            call.dynamic {recursive_calls_program_field} {aleo_field} r8 with r6 (as u64.private) into r9 (as u64.private);
-
-            // Call fibonacci(r0 - 2)
-            call.dynamic {recursive_calls_program_field} {aleo_field} r8 with r7 (as u64.private) into r10 (as u64.private);
-
-            // Return the sum.
-            add r9 r10 into r11;
-            ternary r3 r9 r11 into r12;
-            output r12 as u64.private;
-
-        // The base case for Fibonacci numbers.
-        function {base_function_name}:
-            input r0 as u64.private;
-            output r0 as u64.private;
-
-        constructor:
-            assert.eq true true;
-    ");
-
-    // Parse program
-    let recursive_calls_program = Program::<CurrentNetwork>::from_str(&recursive_calls_program_str).unwrap();
-
-    // Initialize an RNG.
-    let rng = &mut TestRng::default();
-
-    // Initialize a new caller.
-    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
-    let caller_view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
-
-    // Initialize the VM at the V12 height.
-    let v12_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap();
-    let vm = crate::vm::test_helpers::sample_vm_at_height(v12_height, rng);
-
-    let fibonacci_index = 5;
-    let expected_num_transitions = 15;
-
-    // Deploy the program
-    println!("Deploying program {recursive_calls_program_name}.aleo...");
-    let deployment = vm.deploy(&caller_private_key, &recursive_calls_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deployment], rng);
-
-    println!("Executing {recursive_calls_program_name}.aleo/{fibonacci_function_name}...");
-    let execute = vm
-        .execute(
-            &caller_private_key,
-            (format!("{recursive_calls_program_name}.aleo"), fibonacci_function_name),
-            vec![
-                Value::from_str(&format!("{fibonacci_index}u64")).unwrap(),
-            ].into_iter(),
-            None,
-            0,
-            None,
-            rng,
-        )
-        .unwrap();
-
-    assert_eq!(execute.transitions().into_iter().count(), expected_num_transitions);
-    add_and_test(&vm, &caller_private_key, &[execute], rng);
-
-    // TODO (dynamic_dispatch): do we have a way to check the output without finalize blocks?    
+    // TODO (dynamic_dispatch): do we have a way to check the output without finalize blocks?
 }
 
 // TODO Missing test cases from the design doc:
