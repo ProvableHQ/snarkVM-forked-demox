@@ -51,8 +51,8 @@ fn add_and_test(
     rng: &mut TestRng,
 ) {
     for (index, transaction) in transactions.iter().enumerate() {
-        if vm.check_transaction(transaction, None, rng).is_err() {
-            panic!("Transaction {index} check failed");
+        if let Err(e) = vm.check_transaction(transaction, None, rng) {
+            panic!("Transaction {index} check failed: {e}");
         }
     }
     let block = sample_next_block(vm, caller_private_key, transactions, rng).unwrap();
