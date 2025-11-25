@@ -92,13 +92,15 @@ fn test_translation(
     let consume_dynamic_blob_function_name = Identifier::<CurrentNetwork>::from_str("consume_dynamic_blob").unwrap();
     let nitrogen_pump_function_name = Identifier::<CurrentNetwork>::from_str("nitrogen_pump").unwrap();
     let get_external_liters_function_name = Identifier::<CurrentNetwork>::from_str("get_external_liters").unwrap();
+    let gas_pipe_function_name = Identifier::<CurrentNetwork>::from_str("gas_pipe").unwrap();
 
     let get_liquid_liters_function_field = get_liquid_liters_function_name.to_field().unwrap();
     let get_gas_liters_function_field = get_gas_liters_function_name.to_field().unwrap();
     let consume_dynamic_blob_function_field = consume_dynamic_blob_function_name.to_field().unwrap();
     let nitrogen_pump_function_field = nitrogen_pump_function_name.to_field().unwrap();
     let get_external_liters_function_field = get_external_liters_function_name.to_field().unwrap();
-    
+    let gas_pipe_function_field = gas_pipe_function_name.to_field().unwrap();
+
     let program_a_string = format!(
         r"
     import {program_b_name_str}.aleo;
@@ -129,10 +131,16 @@ fn test_translation(
         input r0 as {program_b_name_str}.aleo/gas_container.record;
         output r0.liters as u64.public;
 
+    // Input and output the same gas record
+    function {gas_pipe_function_name}:
+        input r0 as {program_b_name_str}.aleo/gas_container.record;
+        output r0 as {program_b_name_str}.aleo/gas_container.record;
+
     constructor:
         assert.eq true true;
     "
     );
+    // TODO (Antonio) maybe add some leak in the gas pipe
 
     // Preparing the record values for the hardcoded gas_record minter
     let (gas_owner, gas_liters, gas_flammable) = if let Some(gas_to_mint_record) = &gas_to_mint {
@@ -192,6 +200,10 @@ fn test_translation(
     function hardcoded_gas_pump:
         cast {gas_owner} {gas_liters} {gas_flammable} into r0 as gas_container.record;
         output r0 as gas_container.record;
+
+    function pump_and_send_through_pipe:
+        cast {gas_owner} {gas_liters} {gas_flammable} into r0 as gas_container.record;
+        call.dynamic {program_a_field} {network_field} {gas_pipe_function_field} with r0 (as gas_container.record) into r1 (as dynamic.record);
 
     constructor:
         assert.eq true true;
@@ -1334,7 +1346,7 @@ fn test_dynamic_recursive_calls() {
 // More
 
 #[test]
-fn test_translation_input_dynamic_static_non_external() {
+fn test_translation_input_dynamic_non_external() {
     // TODO (dynamic_dispatch) reintroduce default
     // let rng = &mut TestRng::default();
     let rng = &mut TestRng::from_seed(19);
@@ -1372,7 +1384,7 @@ fn test_translation_input_dynamic_static_non_external() {
 }
 
 #[test]
-fn test_translation_output_static_non_external_dynamic() {
+fn test_translation_output_non_external_dynamic() {
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
@@ -1381,7 +1393,7 @@ fn test_translation_output_static_non_external_dynamic() {
 }
 
 #[test]
-fn test_translation_input_dynamic_static_external() {
+fn test_translation_input_dynamic_external() {
     // TODO (dynamic_dispatch) reintroduce default
     // let rng = &mut TestRng::default();
     let rng = &mut TestRng::from_seed(19);
@@ -1416,4 +1428,13 @@ fn test_translation_input_dynamic_static_external() {
         Some(vec![expected_output]),
         rng,
     );
+}
+
+#[test]
+fn test_translation_output_external_dynamic() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    test_translation(&caller_private_key, "gas_manager.aleo", "pump_and_send_through_pipe", Some(vec![]), None, None, rng);
 }

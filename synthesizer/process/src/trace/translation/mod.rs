@@ -254,7 +254,20 @@ impl<N: Network> Translation<N> {
                         (Input::ExternalRecord(..), Input::DynamicRecord(..), ValueType::DynamicRecord) => {
                             bail!("Translation of (external) input records to dynamic records is not supported");
                         }
+                        (
+                            Input::ExternalRecord(..),
+                            Input::Record(..),
+                            ValueType::Record(..),
+                        ) |
+                        (
+                            Input::Record(..),
+                            Input::ExternalRecord(..),
+                            ValueType::ExternalRecord(..),
+                        ) => {
+                            // This is an admissible type combination which requires no translation
+                        }
                         // TODO (dynamic_dispatch): if this check is redundant with other ones already in place, remove it
+                        // TODO (dynamic_dispatch): make sure this (and its output counterpart below) do not incorrectly reject valid type combinations; possibly do away with this check altogether
                         _ => {
                             ensure!(
                                 caller_input.variant() == callee_input.variant()
@@ -418,7 +431,20 @@ impl<N: Network> Translation<N> {
                         (Output::ExternalRecord(..), Output::DynamicRecord(..), ValueType::DynamicRecord) => {
                             bail!("Translation of output dynamic records to (external) records is not supported");
                         }
+                        (
+                            Output::ExternalRecord(..),
+                            Output::Record(..),
+                            ValueType::Record(..),
+                        ) |
+                        (
+                            Output::Record(..),
+                            Output::ExternalRecord(..),
+                            ValueType::ExternalRecord(..),
+                        ) => {
+                            // This is an admissible type combination which requires no translation
+                        }
                         // TODO (dynamic_dispatch): if this check is redundant with other ones already in place, remove it
+                        // TODO (dynamic_dispatch): make sure this (and its input counterpart above) do not incorrectly reject valid type combinations; possibly do away with this check altogether
                         _ => {
                             ensure!(
                                 caller_output.variant() == callee_output.variant()
