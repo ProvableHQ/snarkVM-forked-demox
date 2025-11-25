@@ -258,13 +258,13 @@ impl<N: Network> Stack<N> {
                 let translation_count = Uniform::rand(rng);
                 let tvk = Uniform::rand(rng);
                 let input_output_index = Uniform::rand(rng);
-                let record_view_key = Uniform::rand(rng);
-                let gamma = Uniform::rand(rng);
+                let record_view_key: Option<Field<N>> = Uniform::rand(rng);
+                let gamma: Option<Group<N>> = Uniform::rand(rng);
                 let id_dynamic = record_dynamic.to_id(function_id, tvk, U16::new(input_output_index)).unwrap();
                 let is_input = Uniform::rand(rng);
                 let static_is_external = Uniform::rand(rng);
-                let commitment = record_static.to_commitment(&program_id, &record_name, &record_view_key).unwrap();
-                let id_static = commitment;
+                let commitment: Field<N> = Uniform::rand(rng);
+                let id_static = Uniform::rand(rng);
 
                 lap!(timer, "Sample the inputs to the translation circuit for record {record_name}");
 

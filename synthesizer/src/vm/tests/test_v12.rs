@@ -1293,11 +1293,13 @@ fn test_dynamic_recursive_calls() {
 /************************** Translation test cases ***************************/
 
 // TODO (dynamic_dispatch) remove the legend once working
+// 
 // Single-translation test cases (O: coded, P: passing)
-// O input static -> dynamic
-// P input dynamic -> static
-// O output static -> dynamic
-// x output dynamic -> static ! Cannot be tested directly since dynamic records cannot be directly instantiated. Tested as part of multi-translation tests below.
+// P input dynamic -> static external
+// O input dynamic -> static non-external
+// P output static non-external -> dynamic
+// O output static external -> dynamic
+// 
 // Double-translation test cases
 // - input dynamic -> dynamic (no translation; check dynamic-record InputID changes as expected)
 // - input static -> static (no translation)

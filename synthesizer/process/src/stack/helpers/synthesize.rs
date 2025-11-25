@@ -144,8 +144,7 @@ impl<N: Network> Stack<N> {
         let id_dynamic = record_dynamic.to_id(function_id, tvk, U16::new(input_output_index)).unwrap();
         let is_input = Uniform::rand(rng);
         let static_is_external = Uniform::rand(rng);
-        let commitment = record_static.to_commitment(&program_id, &record_name, &record_view_key).unwrap();
-        let id_static = commitment;
+        let id_static = Uniform::rand(rng);
 
         let translation_assignment = TranslationAssignment::new(
             record_static,

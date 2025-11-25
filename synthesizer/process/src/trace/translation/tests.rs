@@ -71,8 +71,8 @@ fn translation_assignment_from_record_str(
         input_output_index,
         id_dynamic,
         id_static,
-        record_view_key,
-        gamma,
+        Some(record_view_key),
+        Some(gamma),
     )
 }
 
@@ -621,7 +621,7 @@ fn test_external_translation() {
     let id_dynamic = record_dynamic.to_id(function_id, tvk, U16::new(input_output_index)).unwrap();
     let id_static = external_record_output_id;
     let record_view_key = Uniform::rand(&mut rng);
-    let gamma = Group::<CurrentNetwork>::rand(&mut rng);
+    let gamma = Uniform::rand(&mut rng);
 
     let translation_assignment = TranslationAssignment::<CurrentNetwork>::new(
         record_static,

@@ -41,20 +41,18 @@ pub struct TranslationAssignment<N: Network> {
     pub(super) program_id: ProgramID<N>,
     /// The function ID of the callee in the dynamic call.
     pub(super) function_id: Field<N>,
-    /// The name of the static record (to be embedded as a constant)
+    /// The name of the static record (to be embedded as a constant).
     pub(super) record_name: Identifier<N>,
-    /// True if translation is happening for an input to `dynamic.call` (static record is being produced)
-    /// or an output of `dynamic.call` (static record is being consumed).
+    /// True if translation is happening for an input to `dynamic.call` (static record is being produced) or an output of `dynamic.call` (static record is being consumed).
     pub(super) is_input: bool,
-    /// True if the static record ID should be computed as that of a `Record` or that of an `ExternalRecord`.
+    /// Whether the value type corresponding to the static record is `Record` or that of an `ExternalRecord`.
     pub(super) static_is_external: bool,
     /// The number of times a translation circuit has been invoked in the current batch.
     pub(super) translation_count: u16,
     /// The view key of the transition containing the dynamic call.
     pub(super) tvk: Field<N>,
     /// Index of the input operand or output destination that contains the (dynamic and static) record.
-    // Note that the first three dynamic.call operands are reserved for call-related data, *however* this
-    // operand index still starts at 0 and is the same for caller and callee.
+    // Note that the first three dynamic.call operands are reserved for call-related data, *however* this operand index still starts at 0 and is the same for caller and callee.
     pub(super) input_output_index: u16,
     /// The ID of the dynamic record.
     pub(super) id_dynamic: Field<N>,
@@ -85,8 +83,8 @@ impl<N: Network> TranslationAssignment<N> {
         input_output_index: u16,
         id_dynamic: Field<N>,
         id_static: Field<N>,
-        record_view_key: Field<N>,
-        gamma: Group<N>,
+        record_view_key: Option<Field<N>>,
+        gamma: Option<Group<N>>,
     ) -> Self {
         Self {
             record_static,
@@ -101,8 +99,8 @@ impl<N: Network> TranslationAssignment<N> {
             input_output_index,
             id_dynamic,
             id_static,
-            record_view_key,
-            gamma,
+            record_view_key: record_view_key.unwrap_or_else(|| Field::zero()),
+            gamma: gamma.unwrap_or_else(|| Group::zero()),
         }
     }
 
