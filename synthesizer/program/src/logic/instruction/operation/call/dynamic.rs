@@ -73,6 +73,14 @@ impl<N: Network> CallDynamic<N> {
         // Ensure that the operand types do not contain a future, dynamic future, record, or external record type.
         for type_ in &operand_types {
             match type_ {
+                ValueType::Record(_) => {
+                    bail!("A record cannot be passed in as input to a dynamic call, use `dynamic.record` instead.")
+                }
+                ValueType::ExternalRecord(_) => {
+                    bail!(
+                        "An external record cannot be passed in as input to a dynamic call, use `dynamic.record` instead."
+                    )
+                }
                 ValueType::Future(_) => bail!("A future cannot be passed in as input to a dynamic call."),
                 ValueType::DynamicFuture => bail!("A dynamic future cannot be passed in as input to a dynamic call."),
                 _ => {}
@@ -88,11 +96,11 @@ impl<N: Network> CallDynamic<N> {
         // Ensure that the destination types do not contain a future, record, or external record type.
         for type_ in &destination_types {
             match type_ {
-                ValueType::Future(_) => bail!("A dynamic call cannot return a future, use `dynamic.future` instead."),
                 ValueType::Record(_) => bail!("A dynamic call cannot return a record, use `dynamic.record` instead."),
                 ValueType::ExternalRecord(_) => {
                     bail!("A dynamic call cannot return an external record, use `dynamic.record` instead.")
                 }
+                ValueType::Future(_) => bail!("A dynamic call cannot return a future, use `dynamic.future` instead."),
                 _ => {}
             }
         }
