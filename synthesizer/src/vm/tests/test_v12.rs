@@ -49,9 +49,9 @@ fn add_and_test(
     rng: &mut TestRng,
 ) {
     for (index, transaction) in transactions.iter().enumerate() {
-        if vm.check_transaction(transaction, None, rng).is_err() {
-            panic!("Transaction {index} check failed");
-        }
+        vm.check_transaction(transaction, None, rng).map_err(|e| {
+            anyhow!("Transaction {index} check failed: {e}")
+        }).unwrap();
     }
     let block = sample_next_block(vm, caller_private_key, transactions, rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), transactions.len());
@@ -80,10 +80,10 @@ fn test_translation(
 
     // Various parameters for dynamic.call instructions.
     let program_a_name_str = "flow";
-    let program_a_name_field =
+    let program_a_field =
         Identifier::<CurrentNetwork>::from_str(program_a_name_str).unwrap().to_field().unwrap();
     let program_b_name_str = "gas_manager";
-    let program_b_name_field =
+    let program_b_field =
         Identifier::<CurrentNetwork>::from_str(program_b_name_str).unwrap().to_field().unwrap();
     let network_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
 
@@ -91,25 +91,29 @@ fn test_translation(
     let get_gas_liters_function_name = Identifier::<CurrentNetwork>::from_str("get_gas_liters").unwrap();
     let consume_dynamic_blob_function_name = Identifier::<CurrentNetwork>::from_str("consume_dynamic_blob").unwrap();
     let nitrogen_pump_function_name = Identifier::<CurrentNetwork>::from_str("nitrogen_pump").unwrap();
+    let get_external_liters_function_name = Identifier::<CurrentNetwork>::from_str("get_external_liters").unwrap();
 
     let get_liquid_liters_function_field = get_liquid_liters_function_name.to_field().unwrap();
     let get_gas_liters_function_field = get_gas_liters_function_name.to_field().unwrap();
     let consume_dynamic_blob_function_field = consume_dynamic_blob_function_name.to_field().unwrap();
     let nitrogen_pump_function_field = nitrogen_pump_function_name.to_field().unwrap();
-
+    let get_external_liters_function_field = get_external_liters_function_name.to_field().unwrap();
+    
     let program_a_string = format!(
         r"
+    import {program_b_name_str}.aleo;
+
     program {program_a_name_str}.aleo;
 
     // Tries to consume a container passed as dynamic as a specifically liquid one
     function get_dynamic_liters_from_liquid:
         input r0 as dynamic.record;
-        call.dynamic {program_b_name_field} {network_field} {get_liquid_liters_function_field} with r0 (as dynamic.record) into r1 (as u64.public);
+        call.dynamic {program_b_field} {network_field} {get_liquid_liters_function_field} with r0 (as dynamic.record) into r1 (as u64.public);
         output r1 as u64.public;
     
     function get_dynamic_liters_from_gas:
         input r0 as dynamic.record;
-        call.dynamic {program_b_name_field} {network_field} {get_gas_liters_function_field} with r0 (as dynamic.record) into r1 (as u64.public);
+        call.dynamic {program_b_field} {network_field} {get_gas_liters_function_field} with r0 (as dynamic.record) into r1 (as u64.public);
         output r1 as u64.public;
 
     function consume_dynamic_blob:
@@ -117,8 +121,13 @@ fn test_translation(
         output true as boolean.private;
 
     function dynamic_pump:
-        call.dynamic {program_b_name_field} {network_field} {nitrogen_pump_function_field} with 1u64 (as u64.public) into r0 (as dynamic.record);
+        call.dynamic {program_b_field} {network_field} {nitrogen_pump_function_field} with 1u64 (as u64.public) into r0 (as dynamic.record);
         output r0 as dynamic.record;
+
+    // Get the liters in an external liquid record
+    function {get_external_liters_function_name}:
+        input r0 as {program_b_name_str}.aleo/gas_container.record;
+        output r0.liters as u64.public;
 
     constructor:
         assert.eq true true;
@@ -159,18 +168,23 @@ fn test_translation(
 
     function consume_gas:
         input r0 as gas_container.record;
-        call.dynamic {program_a_name_field} {network_field} {consume_dynamic_blob_function_field} with r0 (as gas_container.record) into r1 (as boolean.private);
+        call.dynamic {program_a_field} {network_field} {consume_dynamic_blob_function_field} with r0 (as gas_container.record) into r1 (as boolean.private);
         output r0.liters as u64.public;
 
-    function get_liquid_liters:
+    function {get_liquid_liters_function_name}:
         input r0 as liquid_container.record;
         output r0.liters as u64.public;
 
-    function get_gas_liters:
+    function get_gas_liters_externally:
+        input r0 as dynamic.record;
+        call.dynamic {program_a_field} {network_field} {get_external_liters_function_field} with r0 (as dynamic.record) into r1 (as u64.public);
+        output r1 as u64.public;
+
+    function {get_gas_liters_function_name}:
         input r0 as gas_container.record;
         output r0.liters as u64.public;
 
-    function nitrogen_pump:
+    function {nitrogen_pump_function_name}:
         input r0 as u64.public;
         cast self.caller r0 false into r1 as gas_container.record;
         output r1 as gas_container.record;
@@ -191,14 +205,14 @@ fn test_translation(
     // Initialize the VM.
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap(), rng);
 
-    // Deploy the program.
-    println!("Deploying program {program_a_name_str}...");
-    let transaction_a = vm.deploy(&caller_private_key, &program_a, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[transaction_a], rng);
-
+    // Deploy the programs.
     println!("Deploying program {program_b_name_str}...");
     let transaction_b = vm.deploy(&caller_private_key, &program_b, None, 0, None, rng).unwrap();
     add_and_test(&vm, &caller_private_key, &[transaction_b], rng);
+
+    println!("Deploying program {program_a_name_str}...");
+    let transaction_a = vm.deploy(&caller_private_key, &program_a, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[transaction_a], rng);
 
     assert!(
         input_values.is_none() || gas_to_mint.is_none(),
@@ -1319,35 +1333,8 @@ fn test_dynamic_recursive_calls() {
 // - test involve translation of the output of a call from a preexisting program to ensure signature-verification circuit hasn't changed
 // More
 
-//#[test]
-// fn test_translation_input_static_dynamic() {
-//     let rng = &mut TestRng::default();
-
-//     let caller_private_key = sample_genesis_private_key(rng);
-//     let caller_address = Address::try_from(&caller_private_key).unwrap();
-
-//     let record_static_str = format!(
-//         r#"{{
-//         owner: {}.private,
-//         liters: 22u64.public,
-//         flammable: false.private,
-//         _nonce: 0group.public,
-//         _version: 1u8.public
-//     }}"#,
-//         caller_address
-//     );
-
-//     // Construct the static and dynamic records.
-//     let r0_static = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_str(&record_static_str).unwrap();
-
-//     // Input and expected output
-//     let r0_value = Value::<CurrentNetwork>::Record(r0_static.clone());
-
-//     test_translation(&caller_private_key, "gas_manager.aleo", "consume_gas", &[r0_value], Some(r0_static), None, None, rng);
-// }
-
 #[test]
-fn test_translation_input_dynamic_static() {
+fn test_translation_input_dynamic_static_non_external() {
     // TODO (dynamic_dispatch) reintroduce default
     // let rng = &mut TestRng::default();
     let rng = &mut TestRng::from_seed(19);
@@ -1385,10 +1372,48 @@ fn test_translation_input_dynamic_static() {
 }
 
 #[test]
-fn test_translation_output_static_dynamic() {
+fn test_translation_output_static_non_external_dynamic() {
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
 
     test_translation(&caller_private_key, "flow.aleo", "dynamic_pump", Some(vec![]), None, None, rng);
+}
+
+#[test]
+fn test_translation_input_dynamic_static_external() {
+    // TODO (dynamic_dispatch) reintroduce default
+    // let rng = &mut TestRng::default();
+    let rng = &mut TestRng::from_seed(19);
+
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
+
+    let record_static_str = format!(
+        r#"{{
+        owner: {caller_address}.private,
+        liters: 292u64.public,
+        flammable: true.private,
+        _nonce: 0group.public,
+        _version: 1u8.public
+    }}"#
+    );
+
+    // Construct the static and dynamic records.
+    let r0_static = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_str(&record_static_str).unwrap();
+    let r0_dynamic = DynamicRecord::<CurrentNetwork>::from_record(&r0_static).unwrap();
+
+    // Input and expected output
+    let r0_value = Value::<CurrentNetwork>::DynamicRecord(r0_dynamic);
+    let expected_output = Plaintext::<CurrentNetwork>::from_str("292u64").unwrap();
+
+    test_translation(
+        &caller_private_key,
+        "gas_manager.aleo",
+        "get_gas_liters_externally",
+        None,
+        Some(r0_static),
+        Some(vec![expected_output]),
+        rng,
+    );
 }

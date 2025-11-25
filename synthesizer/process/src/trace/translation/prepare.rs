@@ -60,14 +60,6 @@ impl<N: Network> Translation<N> {
                     input_output_index,
                 } = translation_task;
 
-                // TODO (dynamic_dispatch) add here consistency checks with the Transition object?
-                ensure!(
-                    record_view_key.is_some(),
-                    "record_view_key is None in record translation for transition ID {} and index {}",
-                    transition_id,
-                    input_output_index
-                );
-
                 // Checks associated to input-record translation
                 let batch = &mut batched_assignments.entry((*program_id, *record_name)).or_insert(vec![]);
 

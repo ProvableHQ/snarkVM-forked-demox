@@ -138,15 +138,25 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                     .iter()
                     .zip(input_types.iter())
                     .map(|(input, input_type)| match (input, input_type) {
-                        (Value::Record(record), ValueType::DynamicRecord) => {
-                            Ok(Value::DynamicRecord(DynamicRecord::from_record(&record)?))
-                        }
                         (Value::Future(future), ValueType::DynamicFuture) => {
                             Ok(Value::DynamicFuture(DynamicFuture::from_future(future)?))
                         }
                         (Value::DynamicRecord(dynamic_record), ValueType::Record(record_name)) => {
                             // Look up the owner visibility.
                             let owner_is_private = substack.program().get_record(record_name)?.owner().is_private();
+                            Ok(Value::Record(dynamic_record.to_record(owner_is_private)?))
+                        }
+                        (Value::DynamicRecord(dynamic_record), ValueType::ExternalRecord(locator)) => {
+                            let record_program_id = locator.program_id();
+                            let record_name = locator.resource();
+
+                            // Obtain the program where the external record is defined (which must be imported inside the callee)
+                            // TODO (dynamic_dispatch) make sure this handles substack-fetching correctly
+                            let external_record_stack = substack.get_external_stack(record_program_id)?;
+                            
+                            // Look up the owner visibility.
+                            let owner_is_private = external_record_stack.program().get_record(record_name)?.owner().is_private();
+
                             Ok(Value::Record(dynamic_record.to_record(owner_is_private)?))
                         }
                         (Value::DynamicFuture(dynamic_future), ValueType::Future(locator)) => {
@@ -337,9 +347,6 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             .iter()
                             .zip(input_types.iter())
                             .map(|(input, input_type)| match (input, input_type) {
-                                (Value::Record(record), ValueType::DynamicRecord) => {
-                                    Ok(Value::DynamicRecord(DynamicRecord::from_record(&record)?))
-                                }
                                 (Value::Future(future), ValueType::DynamicFuture) => {
                                     Ok(Value::DynamicFuture(DynamicFuture::from_future(future)?))
                                 }
@@ -347,6 +354,19 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                     // Look up the owner visibility.
                                     let owner_is_private =
                                         target.substack().program().get_record(record_name)?.owner().is_private();
+                                    Ok(Value::Record(dynamic_record.to_record(owner_is_private)?))
+                                }
+                                (Value::DynamicRecord(dynamic_record), ValueType::ExternalRecord(locator)) => {
+                                    let record_program_id = locator.program_id();
+                                    let record_name = locator.resource();
+        
+                                    // Obtain the program where the external record is defined (which must be imported inside the callee)
+                                    // TODO (dynamic_dispatch) make sure this handles substack-fetching correctly
+                                    let external_record_stack = target.substack().get_external_stack(record_program_id)?;
+                                    
+                                    // Look up the owner visibility.
+                                    let owner_is_private = external_record_stack.program().get_record(record_name)?.owner().is_private();
+        
                                     Ok(Value::Record(dynamic_record.to_record(owner_is_private)?))
                                 }
                                 (Value::DynamicFuture(dynamic_future), ValueType::Future(locator)) => {
@@ -508,9 +528,6 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             .iter()
                             .zip(input_types.iter())
                             .map(|(input, input_type)| match (input, input_type) {
-                                (Value::Record(record), ValueType::DynamicRecord) => {
-                                    Ok(Value::DynamicRecord(DynamicRecord::from_record(&record)?))
-                                }
                                 (Value::Future(future), ValueType::DynamicFuture) => {
                                     Ok(Value::DynamicFuture(DynamicFuture::from_future(future)?))
                                 }
@@ -518,6 +535,19 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                     // Look up the owner visibility.
                                     let owner_is_private =
                                         target.substack().program().get_record(record_name)?.owner().is_private();
+                                    Ok(Value::Record(dynamic_record.to_record(owner_is_private)?))
+                                }
+                                (Value::DynamicRecord(dynamic_record), ValueType::ExternalRecord(locator)) => {
+                                    let record_program_id = locator.program_id();
+                                    let record_name = locator.resource();
+        
+                                    // Obtain the program where the external record is defined (which must be imported inside the callee)
+                                    // TODO (dynamic_dispatch) make sure this handles substack-fetching correctly
+                                    let external_record_stack = target.substack().get_external_stack(record_program_id)?;
+                                    
+                                    // Look up the owner visibility.
+                                    let owner_is_private = external_record_stack.program().get_record(record_name)?.owner().is_private();
+        
                                     Ok(Value::Record(dynamic_record.to_record(owner_is_private)?))
                                 }
                                 (Value::DynamicFuture(dynamic_future), ValueType::Future(locator)) => {

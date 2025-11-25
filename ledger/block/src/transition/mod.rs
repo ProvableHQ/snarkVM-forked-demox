@@ -360,20 +360,13 @@ impl<N: Network> Transition<N> {
                     .enumerate()
                     .map(|(output_index, ((output_value, caller_output_type), callee_output))| {
                         match (output_value, caller_output_type) {
-                            // Convert the record output to a dynamic record output.
+                            // Convert the record output (whether external or not) to a dynamic record output.
                             (Value::Record(record), ValueType::DynamicRecord) => {
                                 let caller_output_value = Value::DynamicRecord(DynamicRecord::from_record(record)?);
                                 let output = construct_output(output_index, &None, &caller_output_value, caller_output_type, &None);
                                 println!("[Construct output] caller_output_value: {:?}, caller_output_type: {:?}, output: {:?}", caller_output_value, caller_output_type, output);
                                 output
-                            }
-                            // Convert the dynamic record output to a record output.
-                            (Value::DynamicRecord(dynamic_record), ValueType::Record(_)) => {
-                                // TODO (@d0cd) We don't know the record output type here.
-                                todo!();
-                                let caller_output_value = Value::Record(dynamic_record.to_record(true)?);
-                                construct_output(output_index, &None, &caller_output_value, caller_output_type, &None)
-                            }
+                            },
                             // Otherwise, just return the output as is.
                             _ => Ok(callee_output.clone()),
                         }

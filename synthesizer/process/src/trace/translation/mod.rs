@@ -136,13 +136,13 @@ impl<N: Network> Translation<N> {
                 {
                     match (caller_input, callee_input, callee_input_type) {
                         (
-                            Input::DynamicRecord(dynamic_record_id),
+                            Input::DynamicRecord(id_dynamic),
                             Input::Record(serial_number, _),
                             ValueType::Record(record_name),
                         ) => {
-                            // True
+                            // true
                             let field_is_input = N::Field::one();
-                            // False
+                            // false
                             let field_static_is_external = N::Field::zero();
 
                             let field_function_id = *callee_function_id;
@@ -162,7 +162,7 @@ impl<N: Network> Translation<N> {
                                 .collect_vec();
 
                             let field_id_static = **serial_number;
-                            let field_id_dynamic = **dynamic_record_id;
+                            let field_id_dynamic = **id_dynamic;
 
                             let verifier_inputs = [
                                 vec![
@@ -190,8 +190,69 @@ impl<N: Network> Translation<N> {
 
                             translation_count += 1;
                         }
+                        (
+                            Input::DynamicRecord(id_dynamic),
+                            Input::ExternalRecord(id_static),
+                            ValueType::ExternalRecord(record_locator),
+                        ) => {
+                            // true
+                            let field_is_input = N::Field::one();
+                            // true
+                            let field_static_is_external = N::Field::one();
+
+                            let field_function_id = *callee_function_id;
+
+                            // TODO (dynamic_dispatch) is there a better way to do this? .to_fields() yields one field element
+                            // TODO (dynamic_dispatch) separately: should this be to_bits_le or to_bits_be?
+                            // TODO (dynamic_dispatch) both TODOs are superseeded by the discussed optimization of making the translation count a field element
+                            let fields_translation_count = translation_count
+                                .to_bits_le()
+                                .into_iter()
+                                .map(|bit: bool| if bit { N::Field::one() } else { N::Field::zero() })
+                                .collect_vec();
+                            let fields_input_output_index = (input_output_index as u16)
+                                .to_bits_le()
+                                .into_iter()
+                                .map(|bit: bool| if bit { N::Field::one() } else { N::Field::zero() })
+                                .collect_vec();
+
+                            let field_id_static = **id_static;
+                            let field_id_dynamic = **id_dynamic;
+
+                            let verifier_inputs = [
+                                vec![
+                                    // Initial constant 1
+                                    N::Field::one(),
+                                    field_is_input,
+                                    field_static_is_external,
+                                    field_function_id,
+                                ],
+                                fields_translation_count,
+                                fields_input_output_index,
+                                vec![
+                                    field_id_static,
+                                    field_id_dynamic
+                                ],
+                            ]
+                            .into_iter()
+                            .flatten()
+                            .collect_vec();
+
+                            let program_id = record_locator.program_id();
+                            let record_name = record_locator.resource();
+                            
+                            batch_verifier_inputs
+                                .entry((*program_id, *record_name))
+                                .or_default()
+                                .push(verifier_inputs);
+
+                            translation_count += 1;
+                        }
                         (Input::Record(..), Input::DynamicRecord(..), ValueType::DynamicRecord) => {
-                            bail!("Translation of (static) input Records to Dynamic Records is not supported");
+                            bail!("Translation of (non-external) input records to dynamic records is not supported");
+                        }
+                        (Input::ExternalRecord(..), Input::DynamicRecord(..), ValueType::DynamicRecord) => {
+                            bail!("Translation of (external) input records to dynamic records is not supported");
                         }
                         // TODO (dynamic_dispatch): if this check is redundant with other ones already in place, remove it
                         _ => {
@@ -239,7 +300,7 @@ impl<N: Network> Translation<N> {
                 {
                     match (caller_output, callee_output, callee_output_type) {
                         (
-                            Output::DynamicRecord(dynamic_record_id),
+                            Output::DynamicRecord(id_dynamic),
                             Output::Record(commitment, _, _, _),
                             ValueType::Record(record_name),
                         ) => {
@@ -265,7 +326,7 @@ impl<N: Network> Translation<N> {
                                 .collect_vec();
 
                             let field_id_static = **commitment;
-                            let field_id_dynamic = **dynamic_record_id;
+                            let field_id_dynamic = **id_dynamic;
 
                             let verifier_inputs = [
                                 vec![
@@ -293,8 +354,69 @@ impl<N: Network> Translation<N> {
 
                             translation_count += 1;
                         }
+                        (
+                            Output::DynamicRecord(id_dynamic),
+                            Output::ExternalRecord(id_static),
+                            ValueType::ExternalRecord(record_locator),
+                        ) => {
+                            // false
+                            let field_is_input = N::Field::zero();
+                            // true
+                            let field_static_is_external = N::Field::one();
+
+                            let field_function_id = *callee_function_id;
+
+                            // TODO (dynamic_dispatch) is there a better way to do this? .to_fields() yields one field element
+                            // TODO (dynamic_dispatch) separately: should this be to_bits_le or to_bits_be?
+                            // TODO (dynamic_dispatch) both TODOs are superseeded by the discussed optimization of making the translation count a field element
+                            let fields_translation_count = translation_count
+                                .to_bits_le()
+                                .into_iter()
+                                .map(|bit: bool| if bit { N::Field::one() } else { N::Field::zero() })
+                                .collect_vec();
+                            let fields_input_output_index = ((input_output_index + num_inputs) as u16)
+                                .to_bits_le()
+                                .into_iter()
+                                .map(|bit: bool| if bit { N::Field::one() } else { N::Field::zero() })
+                                .collect_vec();
+
+                            let field_id_static = **id_static;
+                            let field_id_dynamic = **id_dynamic;
+
+                            let verifier_inputs = [
+                                vec![
+                                    // Initial constant 1
+                                    N::Field::one(),
+                                    field_is_input,
+                                    field_static_is_external,
+                                    field_function_id,
+                                ],
+                                fields_translation_count,
+                                fields_input_output_index,
+                                vec![
+                                    field_id_static,
+                                    field_id_dynamic
+                                ],
+                            ]
+                            .into_iter()
+                            .flatten()
+                            .collect_vec();
+
+                            let program_id = record_locator.program_id();
+                            let record_name = record_locator.resource();
+
+                            batch_verifier_inputs
+                                .entry((*program_id, *record_name))
+                                .or_default()
+                                .push(verifier_inputs);
+
+                            translation_count += 1;
+                        }
                         (Output::Record(..), Output::DynamicRecord(..), ValueType::DynamicRecord) => {
-                            bail!("Translation of output dynamic records to static record is not supported yet");
+                            bail!("Translation of output dynamic records to (non-external) records is not supported");
+                        }
+                        (Output::ExternalRecord(..), Output::DynamicRecord(..), ValueType::DynamicRecord) => {
+                            bail!("Translation of output dynamic records to (external) records is not supported");
                         }
                         // TODO (dynamic_dispatch): if this check is redundant with other ones already in place, remove it
                         _ => {

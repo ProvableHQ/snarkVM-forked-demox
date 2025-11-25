@@ -301,6 +301,7 @@ impl<N: Network> Response<N> {
             .zip(caller_output_types)
             .map(|(output, output_type)| match (output, output_type) {
                 (Value::Record(record), ValueType::DynamicRecord) => {
+                    // This covers both the non-External and External record cases.
                     Ok(Value::DynamicRecord(DynamicRecord::from_record(record)?))
                 }
                 (Value::Future(future), ValueType::DynamicFuture) => {
