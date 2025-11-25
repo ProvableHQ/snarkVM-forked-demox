@@ -140,7 +140,6 @@ fn test_translation(
         assert.eq true true;
     "
     );
-    // TODO (Antonio) maybe add some leak in the gas pipe
 
     // Preparing the record values for the hardcoded gas_record minter
     let (gas_owner, gas_liters, gas_flammable) = if let Some(gas_to_mint_record) = &gas_to_mint {
@@ -179,31 +178,31 @@ fn test_translation(
         call.dynamic {program_a_name_field} {network_field} {consume_dynamic_blob_function_field} with r0 (as gas_container.record) into r1 (as boolean.private);
         output r0.liters as u64.public;
 
-    function {get_liquid_liters_function_name}:
-        input r0 as liquid_container.record;
-        output r0.liters as u64.public;
+    // function {get_liquid_liters_function_name}:
+    //     input r0 as liquid_container.record;
+    //     output r0.liters as u64.public;
 
-    function get_gas_liters_externally:
-        input r0 as dynamic.record;
-        call.dynamic {program_a_name_field} {network_field} {get_external_liters_function_field} with r0 (as dynamic.record) into r1 (as u64.public);
-        output r1 as u64.public;
+    // function get_gas_liters_externally:
+    //     input r0 as dynamic.record;
+    //     call.dynamic {program_a_name_field} {network_field} {get_external_liters_function_field} with r0 (as dynamic.record) into r1 (as u64.public);
+    //     output r1 as u64.public;
 
     function {get_gas_liters_function_name}:
         input r0 as gas_container.record;
         output r0.liters as u64.public;
 
-    function {nitrogen_pump_function_name}:
-        input r0 as u64.public;
-        cast self.caller r0 false into r1 as gas_container.record;
-        output r1 as gas_container.record;
+    // function {nitrogen_pump_function_name}:
+    //     input r0 as u64.public;
+    //     cast self.caller r0 false into r1 as gas_container.record;
+    //     output r1 as gas_container.record;
 
-    function hardcoded_gas_pump:
-        cast {gas_owner} {gas_liters} {gas_flammable} into r0 as gas_container.record;
-        output r0 as gas_container.record;
+    // function hardcoded_gas_pump:
+    //     cast {gas_owner} {gas_liters} {gas_flammable} into r0 as gas_container.record;
+    //     output r0 as gas_container.record;
 
-    function pump_and_send_through_pipe:
-        cast {gas_owner} {gas_liters} {gas_flammable} into r0 as gas_container.record;
-        call.dynamic {program_a_name_field} {network_field} {gas_pipe_function_field} with r0 (as gas_container.record) into r1 (as dynamic.record);
+    // function pump_and_send_through_pipe:
+    //     cast {gas_owner} {gas_liters} {gas_flammable} into r0 as gas_container.record;
+    //     call.dynamic {program_a_name_field} {network_field} {gas_pipe_function_field} with r0 (as gas_container.record) into r1 (as dynamic.record);
 
     constructor:
         assert.eq true true;
