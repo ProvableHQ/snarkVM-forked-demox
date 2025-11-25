@@ -140,10 +140,16 @@ impl<N: Network> Translation<N> {
                             Input::Record(serial_number, _),
                             ValueType::Record(record_name),
                         ) => {
-                            let field_record_consumed = N::Field::one();
+                            // True
+                            let field_is_input = N::Field::one();
+                            // False
+                            let field_static_is_external = N::Field::zero();
+
                             let field_function_id = *callee_function_id;
+
                             // TODO (dynamic_dispatch) is there a better way to do this? .to_fields() yields one field element
                             // TODO (dynamic_dispatch) separately: should this be to_bits_le or to_bits_be?
+                            // TODO (dynamic_dispatch) both TODOs are superseeded by the discussed optimization of making the translation count a field element
                             let fields_translation_count = translation_count
                                 .to_bits_le()
                                 .into_iter()
@@ -162,12 +168,16 @@ impl<N: Network> Translation<N> {
                                 vec![
                                     // Initial constant 1
                                     N::Field::one(),
-                                    field_record_consumed,
+                                    field_is_input,
+                                    field_static_is_external,
                                     field_function_id,
                                 ],
                                 fields_translation_count,
                                 fields_input_output_index,
-                                vec![field_id_static, field_id_dynamic],
+                                vec![
+                                    field_id_static,
+                                    field_id_dynamic
+                                ],
                             ]
                             .into_iter()
                             .flatten()
@@ -233,10 +243,16 @@ impl<N: Network> Translation<N> {
                             Output::Record(commitment, _, _, _),
                             ValueType::Record(record_name),
                         ) => {
-                            let field_record_consumed = N::Field::zero();
+                            // false
+                            let field_is_input = N::Field::zero();
+                            // false
+                            let field_static_is_external = N::Field::zero();
+
                             let field_function_id = *callee_function_id;
+
                             // TODO (dynamic_dispatch) is there a better way to do this? .to_fields() yields one field element
                             // TODO (dynamic_dispatch) separately: should this be to_bits_le or to_bits_be?
+                            // TODO (dynamic_dispatch) both TODOs are superseeded by the discussed optimization of making the translation count a field element
                             let fields_translation_count = translation_count
                                 .to_bits_le()
                                 .into_iter()
@@ -255,12 +271,16 @@ impl<N: Network> Translation<N> {
                                 vec![
                                     // Initial constant 1
                                     N::Field::one(),
-                                    field_record_consumed,
+                                    field_is_input,
+                                    field_static_is_external,
                                     field_function_id,
                                 ],
                                 fields_translation_count,
                                 fields_input_output_index,
-                                vec![field_id_static, field_id_dynamic],
+                                vec![
+                                    field_id_static,
+                                    field_id_dynamic
+                                ],
                             ]
                             .into_iter()
                             .flatten()

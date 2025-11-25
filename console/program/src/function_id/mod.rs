@@ -14,7 +14,7 @@
 // limitations under the License.
 
 use crate::{Identifier, ProgramID};
-use snarkvm_console_account::{ToBits, ToField};
+use snarkvm_console_account::ToBits;
 use snarkvm_console_algorithms::Result;
 use snarkvm_console_network::Network;
 use snarkvm_console_types::{Field, U8, U16};

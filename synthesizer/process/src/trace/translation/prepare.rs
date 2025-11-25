@@ -50,12 +50,13 @@ impl<N: Network> Translation<N> {
                     program_id,
                     function_id,
                     record_name,
-                    record_consumed,
+                    is_input,
+                    static_is_external,
                     tvk,
                     record_view_key,
                     gamma,
-                    static_record_id,
-                    dynamic_record_id,
+                    id_static,
+                    id_dynamic,
                     input_output_index,
                 } = translation_task;
 
@@ -84,16 +85,17 @@ impl<N: Network> Translation<N> {
 
                 batch.push(TranslationAssignment::new(
                     record_static.clone(),
+                    record_dynamic.clone(),
                     program_id.clone(),
                     function_id.clone(),
                     record_name.clone(),
-                    record_dynamic.clone(),
-                    *record_consumed,
+                    *is_input,
+                    *static_is_external,
                     translation_count,
                     tvk.clone(),
                     *input_output_index,
-                    *dynamic_record_id,
-                    *static_record_id,
+                    *id_dynamic,
+                    *id_static,
                     record_view_key_value.clone(),
                     *gamma,
                 ));

@@ -48,19 +48,19 @@ use snarkvm_synthesizer_snark::{ProvingKey, VerifyingKey};
 #[derive(Clone, Debug)]
 pub struct RecordTranslationData<N: Network> {
     pub translation_proving_key: ProvingKey<N>,
-    pub record_dynamic: DynamicRecord<N>,
     pub record_static: Record<N, Plaintext<N>>,
+    pub record_dynamic: DynamicRecord<N>,
     pub program_id: ProgramID<N>,
     pub function_id: Field<N>,
     pub record_name: Identifier<N>,
-    pub record_consumed: bool,
+    pub is_input: bool,
+    pub static_is_external: bool,
     pub tvk: Field<N>,
-    // TODO (dynamic_dispatch) this shouldn't be an option: translation circuits always compute the record commitment
     pub record_view_key: Option<Field<N>>,
     pub gamma: Group<N>,
-    pub static_record_id: Field<N>,
-    pub dynamic_record_id: Field<N>,
     pub input_output_index: u16,
+    pub id_dynamic: Field<N>,
+    pub id_static: Field<N>,
 }
 
 /// This trait is intended to be implemented only by `snarkvm_synthesizer_process::Stack`.
