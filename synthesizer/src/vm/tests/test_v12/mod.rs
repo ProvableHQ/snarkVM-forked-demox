@@ -1254,9 +1254,7 @@ fn test_conditional_execution() {
 
 #[test]
 fn test_translation_input_dynamic_non_external() {
-    // TODO (dynamic_dispatch) reintroduce default
-    // let rng = &mut TestRng::default();
-    let rng = &mut TestRng::from_seed(19);
+    let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
     let caller_address = Address::try_from(&caller_private_key).unwrap();
@@ -1301,9 +1299,7 @@ fn test_translation_output_non_external_dynamic() {
 
 #[test]
 fn test_translation_input_dynamic_external() {
-    // TODO (dynamic_dispatch) reintroduce default
-    // let rng = &mut TestRng::default();
-    let rng = &mut TestRng::from_seed(19);
+    let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
     let caller_address = Address::try_from(&caller_private_key).unwrap();
