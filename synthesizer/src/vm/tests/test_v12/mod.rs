@@ -173,36 +173,31 @@ fn test_translation(
         liters as u64.public;
         flammable as boolean.private;
 
-    function consume_gas:
-        input r0 as gas_container.record;
-        call.dynamic {program_a_name_field} {network_field} {consume_dynamic_blob_function_field} with r0 (as gas_container.record) into r1 (as boolean.private);
+    function {get_liquid_liters_function_name}:
+        input r0 as liquid_container.record;
         output r0.liters as u64.public;
 
-    // function {get_liquid_liters_function_name}:
-    //     input r0 as liquid_container.record;
-    //     output r0.liters as u64.public;
-
-    // function get_gas_liters_externally:
-    //     input r0 as dynamic.record;
-    //     call.dynamic {program_a_name_field} {network_field} {get_external_liters_function_field} with r0 (as dynamic.record) into r1 (as u64.public);
-    //     output r1 as u64.public;
+    function get_gas_liters_externally:
+        input r0 as dynamic.record;
+        call.dynamic {program_a_name_field} {network_field} {get_external_liters_function_field} with r0 (as dynamic.record) into r1 (as u64.public);
+        output r1 as u64.public;
 
     function {get_gas_liters_function_name}:
         input r0 as gas_container.record;
         output r0.liters as u64.public;
 
-    // function {nitrogen_pump_function_name}:
-    //     input r0 as u64.public;
-    //     cast self.caller r0 false into r1 as gas_container.record;
-    //     output r1 as gas_container.record;
+    function {nitrogen_pump_function_name}:
+        input r0 as u64.public;
+        cast self.caller r0 false into r1 as gas_container.record;
+        output r1 as gas_container.record;
 
-    // function hardcoded_gas_pump:
-    //     cast {gas_owner} {gas_liters} {gas_flammable} into r0 as gas_container.record;
-    //     output r0 as gas_container.record;
+    function hardcoded_gas_pump:
+        cast {gas_owner} {gas_liters} {gas_flammable} into r0 as gas_container.record;
+        output r0 as gas_container.record;
 
-    // function pump_and_send_through_pipe:
-    //     cast {gas_owner} {gas_liters} {gas_flammable} into r0 as gas_container.record;
-    //     call.dynamic {program_a_name_field} {network_field} {gas_pipe_function_field} with r0 (as gas_container.record) into r1 (as dynamic.record);
+    function pump_and_send_through_pipe:
+        input r0 as dynamic.record;
+        call.dynamic {program_a_name_field} {network_field} {gas_pipe_function_field} with r0 (as dynamic.record) into r1 (as dynamic.record);
 
     constructor:
         assert.eq true true;
@@ -286,26 +281,25 @@ fn test_translation(
     println!("Verifying transaction...");
     add_and_test(&vm, &caller_private_key, &[transaction.clone()], rng);
 
-    println!("Asserting output correctness...");
+    if let Some(expected_public_outputs) = expected_public_outputs {
+        
+        println!("Asserting output correctness on {} expected public outputs...", expected_public_outputs.len());
 
-    let output_ids = transaction.transitions().last().unwrap().output_ids().collect_vec();
+        // Note the last transition is the fee transition
+        let num_transitions = transaction.transitions().count();
+        let root_transition = transaction.transitions().nth(num_transitions - 2).unwrap();
+    
+        let public_outputs = root_transition
+            .outputs()
+            .iter()
+            .filter_map(|output| match output {
+                Output::Public(_, Some(plaintext)) => Some(plaintext),
+                _ => None,
+            })
+            .collect_vec();
 
-    // TODO (dynamic_dispatch) reintroduce and fix
-    // let public_outputs = transaction
-    //     .transitions()
-    //     .last()
-    //     .unwrap()
-    //     .outputs()
-    //     .iter()
-    //     .filter_map(|output| match output {
-    //         Output::Public(_, Some(plaintext)) => Some(plaintext),
-    //         _ => None,
-    //     })
-    //     .collect_vec();
-
-    // if let Some(expected_public_outputs) = expected_public_outputs {
-    //     assert_eq!(public_outputs.into_iter().cloned().collect_vec(), expected_public_outputs);
-    // }
+        assert_eq!(public_outputs.into_iter().cloned().collect_vec(), expected_public_outputs);
+    }
 }
 
 // This test checks that the execution graph computed from an execution
@@ -1337,6 +1331,30 @@ fn test_translation_output_external_dynamic() {
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
-    test_translation(&caller_private_key, "gas_manager.aleo", "pump_and_send_through_pipe", Some(vec![]), None, None, rng);
+    let record_static_str = format!(
+        r#"{{
+        owner: {caller_address}.private,
+        liters: 292u64.public,
+        flammable: true.private,
+        _nonce: 0group.public,
+        _version: 1u8.public
+    }}"#
+    );
+
+    // Construct the static and dynamic records.
+    let r0_static = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_str(&record_static_str).unwrap();
+
+    // Input and expected output
+    let expected_output = Plaintext::<CurrentNetwork>::from_str("292u64").unwrap();
+
+    test_translation(
+        &caller_private_key,
+        "gas_manager.aleo",
+        "pump_and_send_through_pipe",
+        None,
+        Some(r0_static),None,
+        rng
+    );
 }
