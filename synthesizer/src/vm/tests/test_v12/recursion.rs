@@ -415,9 +415,24 @@ constructor:
         );
     }
 
+    // Test function `seven` at the maximum valid depth which should pass.
+    {
+        let test_index = Transaction::<CurrentNetwork>::MAX_TRANSITIONS as u8 - 3; // Account for the fee transition and zero indexing.
+        execute_and_check(
+            seven_name.clone(),
+            vec![
+                Value::DynamicRecord(DynamicRecord::from_record(&mint_record(rng)).unwrap()),
+                Value::from_str(&format!("{test_index}u8")).unwrap(),
+            ],
+            true,
+            &format!("Testing function {seven_name} at index {test_index} which should pass"),
+            rng,
+        );
+    }
+
     // Test function `seven` at the maximum call depth which should fail.
     {
-        let test_index = Transaction::<CurrentNetwork>::MAX_TRANSITIONS as u8;
+        let test_index = Transaction::<CurrentNetwork>::MAX_TRANSITIONS as u8 - 2; // Account for the fee transition and zero indexing.
         execute_and_check(
             seven_name.clone(),
             vec![

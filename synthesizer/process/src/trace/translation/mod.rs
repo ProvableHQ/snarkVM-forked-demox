@@ -186,8 +186,8 @@ impl<N: Network> Translation<N> {
                         // TODO (dynamic_dispatch): if this check is redundant with other ones already in place, remove it
                         _ => {
                             ensure!(
-                                caller_input.variant() == callee_input.variant()
-                                    && callee_input.variant() == callee_input_type.variant(),
+                                Input::variants_match(caller_input, callee_input)
+                                    && callee_input.is_type(callee_input_type),
                                 "Mismatch between caller input {}, (callee) input {} and (callee) input type {} in transition {} (index: {})",
                                 caller_input,
                                 callee_input,
@@ -279,8 +279,8 @@ impl<N: Network> Translation<N> {
                         // TODO (dynamic_dispatch): if this check is redundant with other ones already in place, remove it
                         _ => {
                             ensure!(
-                                caller_output.variant() == callee_output.variant()
-                                    && callee_output.variant() == callee_output_type.variant(),
+                                Output::variants_match(caller_output, callee_output)
+                                    && callee_output.is_type(callee_output_type),
                                 "Mismatch between caller output {}, (callee) output {} and (callee) output type {} in transition {} (index: {})",
                                 caller_output,
                                 callee_output,
