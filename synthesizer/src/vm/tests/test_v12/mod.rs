@@ -110,12 +110,12 @@ fn test_translation(
     // Tries to consume a container passed as dynamic as a specifically liquid one
     function get_dynamic_liters_from_liquid:
         input r0 as dynamic.record;
-        call.dynamic {program_b_field} {network_field} {get_liquid_liters_function_field} with r0 (as dynamic.record) into r1 (as u64.public);
+        call.dynamic {program_b_name_field} {network_field} {get_liquid_liters_function_field} with r0 (as dynamic.record) into r1 (as u64.public);
         output r1 as u64.public;
     
     function get_dynamic_liters_from_gas:
         input r0 as dynamic.record;
-        call.dynamic {program_b_field} {network_field} {get_gas_liters_function_field} with r0 (as dynamic.record) into r1 (as u64.public);
+        call.dynamic {program_b_name_field} {network_field} {get_gas_liters_function_field} with r0 (as dynamic.record) into r1 (as u64.public);
         output r1 as u64.public;
 
     function consume_dynamic_blob:
@@ -123,7 +123,7 @@ fn test_translation(
         output true as boolean.private;
 
     function dynamic_pump:
-        call.dynamic {program_b_field} {network_field} {nitrogen_pump_function_field} with 1u64 (as u64.public) into r0 (as dynamic.record);
+        call.dynamic {program_b_name_field} {network_field} {nitrogen_pump_function_field} with 1u64 (as u64.public) into r0 (as dynamic.record);
         output r0 as dynamic.record;
 
     // Get the liters in an external liquid record
@@ -176,7 +176,7 @@ fn test_translation(
 
     function consume_gas:
         input r0 as gas_container.record;
-        call.dynamic {program_a_field} {network_field} {consume_dynamic_blob_function_field} with r0 (as gas_container.record) into r1 (as boolean.private);
+        call.dynamic {program_a_name_field} {network_field} {consume_dynamic_blob_function_field} with r0 (as gas_container.record) into r1 (as boolean.private);
         output r0.liters as u64.public;
 
     function {get_liquid_liters_function_name}:
@@ -185,7 +185,7 @@ fn test_translation(
 
     function get_gas_liters_externally:
         input r0 as dynamic.record;
-        call.dynamic {program_a_field} {network_field} {get_external_liters_function_field} with r0 (as dynamic.record) into r1 (as u64.public);
+        call.dynamic {program_a_name_field} {network_field} {get_external_liters_function_field} with r0 (as dynamic.record) into r1 (as u64.public);
         output r1 as u64.public;
 
     function {get_gas_liters_function_name}:
@@ -203,7 +203,7 @@ fn test_translation(
 
     function pump_and_send_through_pipe:
         cast {gas_owner} {gas_liters} {gas_flammable} into r0 as gas_container.record;
-        call.dynamic {program_a_field} {network_field} {gas_pipe_function_field} with r0 (as gas_container.record) into r1 (as dynamic.record);
+        call.dynamic {program_a_name_field} {network_field} {gas_pipe_function_field} with r0 (as gas_container.record) into r1 (as dynamic.record);
 
     constructor:
         assert.eq true true;
