@@ -213,12 +213,12 @@ fn test_translation(
 
     // Deploy the programs.
     println!("Deploying program {program_b_name_str}...");
-    let transaction_b = vm.deploy(&caller_private_key, &program_b, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[transaction_b], rng);
+    let transaction_b = vm.deploy(caller_private_key, &program_b, None, 0, None, rng).unwrap();
+    add_and_test(&vm, caller_private_key, &[transaction_b], rng);
 
     println!("Deploying program {program_a_name_str}...");
-    let transaction_a = vm.deploy(&caller_private_key, &program_a, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[transaction_a], rng);
+    let transaction_a = vm.deploy(caller_private_key, &program_a, None, 0, None, rng).unwrap();
+    add_and_test(&vm, caller_private_key, &[transaction_a], rng);
 
     assert!(
         input_values.is_none() || gas_to_mint.is_none(),
@@ -234,7 +234,7 @@ fn test_translation(
         println!("Minting gas_container record...");
         let transaction_mint = vm
             .execute(
-                &caller_private_key,
+                caller_private_key,
                 (format!("{program_b_name_str}.aleo"), "hardcoded_gas_pump"),
                 Vec::<Value<CurrentNetwork>>::new().iter(),
                 None,
@@ -253,7 +253,7 @@ fn test_translation(
             _ => panic!("Minted record is not a record"),
         };
 
-        let block_mint = sample_next_block(&vm, &caller_private_key, &[transaction_mint], rng).unwrap();
+        let block_mint = sample_next_block(&vm, caller_private_key, &[transaction_mint], rng).unwrap();
         assert_eq!(block_mint.transactions().num_accepted(), 1);
         assert_eq!(block_mint.transactions().num_rejected(), 0);
         assert_eq!(block_mint.aborted_transaction_ids().len(), 0);
@@ -268,7 +268,7 @@ fn test_translation(
     // Execute the root function.
     let transaction = vm
         .execute(
-            &caller_private_key,
+            caller_private_key,
             (root_program_name, root_function_name),
             computed_input_values.into_iter(),
             None,
@@ -279,7 +279,7 @@ fn test_translation(
         .unwrap();
 
     println!("Verifying transaction...");
-    add_and_test(&vm, &caller_private_key, &[transaction.clone()], rng);
+    add_and_test(&vm, caller_private_key, &[transaction.clone()], rng);
 
     if let Some(expected_public_outputs) = expected_public_outputs {
         

@@ -147,7 +147,7 @@ impl<N: Network> Process<N> {
                 let key = (*transition.program_id(), *record_name);
 
                 // TODO (dynamic_dispatch) do better (e.g with .entry)
-                if !translation_verifying_keys.contains_key(&key) {
+                if let std::collections::hash_map::Entry::Vacant(e) = translation_verifying_keys.entry(key) {
                     if key
                         == (
                             ProgramID::<N>::from_str("credits.aleo").unwrap(),
@@ -160,12 +160,12 @@ impl<N: Network> Process<N> {
                         // this program is never deployed, as it is a first-class citizen of the protocol.
                         let num_variables = verifying_key.circuit_info.num_public_and_private_variables as u64;
                         // Insert the translation verifying key.
-                        translation_verifying_keys.insert(key, VerifyingKey::<N>::new(verifying_key, num_variables));
+                        e.insert(VerifyingKey::<N>::new(verifying_key, num_variables));
                     } else {
                         let translation_verifying_key = stack
                             .get_translation_verifying_key(record_name)
                             .map_err(|_| anyhow!("Translation verifying key not found for {}/{}", key.0, key.1))?;
-                        translation_verifying_keys.insert(key, translation_verifying_key);
+                        e.insert(translation_verifying_key);
                     }
                 }
             }
@@ -310,8 +310,8 @@ impl<N: Network> Process<N> {
 
         // If there are function calls, append their inputs and outputs.
         let child_transition_ids = call_graph.get(transition.id()).unwrap();
-        let parent_function = transition_map.get(&transition.id()).map(|(_, function)| function.clone());
-        use snarkvm_synthesizer_program::{Call, CallOperator};
+        let parent_function = transition_map.get(transition.id()).map(|(_, function)| function.clone());
+        
         let parent_function_calls = match parent_function {
             Some(function) => function
                 .instructions()
@@ -361,7 +361,7 @@ impl<N: Network> Process<N> {
                 (true, None) => bail!("Dynamic transition has no caller outputs"),
                 (true, Some(caller_outputs)) => {
                     let Some(Instruction::CallDynamic(dynamic_call)) = parent_function_call else {
-                        bail!("Parent function call is not a dynamic call: {:?}", parent_function_call);
+                        bail!("Parent function call is not a dynamic call: {parent_function_call:?}");
                     };
                     let mut caller_output_ids = vec![];
                     ensure!(

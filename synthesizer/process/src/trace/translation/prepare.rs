@@ -13,7 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use console::types::U16;
 use snarkvm_synthesizer_snark::ProvingKey;
 
 use super::*;
@@ -39,7 +38,7 @@ impl<N: Network> Translation<N> {
             let transition_id = transition.id();
 
             let Some(translation_tasks) = self.translation_tasks.get(transition_id) else {
-                bail!("Translation tasks not found for transition ID {}", transition_id);
+                bail!("Translation tasks not found for transition ID {transition_id}");
             };
 
             for translation_task in translation_tasks {
@@ -61,14 +60,12 @@ impl<N: Network> Translation<N> {
                 } = translation_task;
 
                 // Checks associated to input-record translation
-                let batch = &mut batched_assignments.entry((*program_id, *record_name)).or_insert(vec![]);
+                let batch = &mut batched_assignments.entry((*program_id, *record_name)).or_default();
 
                 if let Some(previous_key) = proving_keys.get(&(*program_id, *record_name)) {
                     ensure!(
                         previous_key == translation_proving_key,
-                        "Proving key mismatch for record {}/{}",
-                        program_id,
-                        record_name
+                        "Proving key mismatch for record {program_id}/{record_name}"
                     );
                 } else {
                     proving_keys.insert((*program_id, *record_name), translation_proving_key.clone());
@@ -77,18 +74,18 @@ impl<N: Network> Translation<N> {
                 batch.push(TranslationAssignment::new(
                     record_static.clone(),
                     record_dynamic.clone(),
-                    program_id.clone(),
-                    function_id.clone(),
-                    record_name.clone(),
+                    *program_id,
+                    *function_id,
+                    *record_name,
                     *is_input,
                     *static_is_external,
                     translation_count,
-                    tvk.clone(),
+                    *tvk,
                     *input_output_index,
                     *id_dynamic,
                     *id_static,
-                    record_view_key.clone(),
-                    gamma.clone(),
+                    *record_view_key,
+                    *gamma,
                 ));
 
                 translation_count += 1;

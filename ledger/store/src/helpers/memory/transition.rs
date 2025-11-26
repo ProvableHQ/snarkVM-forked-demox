@@ -16,7 +16,7 @@
 use crate::{InputStorage, InputStore, OutputStorage, OutputStore, TransitionStorage, helpers::memory::MemoryMap};
 use console::{
     prelude::*,
-    program::{Ciphertext, Future, Identifier, Plaintext, ProgramID, Record, Request},
+    program::{Ciphertext, Future, Identifier, Plaintext, ProgramID, Record},
     types::{Field, Group},
 };
 use snarkvm_ledger_block::{Input, Output};

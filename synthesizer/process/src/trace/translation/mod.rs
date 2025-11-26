@@ -17,7 +17,6 @@ mod assignment;
 pub use assignment::*;
 
 mod prepare;
-pub use prepare::*;
 
 #[cfg(test)]
 pub mod tests;
@@ -31,20 +30,18 @@ use console::{
     program::{
         DynamicRecord,
         Identifier,
-        InputID,
         Plaintext,
         ProgramID,
         RECORD_DATA_TREE_DEPTH,
         Record,
         U16,
-        Value,
         ValueType,
         compute_function_id,
     },
     types::{Field, Group},
 };
 use snarkvm_ledger_block::{Input, Output, Transition};
-use snarkvm_synthesizer_program::{Function, Instruction, RecordTranslationData};
+use snarkvm_synthesizer_program::{Function, RecordTranslationData};
 use snarkvm_synthesizer_snark::VerifyingKey;
 
 use std::collections::HashMap;

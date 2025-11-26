@@ -31,7 +31,6 @@ impl<A: Aleo> Request<A> {
         root_tvk: Option<Field<A>>,
         is_root: Boolean<A>,
         program_checksum: Option<Field<A>>,
-        is_dynamic: bool,
     ) -> Boolean<A> {
         // Compute the function ID.
         let function_id = compute_function_id(&self.network_id, &self.program_id, &self.function_name);
@@ -544,7 +543,7 @@ mod tests {
 
             Circuit::scope(format!("Request {i}"), || {
                 let root_tvk = None;
-                let candidate = request.verify(&input_types, &tpk, root_tvk, is_root, program_checksum, false);
+                let candidate = request.verify(&input_types, &tpk, root_tvk, is_root, program_checksum);
                 assert!(candidate.eject_value());
                 count.assert_matches(
                     Circuit::num_constants_in_scope(),
@@ -578,7 +577,7 @@ mod tests {
 
             // If the request is dynamic, compute the function ID.
             let function_id = if dynamic {
-                Some(compute_function_id(&request.network_id(), &request.program_id(), &request.function_name()))
+                Some(compute_function_id(request.network_id(), request.program_id(), request.function_name()))
             } else {
                 None
             };

@@ -118,15 +118,14 @@ fn test_fibonacci() {
             )
             .unwrap();
         let execution = transaction.execution().unwrap();
-        assert_eq!(execution.transitions().into_iter().count(), expected_num_transitions);
+        assert_eq!(execution.transitions().count(), expected_num_transitions);
         assert_eq!(
             execution
                 .transitions()
-                .into_iter()
                 .last()
                 .unwrap()
                 .outputs()
-                .into_iter()
+                .iter()
                 .find_map(|output| match output {
                     Output::Public(_, Some(plaintext)) => Some(plaintext),
                     _ => None,
@@ -338,11 +337,10 @@ constructor:
         let execution = mint_transaction.execution().unwrap();
         let minted_record = execution
             .transitions()
-            .into_iter()
             .last()
             .unwrap()
             .outputs()
-            .into_iter()
+            .iter()
             .find_map(|output| match output {
                 Output::Record(_, _, Some(record), _) => Some(record.decrypt(&caller_view_key).unwrap()),
                 _ => None,
@@ -371,20 +369,18 @@ constructor:
         );
 
         if should_succeed {
-            let transaction = result.expect(&format!("Expected {function_name} to succeed"));
+            let transaction = result.unwrap_or_else(|_| panic!("Expected {function_name} to succeed"));
             add_and_test(&vm, &caller_private_key, &[transaction], rng);
-        } else {
-            if let Ok(transaction) = result {
-                // Check that the transaction fails to verify.
-                let transaction_fails = vm.check_transaction(&transaction, None, rng).is_err();
-                assert!(transaction_fails, "Expected {function_name} to fail");
-            }
+        } else if let Ok(transaction) = result {
+            // Check that the transaction fails to verify.
+            let transaction_fails = vm.check_transaction(&transaction, None, rng).is_err();
+            assert!(transaction_fails, "Expected {function_name} to fail");
         }
     };
 
     // Test function `five` which should fail due to double-spend.
     execute_and_check(
-        five_name.clone(),
+        five_name,
         vec![Value::DynamicRecord(DynamicRecord::from_record(&mint_record(rng)).unwrap())],
         false,
         &format!("Testing function {five_name} which should fail due to double-spend"),
@@ -393,7 +389,7 @@ constructor:
 
     // Test function `six` which should pass because the record is dynamic.
     execute_and_check(
-        six_name.clone(),
+        six_name,
         vec![Value::DynamicRecord(DynamicRecord::from_record(&mint_record(rng)).unwrap())],
         true,
         &format!("Testing function {six_name} which should pass because the record is dynamic"),
@@ -404,7 +400,7 @@ constructor:
     {
         let test_index = 5u8;
         execute_and_check(
-            seven_name.clone(),
+            seven_name,
             vec![
                 Value::DynamicRecord(DynamicRecord::from_record(&mint_record(rng)).unwrap()),
                 Value::from_str(&format!("{test_index}u8")).unwrap(),
@@ -419,7 +415,7 @@ constructor:
     {
         let test_index = Transaction::<CurrentNetwork>::MAX_TRANSITIONS as u8 - 3; // Account for the fee transition and zero indexing.
         execute_and_check(
-            seven_name.clone(),
+            seven_name,
             vec![
                 Value::DynamicRecord(DynamicRecord::from_record(&mint_record(rng)).unwrap()),
                 Value::from_str(&format!("{test_index}u8")).unwrap(),
@@ -434,7 +430,7 @@ constructor:
     {
         let test_index = Transaction::<CurrentNetwork>::MAX_TRANSITIONS as u8 - 2; // Account for the fee transition and zero indexing.
         execute_and_check(
-            seven_name.clone(),
+            seven_name,
             vec![
                 Value::DynamicRecord(DynamicRecord::from_record(&mint_record(rng)).unwrap()),
                 Value::from_str(&format!("{test_index}u8")).unwrap(),
@@ -449,7 +445,7 @@ constructor:
 
     // Test function `eight` at index zero which should pass.
     execute_and_check(
-        eight_name.clone(),
+        eight_name,
         vec![
             Value::DynamicRecord(DynamicRecord::from_record(&mint_record(rng)).unwrap()),
             Value::from_str("0u8").unwrap(),
@@ -461,7 +457,7 @@ constructor:
 
     // Test function `eight` at index one which should fail due to double-spend.
     execute_and_check(
-        eight_name.clone(),
+        eight_name,
         vec![
             Value::DynamicRecord(DynamicRecord::from_record(&mint_record(rng)).unwrap()),
             Value::from_str("1u8").unwrap(),
@@ -473,7 +469,7 @@ constructor:
 
     // Test function `nine` at index zero which should pass.
     execute_and_check(
-        nine_name.clone(),
+        nine_name,
         vec![
             Value::DynamicRecord(DynamicRecord::from_record(&mint_record(rng)).unwrap()),
             Value::from_str("0u8").unwrap(),
@@ -485,7 +481,7 @@ constructor:
 
     // Test function `nine` at index one which should fail due to record not existing.
     execute_and_check(
-        nine_name.clone(),
+        nine_name,
         vec![
             Value::DynamicRecord(DynamicRecord::from_record(&mint_record(rng)).unwrap()),
             Value::from_str("1u8").unwrap(),
@@ -497,7 +493,7 @@ constructor:
 
     // Test function `nine` at index two which should fail due to record not existing.
     execute_and_check(
-        nine_name.clone(),
+        nine_name,
         vec![
             Value::DynamicRecord(DynamicRecord::from_record(&mint_record(rng)).unwrap()),
             Value::from_str("2u8").unwrap(),

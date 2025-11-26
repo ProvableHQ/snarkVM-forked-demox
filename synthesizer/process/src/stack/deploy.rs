@@ -250,9 +250,9 @@ impl<N: Network> Stack<N> {
                 // principle private_key itself is not necessary
 
                 // Construct a TranslationAssignment:
-                let program_id = self.program_id().clone();
+                let program_id = *self.program_id();
                 let function_id = Field::<N>::from_u64(Uniform::rand(rng));
-                let record_name = record_name.clone();
+                let record_name = *record_name;
                 let record_static = self.sample_record(&address, &record_name, Group::rand(rng), rng)?;
                 let record_dynamic = DynamicRecord::<N>::from_record(&record_static)?;
                 let translation_count = Uniform::rand(rng);

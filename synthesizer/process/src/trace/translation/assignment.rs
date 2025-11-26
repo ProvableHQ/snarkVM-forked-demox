@@ -99,8 +99,8 @@ impl<N: Network> TranslationAssignment<N> {
             input_output_index,
             id_dynamic,
             id_static,
-            record_view_key: record_view_key.unwrap_or_else(|| Field::zero()),
-            gamma: gamma.unwrap_or_else(|| Group::zero()),
+            record_view_key: record_view_key.unwrap_or_else(Field::zero),
+            gamma: gamma.unwrap_or_else(Group::zero),
         }
     }
 

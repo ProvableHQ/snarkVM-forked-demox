@@ -19,7 +19,7 @@ mod registers_trait;
 use crate::{CallStack, RegisterTypes};
 use console::{
     network::prelude::*,
-    program::{Entry, Identifier, Literal, Plaintext, Register, Request, Value},
+    program::{Entry, Literal, Plaintext, Register, Request, Value},
     types::{Address, Field},
 };
 use snarkvm_synthesizer_program::{
