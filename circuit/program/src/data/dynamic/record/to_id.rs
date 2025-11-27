@@ -54,7 +54,7 @@ mod tests {
             let version = console::U8::<CurrentNetwork>::rand(&mut rng);
 
             let console_record =
-                console::DynamicRecord::<CurrentNetwork>::new_unchecked(owner, root, nonce, version, None, None);
+                console::DynamicRecord::<CurrentNetwork>::new_unchecked(*owner, root, nonce, version, None, None);
 
             // Extra fields when computing a Dynamic record's ID
             let function_id = console::Field::<CurrentNetwork>::rand(&mut rng);
