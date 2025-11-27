@@ -34,7 +34,7 @@ pub struct GetDynamicRecordInstruction<N: Network> {
     /// The destination register to store the value of the entry.
     // The variant is always Register::Locator
     destination: Register<N>,
-    /// The type of the entry being read.t
+    /// The type of the entry being read.
     plaintext_type: PlaintextType<N>,
 }
 
@@ -43,7 +43,7 @@ impl<N: Network> GetDynamicRecordInstruction<N> {
     #[inline]
     pub fn new(operand: Operand<N>, destination: Register<N>, plaintext_type: PlaintextType<N>) -> Result<Self> {
         
-        let _ = Self::check_and_get_input_output(&[operand.clone()], &destination)?;
+        Self::check_and_get_input_output(&[operand.clone()], &destination)?;
         
         Ok(Self { 
             operands: [operand],
@@ -66,7 +66,7 @@ impl<N: Network> GetDynamicRecordInstruction<N> {
             destination
         );
         
-        if let [Operand::Register(Register::Access(source_index, accesses))] = source_operands {
+        if [Operand::Register(Register::Access(source_index, accesses))] = source_operands {
             if let [Access::Member(identifier)] = accesses.as_slice() {
                 Ok((Operand::Register(Register::Locator(*source_index)), identifier.clone()))
             } else {
