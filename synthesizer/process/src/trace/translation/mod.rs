@@ -93,7 +93,7 @@ impl<N: Network> Translation<N> {
         // Order is irrelevant as long as it is consistent between the prover and verifier. (cf. Translation::prepare)
         
         // TODO (Antonio) remove enumerate
-        for (i, transition) in transitions.rev().enumerate() {
+        for (i, transition) in transitions.enumerate() {
 
             // TODO (Antonio) remove
             println!(" - transition {i}: {}/{}", transition.program_id(), transition.function_name());

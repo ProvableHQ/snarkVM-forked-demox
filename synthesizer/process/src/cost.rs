@@ -23,7 +23,7 @@ use console::{
 };
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use snarkvm_ledger_block::{Deployment, Execution, Transaction};
-use snarkvm_synthesizer_program::{CallDynamic, CastType, Command, Instruction, Operand};
+use snarkvm_synthesizer_program::{CallDynamic, CastType, Command, GetDynamicRecord, Instruction, Operand};
 use snarkvm_synthesizer_snark::proof_size;
 
 pub type MinimumCost = u64;
@@ -626,6 +626,9 @@ pub fn cost_per_command<N: Network>(
         }
         Command::Instruction(Instruction::ECDSAVerifySha3_512Eth(ecdsa)) => {
             cost_in_size(stack, finalize_types, ecdsa.operands(), HASH_PER_BYTE_COST, ECDSA_VERIFY_ETH_BASE_COST)
+        }
+        Command::Instruction(Instruction::GetDynamicRecord(get_dynamic_record)) => {
+            bail!("'{}' is not supported in finalize", GetDynamicRecord::<N>::opcode())
         }
         Command::Instruction(Instruction::GreaterThan(_)) => Ok(500),
         Command::Instruction(Instruction::GreaterThanOrEqual(_)) => Ok(500),

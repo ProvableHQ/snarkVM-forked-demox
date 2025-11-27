@@ -17,8 +17,11 @@ use crate::{Opcode, Operand, RegistersCircuit, RegistersTrait, StackTrait};
 use circuit::{Inject, Mode, Eject, traits::{ToField, ToFields}};
 use console::{
     network::prelude::*,
-    program::{Access, Entry, EntryType, Identifier, Plaintext, PlaintextType, Register, RegisterType, Value, ToFields as ConsoleToFields, ToField as ConsoleToField},
+    program::{Access, Address, Entry, EntryType, Field, Identifier, Plaintext, PlaintextType, Register, RegisterType, U64, Value, ToFields as ConsoleToFields, ToField as ConsoleToField, RECORD_DATA_TREE_DEPTH},
+    collections::merkle_tree::MerklePath,
 };
+
+use rand::thread_rng;
 
 type CircuitLH<A> = circuit::Poseidon8<A>;
 type CircuitPH<A> = circuit::Poseidon2<A>;
@@ -27,38 +30,23 @@ type ConsolePH<N> = console::algorithms::Poseidon2<N>;
 
 /// Retrieves the value of an entry in a dynamic record.
 #[derive(Clone, PartialEq, Eq, Hash)]
-pub struct GetDynamicRecordInstruction<N: Network> {
-    /// The register and entry containing the dynamic record being read.
-    // It is always of the form Register(Register::Access(u64, [Access::Member(Identifier)]))
+pub struct GetDynamicRecord<N: Network> {
+    /// The register containing the dynamic record being read.
+    // It is always of the form `Operand::Register(Register::Locator(u64))`.
     operands: [Operand<N>; 1],
     /// The destination register to store the value of the entry.
     // The variant is always Register::Locator
     destination: Register<N>,
+    /// The Identifier of the entry being read.
+    entry_identifier: Identifier<N>,
     /// The type of the entry being read.
     plaintext_type: PlaintextType<N>,
 }
 
-impl<N: Network> GetDynamicRecordInstruction<N> {
+impl<N: Network> GetDynamicRecord<N> {
     /// Initializes a new `get.dynamic.record` instruction.
     #[inline]
     pub fn new(operand: Operand<N>, destination: Register<N>, plaintext_type: PlaintextType<N>) -> Result<Self> {
-        
-        Self::check_and_get_input_output(&[operand.clone()], &destination)?;
-        
-        Ok(Self { 
-            operands: [operand],
-            destination, 
-            plaintext_type
-        })
-    }
-
-    // Internal function which checks the source operand and destination
-    // register have the expected shape and splits the former into a
-    // Record::Locator and an Identifier.
-    fn check_and_get_input_output(
-        source_operands: &[Operand<N>],
-        destination: &Register<N>,
-    ) -> Result<(Operand<N>, Identifier<N>)> {
 
         ensure!(
             matches!(destination, Register::Locator(_)),
@@ -66,15 +54,22 @@ impl<N: Network> GetDynamicRecordInstruction<N> {
             destination
         );
         
-        if [Operand::Register(Register::Access(source_index, accesses))] = source_operands {
+        let (prepared_operands, entry_identifier) = if let Operand::Register(Register::Access(index, accesses)) = operand {
             if let [Access::Member(identifier)] = accesses.as_slice() {
-                Ok((Operand::Register(Register::Locator(*source_index)), identifier.clone()))
+                ([Operand::Register(Register::Locator(index))], identifier.clone())
             } else {
-                Err(anyhow!("Expected single Access of type Member in source operand, found {:?}", accesses))
+                bail!("Expected a single entry identifier, found {:?}", accesses)
             }
         } else {
-            Err(anyhow!("Expected source operand of the form r<i>.<name>, found {:?}", source_operands))
-        }
+            bail!("Expected input to be of the form r<i>.<name>, found {:?}", operand)
+        };
+        
+        Ok(Self { 
+            operands: prepared_operands,
+            destination,
+            entry_identifier,
+            plaintext_type
+        })
     }
 
     /// Returns the opcode.
@@ -96,15 +91,13 @@ impl<N: Network> GetDynamicRecordInstruction<N> {
     }
 }
 
-impl<N: Network> GetDynamicRecordInstruction<N> {
+impl<N: Network> GetDynamicRecord<N> {
     /// Evaluates the instruction.
     pub fn evaluate(&self, stack: &impl StackTrait<N>, registers: &mut impl RegistersTrait<N>) -> Result<()> {
 
-        let (source_record, entry_identifier) = Self::check_and_get_input_output(&self.operands, &self.destination)?;
-
         // Retrieve the dynamic record
         let dynamic_record = {
-            let value = registers.load(stack, &source_record)?;
+            let value = registers.load(stack, &self.operands[0])?;
             if let Value::DynamicRecord(dynamic_record) = value {
                 dynamic_record
             } else {
@@ -113,10 +106,10 @@ impl<N: Network> GetDynamicRecordInstruction<N> {
         };
 
         let entry = if let Some(data) = dynamic_record.data() {
-            if let Some(entry) = data.get(&entry_identifier) {
+            if let Some(entry) = data.get(&self.entry_identifier) {
                 entry
             } else {
-                bail!("Entry {} not found in DynamicRecord", entry_identifier)
+                bail!("Entry {} not found in DynamicRecord", self.entry_identifier)
             }
         } else {
             bail!("DynamicRecord data has not been populated")
@@ -131,7 +124,7 @@ impl<N: Network> GetDynamicRecordInstruction<N> {
         ensure!(
             stack.matches_plaintext(&plaintext, &self.plaintext_type).is_ok(),
             "Type mismatch in DynamicRecord entry {:?}: expected {:?}, found {:?}",
-            entry_identifier,
+            self.entry_identifier,
             self.plaintext_type,
             entry
         );
@@ -146,11 +139,10 @@ impl<N: Network> GetDynamicRecordInstruction<N> {
         stack: &impl StackTrait<N>,
         registers: &mut impl RegistersCircuit<N, A>,
     ) -> Result<()> {
-        let (source_record, entry_identifier) = Self::check_and_get_input_output(&self.operands, &self.destination)?;
 
         // Retrieve the dynamic record
         let circuit_dynamic_record = {
-            let value = registers.load_circuit(stack, &source_record)?;
+            let value = registers.load_circuit(stack, &self.operands[0])?;
             if let circuit::Value::DynamicRecord(dynamic_record) = value {
                 dynamic_record
             } else {
@@ -158,18 +150,70 @@ impl<N: Network> GetDynamicRecordInstruction<N> {
             }
         };
 
-        let tree = circuit_dynamic_record.tree().as_ref().ok_or_else(|| anyhow!("DynamicRecord tree has not been populated"))?;
-        let data = circuit_dynamic_record.data().ok_or_else(|| anyhow!("DynamicRecord data has not been populated"))?;
+        let (console_entry, console_path) = match (circuit_dynamic_record.tree(), circuit_dynamic_record.data()) {
+            (Some(tree), Some(data)) => {
+                // Retrieving the entry
+                let (index, _, entry) = data.get_full(&self.entry_identifier).ok_or_else(|| anyhow!(
+                    "The dynamic record's data is present but does not contain entry entry {}",
+                    self.entry_identifier
+                ))?;
 
-        let (index, _, entry) = data.get_full(&entry_identifier).ok_or_else(|| anyhow!("Entry {} not found in DynamicRecord", entry_identifier))?;
+                // Constructing the leaf of the merkleized-data tree
+                let mut leaf = vec![self.entry_identifier.to_field()?];
+                leaf.extend(entry.to_fields()?);
 
+                // Computing the path (i. e. Merkle proof)
+                let path = tree.prove(index, &leaf)?;
+
+                ensure!(
+                    *path.leaf_index() as usize == index,
+                    "Entry {} has index {} in the dynamic record's data, but its leaf index in the dynamic record's Merkle tree is {}",
+                    self.entry_identifier,
+                    index,
+                    *path.leaf_index()
+                );
+
+                (entry.clone(), path.clone())
+            }
+            _ => {
+                // The data or tree can be missing
+                //   - during synthesis, where it is normal
+                //   - during execution, where it is an error (those fields should have been populated)
+                // Since we cannot tell the two cases apart, upon encountering missing fields we sample
+                // arbitary data as necessitated by synthesis and simply log the event.
+
+                let value = {
+                    let rng = &mut thread_rng();
+                    let address = Address::<N>::rand(rng);
+                    stack.sample_value(
+                        &address,
+                        &RegisterType::Plaintext(self.plaintext_type.clone()),
+                        rng
+                    )?
+                };
+
+                let entry = match value {
+                    // The visibility (Constant/Private/Public) of the entry is injected into
+                    // the circuit as a private variable (rather than a constant) and can therefore be
+                    // chosen arbitrarily here. The plaintext type of the entry, however, is injected
+                    // as a constant and must be set correctly here.
+                    Value::Plaintext(plaintext) => Entry::Public(plaintext),
+                    _ => bail!("Expected plaintext value while sampling an entry for a dynamic record, found {:?}", value)
+                };
+
+                let path = MerklePath::try_from((U64::new(0), vec![Field::<N>::zero(); RECORD_DATA_TREE_DEPTH as usize]))?;
+
+                (entry, path)
+
+                // TODO (dynamic_dispatch) decide whether we want to handle the case in which the data is present but the tree is not (in which case one could reconstruct the tree) or treat it as an error, as we are here. In principle, the data and try always go hand in hand (either both present or both absent), so this shouldn't occur; but there are situations we have little control of, such as when the dynamic is an input to the root transition.
+            }
+        };
         
-        // This verification is only a sanity check and not performed
-        // in-circuit. The fact that the in-circuit entry has the correct type
-        // is encoded into the circuit structure (and therefore the proving and
-        // verifying keys).
+        // This verification is only a sanity check and not performed in-circuit. The type of the
+        // in-circuit entry is encoded into the circuit structure (and therefore the proving and
+        // is encoded into the circuit structure (and therefore the proving and verifying keys).
         {
-            let plaintext = match entry {
+            let plaintext = match &console_entry {
                 Entry::Constant(plaintext) => plaintext,
                 Entry::Public(plaintext) => plaintext,
                 Entry::Private(plaintext) => plaintext,
@@ -177,34 +221,27 @@ impl<N: Network> GetDynamicRecordInstruction<N> {
             ensure!(
                 stack.matches_plaintext(&plaintext, &self.plaintext_type).is_ok(),
                 "Type mismatch in DynamicRecord entry {:?}: expected {:?}, found {:?}",
-                entry_identifier,
+                self.entry_identifier,
                 self.plaintext_type,
-                entry
+                console_entry
             );
         }
 
-        // Constructing the leaf of the merkleized-data tree
-        let mut console_leaf = vec![entry_identifier.to_field()?];
-        console_leaf.extend(entry.to_fields()?);
-
-        // Computing the path (i. e. Merkle proof) with native objects
-        let console_path = tree.prove(index, &console_leaf)?;
-
         // Loading the root of the merkleized-data tree
-        let root = circuit_dynamic_record.root();
+        let circuit_root = circuit_dynamic_record.root();
 
         // Constructing the in-circuit leaf in Private mode. An entry is
         // described by:
         // - its identifier, which is injected into the circuit as a constant
         //   Field element
         // - its visibility (Constant, Public or Private) which is injected as
-        //   two constant Boolean
+        //   two private Boolean
         // - its plaintext, whose variant and relevant identifiers (e. g. those
         //   inside structures) are injected as constants
-        let circuit_identifier = circuit::Identifier::constant(entry_identifier.clone());
-        let circuit_entry = circuit::Entry::new(Mode::Private, entry.clone());
+        let circuit_identifier = circuit::Identifier::constant(self.entry_identifier.clone());
+        let circuit_entry = circuit::Entry::new(Mode::Private, console_entry);
         let mut circuit_leaf = vec![circuit_identifier.to_field()];
-        circuit_leaf.extend(circuit_entry.to_fields());
+        circuit_leaf.extend(circuit_entry.to_fields_with_visibility_mode(Mode::Private));
 
         // Loading the in-circuit hashers
         let console_leaf_hasher = ConsoleLH::<A::Network>::setup("DynamicRecordLeafHasher").unwrap();
@@ -216,7 +253,7 @@ impl<N: Network> GetDynamicRecordInstruction<N> {
         let circuit_path = circuit::merkle_tree::MerklePath::new(Mode::Private, console_path);
 
         // Verifying the path inside the circuit
-        circuit_path.verify(&circuit_leaf_hasher, &circuit_path_hasher, &root, &circuit_leaf);
+        circuit_path.verify(&circuit_leaf_hasher, &circuit_path_hasher, &circuit_root, &circuit_leaf);
 
         let circuit_entry_plaintext = match circuit_entry {
             circuit::Entry::Constant(plaintext) => plaintext,
@@ -241,9 +278,6 @@ impl<N: Network> GetDynamicRecordInstruction<N> {
         _stack: &impl StackTrait<N>,
         _input_types: &[RegisterType<N>],
     ) -> Result<Vec<RegisterType<N>>> {
-        // Ensure the instruction is correctly defined.
-        Self::check_and_get_input_output(&self.operands, &self.destination)?;
-        
         // TODO (Antonio) should this return <TYPE> or r<j> if the instruction
         // is of the form
         //    get.dynamic.record r<k>.<name> into r<j> as <TYPE>
@@ -252,7 +286,7 @@ impl<N: Network> GetDynamicRecordInstruction<N> {
     }
 }
 
-impl<N: Network> Parser for GetDynamicRecordInstruction<N> {
+impl<N: Network> Parser for GetDynamicRecord<N> {
     /// Parses a string into an operation.
     fn parse(string: &str) -> ParserResult<Self> {
 
@@ -292,7 +326,7 @@ impl<N: Network> Parser for GetDynamicRecordInstruction<N> {
     }
 }
 
-impl<N: Network> FromStr for GetDynamicRecordInstruction<N> {
+impl<N: Network> FromStr for GetDynamicRecord<N> {
     type Err = Error;
 
     /// Parses a string into an operation.
@@ -309,44 +343,57 @@ impl<N: Network> FromStr for GetDynamicRecordInstruction<N> {
     }
 }
 
-impl<N: Network> Debug for GetDynamicRecordInstruction<N> {
+impl<N: Network> Debug for GetDynamicRecord<N> {
     /// Prints the operation as a string.
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         Display::fmt(self, f)
     }
 }
 
-impl<N: Network> Display for GetDynamicRecordInstruction<N> {
+impl<N: Network> Display for GetDynamicRecord<N> {
     /// Prints the operation to a string.
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         // Print the operation.
-        write!(f, "{} {} into {} as {}", Self::opcode(), self.operands[0], self.destination, self.plaintext_type)
+        write!(f, "{} {}.{} into {} as {}", Self::opcode(), self.operands[0], self.entry_identifier, self.destination, self.plaintext_type)
     }
 }
 
-impl<N: Network> FromBytes for GetDynamicRecordInstruction<N> {
+// TODO (Antonio) add serialization and deserialization tests.
+impl<N: Network> FromBytes for GetDynamicRecord<N> {
     /// Reads the operation from a buffer.
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
-        let source_operand = Operand::read_le(&mut reader)?;
+        let operand = Operand::read_le(&mut reader)?;
         let destination = Register::read_le(&mut reader)?;
+        let entry_identifier = Identifier::read_le(&mut reader)?;
         let plaintext_type = PlaintextType::read_le(&mut reader)?;
 
+        if !matches!(operand, Operand::Register(Register::Locator(_))) {
+            return Err(error(format!("Expected (prepared) operand of the form r<i>, found {}", operand)));
+        }
+
+        if !matches!(destination, Register::Locator(_)) {
+            return Err(error(format!("Expected destination  the form r<i>, found {}", destination)));
+        }
+
         // Return the operation.
-        Self::new(source_operand, destination, plaintext_type).map_err(error)
+        Ok(Self {
+            operands: [operand],
+            destination,
+            entry_identifier,
+            plaintext_type
+        })
     }
 }
 
-impl<N: Network> ToBytes for GetDynamicRecordInstruction<N> {
+impl<N: Network> ToBytes for GetDynamicRecord<N> {
     /// Writes the operation to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
-        if self.operands.len() != 1 {
-            return Err(error(format!("Expected one operand, found {}", self.operands.len())));
-        }
-
         // Write the source operand.
         self.operands[0].write_le(&mut writer)?;
         // Write the destination register.
         self.destination.write_le(&mut writer)?;
+        // Write the entry identifier.
+        self.entry_identifier.write_le(&mut writer)?;
         // Write the entry type.
         self.plaintext_type.write_le(&mut writer)
     }
@@ -363,97 +410,126 @@ mod tests {
 
         // ************ Literal types ************
 
-        let (remainder, instruction) = GetDynamicRecordInstruction::<CurrentNetwork>::parse("get.dynamic.record r0.outdated into r1 as bool").unwrap();
+        let (remainder, instruction) = GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r0.outdated into r1 as bool").unwrap();
         assert!(remainder.is_empty());
-        assert!(instruction.operands().len() == 1, "The number of operands is incorrect");
-        assert!(instruction.operands()[0] == Operand::Register(Register::Access(0, vec![Access::Member(Identifier::from_str("outdated").unwrap())])), "The source operand is incorrect");
-        assert!(instruction.destination == Register::Locator(1), "The destination register is incorrect");
-        assert!(instruction.plaintext_type == PlaintextType::from_str("bool").unwrap(), "The plaintext type is incorrect");
+        assert_eq!(instruction.operands().len(), 1);
+        assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
+        assert_eq!(instruction.destination, Register::Locator(1));
+        assert_eq!(instruction.entry_identifier, Identifier::from_str("outdated").unwrap());
+        assert_eq!(instruction.plaintext_type, PlaintextType::from_str("bool").unwrap());
         
-        let (remainder, instruction) = GetDynamicRecordInstruction::<CurrentNetwork>::parse("get.dynamic.record r0.middleman into r1 as address").unwrap();
+        let (remainder, instruction) = GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r0.middleman into r1 as address").unwrap();
         assert!(remainder.is_empty());
-        assert!(instruction.operands()[0] == Operand::Register(Register::Access(0, vec![Access::Member(Identifier::from_str("middleman").unwrap())])));
-        assert!(instruction.destination == Register::Locator(1));
-        assert!(instruction.plaintext_type == PlaintextType::from_str("address").unwrap());
+        assert_eq!(instruction.operands().len(), 1);
+        assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
+        assert_eq!(instruction.destination, Register::Locator(1));
+        assert_eq!(instruction.entry_identifier, Identifier::from_str("middleman").unwrap());
+        assert_eq!(instruction.plaintext_type, PlaintextType::from_str("address").unwrap());
         
-        let (remainder, instruction) = GetDynamicRecordInstruction::<CurrentNetwork>::parse("get.dynamic.record r0.sk into r1 as field").unwrap();
+        let (remainder, instruction) = GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r0.sk into r1 as field").unwrap();
         assert!(remainder.is_empty());
-        assert!(instruction.operands()[0] == Operand::Register(Register::Access(0, vec![Access::Member(Identifier::from_str("sk").unwrap())])));
-        assert!(instruction.destination == Register::Locator(1));
-        assert!(instruction.plaintext_type == PlaintextType::from_str("field").unwrap());
+        assert_eq!(instruction.operands().len(), 1);
+        assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
+        assert_eq!(instruction.destination, Register::Locator(1));
+        assert_eq!(instruction.entry_identifier, Identifier::from_str("sk").unwrap());
+        assert_eq!(instruction.plaintext_type, PlaintextType::from_str("field").unwrap());
         
-        let (remainder, instruction) = GetDynamicRecordInstruction::<CurrentNetwork>::parse("get.dynamic.record r0.pk into r1 as group").unwrap();
+        let (remainder, instruction) = GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r0.pk into r1 as group").unwrap();
         assert!(remainder.is_empty());
-        assert!(instruction.operands()[0] == Operand::Register(Register::Access(0, vec![Access::Member(Identifier::from_str("pk").unwrap())])));
-        assert!(instruction.destination == Register::Locator(1));
-        assert!(instruction.plaintext_type == PlaintextType::from_str("group").unwrap());
+        assert_eq!(instruction.operands().len(), 1);
+        assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
+        assert_eq!(instruction.destination, Register::Locator(1));
+        assert_eq!(instruction.entry_identifier, Identifier::from_str("pk").unwrap());
+        assert_eq!(instruction.plaintext_type, PlaintextType::from_str("group").unwrap());
         
-        let (remainder, instruction) = GetDynamicRecordInstruction::<CurrentNetwork>::parse("get.dynamic.record r0.crs_byte into r1 as u8").unwrap();
+        let (remainder, instruction) = GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r0.crs_byte into r1 as u8").unwrap();
         assert!(remainder.is_empty());
-        assert!(instruction.operands()[0] == Operand::Register(Register::Access(0, vec![Access::Member(Identifier::from_str("crs_byte").unwrap())])));
-        assert!(instruction.destination == Register::Locator(1));
-        assert!(instruction.plaintext_type == PlaintextType::from_str("u8").unwrap());
+        assert_eq!(instruction.operands().len(), 1);
+        assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
+        assert_eq!(instruction.destination, Register::Locator(1));
+        assert_eq!(instruction.entry_identifier, Identifier::from_str("crs_byte").unwrap());
+        assert_eq!(instruction.plaintext_type, PlaintextType::from_str("u8").unwrap());
         
-        let (remainder, instruction) = GetDynamicRecordInstruction::<CurrentNetwork>::parse("get.dynamic.record r0.size into r1 as u16").unwrap();
+        let (remainder, instruction) = GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r0.size into r1 as u16").unwrap();
         assert!(remainder.is_empty());
-        assert!(instruction.operands()[0] == Operand::Register(Register::Access(0, vec![Access::Member(Identifier::from_str("size").unwrap())])));
-        assert!(instruction.destination == Register::Locator(1));
-        assert!(instruction.plaintext_type == PlaintextType::from_str("u16").unwrap());
+        assert_eq!(instruction.operands().len(), 1);
+        assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
+        assert_eq!(instruction.destination, Register::Locator(1));
+        assert_eq!(instruction.entry_identifier, Identifier::from_str("size").unwrap());
+        assert_eq!(instruction.plaintext_type, PlaintextType::from_str("u16").unwrap());
         
-        let (remainder, instruction) = GetDynamicRecordInstruction::<CurrentNetwork>::parse("get.dynamic.record r0.register into r1 as u32").unwrap();
+        let (remainder, instruction) = GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r0.register into r1 as u32").unwrap();
         assert!(remainder.is_empty());
-        assert!(instruction.operands()[0] == Operand::Register(Register::Access(0, vec![Access::Member(Identifier::from_str("register").unwrap())])));
-        assert!(instruction.destination == Register::Locator(1));
-        assert!(instruction.plaintext_type == PlaintextType::from_str("u32").unwrap());
+        assert_eq!(instruction.operands().len(), 1);
+        assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
+        assert_eq!(instruction.destination, Register::Locator(1));
+        assert_eq!(instruction.entry_identifier, Identifier::from_str("register").unwrap());
+        assert_eq!(instruction.plaintext_type, PlaintextType::from_str("u32").unwrap());
 
-        let (remainder, instruction) = GetDynamicRecordInstruction::<CurrentNetwork>::parse("get.dynamic.record r0.crs_byte into r1 as u8").unwrap();
+        let (remainder, instruction) = GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r0.crs_byte into r1 as u8").unwrap();
         assert!(remainder.is_empty());
-        assert!(instruction.operands()[0] == Operand::Register(Register::Access(0, vec![Access::Member(Identifier::from_str("crs_byte").unwrap())])));
-        assert!(instruction.destination == Register::Locator(1));
-        assert!(instruction.plaintext_type == PlaintextType::from_str("u8").unwrap());
+        assert_eq!(instruction.operands().len(), 1);
+        assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
+        assert_eq!(instruction.destination, Register::Locator(1));
+        assert_eq!(instruction.entry_identifier, Identifier::from_str("crs_byte").unwrap());
+        assert_eq!(instruction.plaintext_type, PlaintextType::from_str("u8").unwrap());
 
-        let (remainder, instruction) = GetDynamicRecordInstruction::<CurrentNetwork>::parse("get.dynamic.record r0.size into r1 as u16").unwrap();
+        let (remainder, instruction) = GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r0.size into r1 as u16").unwrap();
         assert!(remainder.is_empty());
-        assert!(instruction.operands()[0] == Operand::Register(Register::Access(0, vec![Access::Member(Identifier::from_str("size").unwrap())])));
-        assert!(instruction.destination == Register::Locator(1));
-        assert!(instruction.plaintext_type == PlaintextType::from_str("u16").unwrap());
+        assert_eq!(instruction.operands().len(), 1);
+        assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
+        assert_eq!(instruction.destination, Register::Locator(1));
+        assert_eq!(instruction.entry_identifier, Identifier::from_str("size").unwrap());
+        assert_eq!(instruction.plaintext_type, PlaintextType::from_str("u16").unwrap());
         
-        let (remainder, instruction) = GetDynamicRecordInstruction::<CurrentNetwork>::parse("get.dynamic.record r0.register into r1 as u32").unwrap();
+        let (remainder, instruction) = GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r0.register into r1 as u32").unwrap();
         assert!(remainder.is_empty());
-        assert!(instruction.operands()[0] == Operand::Register(Register::Access(0, vec![Access::Member(Identifier::from_str("register").unwrap())])));
-        assert!(instruction.destination == Register::Locator(1));
-        assert!(instruction.plaintext_type == PlaintextType::from_str("u32").unwrap());
+        assert_eq!(instruction.operands().len(), 1);
+        assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
+        assert_eq!(instruction.destination, Register::Locator(1));
+        assert_eq!(instruction.entry_identifier, Identifier::from_str("register").unwrap());
+        assert_eq!(instruction.plaintext_type, PlaintextType::from_str("u32").unwrap());
 
-        let (remainder, instruction) = GetDynamicRecordInstruction::<CurrentNetwork>::parse("get.dynamic.record r0.usize into r1 as u64").unwrap();
+        let (remainder, instruction) = GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r0.usize into r1 as u64").unwrap();
         assert!(remainder.is_empty());
-        assert!(instruction.operands()[0] == Operand::Register(Register::Access(0, vec![Access::Member(Identifier::from_str("usize").unwrap())])));
-        assert!(instruction.destination == Register::Locator(1));
-        assert!(instruction.plaintext_type == PlaintextType::from_str("u64").unwrap());
+        assert_eq!(instruction.operands().len(), 1);
+        assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
+        assert_eq!(instruction.entry_identifier, Identifier::from_str("usize").unwrap());
+        assert_eq!(instruction.destination, Register::Locator(1));
+        assert_eq!(instruction.plaintext_type, PlaintextType::from_str("u64").unwrap());
         
-        let (remainder, instruction) = GetDynamicRecordInstruction::<CurrentNetwork>::parse("get.dynamic.record r0.long into r1 as u128").unwrap();
+        let (remainder, instruction) = GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r0.long into r1 as u128").unwrap();
         assert!(remainder.is_empty());
-        assert!(instruction.operands()[0] == Operand::Register(Register::Access(0, vec![Access::Member(Identifier::from_str("long").unwrap())])));
-        assert!(instruction.destination == Register::Locator(1));
-        assert!(instruction.plaintext_type == PlaintextType::from_str("u128").unwrap());
+        assert_eq!(instruction.operands().len(), 1);
+        assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
+        assert_eq!(instruction.entry_identifier, Identifier::from_str("long").unwrap());
+        assert_eq!(instruction.destination, Register::Locator(1));
+        assert_eq!(instruction.plaintext_type, PlaintextType::from_str("u128").unwrap());
 
         // ************ Other correct cases ************
-        let (remainder, instruction) = GetDynamicRecordInstruction::<CurrentNetwork>::parse("get.dynamic.record r3.banana into r3 as fruit_struct").unwrap();
+        let (remainder, instruction) = GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r3.banana into r3 as fruit_struct").unwrap();
         assert!(remainder.is_empty());
-        assert!(instruction.operands()[0] == Operand::Register(Register::Access(3, vec![Access::Member(Identifier::from_str("banana").unwrap())])));
-        assert!(instruction.destination == Register::Locator(3));
-        assert!(instruction.plaintext_type == PlaintextType::Struct(Identifier::from_str("fruit_struct").unwrap()));
+        assert_eq!(instruction.operands().len(), 1);
+        assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(3)));
+        assert_eq!(instruction.entry_identifier, Identifier::from_str("banana").unwrap());
+        assert_eq!(instruction.destination, Register::Locator(3));
+        assert_eq!(instruction.plaintext_type, PlaintextType::Struct(Identifier::from_str("fruit_struct").unwrap()));
 
-        let (remainder, instruction) = GetDynamicRecordInstruction::<CurrentNetwork>::parse("get.dynamic.record r1.apples into r1 as [fruit_struct; 20u32]").unwrap();
+        let (remainder, instruction) = GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r1.apples into r1 as [fruit_struct; 20u32]").unwrap();
         assert!(remainder.is_empty());
-        assert!(instruction.operands()[0] == Operand::Register(Register::Access(1, vec![Access::Member(Identifier::from_str("apples").unwrap())])));
-        assert!(instruction.destination == Register::Locator(1));
-        assert!(instruction.plaintext_type == PlaintextType::Array(ArrayType::from_str("[fruit_struct; 20u32]").unwrap()));
+        assert_eq!(instruction.operands().len(), 1);
+        assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(1)));
+        assert_eq!(instruction.entry_identifier, Identifier::from_str("apples").unwrap());
+        assert_eq!(instruction.destination, Register::Locator(1));
+        assert_eq!(instruction.plaintext_type, PlaintextType::Array(ArrayType::from_str("[fruit_struct; 20u32]").unwrap()));
 
-        let (remainder, instruction) = GetDynamicRecordInstruction::<CurrentNetwork>::parse("get.dynamic.record r1.dragonfruit_matrix into r0 as [[fruit_struct; 20u32]; 10u32]").unwrap();
+        let (remainder, instruction) = GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r45.dragonfruit_matrix into r49 as [[fruit_struct; 20u32]; 10u32]").unwrap();
         assert!(remainder.is_empty());
-        assert!(instruction.operands()[0] == Operand::Register(Register::Access(1, vec![Access::Member(Identifier::from_str("dragonfruit_matrix").unwrap())])));
-        assert!(instruction.destination == Register::Locator(0));
-        assert!(instruction.plaintext_type == PlaintextType::Array(ArrayType::from_str("[[fruit_struct; 20u32]; 10u32]").unwrap()));
+        assert_eq!(instruction.operands().len(), 1);
+        assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(45)));
+        assert_eq!(instruction.entry_identifier, Identifier::from_str("dragonfruit_matrix").unwrap());
+        assert_eq!(instruction.destination, Register::Locator(49));
+        assert_eq!(instruction.plaintext_type, PlaintextType::Array(ArrayType::from_str("[[fruit_struct; 20u32]; 10u32]").unwrap()));
 
         // ************ Incorrect cases ************
         let incorrect_cases = [
@@ -469,10 +545,14 @@ mod tests {
             "get.dynamic.record r1.apples into r0 field",
             // Incorrect: no entry type
             "get.dynamic.record r1.apples into r0 as",
+            // Incorrect: wrong access type access
+            "get.dynamic.record r1[2u32] into r0 as fruit_struct",
+            // Incorrect: finer access than the allowed entry name
+            "get.dynamic.record r1.grape_vine[70u32] into r0 as fruit_struct",
         ];
         
         for case in incorrect_cases {
-            assert!(GetDynamicRecordInstruction::<CurrentNetwork>::parse(case).is_err());
+            assert!(GetDynamicRecord::<CurrentNetwork>::parse(case).is_err());
         }
     }
 }

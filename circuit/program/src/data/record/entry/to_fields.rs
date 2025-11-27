@@ -19,7 +19,7 @@ use super::*;
 impl<A: Aleo> Entry<A, Plaintext<A>> {
 
     /// Returns this entry as a list of field elements.
-    fn to_fields_with_visibility_mode(&self, visibility_mode: Mode) -> Vec<Field<A>> {
+    pub fn to_fields_with_visibility_mode(&self, visibility_mode: Mode) -> Vec<Field<A>> {
 
         // Encode the data as little-endian bits.
         let mut bits_le = vec![];
