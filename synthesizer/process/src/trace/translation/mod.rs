@@ -91,7 +91,13 @@ impl<N: Network> Translation<N> {
 
         // Traversal order only affects the translation count appearing as a public input in the translation circuit.
         // Order is irrelevant as long as it is consistent between the prover and verifier. (cf. Translation::prepare)
-        for transition in transitions {
+        
+        // TODO (Antonio) remove enumerate
+        for (i, transition) in transitions.rev().enumerate() {
+
+            // TODO (Antonio) remove
+            println!(" - transition {i}: {}/{}", transition.program_id(), transition.function_name());
+
             let (_, callee_function_core) = transition_map
                 .get(transition.id())
                 .ok_or_else(|| anyhow!("Transition {} from execution not found transition map", transition.id()))?;

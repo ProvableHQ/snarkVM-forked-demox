@@ -93,6 +93,8 @@ fn test_translation(
     let nitrogen_pump_function_name = Identifier::<CurrentNetwork>::from_str("nitrogen_pump").unwrap();
     let get_external_liters_function_name = Identifier::<CurrentNetwork>::from_str("get_external_liters").unwrap();
     let gas_pipe_function_name = Identifier::<CurrentNetwork>::from_str("gas_pipe").unwrap();
+    let static_gas_leak_function_name = Identifier::<CurrentNetwork>::from_str("static_gas_leak").unwrap();
+    let get_dynamic_liters_from_gas_function_name = Identifier::<CurrentNetwork>::from_str("get_dynamic_liters_from_gas").unwrap();
 
     let get_liquid_liters_function_field = get_liquid_liters_function_name.to_field().unwrap();
     let get_gas_liters_function_field = get_gas_liters_function_name.to_field().unwrap();
@@ -100,6 +102,8 @@ fn test_translation(
     let nitrogen_pump_function_field = nitrogen_pump_function_name.to_field().unwrap();
     let get_external_liters_function_field = get_external_liters_function_name.to_field().unwrap();
     let gas_pipe_function_field = gas_pipe_function_name.to_field().unwrap();
+    let static_gas_leak_function_field = static_gas_leak_function_name.to_field().unwrap();
+    let get_dynamic_liters_from_gas_function_field = get_dynamic_liters_from_gas_function_name.to_field().unwrap();
 
     let program_a_string = format!(
         r"
@@ -113,7 +117,7 @@ fn test_translation(
         call.dynamic {program_b_name_field} {network_field} {get_liquid_liters_function_field} with r0 (as dynamic.record) into r1 (as u64.public);
         output r1 as u64.public;
     
-    function get_dynamic_liters_from_gas:
+    function {get_dynamic_liters_from_gas_function_name}:
         input r0 as dynamic.record;
         call.dynamic {program_b_name_field} {network_field} {get_gas_liters_function_field} with r0 (as dynamic.record) into r1 (as u64.public);
         output r1 as u64.public;
@@ -135,6 +139,14 @@ fn test_translation(
     function {gas_pipe_function_name}:
         input r0 as {program_b_name_str}.aleo/gas_container.record;
         output r0 as {program_b_name_str}.aleo/gas_container.record;
+
+    // Receive a dynamic blob of gas and pass it to another function for leaking,
+    // then receive it and measure its liters with yet another function
+    function dynamic_gas_leak:
+        input r0 as dynamic.record;
+        call.dynamic {program_b_name_field} {network_field} {static_gas_leak_function_field} with r0 (as dynamic.record) into r1 (as dynamic.record);
+        call.dynamic {program_a_name_field} {network_field} {get_dynamic_liters_from_gas_function_field} with r1 (as dynamic.record) into r2 (as u64.public);
+        output r2 as u64.public;
 
     constructor:
         assert.eq true true;
@@ -198,6 +210,13 @@ fn test_translation(
     function pump_and_send_through_pipe:
         input r0 as dynamic.record;
         call.dynamic {program_a_name_field} {network_field} {gas_pipe_function_field} with r0 (as dynamic.record) into r1 (as dynamic.record);
+    
+    // Consume a gas record and produce a new one containing 10 fewer liters
+    function static_gas_leak:
+        input r0 as gas_container.record;
+        // sub r0.liters 10u64 into r1;
+        cast r0.owner r0.liters r0.flammable into r1 as gas_container.record;
+        output r1 as gas_container.record;
 
     constructor:
         assert.eq true true;
@@ -1222,15 +1241,11 @@ fn test_conditional_execution() {
 // 
 // Single-translation test cases (O: coded, P: passing)
 // P input dynamic -> static external
-// O input dynamic -> static non-external
+// P input dynamic -> static non-external
 // P output static non-external -> dynamic
-// O output static external -> dynamic
-// 
-// Double-translation test cases
-// - input dynamic -> dynamic (no translation; check dynamic-record InputID changes as expected)
-// - input static -> static (no translation)
+// P output static external -> dynamic
 // Double-translation test cases (non-exhaustive)
-// - input static -> dynamic subsequently passed as input dynamic -> static
+// - input static-external -> dynamic subsequently passed as input dynamic -> static
 // - output static -> dynamic subsequently passed as output dynamic -> static
 // Polimorphy
 // - input static-type-1 -> dynamic, then static-type-2 -> dynamic (e. g. controlled by a boolean private input)
@@ -1353,6 +1368,48 @@ fn test_translation_output_external_dynamic() {
         &caller_private_key,
         "gas_manager.aleo",
         "pump_and_send_through_pipe",
+        None,
+        Some(r0_static),None,
+        rng
+    );
+}
+
+#[test]
+fn test_translation_triple() {
+    // Before root call: pump a gas_container.record
+    // Root call:
+    //    - Receive as input a dynamic record corresponding to the above static one
+    //    - Pass it to static_gas_leak, which consumes a static gas_container.record (first translation) and produces a new one with 10 fewer liters.
+    //    - Receive as output the new static record as dynamic (second translation)
+    //    - Call get_dynamic_liters_from_gas, which receives a dynamic record (no translation) and calls get_gas_liters, which in turn expects an static record (third translation)
+    //
+    // This also checks consistency in the traversal order of translation tasks for the prover and verifier.
+
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
+
+    let record_static_str = format!(
+        r#"{{
+        owner: {caller_address}.private,
+        liters: 333u64.public,
+        flammable: true.private,
+        _nonce: 0group.public,
+        _version: 1u8.public
+    }}"#
+    );
+
+    // Construct the static and dynamic records.
+    let r0_static = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_str(&record_static_str).unwrap();
+
+    // Input and expected output (10 liters have leaked)
+    let expected_output = Plaintext::<CurrentNetwork>::from_str("323u64").unwrap();
+
+    test_translation(
+        &caller_private_key,
+        "flow.aleo",
+        "dynamic_gas_leak",
         None,
         Some(r0_static),None,
         rng

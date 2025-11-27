@@ -32,6 +32,16 @@ impl<N: Network> Translation<N> {
 
         let mut translation_count = 0;
 
+        for (i, transition) in transitions.iter().enumerate() {
+            println!(" - transition {i}: {}/{}", transition.program_id(), transition.function_name());
+
+            if let Some(translation_tasks) = self.translation_tasks.get(transition.id()) {
+                for (j, translation_task) in translation_tasks.iter().enumerate() {
+                    println!("   - translation task {j}: {}", translation_task.id_dynamic);
+                }
+            }
+        }
+
         // TODO (dynamic_dispatch) so far we only cover translation case 1: input dynamic -> static
         // Traversal order only affects the translation count appearing as a public input in the translation circuit.
         // Order is irrelevant as long as it is consistent between the prover and verifier. (cf. Translation::prepare_verifier_inputs)
