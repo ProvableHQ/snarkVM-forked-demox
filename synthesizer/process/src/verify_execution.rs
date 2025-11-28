@@ -618,7 +618,7 @@ impl<N: Network> Process<N> {
     ///
     /// The reverse call graph is a mapping of child transition IDs to parent transition IDs.
     /// Note: Each child transition only has one parent transition, by definition.
-    fn reverse_call_graph(
+    pub(crate) fn reverse_call_graph(
         call_graph: &HashMap<N::TransitionID, Vec<N::TransitionID>>,
     ) -> HashMap<N::TransitionID, N::TransitionID> {
         // Initialize a map for the reverse call graph.

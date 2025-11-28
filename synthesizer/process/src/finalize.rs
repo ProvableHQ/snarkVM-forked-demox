@@ -47,6 +47,12 @@ impl<N: Network> Process<N> {
         for (function_name, (verifying_key, _)) in deployment.verifying_keys() {
             stack.insert_verifying_key(function_name, verifying_key.clone())?;
         }
+
+        // TODO (Antonio) remove
+        for (record_name, (verifying_key, _)) in deployment.translation_verifying_keys() {
+            println!(" * Verifying key for {}: {}", record_name, verifying_key.id);
+        }
+        
         // Insert the translation verifying keys.
         for (record_name, (verifying_key, _)) in deployment.translation_verifying_keys() {
             stack.insert_translation_verifying_key(record_name, verifying_key.clone())?;

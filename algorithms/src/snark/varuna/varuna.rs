@@ -378,6 +378,13 @@ where
         let mut public_inputs = BTreeMap::new(); // inputs need to live longer than the rest of prover_state
         let num_unique_circuits = keys_to_constraints.len();
         let mut circuit_ids = Vec::with_capacity(num_unique_circuits);
+
+        // TODO (Antonio) remove
+        println!("Batch sizes");
+        for key in keys_to_constraints.keys() {
+            println!(" - {}: {}", key.circuit_verifying_key.id, prover_state.batch_size(&key.circuit).unwrap());
+        }
+        
         for pk in keys_to_constraints.keys() {
             let batch_size = prover_state.batch_size(&pk.circuit).ok_or(anyhow!("Batch size not found."))?;
             let public_input = prover_state.public_inputs(&pk.circuit).ok_or(anyhow!("Public input not found."))?;

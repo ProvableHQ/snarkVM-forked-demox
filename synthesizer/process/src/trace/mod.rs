@@ -164,7 +164,7 @@ impl<N: Network> Trace<N> {
     pub fn prepare(&mut self, query: &dyn QueryTrait<N>) -> Result<()> {
         // Compute the inclusion and translation assignments.
         let (inclusion_assignments, global_state_root) = self.inclusion_tasks.prepare(&self.transitions, query)?;
-        let translation_assignments = self.translation_tasks.prepare(&self.transitions)?;
+        let translation_assignments = self.translation_tasks.prepare(&self.transitions, &self.call_graph)?;
 
         // Store the inclusion and translation assignments and global state root.
         self.inclusion_assignments

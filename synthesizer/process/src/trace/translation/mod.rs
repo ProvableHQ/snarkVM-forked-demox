@@ -89,7 +89,7 @@ impl<N: Network> Translation<N> {
 
         let mut translation_count: u16 = 0;
 
-        // Traversal order only affects the translation count appearing as a public input in the translation circuit.
+        // Traversal order affects the translation count as well as the internal order of each batch input to proving/verification.
         // Order is irrelevant as long as it is consistent between the prover and verifier. (cf. Translation::prepare)
         
         // TODO (Antonio) remove enumerate
