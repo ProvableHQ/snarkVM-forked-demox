@@ -615,6 +615,7 @@ impl<N: Network> RegisterTypes<N> {
             Opcode::Serialize(opcode) => Self::check_serialize_opcode(opcode, instruction)?,
             Opcode::Deserialize(opcode) => Self::check_deserialize_opcode(opcode, instruction)?,
             // TODO (Antonio) how to handle GetDynamicRecord here?
+            // TODO (dynamic_dispatch) cf. above
             Opcode::GetDynamicRecord(_) => (),
         }
         Ok(())

@@ -91,12 +91,7 @@ impl<N: Network> Translation<N> {
 
         // Traversal order affects the translation count as well as the internal order of each batch input to proving/verification.
         // Order is irrelevant as long as it is consistent between the prover and verifier. (cf. Translation::prepare)
-        
-        // TODO (Antonio) remove enumerate
-        for (i, transition) in transitions.enumerate() {
-
-            // TODO (Antonio) remove
-            println!(" - transition {i}: {}/{}", transition.program_id(), transition.function_name());
+        for transition in transitions {
 
             let (_, callee_function_core) = transition_map
                 .get(transition.id())

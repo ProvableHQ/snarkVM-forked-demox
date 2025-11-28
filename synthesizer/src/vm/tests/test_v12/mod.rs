@@ -1629,19 +1629,6 @@ fn test_translation_traversal_consistency() {
 
     add_and_test(&vm, &caller_private_key, &[transaction_mint_a, transaction_mint_b_1, transaction_mint_b_2], rng);
 
-    // TODO (Antonio) remove:
-    println!("Function field to name dictionary:");
-    for (field, name) in [
-        (quadruple_caller_function_field, "quadruple_caller"),
-        (double_caller_one_zero_function_field, "double_caller_one_zero"),
-        (leaf_two_one_function_field, "leaf_two_one"),
-        (leaf_one_two_function_field, "leaf_one_two"),
-        (leaf_one_one_function_field, "leaf_one_one"),
-        (leaf_zero_one_function_field, "leaf_zero_one"),
-    ]{
-        println!("{:?}: {:?}", field, name);
-    }
-
     let transaction = vm.execute(
         &caller_private_key,
         ("quotes.aleo", "quadruple_caller"),
@@ -1656,20 +1643,7 @@ fn test_translation_traversal_consistency() {
         rng,
     ).unwrap();
 
-    // TODO (Antonio) remove
-    for transition in transaction.transitions() {
-        println!(" - transition {}: {}/{}", transition.id(), transition.program_id(), transition.function_name());
-        for (i, input_id) in transition.input_ids().enumerate() {
-            println!("   - input {i}: {:?}", input_id);
-        }
-        for (i,output_id) in transition.output_ids().enumerate() {
-            println!("   - output {i}: {:?}", output_id);
-        }
-    }
-
     add_and_test(&vm, &caller_private_key, &[transaction], rng);
-
-    println!("THINGS CHEGK OUT");
 }
 
 /************************** get.dynamic.record test cases ***************************/
