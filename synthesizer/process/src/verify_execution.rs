@@ -311,7 +311,7 @@ impl<N: Network> Process<N> {
         // If there are function calls, append their inputs and outputs.
         let child_transition_ids = call_graph.get(transition.id()).unwrap();
         let parent_function = transition_map.get(transition.id()).map(|(_, function)| function.clone());
-        
+
         let parent_function_calls = match parent_function {
             Some(function) => function
                 .instructions()

@@ -171,10 +171,7 @@ impl<N: Network> Translation<N> {
                                 ],
                                 fields_translation_count,
                                 fields_input_output_index,
-                                vec![
-                                    field_id_static,
-                                    field_id_dynamic
-                                ],
+                                vec![field_id_static, field_id_dynamic],
                             ]
                             .into_iter()
                             .flatten()
@@ -226,10 +223,7 @@ impl<N: Network> Translation<N> {
                                 ],
                                 fields_translation_count,
                                 fields_input_output_index,
-                                vec![
-                                    field_id_static,
-                                    field_id_dynamic
-                                ],
+                                vec![field_id_static, field_id_dynamic],
                             ]
                             .into_iter()
                             .flatten()
@@ -237,11 +231,8 @@ impl<N: Network> Translation<N> {
 
                             let program_id = record_locator.program_id();
                             let record_name = record_locator.resource();
-                            
-                            batch_verifier_inputs
-                                .entry((*program_id, *record_name))
-                                .or_default()
-                                .push(verifier_inputs);
+
+                            batch_verifier_inputs.entry((*program_id, *record_name)).or_default().push(verifier_inputs);
 
                             translation_count += 1;
                         }
@@ -251,16 +242,8 @@ impl<N: Network> Translation<N> {
                         (Input::ExternalRecord(..), Input::DynamicRecord(..), ValueType::DynamicRecord) => {
                             bail!("Translation of (external) input records to dynamic records is not supported");
                         }
-                        (
-                            Input::ExternalRecord(..),
-                            Input::Record(..),
-                            ValueType::Record(..),
-                        ) |
-                        (
-                            Input::Record(..),
-                            Input::ExternalRecord(..),
-                            ValueType::ExternalRecord(..),
-                        ) => {
+                        (Input::ExternalRecord(..), Input::Record(..), ValueType::Record(..))
+                        | (Input::Record(..), Input::ExternalRecord(..), ValueType::ExternalRecord(..)) => {
                             // This is an admissible type combination which requires no translation
                         }
                         // TODO (dynamic_dispatch): if this check is redundant with other ones already in place, remove it
@@ -348,10 +331,7 @@ impl<N: Network> Translation<N> {
                                 ],
                                 fields_translation_count,
                                 fields_input_output_index,
-                                vec![
-                                    field_id_static,
-                                    field_id_dynamic
-                                ],
+                                vec![field_id_static, field_id_dynamic],
                             ]
                             .into_iter()
                             .flatten()
@@ -403,10 +383,7 @@ impl<N: Network> Translation<N> {
                                 ],
                                 fields_translation_count,
                                 fields_input_output_index,
-                                vec![
-                                    field_id_static,
-                                    field_id_dynamic
-                                ],
+                                vec![field_id_static, field_id_dynamic],
                             ]
                             .into_iter()
                             .flatten()
@@ -415,10 +392,7 @@ impl<N: Network> Translation<N> {
                             let program_id = record_locator.program_id();
                             let record_name = record_locator.resource();
 
-                            batch_verifier_inputs
-                                .entry((*program_id, *record_name))
-                                .or_default()
-                                .push(verifier_inputs);
+                            batch_verifier_inputs.entry((*program_id, *record_name)).or_default().push(verifier_inputs);
 
                             translation_count += 1;
                         }
@@ -428,16 +402,8 @@ impl<N: Network> Translation<N> {
                         (Output::ExternalRecord(..), Output::DynamicRecord(..), ValueType::DynamicRecord) => {
                             bail!("Translation of output dynamic records to (external) records is not supported");
                         }
-                        (
-                            Output::ExternalRecord(..),
-                            Output::Record(..),
-                            ValueType::Record(..),
-                        ) |
-                        (
-                            Output::Record(..),
-                            Output::ExternalRecord(..),
-                            ValueType::ExternalRecord(..),
-                        ) => {
+                        (Output::ExternalRecord(..), Output::Record(..), ValueType::Record(..))
+                        | (Output::Record(..), Output::ExternalRecord(..), ValueType::ExternalRecord(..)) => {
                             // This is an admissible type combination which requires no translation
                         }
                         // TODO (dynamic_dispatch): if this check is redundant with other ones already in place, remove it

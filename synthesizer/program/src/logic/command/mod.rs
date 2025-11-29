@@ -62,11 +62,18 @@ pub enum Command<N: Network> {
     Await(Await<N>),
     /// Returns true if the `key` operand is present in `mapping`, and stores the result into `destination`.
     Contains(Contains<N>),
+    /// Resolves the `program` and `mapping` operands, returns true if the `key` operand is present in the `mapping`, and stores the result into `destination`.
+    ContainsDynamic(ContainsDynamic<N>),
     /// Gets the value stored at the `key` operand in `mapping` and stores the result into `destination`.
     Get(Get<N>),
+    /// Resolves the `program` and `mapping` operands, gets the value stored at the `key` operand in `mapping`, and stores the result into `destination`.
+    GetDynamic(GetDynamic<N>),
     /// Gets the value stored at the `key` operand in `mapping` and stores the result into `destination`.
-    /// If the key is not present, `default` is stored `destination`.
+    /// If the key is not present, `default` is stored into `destination`.
     GetOrUse(GetOrUse<N>),
+    /// Resolves the `program` and `mapping` operands, gets the value stored at the `key` operand in `mapping`, and stores the result into `destination`.
+    /// If the key is not present, `default` is stored into `destination`.
+    GetOrUseDynamic(GetOrUseDynamic<N>),
     /// Generates a random value using the `rand.chacha` command and stores the result into `destination`.
     RandChaCha(RandChaCha<N>),
     /// Removes the (`key`, `value`) entry from the `mapping`.

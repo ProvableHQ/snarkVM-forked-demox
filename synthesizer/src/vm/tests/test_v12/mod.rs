@@ -51,9 +51,9 @@ fn add_and_test(
     rng: &mut TestRng,
 ) {
     for (index, transaction) in transactions.iter().enumerate() {
-        vm.check_transaction(transaction, None, rng).map_err(|e| {
-            anyhow!("Transaction {index} check failed: {e}")
-        }).unwrap();
+        vm.check_transaction(transaction, None, rng)
+            .map_err(|e| anyhow!("Transaction {index} check failed: {e}"))
+            .unwrap();
     }
     let block = sample_next_block(vm, caller_private_key, transactions, rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), transactions.len());
@@ -282,13 +282,12 @@ fn test_translation(
     add_and_test(&vm, caller_private_key, &[transaction.clone()], rng);
 
     if let Some(expected_public_outputs) = expected_public_outputs {
-        
         println!("Asserting output correctness on {} expected public outputs...", expected_public_outputs.len());
 
         // Note the last transition is the fee transition
         let num_transitions = transaction.transitions().count();
         let root_transition = transaction.transitions().nth(num_transitions - 2).unwrap();
-    
+
         let public_outputs = root_transition
             .outputs()
             .iter()
@@ -1219,13 +1218,13 @@ fn test_conditional_execution() {
 /************************** Translation test cases ***************************/
 
 // TODO (dynamic_dispatch) remove the legend once working
-// 
+//
 // Single-translation test cases (O: coded, P: passing)
 // P input dynamic -> static external
 // O input dynamic -> static non-external
 // P output static non-external -> dynamic
 // O output static external -> dynamic
-// 
+//
 // Double-translation test cases
 // - input dynamic -> dynamic (no translation; check dynamic-record InputID changes as expected)
 // - input static -> static (no translation)
@@ -1354,7 +1353,8 @@ fn test_translation_output_external_dynamic() {
         "gas_manager.aleo",
         "pump_and_send_through_pipe",
         None,
-        Some(r0_static),None,
-        rng
+        Some(r0_static),
+        None,
+        rng,
     );
 }

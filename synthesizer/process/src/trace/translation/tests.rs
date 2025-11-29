@@ -16,7 +16,7 @@
 use circuit::{environment::compare_constraints, prelude::count_is};
 use console::{
     program::{Plaintext, ProgramID, Record},
-    types::{Field, U16, Address},
+    types::{Address, Field, U16},
 };
 
 use crate::{
@@ -104,7 +104,8 @@ fn test_translation_simple() {
         _version: 1u8.public
     }"#;
 
-    let translation_assignment = translation_assignment_from_record_str(record_static_str, false, false, None, &mut rng);
+    let translation_assignment =
+        translation_assignment_from_record_str(record_static_str, false, false, None, &mut rng);
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
     print_rc1s_data("simple");
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
@@ -174,7 +175,8 @@ fn test_translation_recursive() {
     }"#;
 
     // is_input = false
-    let translation_assignment = translation_assignment_from_record_str(record_static_str, false, false, None, &mut rng);
+    let translation_assignment =
+        translation_assignment_from_record_str(record_static_str, false, false, None, &mut rng);
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
     print_rc1s_data("recursive");
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
@@ -261,7 +263,8 @@ fn test_translation_complex() {
     }"#;
 
     // is_input = false
-    let translation_assignment = translation_assignment_from_record_str(record_static_str, false, false, None, &mut rng);
+    let translation_assignment =
+        translation_assignment_from_record_str(record_static_str, false, false, None, &mut rng);
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
     print_rc1s_data("complex");
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
@@ -527,7 +530,8 @@ fn test_external_translation() {
 
     let mut rng = TestRng::default();
 
-    let record_static_str = format!("
+    let record_static_str = format!(
+        "
         {{
             owner: {}.private,
             location_x: {}.public,
@@ -598,7 +602,8 @@ fn test_external_translation() {
     let tvk = Uniform::rand(&mut rng);
     let input_output_index = Uniform::rand(&mut rng);
 
-    let external_record_input_id = InputID::<CurrentNetwork>::external_record(function_id, &record_static_value, tvk, input_output_index).unwrap();
+    let external_record_input_id =
+        InputID::<CurrentNetwork>::external_record(function_id, &record_static_value, tvk, input_output_index).unwrap();
     let external_record_output_id = {
         let mut preimage = Vec::new();
         preimage.push(function_id);
