@@ -16,10 +16,10 @@
 use crate::{FinalizeStoreTrait, Opcode, Operand, RegistersTrait, StackTrait};
 use console::{
     network::prelude::*,
-    program::{Identifier, Literal, Plaintext, ProgramID, Register, Value},
+    program::{Identifier, Literal, Plaintext, PlaintextType, ProgramID, Register, Value},
 };
 
-/// A dynamic get command that uses the provided default in case of failure, e.g. `get.or_use.dynamic r0.r1/r2[r3] r4 into r5;`.
+/// A dynamic get command that uses the provided default in case of failure, e.g. `get.or_use.dynamic r0.r1/r2[r3] r4 into r5 as boolean;`.
 /// Resolves the `program` and `mapping` operands, gets the value stored at the `key` operand in `mapping`, and stores the result into `destination`.
 /// If the key is not present, `default` is stored in `destination`.
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -28,6 +28,8 @@ pub struct GetOrUseDynamic<N: Network> {
     operands: [Operand<N>; 5],
     /// The destination register.
     destination: Register<N>,
+    /// The destination type.
+    destination_type: PlaintextType<N>,
 }
 
 impl<N: Network> GetOrUseDynamic<N> {
@@ -78,6 +80,12 @@ impl<N: Network> GetOrUseDynamic<N> {
     pub const fn destination(&self) -> &Register<N> {
         &self.destination
     }
+
+    /// Returns the destination type.
+    #[inline]
+    pub const fn destination_type(&self) -> &PlaintextType<N> {
+        &self.destination_type
+    }
 }
 
 impl<N: Network> GetOrUseDynamic<N> {
@@ -118,6 +126,24 @@ impl<N: Network> GetOrUseDynamic<N> {
         // Load the operand as a plaintext.
         let key = registers.load_plaintext(stack, self.key())?;
 
+        // Get the mapping definition.
+        let mapping = stack.get_stack_unchecked(&program_id)?.program().get_mapping(&mapping_name)?;
+        // Get the key type.
+        let mapping_key_type = mapping.key().plaintext_type();
+        // Ensure the key operand matches the mapping key type.
+        ensure!(
+            stack.matches_plaintext(&key, mapping_key_type).is_ok(),
+            "Expected the key to be of type '{mapping_key_type}', found '{key}'."
+        );
+        // Get the mapping value type.
+        let mapping_value_type = mapping.value().plaintext_type();
+        // Ensure the destination type matches the mapping value type.
+        ensure!(
+            &self.destination_type == mapping_value_type,
+            "Expected the destination type to be '{mapping_value_type}', found '{}'.",
+            self.destination_type
+        );
+
         // Retrieve the value from storage as a literal.
         let value = match store.get_value_speculative(program_id, mapping_name, &key)? {
             Some(Value::Plaintext(plaintext)) => Value::Plaintext(plaintext),
@@ -128,6 +154,18 @@ impl<N: Network> GetOrUseDynamic<N> {
             // If a key does not exist, then use the default value.
             None => Value::Plaintext(registers.load_plaintext(stack, self.default())?),
         };
+
+        // Check that the value type matches the destination type.
+        match &value {
+            Value::Plaintext(plaintext) => {
+                ensure!(
+                    stack.matches_plaintext(plaintext, self.destination_type()).is_ok(),
+                    "Expected the value to be of type '{}', found '{plaintext}' in 'get.or_use.dynamic'",
+                    self.destination_type()
+                )
+            }
+            _ => bail!("Expected a plaintext value in 'get.or_use.dynamic'"),
+        }
 
         // Assign the value to the destination register.
         registers.store(stack, &self.destination, value)?;
@@ -186,10 +224,23 @@ impl<N: Network> Parser for GetOrUseDynamic<N> {
 
         // Parse the whitespace from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
+        // Parse the "as" keyword from the string.
+        let (string, _) = tag("as")(string)?;
+        // Parse the whitespace from the string.
+        let (string, _) = Sanitizer::parse_whitespaces(string)?;
+        // Parse the destination type from the string.
+        let (string, destination_type) = PlaintextType::parse(string)?;
+
+        // Parse the whitespace from the string.
+        let (string, _) = Sanitizer::parse_whitespaces(string)?;
         // Parse the ";" from the string.
         let (string, _) = tag(";")(string)?;
 
-        Ok((string, Self { operands: [program_name, program_network, mapping_name, key, default], destination }))
+        Ok((string, Self {
+            operands: [program_name, program_network, mapping_name, key, default],
+            destination,
+            destination_type,
+        }))
     }
 }
 
@@ -234,7 +285,7 @@ impl<N: Network> Display for GetOrUseDynamic<N> {
             self.default()
         )?;
         // Print the destination register.
-        write!(f, "{};", self.destination)
+        write!(f, "{} as {};", self.destination, self.destination_type)
     }
 }
 
@@ -253,8 +304,14 @@ impl<N: Network> FromBytes for GetOrUseDynamic<N> {
         let default = Operand::read_le(&mut reader)?;
         // Read the destination register.
         let destination = Register::read_le(&mut reader)?;
+        // Read the destination type.
+        let destination_type = PlaintextType::read_le(&mut reader)?;
         // Return the command.
-        Ok(Self { operands: [program_name, program_network, mapping_name, key, default], destination })
+        Ok(Self {
+            operands: [program_name, program_network, mapping_name, key, default],
+            destination,
+            destination_type,
+        })
     }
 }
 
@@ -272,7 +329,9 @@ impl<N: Network> ToBytes for GetOrUseDynamic<N> {
         // Write the default operand.
         self.default().write_le(&mut writer)?;
         // Write the destination register.
-        self.destination.write_le(&mut writer)
+        self.destination.write_le(&mut writer)?;
+        // Write the destination type.
+        self.destination_type.write_le(&mut writer)
     }
 }
 
@@ -286,7 +345,7 @@ mod tests {
     #[test]
     fn test_parse() {
         let (string, get) =
-            GetOrUseDynamic::<CurrentNetwork>::parse("get.or_use.dynamic r0.r1/r2[r3] r4 into r5;").unwrap();
+            GetOrUseDynamic::<CurrentNetwork>::parse("get.or_use.dynamic r0.r1/r2[r3] r4 into r5 as boolean;").unwrap();
         assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
         assert_eq!(get.operands().len(), 5, "The number of operands is incorrect");
         assert_eq!(get.program_name(), &Operand::Register(Register::Locator(0)), "The first operand is incorrect");
@@ -295,12 +354,13 @@ mod tests {
         assert_eq!(get.key(), &Operand::Register(Register::Locator(3)), "The fourth operand is incorrect");
         assert_eq!(get.default(), &Operand::Register(Register::Locator(4)), "The fifth operand is incorrect");
         assert_eq!(get.destination, Register::Locator(5), "The destination register is incorrect");
+        assert_eq!(get.destination_type, PlaintextType::Boolean, "The destination type is incorrect");
     }
 
     #[test]
     fn test_from_bytes() {
         let (string, get) =
-            GetOrUseDynamic::<CurrentNetwork>::parse("get.or_use.dynamic r0.r1/r2[r3] r4 into r5;").unwrap();
+            GetOrUseDynamic::<CurrentNetwork>::parse("get.or_use.dynamic r0.r1/r2[r3] r4 into r5 as Foo;").unwrap();
         assert!(string.is_empty());
         let bytes_le = get.to_bytes_le().unwrap();
         let result = GetOrUseDynamic::<CurrentNetwork>::from_bytes_le(&bytes_le[..]);

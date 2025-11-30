@@ -111,6 +111,16 @@ impl<N: Network> ContainsDynamic<N> {
         // Load the operand as a plaintext.
         let key = registers.load_plaintext(stack, self.key())?;
 
+        // Get the mapping definition.
+        let mapping = stack.get_stack_unchecked(&program_id)?.program().get_mapping(&mapping_name)?;
+        // Get the key type.
+        let mapping_key_type = mapping.key().plaintext_type();
+        // Ensure the key operand matches the mapping key type.
+        ensure!(
+            stack.matches_plaintext(&key, mapping_key_type).is_ok(),
+            "Expected the key to be of type '{mapping_key_type}', found '{key}'."
+        );
+
         // Determine if the key exists in the mapping.
         let contains_key = store.contains_key_speculative(program_id, mapping_name, &key)?;
 

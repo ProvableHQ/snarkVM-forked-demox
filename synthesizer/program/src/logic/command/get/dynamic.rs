@@ -16,7 +16,7 @@
 use crate::{FinalizeStoreTrait, Opcode, Operand, RegistersTrait, StackTrait};
 use console::{
     network::prelude::*,
-    program::{Identifier, Literal, Plaintext, ProgramID, Register, Value},
+    program::{Identifier, Literal, Plaintext, PlaintextType, ProgramID, Register, Value},
 };
 
 /// A dynamic get command, e.g. `get.dynamic r0.r1/r2[r3] into r4;`.
@@ -27,6 +27,8 @@ pub struct GetDynamic<N: Network> {
     operands: [Operand<N>; 4],
     /// The destination register.
     destination: Register<N>,
+    /// The destination type.
+    destination_type: PlaintextType<N>,
 }
 
 impl<N: Network> GetDynamic<N> {
@@ -71,6 +73,12 @@ impl<N: Network> GetDynamic<N> {
     pub const fn destination(&self) -> &Register<N> {
         &self.destination
     }
+
+    /// Returns the destination type.
+    #[inline]
+    pub const fn destination_type(&self) -> &PlaintextType<N> {
+        &self.destination_type
+    }
 }
 
 impl<N: Network> GetDynamic<N> {
@@ -111,6 +119,24 @@ impl<N: Network> GetDynamic<N> {
         // Load the operand as a plaintext.
         let key = registers.load_plaintext(stack, self.key())?;
 
+        // Get the mapping definition.
+        let mapping = stack.get_stack_unchecked(&program_id)?.program().get_mapping(&mapping_name)?;
+        // Get the key type.
+        let mapping_key_type = mapping.key().plaintext_type();
+        // Ensure the key operand matches the mapping key type.
+        ensure!(
+            stack.matches_plaintext(&key, mapping_key_type).is_ok(),
+            "Expected the key to be of type '{mapping_key_type}', found '{key}'."
+        );
+        // Get the mapping value type.
+        let mapping_value_type = mapping.value().plaintext_type();
+        // Ensure the destination type matches the mapping value type.
+        ensure!(
+            &self.destination_type == mapping_value_type,
+            "Expected the destination type to be '{mapping_value_type}', found '{}'.",
+            self.destination_type
+        );
+
         // Retrieve the value from storage as a literal.
         let value = match store.get_value_speculative(program_id, mapping_name, &key)? {
             Some(Value::Plaintext(plaintext)) => Value::Plaintext(plaintext),
@@ -121,6 +147,19 @@ impl<N: Network> GetDynamic<N> {
             // If a key does not exist, then bail.
             None => bail!("Key '{key}' does not exist in mapping '{program_id}/{mapping_name}'"),
         };
+
+        // Ensure the destin
+        // Check that the value type matches the destination type.
+        match &value {
+            Value::Plaintext(plaintext) => {
+                ensure!(
+                    stack.matches_plaintext(plaintext, self.destination_type()).is_ok(),
+                    "Expected the value to be of type '{}', found '{plaintext}' in 'get.dynamic'",
+                    self.destination_type()
+                )
+            }
+            _ => bail!("Expected a plaintext value in 'get.dynamic'"),
+        }
 
         // Assign the value to the destination register.
         registers.store(stack, &self.destination, value)?;
@@ -175,10 +214,23 @@ impl<N: Network> Parser for GetDynamic<N> {
 
         // Parse the whitespace from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
+        // Parse the "as" keyword from the string.
+        let (string, _) = tag("as")(string)?;
+        // Parse the whitespace from the string.
+        let (string, _) = Sanitizer::parse_whitespaces(string)?;
+        // Parse the destination type from the string.
+        let (string, destination_type) = PlaintextType::parse(string)?;
+
+        // Parse the whitespace from the string.
+        let (string, _) = Sanitizer::parse_whitespaces(string)?;
         // Parse the ";" from the string.
         let (string, _) = tag(";")(string)?;
 
-        Ok((string, Self { operands: [program_name, program_network, mapping_name, key], destination }))
+        Ok((string, Self {
+            operands: [program_name, program_network, mapping_name, key],
+            destination,
+            destination_type,
+        }))
     }
 }
 
@@ -215,7 +267,7 @@ impl<N: Network> Display for GetDynamic<N> {
         // Print the program name, program network, mapping and key operand.
         write!(f, "{}.{}/{}[{}] into ", self.program_name(), self.program_network(), self.mapping_name(), self.key())?;
         // Print the destination register.
-        write!(f, "{};", self.destination)
+        write!(f, "{} as {};", self.destination, self.destination_type())
     }
 }
 
@@ -232,8 +284,10 @@ impl<N: Network> FromBytes for GetDynamic<N> {
         let key = Operand::read_le(&mut reader)?;
         // Read the destination register.
         let destination = Register::read_le(&mut reader)?;
+        // Read the destination type.
+        let destination_type = PlaintextType::read_le(&mut reader)?;
         // Return the command.
-        Ok(Self { operands: [program_name, program_network, mapping_name, key], destination })
+        Ok(Self { operands: [program_name, program_network, mapping_name, key], destination, destination_type })
     }
 }
 
@@ -249,7 +303,9 @@ impl<N: Network> ToBytes for GetDynamic<N> {
         // Write the key operand.
         self.key().write_le(&mut writer)?;
         // Write the destination register.
-        self.destination.write_le(&mut writer)
+        self.destination.write_le(&mut writer)?;
+        // Write the destination type.
+        self.destination_type.write_le(&mut writer)
     }
 }
 
@@ -262,7 +318,7 @@ mod tests {
 
     #[test]
     fn test_parse() {
-        let (string, get) = GetDynamic::<CurrentNetwork>::parse("get.dynamic r0.r1/r2[r3] into r4;").unwrap();
+        let (string, get) = GetDynamic::<CurrentNetwork>::parse("get.dynamic r0.r1/r2[r3] into r4 as Baz;").unwrap();
         assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
         assert_eq!(get.operands().len(), 4, "The number of operands is incorrect");
         assert_eq!(get.program_name(), &Operand::Register(Register::Locator(0)), "The first operand is incorrect");
@@ -270,11 +326,16 @@ mod tests {
         assert_eq!(get.mapping_name(), &Operand::Register(Register::Locator(2)), "The third operand is incorrect");
         assert_eq!(get.key(), &Operand::Register(Register::Locator(3)), "The fourth operand is incorrect");
         assert_eq!(get.destination, Register::Locator(4), "The destination register is incorrect");
+        assert_eq!(
+            get.destination_type,
+            PlaintextType::Struct(Identifier::from_str("Baz").unwrap()),
+            "The destination type is incorrect"
+        );
     }
 
     #[test]
     fn test_from_bytes() {
-        let (string, get) = GetDynamic::<CurrentNetwork>::parse("get.dynamic r0.r1/r2[r3] into r4;").unwrap();
+        let (string, get) = GetDynamic::<CurrentNetwork>::parse("get.dynamic r0.r1/r2[r3] into r4 as u8;").unwrap();
         assert!(string.is_empty());
         let bytes_le = get.to_bytes_le().unwrap();
         let result = GetDynamic::<CurrentNetwork>::from_bytes_le(&bytes_le[..]);
