@@ -148,38 +148,6 @@ impl<N: Network> Translation<N> {
                 if transition.caller_outputs().is_some() { "Some" } else { "None" }
             );
 
-<<<<<<< HEAD
-                // Checks associated to input-record translation
-                let batch = &mut batched_assignments.entry((*program_id, *record_name)).or_default();
-
-                if let Some(previous_key) = proving_keys.get(&(*program_id, *record_name)) {
-                    ensure!(
-                        previous_key == translation_proving_key,
-                        "Proving key mismatch for record {program_id}/{record_name}"
-                    );
-                } else {
-                    proving_keys.insert((*program_id, *record_name), translation_proving_key.clone());
-                }
-
-                batch.push(TranslationAssignment::new(
-                    record_static.clone(),
-                    record_dynamic.clone(),
-                    *program_id,
-                    *function_id,
-                    *record_name,
-                    *is_input,
-                    *static_is_external,
-                    translation_count,
-                    *tvk,
-                    *input_output_index,
-                    *id_dynamic,
-                    *id_static,
-                    *record_view_key,
-                    *gamma,
-                ));
-
-                translation_count += 1;
-=======
             // Input translation
             if let Some(caller_inputs) = transition.caller_inputs() {
                 for (caller_input, callee_input) in caller_inputs.iter().zip(transition.inputs().iter()) {
@@ -197,7 +165,6 @@ impl<N: Network> Translation<N> {
                         _ => {}
                     }
                 }
->>>>>>> feat/dynamic-dispatch-tmp-get
             }
 
             // Output translation
