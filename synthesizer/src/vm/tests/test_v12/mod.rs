@@ -13,11 +13,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod cast;
+
 mod recursion;
 
 use super::*;
 
-use crate::vm::test_helpers::{sample_vm_at_height, *};
+use crate::{vm::test_helpers::{sample_vm_at_height, *}, circuit::{Eject, Inject, Mode}};
 
 use anyhow::Result;
 use console::{
@@ -597,25 +599,15 @@ fn test_complex_dynamic_graph_construction_internal(
     // 7 -> []
 
     let graph = vm.process().read().construct_call_graph(transitions.into_iter()).unwrap();
-    println!("First check");
     assert_eq!(graph[tids[9]], &[*tids[2], *tids[8]]);
-    println!("Second check");
     assert_eq!(graph[tids[8]], &[*tids[5], *tids[6], *tids[7]]);
-    println!("Third check");
     assert_eq!(graph[tids[5]], &[*tids[3], *tids[4]]);
-    println!("Fourth check");
     assert_eq!(graph[tids[2]], &[*tids[0], *tids[1]]);
-    println!("Fifth check");
     assert_eq!(graph[tids[0]], &[]);
-    println!("Sixth check");
     assert_eq!(graph[tids[1]], &[]);
-    println!("Seventh check");
     assert_eq!(graph[tids[3]], &[]);
-    println!("Eighth check");
     assert_eq!(graph[tids[4]], &[]);
-    println!("Ninth check");
     assert_eq!(graph[tids[6]], &[]);
-    println!("Tenth check");
     assert_eq!(graph[tids[7]], &[]);
 
     let block = sample_next_block(&vm, &caller_private_key, &[transaction.clone()], rng).unwrap();

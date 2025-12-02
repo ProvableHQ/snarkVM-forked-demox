@@ -276,12 +276,11 @@ impl<N: Network> GetDynamicRecord<N> {
     pub fn output_types(
         &self,
         _stack: &impl StackTrait<N>,
-        _input_types: &[RegisterType<N>],
+        input_types: &[RegisterType<N>],
     ) -> Result<Vec<RegisterType<N>>> {
-        // TODO (Antonio) should this return <TYPE> or r<j> if the instruction
-        // is of the form
-        //    get.dynamic.record r<k>.<name> into r<j> as <TYPE>
-        // ? Implemented the former for now.
+        ensure!(input_types.len() == 1, "Expected 1 input type, found {}", input_types.len());
+        ensure!(matches!(input_types[0], RegisterType::DynamicRecord), "Expected dynamic record, found {}", input_types[0]);
+
         Ok(vec![RegisterType::Plaintext(self.plaintext_type.clone())])
     }
 }

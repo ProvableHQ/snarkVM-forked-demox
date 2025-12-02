@@ -517,6 +517,8 @@ pub fn cost_per_command<N: Network>(
             | CastType::GroupYCoordinate
             | CastType::Record(_)
             | CastType::ExternalRecord(_) => Ok(500),
+            // TODO (dynamic_dispatch) cost; note the input can be a non-external record or an external record but the circuits are the same
+            CastType::DynamicRecord => Ok(500),
         },
         Command::Instruction(Instruction::CastLossy(cast_lossy)) => match cast_lossy.cast_type() {
             CastType::Plaintext(PlaintextType::Literal(_)) => Ok(500),
@@ -527,6 +529,8 @@ pub fn cost_per_command<N: Network>(
             | CastType::GroupYCoordinate
             | CastType::Record(_)
             | CastType::ExternalRecord(_) => Ok(500),
+            // TODO (dynamic_dispatch) in principle a cast to dynamic record should never go through the lossy pathway. Handle this better?
+            CastType::DynamicRecord => Ok(500),
         },
         Command::Instruction(Instruction::CommitBHP256(commit)) => {
             cost_in_size(stack, finalize_types, commit.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)

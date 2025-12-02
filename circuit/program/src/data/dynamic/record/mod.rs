@@ -18,10 +18,22 @@ mod to_bits;
 mod to_fields;
 mod to_id;
 
-use crate::{Aleo, Equal, ToBits, ToFields};
+use crate::{Aleo, Equal, Record, Plaintext, ToBits, ToFields};
 
+use console::{RECORD_DATA_TREE_DEPTH, ToField as ConsoleToField, ToFields as ConsoleToFields};
 use snarkvm_circuit_types::{Address, Boolean, Field, Group, U8, U16, environment::prelude::*};
+use snarkvm_circuit_algorithms::{Poseidon2, Poseidon8};
+use snarkvm_circuit_collections::merkle_tree::MerkleTree;
+use snarkvm_console_algorithms::{Poseidon2 as ConsolePoseidon2, Poseidon8 as ConsolePoseidon8};
 
+type CircuitLH<A> = Poseidon8<A>;
+type CircuitPH<A> = Poseidon2<A>;
+type ConsoleLH<N> = ConsolePoseidon8<N>;
+type ConsolePH<N> = ConsolePoseidon2<N>;
+
+pub type RecordDataTree<A> = MerkleTree<A, CircuitLH<A>, CircuitPH<A>, RECORD_DATA_TREE_DEPTH>;
+
+// TODO (dynamic dispatch) correct this and other instances of the specification: that is not the correct structure of the tree (odd-size layers are not filled with a single zero)
 /// A dynamic record is a fixed-size representation of a record.
 /// Like static `Record`s, a dynamic record contains an owner, nonce, and a version.
 /// However, instead of storing the full data, it only stores the Merkle root of the data.
@@ -151,5 +163,84 @@ impl<A: Aleo> Eject for DynamicRecord<A> {
             self.tree.clone(),
             self.data.clone(),
         )
+    }
+}
+
+impl<A: Aleo> DynamicRecord<A> {
+    /// Creates a dynamic record from a static record.
+    pub fn from_record(record: &Record<A, Plaintext<A>>) -> Result<Self> {
+        // This mimics the console::DynamicRecord::from_record function.
+
+        // Note that, in most lines below, cloning (e. g. of record.owner())
+        // does not introduce a new variable into the witness but rather creates
+        // a new reference to the preexisting witness variable.
+        
+        // Get the owner.
+        let owner = (**record.owner()).clone();
+        // Get the nonce.
+        let nonce = record.nonce().clone();
+        // Get the version.
+        let version = record.version().clone();
+
+        // Get the record's data (not part of the circuit representation)
+        let data = record.data().clone();
+
+        // Initalize the hashers.
+        let console_leaf_hasher = ConsoleLH::<A::Network>::setup("DynamicRecordLeafHasher").unwrap();
+        let console_path_hasher = ConsolePH::<A::Network>::setup("DynamicRecordPathHasher").unwrap();
+        let circuit_leaf_hasher = CircuitLH::<A>::constant(console_leaf_hasher.clone());
+        let circuit_path_hasher = CircuitPH::<A>::constant(console_path_hasher.clone());
+
+        let leaves = data
+            .iter()
+            .map(|(identifier, entry)| {
+                let mut leaf = vec![identifier.to_field()];
+                // By using ehtry.to_fields (as in the translation circuit), we
+                // inject the visibility marker of each entry as a constant,
+                // rather than as a witness variable (as in the
+                // get.dynamic.record instruction). as
+                // entry.to_fields_with_visibility_mode(Mode::Private) would
+                leaf.extend(entry.to_fields());
+                leaf
+            })
+            .collect::<Vec<Vec<Field<A>>>>();
+
+        let tree =
+            RecordDataTree::<A>::new(circuit_leaf_hasher, circuit_path_hasher, &leaves).unwrap();
+        let root = tree.root().clone();
+
+        let console_data = data.iter().map(|(identifier, entry)| (identifier, entry).eject_value()).collect::<IndexMap<_, _>>();
+
+        let console_tree = {
+            // TODO (dynamic_dispatch): decide whether we want to compute and set the optional console tree. In principle, it isn't used anywhere.
+            let console_leaves = console_data
+                .iter()
+                .map(|(name, entry)| {
+                    let mut leaf = vec![];
+                    leaf.push(name.to_field()?);
+                    leaf.extend(entry.to_fields()?);
+
+                    Ok(leaf)
+                })
+                .collect::<Result<Vec<_>>>()?;
+
+            let console_tree = console::RecordDataTree::new(&console_leaf_hasher, &console_path_hasher, &console_leaves)?;
+
+            ensure!(
+                root.eject_value() == *console_tree.root(),
+                "The root of the Merkle tree computed inside the circuit differs from that computed on the console objects."
+            );
+
+            console_tree
+        };
+
+        Ok(Self {
+            owner,
+            root,
+            nonce,
+            version,
+            tree: Some(console_tree),
+            data: Some(console_data),
+        })
     }
 }

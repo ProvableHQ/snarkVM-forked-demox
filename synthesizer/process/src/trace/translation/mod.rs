@@ -34,7 +34,6 @@ use console::{
         InputID,
         Plaintext,
         ProgramID,
-        RECORD_DATA_TREE_DEPTH,
         Record,
         U16,
         Value,
@@ -109,7 +108,7 @@ impl<N: Network> Translation<N> {
 
             // Prepare the input translation tasks
             let num_inputs = if let Some(caller_inputs) = transition.caller_inputs() {
-                // TODO (dynamic_dispatch): confirm the input types don't have to be matched against the function definiction, as we were doing before (e. g. because that's already checked elsewhere)
+                // TODO (dynamic_dispatch): confirm the input types don't have to be matched against the function definition, as we were doing before (e. g. because that's already checked elsewhere)
                 // TODO (antonio): cf above
                 // TODO (vicsn): cf above
                 // TODO (d0cd): cf above
