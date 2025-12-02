@@ -15,9 +15,10 @@
 
 use circuit::{
     Aleo,
+    merkle_tree::MerkleTree,
     Poseidon2,
     Poseidon8,
-    merkle_tree::MerkleTree,
+    RecordDataTree,
     traits::{ToField, ToFields},
 };
 
@@ -27,8 +28,6 @@ type CircuitLH<A> = Poseidon8<A>;
 type CircuitPH<A> = Poseidon2<A>;
 type ConsoleLH<N> = console::algorithms::Poseidon8<N>;
 type ConsolePH<N> = console::algorithms::Poseidon2<N>;
-
-pub type RecordMerkleTree<A> = MerkleTree<A, CircuitLH<A>, CircuitPH<A>, RECORD_DATA_TREE_DEPTH>;
 
 /// An assignment for the record translation circuit.
 #[derive(Clone, Debug)]
@@ -229,7 +228,7 @@ impl<N: Network> TranslationAssignment<N> {
             .collect::<Vec<Vec<circuit::Field<A>>>>();
 
         let circuit_tree =
-            RecordMerkleTree::<A>::new(circuit_leaf_hasher, circuit_path_hasher, &circuit_leaves).unwrap();
+            RecordDataTree::<A>::new(circuit_leaf_hasher, circuit_path_hasher, &circuit_leaves).unwrap();
         let circuit_data_root = circuit_tree.root();
 
         // ******** Assertions

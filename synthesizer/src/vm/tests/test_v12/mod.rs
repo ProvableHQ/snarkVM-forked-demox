@@ -13,11 +13,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod cast;
+
 mod recursion;
 
 use super::*;
 
-use crate::vm::test_helpers::{sample_vm_at_height, *};
+use crate::{vm::test_helpers::{sample_vm_at_height, *}, circuit::{Eject, Inject, Mode}};
 
 use anyhow::Result;
 use console::{
@@ -80,7 +82,7 @@ fn test_translation(
     let caller_view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
     let caller_address = Address::<CurrentNetwork>::try_from(caller_private_key).unwrap();
 
-    // Various parameters for dynamic.call instructions.
+    // Various parameters for call.dynamic instructions.
     let program_a_name_str = "flow";
     let program_a_name_field = Identifier::<CurrentNetwork>::from_str(program_a_name_str).unwrap().to_field().unwrap();
     let program_b_name_str = "gas_manager";
@@ -597,25 +599,15 @@ fn test_complex_dynamic_graph_construction_internal(
     // 7 -> []
 
     let graph = vm.process().read().construct_call_graph(transitions.into_iter()).unwrap();
-    println!("First check");
     assert_eq!(graph[tids[9]], &[*tids[2], *tids[8]]);
-    println!("Second check");
     assert_eq!(graph[tids[8]], &[*tids[5], *tids[6], *tids[7]]);
-    println!("Third check");
     assert_eq!(graph[tids[5]], &[*tids[3], *tids[4]]);
-    println!("Fourth check");
     assert_eq!(graph[tids[2]], &[*tids[0], *tids[1]]);
-    println!("Fifth check");
     assert_eq!(graph[tids[0]], &[]);
-    println!("Sixth check");
     assert_eq!(graph[tids[1]], &[]);
-    println!("Seventh check");
     assert_eq!(graph[tids[3]], &[]);
-    println!("Eighth check");
     assert_eq!(graph[tids[4]], &[]);
-    println!("Ninth check");
     assert_eq!(graph[tids[6]], &[]);
-    println!("Tenth check");
     assert_eq!(graph[tids[7]], &[]);
 
     let block = sample_next_block(&vm, &caller_private_key, &[transaction.clone()], rng).unwrap();
@@ -1416,19 +1408,264 @@ fn test_translation_triple() {
     );
 }
 
+#[test]
+fn test_translation_traversal_consistency() {
+    // This tests checks the prover and verifier order all translation tasks associated to a
+    // transaction the same way by asserting correct verification of the following execution
+    // graph (capital leters denote record types):
+    // quadruple_caller (receives two dynamic records of types A B)
+    //   -> leaf_two_one (two input translations A B, one output translation B)
+    //   -> leaf_one_two (one input translation B, two output translations, B C)
+    //   -> double_caller_one_zero (one input translation C)
+    //        -> leaf_one_one (one input translation B, one output translation A)
+    //        -> leaf_two_one (two input translations A B, one output translation B)
+    //   -> leaf_zero_one (one output translation B)
+
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
+    let caller_address = Address::<CurrentNetwork>::try_from(caller_private_key).unwrap();
+
+    // Various parameters for call.dynamic instructions.
+    let program_name_str = "quotes";
+    let program_name_field = Identifier::<CurrentNetwork>::from_str(program_name_str).unwrap().to_field().unwrap();
+    let network_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+
+    let quadruple_caller_function_name = Identifier::<CurrentNetwork>::from_str("quadruple_caller").unwrap();
+    let double_caller_one_zero_function_name = Identifier::<CurrentNetwork>::from_str("double_caller_one_zero").unwrap();
+    let leaf_two_one_function_name = Identifier::<CurrentNetwork>::from_str("leaf_two_one").unwrap();
+    let leaf_one_two_function_name = Identifier::<CurrentNetwork>::from_str("leaf_one_two").unwrap();
+    let leaf_one_one_function_name = Identifier::<CurrentNetwork>::from_str("leaf_one_one").unwrap();
+    let leaf_zero_one_function_name = Identifier::<CurrentNetwork>::from_str("leaf_zero_one").unwrap();
+
+    let quadruple_caller_function_field = quadruple_caller_function_name.to_field().unwrap();
+    let double_caller_one_zero_function_field = double_caller_one_zero_function_name.to_field().unwrap();
+    let leaf_two_one_function_field = leaf_two_one_function_name.to_field().unwrap();
+    let leaf_one_two_function_field = leaf_one_two_function_name.to_field().unwrap();
+    let leaf_one_one_function_field = leaf_one_one_function_name.to_field().unwrap();
+    let leaf_zero_one_function_field = leaf_zero_one_function_name.to_field().unwrap();
+
+    let quixote_quote = vec![69u8, 110, 32, 117, 110, 32, 108, 117, 103, 97, 114, 32, 100, 101, 32, 108, 97, 32, 77, 97, 110, 99, 104, 97];
+    let hamlet_quote = vec![84u8, 111, 32, 98, 101, 32, 111, 114, 32, 110, 111, 116, 32, 116, 111, 32, 98, 101];
+    let lotr_quote = vec![73u8, 116, 39, 115, 32, 97, 32, 100, 97, 110, 103, 101, 114, 111, 117, 115, 32, 98, 117, 115, 105, 110, 101, 115, 115, 44, 32, 70, 114, 111, 100, 111];
+
+    fn process_quote(mut quote: Vec<u8>) -> String {
+        quote.resize(50, 0);
+        format!("{}", quote.into_iter().map(|c| format!("{c}u8")).join(" "))
+    }
+
+    let processed_quixote_quote = process_quote(quixote_quote);
+    let processed_hamlet_quote = process_quote(hamlet_quote);
+    let processed_lotr_quote = process_quote(lotr_quote);
+
+    let mint_quixote_quote = format!("cast {caller_address} {processed_quixote_quote} into");
+    let mint_hamlet_quote = format!("cast {caller_address} {processed_hamlet_quote} false into");
+    let mint_lotr_quote = format!("cast {caller_address} {processed_lotr_quote} 1u8 true into");
+
+    let program_string = format!(
+        r"
+    program {program_name_str}.aleo;
+
+    record a:
+        owner as address.private;
+        quixote_tweet as [u8; 50u32].public;
+
+    record b:
+        owner as address.private;
+        hamlet_tweet as [u8; 50u32].public;
+        understandable as boolean.public;
+
+    record c:
+        owner as address.private;
+        lotr_tweet as [u8; 50u32].public;
+        book_number as u8.public;
+        canon as boolean.private;
+
+    function quadruple_caller:
+        input r0 as dynamic.record; // type A
+        input r1 as dynamic.record; // type B
+        input r2 as dynamic.record; // type B
+        
+        // underlying input types: A B
+        // underlying output types: B
+        call.dynamic {program_name_field} {network_field} {leaf_two_one_function_field}
+            with r0 r1 (as dynamic.record dynamic.record)
+            into r3 (as dynamic.record);
+
+        // underlying input types: B
+        // underlying output types: B C
+        call.dynamic {program_name_field} {network_field} {leaf_one_two_function_field}
+            with r3 (as dynamic.record)
+            into r4 r5 (as dynamic.record dynamic.record);
+
+        // underlying input types: C B B (the last two are not translated)
+        call.dynamic {program_name_field} {network_field} {double_caller_one_zero_function_field}
+            with r5 r4 r2 (as dynamic.record dynamic.record dynamic.record);
+
+        // underlying output types: B
+        call.dynamic {program_name_field} {network_field} {leaf_zero_one_function_field}
+            into r6 (as dynamic.record);
+
+    function double_caller_one_zero:
+        input r0 as c.record;
+        input r1 as dynamic.record; // type B
+        input r2 as dynamic.record; // type B
+
+        // underlying input types: B
+        // underlying output types: A
+        call.dynamic {program_name_field} {network_field} {leaf_one_one_function_field}
+            with r1 (as dynamic.record)
+            into r3 (as dynamic.record);
+
+        // underlying input types: A B
+        // underlying output types: B
+        call.dynamic {program_name_field} {network_field} {leaf_two_one_function_field}
+            with r3 r2 (as dynamic.record dynamic.record)
+            into r4 (as dynamic.record);
+
+    function leaf_two_one:
+        input r0 as a.record;
+        input r1 as b.record;
+
+        cast {processed_hamlet_quote} into r2 as [u8; 50u32];
+        cast {caller_address} r2 false into r3 as b.record;
+
+        output r3 as b.record;
+
+    function leaf_one_two:
+        input r0 as b.record;
+
+        cast {processed_hamlet_quote} into r1 as [u8; 50u32];
+        cast {caller_address} r1 false into r2 as b.record;
+
+        cast {processed_lotr_quote} into r3 as [u8; 50u32];
+        cast {caller_address} r3 1u8 false into r4 as c.record;
+
+        output r2 as b.record;
+        output r4 as c.record;
+
+    function leaf_zero_one:
+        cast {processed_hamlet_quote} into r0 as [u8; 50u32];
+        cast {caller_address} r0 false into r1 as b.record;
+
+        output r1 as b.record;
+
+    function leaf_one_one:
+        input r0 as b.record;
+
+        cast {processed_quixote_quote} into r1 as [u8; 50u32];
+        cast {caller_address} r1 into r2 as a.record;
+
+        output r2 as a.record;
+
+    function mint_a:
+        cast {processed_quixote_quote} into r0 as [u8; 50u32];
+        cast {caller_address} r0 into r1 as a.record;
+        output r1 as a.record;
+    
+    function mint_b:
+        cast {processed_hamlet_quote} into r0 as [u8; 50u32];
+        cast {caller_address} r0 false into r1 as b.record;
+        output r1 as b.record;
+
+    function mint_c:
+        cast {processed_lotr_quote} into r0 as [u8; 50u32];
+        cast {caller_address} r0 1u8 false into r1 as c.record;
+        output r1 as c.record;
+
+    constructor:
+        assert.eq true true;
+    "
+    );
+
+    let program = Program::<CurrentNetwork>::from_str(&program_string).unwrap();
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap(), rng);
+
+    // Deploy the program.
+    let transaction = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+
+    let mut mint_record = |function_name: &str| {
+
+        println!("Executing {function_name}...");
+
+        let transaction_mint = vm.execute(
+            &caller_private_key,
+            ("quotes.aleo", function_name),
+            Vec::<Value<CurrentNetwork>>::new().into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        ).unwrap();
+
+        let mint_output = transaction_mint.transitions().next().unwrap().outputs().iter().next().unwrap();
+
+        let output_record = match mint_output {
+            Output::Record(_, _, record_ciphertext, _) => {
+                record_ciphertext.as_ref().unwrap().decrypt(&caller_view_key).unwrap()
+            }
+            _ => panic!("Minted record is not a record"),
+        };
+    
+        let dynamic_record = DynamicRecord::from_record(&output_record).unwrap();
+
+        (transaction_mint, dynamic_record)
+    };
+
+    let (transaction_mint_a, dynamic_record_a) = mint_record("mint_a");
+    let (transaction_mint_b_1, dynamic_record_b_1) = mint_record("mint_b");
+    let (transaction_mint_b_2, dynamic_record_b_2) = mint_record("mint_b");
+
+    add_and_test(&vm, &caller_private_key, &[transaction_mint_a, transaction_mint_b_1, transaction_mint_b_2], rng);
+
+    let transaction = vm.execute(
+        &caller_private_key,
+        ("quotes.aleo", "quadruple_caller"),
+        [
+            Value::DynamicRecord(dynamic_record_a),
+            Value::DynamicRecord(dynamic_record_b_1),
+            Value::DynamicRecord(dynamic_record_b_2),
+        ].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    ).unwrap();
+
+    // This indeed results of three batches for translation proving/verification:
+    // one of size 3 for a.record, one of size 8 for b.record, and one of size 2 for c.record.
+    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+}
+
 /************************** get.dynamic.record test cases ***************************/
 
 #[test]
 fn test_get_dynamic_record() {
 
+    // Parameters for dynamic-function calls
+    let program_name_str = "warehouse";
+    let network_str = "aleo";
+    let mint_nineties_bleach_function_str = "mint_nineties_bleach";
+    let mint_fake_compliance_cert_function_str = "mint_fake_compliance_cert";
+    
+    let program_name_field = Identifier::<CurrentNetwork>::from_str(program_name_str).unwrap().to_field().unwrap();
+    let network_field = Identifier::<CurrentNetwork>::from_str(network_str).unwrap().to_field().unwrap();
+    let mint_nineties_bleach_function_field = Identifier::<CurrentNetwork>::from_str(mint_nineties_bleach_function_str).unwrap().to_field().unwrap();
+    let mint_fake_compliance_cert_function_field = Identifier::<CurrentNetwork>::from_str(mint_fake_compliance_cert_function_str).unwrap().to_field().unwrap();
+
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
     let caller_address = Address::try_from(&caller_private_key).unwrap();
+    let caller_view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
 
     // Initialize a new program.
-    let program_string = r"
-        program warehouse.aleo;
+    let program_string = format!(
+        r"
+        program {program_name_str}.aleo;
 
         struct safety_struct:
             first as field;
@@ -1455,20 +1692,50 @@ fn test_get_dynamic_record() {
             input r0 as dynamic.record;
             get.dynamic.record r0.production_date into r1 as [u8; 3u32];
             output r1[1u32] as u8.public;
+        
+        function production_year_difference:
+            call.dynamic {program_name_field} {network_field} {mint_nineties_bleach_function_field} into r0 (as dynamic.record);
+            call.dynamic {program_name_field} {network_field} {mint_fake_compliance_cert_function_field} into r1 (as dynamic.record);
             
+            get.dynamic.record r0.production_date into r2 as [u8; 3u32];
+            get.dynamic.record r1.production_date into r3 as [u8; 3u32];
+
+            sub r2[2u32] r3[2u32] into r4;
+
+            output r4 as u8.public;
+
+        function {mint_nineties_bleach_function_str}:
+            cast 10u8 9u8 92u8 into r0 as [u8; 3u32];
+            cast 10u8 9u8 42u8 into r1 as [u8; 3u32];
+
+            cast {caller_address} r0 true r1 into r2 as consumable.record;
+
+            output r2 as consumable.record;
+
+        function {mint_fake_compliance_cert_function_str}:
+            cast 11u8 7u8 17u8 into r0 as [u8; 3u32];
+            cast 10field 13field into r1 as safety_struct;
+
+            cast {caller_address} 2u64 91u16 2group 1field r0 r1 into r2 as non_consumable.record;
+
+            output r2 as non_consumable.record;
+
         constructor:
             assert.eq true true;
-    ";
+        "
+    );
 
     let program = Program::<CurrentNetwork>::from_str(&program_string).unwrap();
 
     // Initialize the VM.
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap(), rng);
 
-    // Deploy the programs.
+    // Deploy the program.
     println!("Deploying program warehouse.aleo...");
     let transaction_deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
     add_and_test(&vm, &caller_private_key, &[transaction_deploy], rng);
+
+    /************** Case 1: Simple read **************/
 
     let record_static_str = format!(
         r#"{{
@@ -1484,7 +1751,7 @@ fn test_get_dynamic_record() {
     let record_dynamic = DynamicRecord::<CurrentNetwork>::from_record(&record_static).unwrap();
 
     println!("Executing root function warehouse.aleo/production_month...");
-    let transaction = vm
+    let transaction_1 = vm
         .execute(
             &caller_private_key,
             ("warehouse.aleo", "production_month"),
@@ -1496,18 +1763,42 @@ fn test_get_dynamic_record() {
         )
         .unwrap();
 
-
     let expected_output = Plaintext::<CurrentNetwork>::from_str("7u8").unwrap();
 
     assert!(
-        matches!(transaction.transitions().next().unwrap().outputs(), [Output::Public(_, Some(plaintext))] if *plaintext == expected_output),
+        matches!(transaction_1.transitions().next().unwrap().outputs(), [Output::Public(_, Some(plaintext))] if *plaintext == expected_output),
         "Expected output: {:?}, got: {:?}",
         expected_output,
-        transaction.transitions().next().unwrap().outputs()
+        transaction_1.transitions().next().unwrap().outputs()
     );
 
-    // TODO (Antonio) remove
-    println!("Assert has happened!");
+    add_and_test(&vm, &caller_private_key, &[transaction_1], rng);
 
-    vm.check_transaction(&transaction, None, rng).unwrap();
+    /************** Case 2: Read from minted records (using polymorphy) **************/
+
+    // Here this case a function outputs two static records of different types that are received as
+    // dynamic by the caller; and the caller then proceeds to field two fields with the same name
+    // that the two static-record types happen to have.
+
+    let transaction_2 = vm.execute(
+        &caller_private_key,
+        ("warehouse.aleo", "production_year_difference"),
+        Vec::<Value<CurrentNetwork>>::new().into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    ).unwrap();
+
+    let expected_output = Plaintext::<CurrentNetwork>::from_str("25u8").unwrap();
+
+    assert!(
+        // The first two transactions correspond to the two minting operations
+        matches!(transaction_2.transitions().skip(2).next().unwrap().outputs(), [Output::Public(_, Some(plaintext))] if *plaintext == expected_output),
+        "Expected output: {:?}, got: {:?}",
+        expected_output,
+        transaction_2.transitions().next().unwrap().outputs()
+    );
+
+    add_and_test(&vm, &caller_private_key, &[transaction_2], rng);
 }

@@ -366,9 +366,6 @@ where
         }
         let prover_state = AHPForR1CS::<_, SM>::init_prover(&circuits_to_constraints, zk_rng)?;
 
-        // TODO (Antonio) remove
-        println!("******** PROVE_BATCH ********");
-
         // extract information from the prover key and state to consume in further
         // calculations
         let mut batch_sizes = BTreeMap::new();
@@ -378,29 +375,13 @@ where
         let mut public_inputs = BTreeMap::new(); // inputs need to live longer than the rest of prover_state
         let num_unique_circuits = keys_to_constraints.len();
         let mut circuit_ids = Vec::with_capacity(num_unique_circuits);
+        
         for pk in keys_to_constraints.keys() {
             let batch_size = prover_state.batch_size(&pk.circuit).ok_or(anyhow!("Batch size not found."))?;
             let public_input = prover_state.public_inputs(&pk.circuit).ok_or(anyhow!("Public input not found."))?;
 
             let padded_public_input =
                 prover_state.padded_public_inputs(&pk.circuit).ok_or(anyhow!("Padded public input not found."))?;
-
-            if public_input.len() == 3 {
-                // TODO (Antonio) remove
-                println!(" - vk id: {}", pk.circuit.id);
-                for (i, input) in public_input.iter().enumerate() {
-                    println!("   - input {i}");
-                    let mut inputs_with_1 = vec![E::Fr::one()];
-                    inputs_with_1.extend_from_slice(input);
-                    // trim final zeros
-                    while inputs_with_1.last().unwrap() == &E::Fr::zero() {
-                        inputs_with_1.pop();
-                    }
-                    for (j, value) in inputs_with_1.iter().enumerate() {
-                        println!("     - value {j}: {value}");
-                    }
-                }
-            }
 
             let circuit_id = pk.circuit.id;
             batch_sizes.insert(circuit_id, batch_size);
@@ -732,9 +713,6 @@ where
             bail!(SNARKError::EmptyBatch);
         }
 
-        // TODO (Antonio) remove
-        println!("******** VERIFY_BATCH ********");
-
         proof.check_batch_sizes()?;
         let batch_sizes_vec = proof.batch_sizes();
         let mut batch_sizes = BTreeMap::new();
@@ -768,9 +746,6 @@ where
         let mut circuit_ids = Vec::with_capacity(keys_to_inputs.len());
         for (&vk, &public_inputs_i) in keys_to_inputs.iter() {
 
-            // TODO (Antonio) remove
-            println!(" - vk id: {}", vk.id);
-
             max_num_constraints = max_num_constraints.max(vk.circuit_info.num_constraints);
             max_num_variables = max_num_variables.max(vk.circuit_info.num_public_and_private_variables);
 
@@ -780,16 +755,6 @@ where
             let input_domain = EvaluationDomain::<E::Fr>::new(vk.circuit_info.num_public_inputs)
                 .ok_or(anyhow!("Failed to create EvaluationDomain from num_public_inputs"))?;
             input_domains.insert(vk.id, input_domain);
-
-            if public_inputs_i.len() == 3 {
-                // TODO (Antonio) remove
-                for (i, input) in public_inputs_i.iter().enumerate() {
-                    println!("   - input {i}");
-                    for (j, value) in input.borrow().iter().enumerate() {
-                        println!("     - value {j}: {value}");
-                    }
-                }
-            }
 
             let input_fields = public_inputs_i
                 .iter()
