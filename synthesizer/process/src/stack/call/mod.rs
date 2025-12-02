@@ -20,14 +20,12 @@ use console::{
     network::prelude::*,
     program::{
         DynamicFuture,
-        DynamicRecord,
         Identifier,
         InputID,
         Literal,
         OutputID,
         Plaintext,
         ProgramID,
-        Record,
         Register,
         Request,
         Response,
@@ -53,10 +51,8 @@ use snarkvm_utilities::dev_eprintln;
 use std::sync::Arc;
 
 mod dynamic;
-pub use dynamic::*;
 
 mod standard;
-pub use standard::*;
 
 pub trait CallTrait<N: Network> {
     /// Evaluates the instruction.

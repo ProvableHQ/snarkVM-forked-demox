@@ -25,7 +25,7 @@ mod parse;
 use crate::{Instruction, finalize::FinalizeCore};
 use console::{
     network::prelude::*,
-    program::{Identifier, Register, ValueType, Variant},
+    program::{Identifier, Register, ValueType},
 };
 
 use indexmap::IndexSet;

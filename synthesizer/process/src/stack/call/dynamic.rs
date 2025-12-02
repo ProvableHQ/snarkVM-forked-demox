@@ -68,12 +68,12 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         lap!(timer, "Retrieved the substack");
 
         // If the operator is a closure, retrieve the closure and compute the output.
-        let outputs = if substack.program().get_closure(&function_name).is_ok() {
+        let outputs = if substack.program().get_closure(function_name).is_ok() {
             // A closure cannot be dynamically called.
             bail!("Cannot dynamically evaluate a closure: {function_name}")
         }
         // If the operator is a function, retrieve the function and compute the output.
-        else if let Ok(function) = substack.program().get_function(&function_name) {
+        else if let Ok(function) = substack.program().get_function(function_name) {
             // Ensure the number of inputs matches the number of input statements.
             if function.inputs().len() != inputs.len() {
                 bail!("Expected {} inputs, found {}", function.inputs().len(), inputs.len())
@@ -100,7 +100,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                 };
 
                 // Get the input types of the callee.
-                let input_types = substack.program().get_function_ref(&function_name)?.input_types();
+                let input_types = substack.program().get_function_ref(function_name)?.input_types();
                 // Ensure that the number of inputs match.
                 if input_types.len() != inputs.len() {
                     bail!("Expected {} inputs, found {}", input_types.len(), inputs.len())
@@ -117,45 +117,32 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                 let callee_inputs = inputs
                     .iter()
                     .zip(input_types.iter())
-                    .map(|(input, input_type)| match (input, input_type) {
-                        (Value::Future(future), ValueType::DynamicFuture) => {
-                            Ok(Value::DynamicFuture(DynamicFuture::from_future(future)?))
-                        }
-                        (Value::DynamicRecord(dynamic_record), ValueType::Record(record_name)) => {
-                            // Look up the owner visibility.
-                            let owner_is_private = substack.program().get_record(record_name)?.owner().is_private();
-                            Ok(Value::Record(dynamic_record.to_record(owner_is_private)?))
-                        }
-                        (Value::DynamicRecord(dynamic_record), ValueType::ExternalRecord(locator)) => {
-                            let record_program_id = locator.program_id();
-                            let record_name = locator.resource();
+                    .map(|(input, input_type)| {
+                        let value = match (input, input_type) {
+                            (Value::DynamicRecord(dynamic_record), ValueType::Record(record_name)) => {
+                                // Look up the owner visibility.
+                                let owner_is_private = substack.program().get_record(record_name)?.owner().is_private();
+                                Value::Record(dynamic_record.to_record(owner_is_private)?)
+                            }
+                            (Value::DynamicRecord(dynamic_record), ValueType::ExternalRecord(locator)) => {
+                                let record_program_id = locator.program_id();
+                                let record_name = locator.resource();
 
-                            // Obtain the program where the external record is defined (which must be imported inside the callee)
-                            // TODO (dynamic_dispatch) make sure this handles substack-fetching correctly
-                            let external_record_stack = substack.get_external_stack(record_program_id)?;
-                            
-                            // Look up the owner visibility.
-                            let owner_is_private = external_record_stack.program().get_record(record_name)?.owner().is_private();
+                                // Obtain the program where the external record is defined (which must be imported inside the callee)
+                                // TODO (dynamic_dispatch) make sure this handles substack-fetching correctly
+                                let external_record_stack = substack.get_external_stack(record_program_id)?;
 
-                            Ok(Value::Record(dynamic_record.to_record(owner_is_private)?))
-                        }
-                        (Value::DynamicFuture(dynamic_future), ValueType::Future(locator)) => {
-                            // Construct the dynamic future.
-                            let future = dynamic_future.to_future()?;
-                            // Ensure that the locator matches.
-                            ensure!(
-                                future.program_id() == locator.program_id(),
-                                "Locator program ID does not match for dynamic future."
-                            );
-                            ensure!(
-                                future.function_name() == locator.resource(),
-                                "Locator resource does not match for dynamic future."
-                            );
+                                // Look up the owner visibility.
+                                let owner_is_private =
+                                    external_record_stack.program().get_record(record_name)?.owner().is_private();
 
-                            Ok(Value::Future(dynamic_future.to_future()?))
-                        }
-                        // For other types, we assume they are directly compatible.
-                        _ => Ok(input.clone()),
+                                Value::Record(dynamic_record.to_record(owner_is_private)?)
+                            }
+                            // For other types, we assume they are directly compatible.
+                            _ => input.clone(),
+                        };
+                        // TODO(@d0cd) Check that the converted input matches the input type.
+                        Ok(value)
                     })
                     .collect::<Result<Vec<_>>>()?;
 
@@ -339,14 +326,16 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                 (Value::DynamicRecord(dynamic_record), ValueType::ExternalRecord(locator)) => {
                                     let record_program_id = locator.program_id();
                                     let record_name = locator.resource();
-        
+
                                     // Obtain the program where the external record is defined (which must be imported inside the callee)
                                     // TODO (dynamic_dispatch) make sure this handles substack-fetching correctly
-                                    let external_record_stack = target.substack().get_external_stack(record_program_id)?;
-                                    
+                                    let external_record_stack =
+                                        target.substack().get_external_stack(record_program_id)?;
+
                                     // Look up the owner visibility.
-                                    let owner_is_private = external_record_stack.program().get_record(record_name)?.owner().is_private();
-        
+                                    let owner_is_private =
+                                        external_record_stack.program().get_record(record_name)?.owner().is_private();
+
                                     Ok(Value::Record(dynamic_record.to_record(owner_is_private)?))
                                 }
                                 (Value::DynamicFuture(dynamic_future), ValueType::Future(locator)) => {
@@ -520,14 +509,16 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                 (Value::DynamicRecord(dynamic_record), ValueType::ExternalRecord(locator)) => {
                                     let record_program_id = locator.program_id();
                                     let record_name = locator.resource();
-        
+
                                     // Obtain the program where the external record is defined (which must be imported inside the callee)
                                     // TODO (dynamic_dispatch) make sure this handles substack-fetching correctly
-                                    let external_record_stack = target.substack().get_external_stack(record_program_id)?;
-                                    
+                                    let external_record_stack =
+                                        target.substack().get_external_stack(record_program_id)?;
+
                                     // Look up the owner visibility.
-                                    let owner_is_private = external_record_stack.program().get_record(record_name)?.owner().is_private();
-        
+                                    let owner_is_private =
+                                        external_record_stack.program().get_record(record_name)?.owner().is_private();
+
                                     Ok(Value::Record(dynamic_record.to_record(owner_is_private)?))
                                 }
                                 (Value::DynamicFuture(dynamic_future), ValueType::Future(locator)) => {
@@ -666,7 +657,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                          -> Result<ProvingKey<N>> {
                             let record_stack = match program_id == stack.program_id() {
                                 true => stack,
-                                false => &stack.get_stack_unchecked(&program_id)?,
+                                false => &stack.get_stack_unchecked(program_id)?,
                             };
 
                             // TODO (dynamic_dispatch) this is meant to be the equivalent of the block with the comment
@@ -680,12 +671,12 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         let callee_console_input_ids = callee_request.input_ids();
                         let caller_console_request = registers.request()?;
                         let caller_console_function_id = compute_function_id(
-                            &caller_console_request.network_id(),
+                            caller_console_request.network_id(),
                             caller_console_request.program_id(),
                             caller_console_request.function_name(),
                         )?;
                         let callee_console_function_id = compute_function_id(
-                            &U16::<N>::new(N::ID as u16),
+                            &U16::<N>::new(N::ID),
                             callee_request.program_id(),
                             callee_request.function_name(),
                         )?;
@@ -774,7 +765,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
 
                                     let translation_proving_key =
                                         get_record_translation_proving_key(&program_id, &record_name, rng)?;
-                                    
+
                                     translation_data.push(RecordTranslationData {
                                         // TODO: consider using a mapping from (program_id, record_name) to (proving_key, other data)
                                         translation_proving_key,
@@ -792,7 +783,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                         id_dynamic,
                                         input_output_index: operand_index as u16,
                                     });
-                                },
+                                }
                                 (
                                     Value::DynamicRecord(record_dynamic),
                                     InputID::DynamicRecord(id_dynamic),
@@ -801,7 +792,6 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                     InputID::ExternalRecord(id_static),
                                     ValueType::ExternalRecord(record_locator),
                                 ) => {
-
                                     let program_id = *record_locator.program_id();
                                     let record_name = *record_locator.resource();
 
@@ -825,7 +815,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                         id_dynamic,
                                         input_output_index: operand_index as u16,
                                     });
-                                },
+                                }
                                 _ => {} // No translation to perform.
                             }
                         }
@@ -911,7 +901,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                     ValueType::Record(record_name),
                                 ) => {
                                     let program_id = *callee_request.program_id();
-                                    
+
                                     let translation_proving_key =
                                         get_record_translation_proving_key(&program_id, &record_name, rng)?;
 
@@ -942,7 +932,8 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                             // Compute the randomizer as `HashToScalar(tvk || index)`.
                                             let randomizer = N::hash_to_scalar_psd2(&[*callee_request.tvk(), index])?;
                                             // Compute the record view key.
-                                            let rvk = (*record_static.owner().to_group() * randomizer).to_x_coordinate();
+                                            let rvk =
+                                                (*record_static.owner().to_group() * randomizer).to_x_coordinate();
 
                                             Some(rvk)
                                         },
@@ -952,7 +943,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                         id_dynamic: *id_dynamic,
                                         input_output_index: (num_inputs + operand_index) as u16,
                                     });
-                                },
+                                }
                                 (
                                     Value::DynamicRecord(record_dynamic),
                                     OutputID::DynamicRecord(id_dynamic),
@@ -966,7 +957,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
 
                                     let translation_proving_key =
                                         get_record_translation_proving_key(&program_id, &record_name, rng)?;
-                                    
+
                                     translation_data.push(RecordTranslationData {
                                         // TODO: consider using a mapping from (program_id, record_name) to (proving_key, other data)
                                         translation_proving_key,
@@ -984,7 +975,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                         id_dynamic: *id_dynamic,
                                         input_output_index: (num_inputs + operand_index) as u16,
                                     });
-                                },
+                                }
                                 _ => {} // No translation to perform.
                             }
                         }

@@ -53,7 +53,7 @@ impl<N: Network> Process<N> {
         // Ensure the trace is not empty.
         ensure!(!trace.transitions().is_empty(), "Execution of '{locator}' is empty");
         // Construct the call graph.
-        trace.construct_call_graph(&self)?;
+        trace.construct_call_graph(self)?;
 
         finish!(timer);
         Ok((response, trace))

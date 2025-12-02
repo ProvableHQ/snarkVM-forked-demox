@@ -258,7 +258,7 @@ impl<N: Network> Stack<N> {
         let caller = Ternary::ternary(&is_root, request.signer(), &parent);
 
         // Ensure the request has a valid signature, inputs, and transition view key.
-        A::assert(request.verify(&input_types, &tpk, Some(root_tvk), is_root, program_checksum, false));
+        A::assert(request.verify(&input_types, &tpk, Some(root_tvk), is_root, program_checksum));
         lap!(timer, "Verify the circuit request");
 
         // Set the transition signer.

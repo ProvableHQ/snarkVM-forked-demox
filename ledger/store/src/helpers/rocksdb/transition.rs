@@ -14,11 +14,7 @@
 // limitations under the License.
 
 use crate::{
-    InputStorage,
-    InputStore,
-    OutputStorage,
-    OutputStore,
-    TransitionStorage,
+    InputStorage, InputStore, OutputStorage, OutputStore, TransitionStorage,
     helpers::rocksdb::{self, DataMap, Database, MapID, TransitionInputMap, TransitionMap, TransitionOutputMap},
 };
 use console::{
@@ -26,7 +22,7 @@ use console::{
     program::{Ciphertext, Future, Identifier, Plaintext, ProgramID, Record},
     types::{Field, Group},
 };
-use snarkvm_ledger_block::Input;
+use snarkvm_ledger_block::{Input, Output};
 
 use aleo_std_storage::StorageMode;
 
@@ -49,8 +45,10 @@ pub struct TransitionDB<N: Network> {
     reverse_tcm_map: DataMap<Field<N>, N::TransitionID>,
     /// The signer commitments.
     scm_map: DataMap<N::TransitionID, Field<N>>,
-    /// The dynamic input map.
+    /// The caller input map.
     caller_input_map: DataMap<N::TransitionID, Vec<Input<N>>>,
+    /// The caller output map.
+    caller_output_map: DataMap<N::TransitionID, Vec<Output<N>>>,
 }
 
 #[rustfmt::skip]
@@ -64,6 +62,7 @@ impl<N: Network> TransitionStorage<N> for TransitionDB<N> {
     type ReverseTCMMap = DataMap<Field<N>, N::TransitionID>;
     type SCMMap = DataMap<N::TransitionID, Field<N>>;
     type CallerInputMap = DataMap<N::TransitionID, Vec<Input<N>>>;
+    type CallerOutputMap = DataMap<N::TransitionID, Vec<Output<N>>>;
 
     /// Initializes the transition storage.
     fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
@@ -77,7 +76,8 @@ impl<N: Network> TransitionStorage<N> for TransitionDB<N> {
             tcm_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Transition(TransitionMap::TCM))?,
             reverse_tcm_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(),  MapID::Transition(TransitionMap::ReverseTCM))?,
             scm_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Transition(TransitionMap::SCM))?,
-            caller_input_map: rocksdb::RocksDB::open_map(N::ID, storage, MapID::Transition(TransitionMap::Caller))?,
+            caller_input_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Transition(TransitionMap::CallerInput))?,
+            caller_output_map: rocksdb::RocksDB::open_map(N::ID, storage, MapID::Transition(TransitionMap::CallerOutput))?,
         })
     }
 
@@ -124,6 +124,11 @@ impl<N: Network> TransitionStorage<N> for TransitionDB<N> {
     /// Returns the caller input map.
     fn caller_input_map(&self) -> &Self::CallerInputMap {
         &self.caller_input_map
+    }
+
+    /// Returns the caller output map.
+    fn caller_output_map(&self) -> &Self::CallerOutputMap {
+        &self.caller_output_map
     }
 }
 

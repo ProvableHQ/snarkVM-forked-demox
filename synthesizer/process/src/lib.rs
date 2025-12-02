@@ -122,7 +122,7 @@ impl<N: Network> Process<N> {
         }
         let rng = &mut rand::thread_rng();
         let credits_record_name = Identifier::<N>::from_str("credits").unwrap();
-        let record_verifying_key = stack.synthesize_translation_key::<A, _>(&credits_record_name, rng)?;
+        stack.synthesize_translation_key::<A, _>(&credits_record_name, rng)?;
         lap!(timer, "Synthesize credits program keys");
 
         // Add the 'credits.aleo' stack to the process.

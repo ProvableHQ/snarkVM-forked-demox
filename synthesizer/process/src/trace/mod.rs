@@ -27,7 +27,6 @@ use circuit::Assignment;
 use console::{
     network::prelude::*,
     program::{InputID, Locator, Value},
-    types::Field,
 };
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use snarkvm_ledger_block::{Execution, Fee, Transition};
@@ -223,7 +222,7 @@ impl<N: Network> Trace<N> {
             locator,
             varuna_version,
             proving_tasks,
-            &translation_assignments,
+            translation_assignments,
             inclusion_assignments,
             *global_state_root,
             rng,
@@ -343,7 +342,7 @@ impl<N: Network> Trace<N> {
         locator: &str,
         varuna_version: VarunaVersion,
         mut proving_tasks: Vec<(ProvingKey<N>, Vec<Assignment<N::Field>>)>,
-        mut translation_assignments: &[(ProvingKey<N>, Vec<TranslationAssignment<N>>)],
+        translation_assignments: &[(ProvingKey<N>, Vec<TranslationAssignment<N>>)],
         inclusion_assignments: &[InclusionAssignmentWrapper<N>],
         global_state_root: N::StateRoot,
         rng: &mut R,
@@ -410,7 +409,7 @@ impl<N: Network> Trace<N> {
 
         for (proving_key, assignments) in translation_assignments {
             let circuit_assignments = assignments
-                .into_iter()
+                .iter()
                 .map(|assignment| assignment.to_circuit_assignment::<A>())
                 .collect::<Result<Vec<Assignment<N::Field>>>>()?;
             // TODO (dynamic_dispatch): is the clone cheap?
