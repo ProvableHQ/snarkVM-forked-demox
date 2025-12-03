@@ -13,6 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod dynamic_mapping_operations;
 mod recursion;
 
 use super::*;

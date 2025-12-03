@@ -183,12 +183,12 @@ impl<N: Network> Parser for GetDynamic<N> {
 
         // Parse the program name operand from the string.
         let (string, program_name) = Operand::parse(string)?;
-        // Parse the "." from the string.
-        let (string, _) = tag(".")(string)?;
+        // Parse the whitespace from the string.
+        let (string, _) = Sanitizer::parse_whitespaces(string)?;
         // Parse the program network operand from the string.
         let (string, program_network) = Operand::parse(string)?;
-        // Parse the "/" from the string.
-        let (string, _) = tag("/")(string)?;
+        // Parse the whitespace from the string.
+        let (string, _) = Sanitizer::parse_whitespaces(string)?;
         // Parse the mapping name operand from the string.
         let (string, mapping_name) = Operand::parse(string)?;
 
@@ -226,11 +226,10 @@ impl<N: Network> Parser for GetDynamic<N> {
         // Parse the ";" from the string.
         let (string, _) = tag(";")(string)?;
 
-        Ok((string, Self {
-            operands: [program_name, program_network, mapping_name, key],
-            destination,
-            destination_type,
-        }))
+        Ok((
+            string,
+            Self { operands: [program_name, program_network, mapping_name, key], destination, destination_type },
+        ))
     }
 }
 
@@ -265,7 +264,7 @@ impl<N: Network> Display for GetDynamic<N> {
         // Print the command.
         write!(f, "{} ", Self::opcode())?;
         // Print the program name, program network, mapping and key operand.
-        write!(f, "{}.{}/{}[{}] into ", self.program_name(), self.program_network(), self.mapping_name(), self.key())?;
+        write!(f, "{} {} {}[{}] into ", self.program_name(), self.program_network(), self.mapping_name(), self.key())?;
         // Print the destination register.
         write!(f, "{} as {};", self.destination, self.destination_type())
     }
@@ -318,7 +317,7 @@ mod tests {
 
     #[test]
     fn test_parse() {
-        let (string, get) = GetDynamic::<CurrentNetwork>::parse("get.dynamic r0.r1/r2[r3] into r4 as Baz;").unwrap();
+        let (string, get) = GetDynamic::<CurrentNetwork>::parse("get.dynamic r0 r1 r2[r3] into r4 as Baz;").unwrap();
         assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
         assert_eq!(get.operands().len(), 4, "The number of operands is incorrect");
         assert_eq!(get.program_name(), &Operand::Register(Register::Locator(0)), "The first operand is incorrect");
@@ -335,7 +334,7 @@ mod tests {
 
     #[test]
     fn test_from_bytes() {
-        let (string, get) = GetDynamic::<CurrentNetwork>::parse("get.dynamic r0.r1/r2[r3] into r4 as u8;").unwrap();
+        let (string, get) = GetDynamic::<CurrentNetwork>::parse("get.dynamic r0 r1 r2[r3] into r4 as u8;").unwrap();
         assert!(string.is_empty());
         let bytes_le = get.to_bytes_le().unwrap();
         let result = GetDynamic::<CurrentNetwork>::from_bytes_le(&bytes_le[..]);

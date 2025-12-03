@@ -141,16 +141,14 @@ impl<N: Network> Parser for ContainsDynamic<N> {
         // Parse the whitespace from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
 
-        // TODO (@d0cd) Verify that the grammar does not have ambiguities.
-
         // Parse the program name operand from the string.
         let (string, program_name) = Operand::parse(string)?;
-        // Parse the "." from the string.
-        let (string, _) = tag(".")(string)?;
+        // Parse the whitespace from the string.
+        let (string, _) = Sanitizer::parse_whitespaces(string)?;
         // Parse the program network operand from the string.
         let (string, program_network) = Operand::parse(string)?;
-        // Parse the "/" from the string.
-        let (string, _) = tag("/")(string)?;
+        // Parse the whitespace from the string.
+        let (string, _) = Sanitizer::parse_whitespaces(string)?;
         // Parse the mapping name operand from the string.
         let (string, mapping_name) = Operand::parse(string)?;
 
@@ -214,7 +212,7 @@ impl<N: Network> Display for ContainsDynamic<N> {
         // Print the command.
         write!(f, "{} ", Self::opcode())?;
         // Print the program name, program network, mapping and key operand.
-        write!(f, "{}.{}/{}[{}] into ", self.program_name(), self.program_network(), self.mapping_name(), self.key())?;
+        write!(f, "{} {} {}[{}] into ", self.program_name(), self.program_network(), self.mapping_name(), self.key())?;
         // Print the destination register.
         write!(f, "{};", self.destination)
     }
@@ -264,7 +262,7 @@ mod tests {
     #[test]
     fn test_parse() {
         let (string, contains) =
-            ContainsDynamic::<CurrentNetwork>::parse("contains.dynamic r0.r1/r2[r3] into r4;").unwrap();
+            ContainsDynamic::<CurrentNetwork>::parse("contains.dynamic r0 r1 r2[r3] into r4;").unwrap();
         assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
         assert_eq!(contains.operands().len(), 4, "The number of operands is incorrect");
         assert_eq!(contains.program_name(), &Operand::Register(Register::Locator(0)), "The first operand is incorrect");
@@ -275,13 +273,13 @@ mod tests {
         );
         assert_eq!(contains.mapping_name(), &Operand::Register(Register::Locator(2)), "The third operand is incorrect");
         assert_eq!(contains.key(), &Operand::Register(Register::Locator(3)), "The fourth operand is incorrect");
-        assert_eq!(contains.destination, Register::Locator(1), "The second operand is incorrect");
+        assert_eq!(contains.destination, Register::Locator(4), "The second operand is incorrect");
     }
 
     #[test]
     fn test_from_bytes() {
         let (string, contains) =
-            ContainsDynamic::<CurrentNetwork>::parse("contains.dynamic r0.r1/r2[r3] into r4;").unwrap();
+            ContainsDynamic::<CurrentNetwork>::parse("contains.dynamic r0 r1 r2[r3] into r4;").unwrap();
         assert!(string.is_empty());
         let bytes_le = contains.to_bytes_le().unwrap();
         let result = ContainsDynamic::<CurrentNetwork>::from_bytes_le(&bytes_le[..]);

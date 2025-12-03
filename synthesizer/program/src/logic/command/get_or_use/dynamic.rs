@@ -185,16 +185,14 @@ impl<N: Network> Parser for GetOrUseDynamic<N> {
         // Parse the whitespace from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
 
-        // TODO (@d0cd) Verify that the grammar does not have ambiguities.
-
         // Parse the program name operand from the string.
         let (string, program_name) = Operand::parse(string)?;
-        // Parse the "." from the string.
-        let (string, _) = tag(".")(string)?;
+        // Parse the whitespace from the string.
+        let (string, _) = Sanitizer::parse_whitespaces(string)?;
         // Parse the program network operand from the string.
         let (string, program_network) = Operand::parse(string)?;
-        // Parse the "/" from the string.
-        let (string, _) = tag("/")(string)?;
+        // Parse the whitespace from the string.
+        let (string, _) = Sanitizer::parse_whitespaces(string)?;
         // Parse the mapping name operand from the string.
         let (string, mapping_name) = Operand::parse(string)?;
 
@@ -236,11 +234,14 @@ impl<N: Network> Parser for GetOrUseDynamic<N> {
         // Parse the ";" from the string.
         let (string, _) = tag(";")(string)?;
 
-        Ok((string, Self {
-            operands: [program_name, program_network, mapping_name, key, default],
-            destination,
-            destination_type,
-        }))
+        Ok((
+            string,
+            Self {
+                operands: [program_name, program_network, mapping_name, key, default],
+                destination,
+                destination_type,
+            },
+        ))
     }
 }
 
@@ -277,7 +278,7 @@ impl<N: Network> Display for GetOrUseDynamic<N> {
         // Print the program name, program network, mapping and key operand.
         write!(
             f,
-            "{}.{}/{}[{}] {} into ",
+            "{} {} {}[{}] {} into ",
             self.program_name(),
             self.program_network(),
             self.mapping_name(),
@@ -345,7 +346,7 @@ mod tests {
     #[test]
     fn test_parse() {
         let (string, get) =
-            GetOrUseDynamic::<CurrentNetwork>::parse("get.or_use.dynamic r0.r1/r2[r3] r4 into r5 as boolean;").unwrap();
+            GetOrUseDynamic::<CurrentNetwork>::parse("get.or_use.dynamic r0 r1 r2[r3] r4 into r5 as boolean;").unwrap();
         assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
         assert_eq!(get.operands().len(), 5, "The number of operands is incorrect");
         assert_eq!(get.program_name(), &Operand::Register(Register::Locator(0)), "The first operand is incorrect");
@@ -354,7 +355,11 @@ mod tests {
         assert_eq!(get.key(), &Operand::Register(Register::Locator(3)), "The fourth operand is incorrect");
         assert_eq!(get.default(), &Operand::Register(Register::Locator(4)), "The fifth operand is incorrect");
         assert_eq!(get.destination, Register::Locator(5), "The destination register is incorrect");
-        assert_eq!(get.destination_type, PlaintextType::Boolean, "The destination type is incorrect");
+        assert_eq!(
+            get.destination_type,
+            PlaintextType::Literal(console::program::LiteralType::Boolean),
+            "The destination type is incorrect"
+        );
     }
 
     #[test]
