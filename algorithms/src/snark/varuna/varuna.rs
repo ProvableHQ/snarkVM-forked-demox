@@ -375,6 +375,7 @@ where
         let mut public_inputs = BTreeMap::new(); // inputs need to live longer than the rest of prover_state
         let num_unique_circuits = keys_to_constraints.len();
         let mut circuit_ids = Vec::with_capacity(num_unique_circuits);
+        
         for pk in keys_to_constraints.keys() {
             let batch_size = prover_state.batch_size(&pk.circuit).ok_or(anyhow!("Batch size not found."))?;
             let public_input = prover_state.public_inputs(&pk.circuit).ok_or(anyhow!("Public input not found."))?;
@@ -744,6 +745,7 @@ where
         let mut circuit_infos = BTreeMap::new();
         let mut circuit_ids = Vec::with_capacity(keys_to_inputs.len());
         for (&vk, &public_inputs_i) in keys_to_inputs.iter() {
+
             max_num_constraints = max_num_constraints.max(vk.circuit_info.num_constraints);
             max_num_variables = max_num_variables.max(vk.circuit_info.num_public_and_private_variables);
 
@@ -781,9 +783,12 @@ where
                     })
                     .unzip()
             };
+
             let circuit_id = vk.id;
             public_inputs.insert(circuit_id, parsed_public_inputs_i);
+
             padded_public_vec.push(padded_public_inputs_i);
+
             circuit_infos.insert(circuit_id, &vk.circuit_info);
             circuit_ids.push(circuit_id);
         }

@@ -561,6 +561,9 @@ impl<N: Network> RegisterTypes<N> {
                         CastType::ExternalRecord(_locator) => {
                             bail!("Illegal operation: Cannot cast to an external record.")
                         }
+                        CastType::DynamicRecord => {
+                            ensure!(instruction.operands().len() == 1, "Cast to dynamic record expected 1 operand.");
+                        }
                     }
                 }
                 "cast.lossy" => {
@@ -614,6 +617,11 @@ impl<N: Network> RegisterTypes<N> {
             }
             Opcode::Serialize(opcode) => Self::check_serialize_opcode(opcode, instruction)?,
             Opcode::Deserialize(opcode) => Self::check_deserialize_opcode(opcode, instruction)?,
+            Opcode::GetDynamicRecord(_) => {
+                ensure!(instruction.operands().len() == 1, "Expected 1 operand.");
+                ensure!(instruction.destinations().len() == 1, "Instruction '{instruction}' has multiple destinations.");
+                ensure!(matches!(instruction, Instruction::GetDynamicRecord(..)), "Instruction '{instruction}' is not a get.dynamic.record operation.");
+            },
         }
         Ok(())
     }

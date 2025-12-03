@@ -15,13 +15,16 @@
 
 use super::*;
 
-impl<A: Aleo> ToFields for Entry<A, Plaintext<A>> {
-    type Field = Field<A>;
+
+impl<A: Aleo> Entry<A, Plaintext<A>> {
 
     /// Returns this entry as a list of field elements.
-    fn to_fields(&self) -> Vec<Self::Field> {
+    pub fn to_fields_with_visibility_mode(&self, visibility_mode: Mode) -> Vec<Field<A>> {
+
         // Encode the data as little-endian bits.
-        let mut bits_le = self.to_bits_le();
+        let mut bits_le = vec![];
+        self.write_bits_le_with_visibility_mode(&mut bits_le, visibility_mode);
+
         // Adds one final bit to the data, to serve as a terminus indicator.
         // During decryption, this final bit ensures we've reached the end.
         bits_le.push(Boolean::constant(true));
@@ -32,5 +35,14 @@ impl<A: Aleo> ToFields for Entry<A, Plaintext<A>> {
             true => fields,
             false => A::halt("Entry<Plaintext> exceeds maximum allowed size"),
         }
+    }
+}
+
+impl<A: Aleo> ToFields for Entry<A, Plaintext<A>> {
+    type Field = Field<A>;
+
+    /// Returns this entry as a list of field elements.
+    fn to_fields(&self) -> Vec<Self::Field> {
+        self.to_fields_with_visibility_mode(Mode::Constant)
     }
 }

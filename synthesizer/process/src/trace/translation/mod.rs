@@ -32,7 +32,6 @@ use console::{
         Identifier,
         Plaintext,
         ProgramID,
-        RECORD_DATA_TREE_DEPTH,
         Record,
         U16,
         ValueType,
@@ -86,9 +85,10 @@ impl<N: Network> Translation<N> {
 
         let mut translation_count: u16 = 0;
 
-        // Traversal order only affects the translation count appearing as a public input in the translation circuit.
+        // Traversal order affects the translation count as well as the internal order of each batch input to proving/verification.
         // Order is irrelevant as long as it is consistent between the prover and verifier. (cf. Translation::prepare)
         for transition in transitions {
+
             let (_, callee_function_core) = transition_map
                 .get(transition.id())
                 .ok_or_else(|| anyhow!("Transition {} from execution not found transition map", transition.id()))?;
@@ -105,7 +105,7 @@ impl<N: Network> Translation<N> {
 
             // Prepare the input translation tasks
             let num_inputs = if let Some(caller_inputs) = transition.caller_inputs() {
-                // TODO (dynamic_dispatch): confirm the input types don't have to be matched against the function definiction, as we were doing before (e. g. because that's already checked elsewhere)
+                // TODO (dynamic_dispatch): confirm the input types don't have to be matched against the function definition, as we were doing before (e. g. because that's already checked elsewhere)
                 // TODO (antonio): cf above
                 // TODO (vicsn): cf above
                 // TODO (d0cd): cf above
