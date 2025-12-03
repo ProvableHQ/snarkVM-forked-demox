@@ -168,8 +168,11 @@ impl<N: Network> TranslationAssignment<N> {
 
         // ******** Computing the IDs of the dynamic and static records
 
-        let actual_id_dynamic =
-            circuit_record_dynamic.to_id(circuit_function_id.clone(), circuit_tvk.clone(), circuit_input_output_index.clone());
+        let actual_id_dynamic = circuit_record_dynamic.to_id(
+            circuit_function_id.clone(),
+            circuit_tvk.clone(),
+            circuit_input_output_index.clone(),
+        );
 
         let circuit_static_commitment =
             circuit_record_static.to_commitment(&circuit_program_id, &circuit_record_name, &circuit_record_view_key);
@@ -180,11 +183,8 @@ impl<N: Network> TranslationAssignment<N> {
         );
 
         // Input/output ID of the static record if it is not external (serial number of or commitment)
-        let actual_id_static_non_external = circuit::Field::<A>::ternary(
-            &circuit_is_input,
-            &circuit_static_serial_number,
-            &circuit_static_commitment,
-        );
+        let actual_id_static_non_external =
+            circuit::Field::<A>::ternary(&circuit_is_input, &circuit_static_serial_number, &circuit_static_commitment);
 
         // Input/output ID of the static record if it is external
         // TODO All instances of this code should point to a single place

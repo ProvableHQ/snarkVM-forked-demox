@@ -209,8 +209,11 @@ impl<N: Network> FinalizeTypes<N> {
             Command::Instruction(instruction) => self.check_instruction(stack, instruction)?,
             Command::Await(await_) => self.check_await(stack, await_)?,
             Command::Contains(contains) => self.check_contains(stack, contains)?,
+            Command::ContainsDynamic(contains_dynamic) => self.check_contains_dynamic(stack, contains_dynamic)?,
             Command::Get(get) => self.check_get(stack, get)?,
+            Command::GetDynamic(get_dynamic) => self.check_get_dynamic(stack, get_dynamic)?,
             Command::GetOrUse(get_or_use) => self.check_get_or_use(stack, get_or_use)?,
+            Command::GetOrUseDynamic(get_or_use_dynamic) => self.check_get_or_use_dynamic(stack, get_or_use_dynamic)?,
             Command::RandChaCha(rand_chacha) => self.check_rand_chacha(stack, rand_chacha)?,
             Command::Remove(remove) => self.check_remove(stack, remove)?,
             Command::Set(set) => self.check_set(stack, set)?,
@@ -350,6 +353,47 @@ impl<N: Network> FinalizeTypes<N> {
         Ok(())
     }
 
+    /// Ensures the given `contains.dynamic` command is well-formed.
+    #[inline]
+    fn check_contains_dynamic(&mut self, stack: &Stack<N>, contains: &ContainsDynamic<N>) -> Result<()> {
+        // Check that the program name, network, and mapping are all field types..
+        for operand in [contains.program_name(), contains.program_network(), contains.mapping_name()] {
+            match self.get_type_from_operand(stack, operand)? {
+                // If the register is a plaintext type, ensure it is a field.
+                FinalizeType::Plaintext(plaintext_type) => {
+                    ensure!(
+                        plaintext_type == PlaintextType::Literal(LiteralType::Field),
+                        "Operand '{operand}' must be of type 'field'."
+                    )
+                }
+                // If the register is a future, throw an error.
+                FinalizeType::Future(..) => {
+                    bail!("A future cannot be used in a `contains.dynamic` command")
+                }
+                // If the register is a dynamic future, throw an error.
+                FinalizeType::DynamicFuture => {
+                    bail!("A dynamic future cannot be used in a `contains.dynamic` command")
+                }
+            }
+        }
+        // Check the key type.
+        match self.get_type_from_operand(stack, contains.key())? {
+            // If the register is a plaintext type, do nothing.
+            FinalizeType::Plaintext(_) => {}
+            // If the register is a future, throw an error.
+            FinalizeType::Future(..) => bail!("A future cannot be used as a key in a `contains` command"),
+            // If the register is a dynamic future, throw an error.
+            FinalizeType::DynamicFuture => bail!("A dynamic future cannot be used as a key in a `contains` command"),
+        };
+        // Get the destination register.
+        let destination = contains.destination().clone();
+        // Ensure the destination register is a locator (and does not reference an access).
+        ensure!(matches!(destination, Register::Locator(..)), "Destination '{destination}' must be a locator.");
+        // Insert the destination register.
+        self.add_destination(destination, FinalizeType::Plaintext(PlaintextType::Literal(LiteralType::Boolean)))?;
+        Ok(())
+    }
+
     /// Ensures the given `get` command is well-formed.
     #[inline]
     fn check_get(&mut self, stack: &Stack<N>, get: &Get<N>) -> Result<()> {
@@ -412,6 +456,47 @@ impl<N: Network> FinalizeTypes<N> {
         ensure!(matches!(destination, Register::Locator(..)), "Destination '{destination}' must be a locator.");
         // Insert the destination register.
         self.add_destination(destination, FinalizeType::Plaintext(mapping_value_type.clone()))?;
+        Ok(())
+    }
+
+    /// Ensures the given `get.dynamic` command is well-formed.
+    #[inline]
+    fn check_get_dynamic(&mut self, stack: &Stack<N>, get: &GetDynamic<N>) -> Result<()> {
+        // Check that the program name, network, and mapping are all field types.
+        for operand in [get.program_name(), get.program_network(), get.mapping_name()] {
+            match self.get_type_from_operand(stack, operand)? {
+                // If the register is a plaintext type, ensure it is a field.
+                FinalizeType::Plaintext(plaintext_type) => {
+                    ensure!(
+                        plaintext_type == PlaintextType::Literal(LiteralType::Field),
+                        "Operand '{operand}' must be of type 'field'."
+                    )
+                }
+                // If the register is a future, throw an error.
+                FinalizeType::Future(..) => {
+                    bail!("A future cannot be used in a `contains.dynamic` command")
+                }
+                // If the register is a dynamic future, throw an error.
+                FinalizeType::DynamicFuture => {
+                    bail!("A dynamic future cannot be used in a `contains.dynamic` command")
+                }
+            }
+        }
+        // Check the register type of the key.
+        match self.get_type_from_operand(stack, get.key())? {
+            // If the register is a plaintext type, do nothing.
+            FinalizeType::Plaintext(_) => {}
+            // If the register is a future, throw an error.
+            FinalizeType::Future(..) => bail!("A future cannot be used as a key in a `get` command"),
+            // If the register is a dynamic future, throw an error.
+            FinalizeType::DynamicFuture => bail!("A dynamic future cannot be used as a key in a `get` command"),
+        };
+        // Get the destination register.
+        let destination = get.destination().clone();
+        // Ensure the destination register is a locator (and does not reference an access).
+        ensure!(matches!(destination, Register::Locator(..)), "Destination '{destination}' must be a locator.");
+        // Insert the destination register.
+        self.add_destination(destination, FinalizeType::Plaintext(get.destination_type().clone()))?;
         Ok(())
     }
 
@@ -494,6 +579,62 @@ impl<N: Network> FinalizeTypes<N> {
         ensure!(matches!(destination, Register::Locator(..)), "Destination '{destination}' must be a locator.");
         // Insert the destination register.
         self.add_destination(destination, FinalizeType::Plaintext(default_value_type))?;
+        Ok(())
+    }
+
+    /// Ensures the given `get.or_use.dynamic` command is well-formed.
+    #[inline]
+    fn check_get_or_use_dynamic(&mut self, stack: &Stack<N>, get_or_use: &GetOrUseDynamic<N>) -> Result<()> {
+        // Check that the program name, network, and mapping are all field types..
+        for operand in [get_or_use.program_name(), get_or_use.program_network(), get_or_use.mapping_name()] {
+            match self.get_type_from_operand(stack, operand)? {
+                // If the register is a plaintext type, ensure it is a field.
+                FinalizeType::Plaintext(plaintext_type) => {
+                    ensure!(
+                        plaintext_type == PlaintextType::Literal(LiteralType::Field),
+                        "Operand '{operand}' must be of type 'field'."
+                    )
+                }
+                // If the register is a future, throw an error.
+                FinalizeType::Future(..) => {
+                    bail!("A future cannot be used in a `contains.dynamic` command")
+                }
+                // If the register is a dynamic future, throw an error.
+                FinalizeType::DynamicFuture => {
+                    bail!("A dynamic future cannot be used in a `contains.dynamic` command")
+                }
+            }
+        }
+        // Check the register type of the key.
+        match self.get_type_from_operand(stack, get_or_use.key())? {
+            // If the register is a plaintext type, do nothing.
+            FinalizeType::Plaintext(_) => {}
+            // If the register is a future, throw an error.
+            FinalizeType::Future(..) => bail!("A future cannot be used as a key in a `get.or_use` command"),
+            // If the register is a dynamic future, throw an error.
+            FinalizeType::DynamicFuture => bail!("A dynamic future cannot be used as a key in a `get.or_use` command"),
+        };
+        // Check the register type of the default value.
+        match self.get_type_from_operand(stack, get_or_use.default())? {
+            // If the register is a plaintext type, check that it matches the destination type.
+            FinalizeType::Plaintext(plaintext_type) => {
+                ensure!(
+                    &plaintext_type == get_or_use.destination_type(),
+                    "Default value type in `get.or_use.dynamic` '{plaintext_type}' does not match the destination type '{}'.",
+                    get_or_use.destination_type()
+                )
+            }
+            // If the register is a future, throw an error.
+            FinalizeType::Future(..) => bail!("A default value cannot be a future"),
+            // If the register is a dynamic future, throw an error.
+            FinalizeType::DynamicFuture => bail!("A default value cannot be a dynamic future"),
+        };
+        // Get the destination register.
+        let destination = get_or_use.destination().clone();
+        // Ensure the destination register is a locator (and does not reference an access).
+        ensure!(matches!(destination, Register::Locator(..)), "Destination '{destination}' must be a locator.");
+        // Insert the destination register.
+        self.add_destination(destination, FinalizeType::Plaintext(get_or_use.destination_type().clone()))?;
         Ok(())
     }
 

@@ -329,6 +329,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
 
                                     // Obtain the program where the external record is defined (which must be imported inside the callee)
                                     // TODO (dynamic_dispatch) make sure this handles substack-fetching correctly
+                                    // TODO (dynamic_dispatch) verify that we want to be using `get_exteranl_stack`, ditto for others.
                                     let external_record_stack =
                                         target.substack().get_external_stack(record_program_id)?;
 

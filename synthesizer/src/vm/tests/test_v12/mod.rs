@@ -14,12 +14,15 @@
 // limitations under the License.
 
 mod cast;
-
+mod dynamic_mapping_operations;
 mod recursion;
 
 use super::*;
 
-use crate::{vm::test_helpers::{sample_vm_at_height, *}, circuit::{Eject, Inject, Mode}};
+use crate::{
+    circuit::{Eject, Inject, Mode},
+    vm::test_helpers::{sample_vm_at_height, *},
+};
 
 use anyhow::Result;
 use console::{
@@ -53,9 +56,9 @@ fn add_and_test(
     rng: &mut TestRng,
 ) {
     for (index, transaction) in transactions.iter().enumerate() {
-        vm.check_transaction(transaction, None, rng).map_err(|e| {
-            anyhow!("Transaction {index} check failed: {e}")
-        }).unwrap();
+        vm.check_transaction(transaction, None, rng)
+            .map_err(|e| anyhow!("Transaction {index} check failed: {e}"))
+            .unwrap();
     }
     let block = sample_next_block(vm, caller_private_key, transactions, rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), transactions.len());
@@ -96,7 +99,8 @@ fn test_translation(
     let get_external_liters_function_name = Identifier::<CurrentNetwork>::from_str("get_external_liters").unwrap();
     let gas_pipe_function_name = Identifier::<CurrentNetwork>::from_str("gas_pipe").unwrap();
     let static_gas_leak_function_name = Identifier::<CurrentNetwork>::from_str("static_gas_leak").unwrap();
-    let get_dynamic_liters_from_gas_function_name = Identifier::<CurrentNetwork>::from_str("get_dynamic_liters_from_gas").unwrap();
+    let get_dynamic_liters_from_gas_function_name =
+        Identifier::<CurrentNetwork>::from_str("get_dynamic_liters_from_gas").unwrap();
 
     let get_liquid_liters_function_field = get_liquid_liters_function_name.to_field().unwrap();
     let get_gas_liters_function_field = get_gas_liters_function_name.to_field().unwrap();
@@ -303,13 +307,12 @@ fn test_translation(
     add_and_test(&vm, caller_private_key, &[transaction.clone()], rng);
 
     if let Some(expected_public_outputs) = expected_public_outputs {
-        
         println!("Asserting output correctness on {} expected public outputs...", expected_public_outputs.len());
 
         // Note the last transition is the fee transition
         let num_transitions = transaction.transitions().count();
         let root_transition = transaction.transitions().nth(num_transitions - 2).unwrap();
-    
+
         let public_outputs = root_transition
             .outputs()
             .iter()
@@ -1230,7 +1233,7 @@ fn test_conditional_execution() {
 /************************** Translation test cases ***************************/
 
 // TODO (dynamic_dispatch) remove the legend once working
-// 
+//
 // Single-translation test cases (O: coded, P: passing)
 // P input dynamic -> static external
 // P input dynamic -> static non-external
@@ -1361,8 +1364,9 @@ fn test_translation_output_external_dynamic() {
         "gas_manager.aleo",
         "pump_and_send_through_pipe",
         None,
-        Some(r0_static),None,
-        rng
+        Some(r0_static),
+        None,
+        rng,
     );
 }
 
@@ -1398,14 +1402,7 @@ fn test_translation_triple() {
     // Input and expected output (10 liters have leaked)
     let expected_output = Plaintext::<CurrentNetwork>::from_str("323u64").unwrap();
 
-    test_translation(
-        &caller_private_key,
-        "flow.aleo",
-        "dynamic_gas_leak",
-        None,
-        Some(r0_static),None,
-        rng
-    );
+    test_translation(&caller_private_key, "flow.aleo", "dynamic_gas_leak", None, Some(r0_static), None, rng);
 }
 
 #[test]
@@ -1433,7 +1430,8 @@ fn test_translation_traversal_consistency() {
     let network_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
 
     let quadruple_caller_function_name = Identifier::<CurrentNetwork>::from_str("quadruple_caller").unwrap();
-    let double_caller_one_zero_function_name = Identifier::<CurrentNetwork>::from_str("double_caller_one_zero").unwrap();
+    let double_caller_one_zero_function_name =
+        Identifier::<CurrentNetwork>::from_str("double_caller_one_zero").unwrap();
     let leaf_two_one_function_name = Identifier::<CurrentNetwork>::from_str("leaf_two_one").unwrap();
     let leaf_one_two_function_name = Identifier::<CurrentNetwork>::from_str("leaf_one_two").unwrap();
     let leaf_one_one_function_name = Identifier::<CurrentNetwork>::from_str("leaf_one_one").unwrap();
@@ -1446,9 +1444,14 @@ fn test_translation_traversal_consistency() {
     let leaf_one_one_function_field = leaf_one_one_function_name.to_field().unwrap();
     let leaf_zero_one_function_field = leaf_zero_one_function_name.to_field().unwrap();
 
-    let quixote_quote = vec![69u8, 110, 32, 117, 110, 32, 108, 117, 103, 97, 114, 32, 100, 101, 32, 108, 97, 32, 77, 97, 110, 99, 104, 97];
+    let quixote_quote = vec![
+        69u8, 110, 32, 117, 110, 32, 108, 117, 103, 97, 114, 32, 100, 101, 32, 108, 97, 32, 77, 97, 110, 99, 104, 97,
+    ];
     let hamlet_quote = vec![84u8, 111, 32, 98, 101, 32, 111, 114, 32, 110, 111, 116, 32, 116, 111, 32, 98, 101];
-    let lotr_quote = vec![73u8, 116, 39, 115, 32, 97, 32, 100, 97, 110, 103, 101, 114, 111, 117, 115, 32, 98, 117, 115, 105, 110, 101, 115, 115, 44, 32, 70, 114, 111, 100, 111];
+    let lotr_quote = vec![
+        73u8, 116, 39, 115, 32, 97, 32, 100, 97, 110, 103, 101, 114, 111, 117, 115, 32, 98, 117, 115, 105, 110, 101,
+        115, 115, 44, 32, 70, 114, 111, 100, 111,
+    ];
 
     fn process_quote(mut quote: Vec<u8>) -> String {
         quote.resize(50, 0);
@@ -1588,18 +1591,19 @@ fn test_translation_traversal_consistency() {
     add_and_test(&vm, &caller_private_key, &[transaction], rng);
 
     let mut mint_record = |function_name: &str| {
-
         println!("Executing {function_name}...");
 
-        let transaction_mint = vm.execute(
-            &caller_private_key,
-            ("quotes.aleo", function_name),
-            Vec::<Value<CurrentNetwork>>::new().into_iter(),
-            None,
-            0,
-            None,
-            rng,
-        ).unwrap();
+        let transaction_mint = vm
+            .execute(
+                &caller_private_key,
+                ("quotes.aleo", function_name),
+                Vec::<Value<CurrentNetwork>>::new().into_iter(),
+                None,
+                0,
+                None,
+                rng,
+            )
+            .unwrap();
 
         let mint_output = transaction_mint.transitions().next().unwrap().outputs().iter().next().unwrap();
 
@@ -1609,7 +1613,7 @@ fn test_translation_traversal_consistency() {
             }
             _ => panic!("Minted record is not a record"),
         };
-    
+
         let dynamic_record = DynamicRecord::from_record(&output_record).unwrap();
 
         (transaction_mint, dynamic_record)
@@ -1621,19 +1625,22 @@ fn test_translation_traversal_consistency() {
 
     add_and_test(&vm, &caller_private_key, &[transaction_mint_a, transaction_mint_b_1, transaction_mint_b_2], rng);
 
-    let transaction = vm.execute(
-        &caller_private_key,
-        ("quotes.aleo", "quadruple_caller"),
-        [
-            Value::DynamicRecord(dynamic_record_a),
-            Value::DynamicRecord(dynamic_record_b_1),
-            Value::DynamicRecord(dynamic_record_b_2),
-        ].into_iter(),
-        None,
-        0,
-        None,
-        rng,
-    ).unwrap();
+    let transaction = vm
+        .execute(
+            &caller_private_key,
+            ("quotes.aleo", "quadruple_caller"),
+            [
+                Value::DynamicRecord(dynamic_record_a),
+                Value::DynamicRecord(dynamic_record_b_1),
+                Value::DynamicRecord(dynamic_record_b_2),
+            ]
+            .into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
 
     // This indeed results of three batches for translation proving/verification:
     // one of size 3 for a.record, one of size 8 for b.record, and one of size 2 for c.record.
@@ -1644,17 +1651,18 @@ fn test_translation_traversal_consistency() {
 
 #[test]
 fn test_get_dynamic_record() {
-
     // Parameters for dynamic-function calls
     let program_name_str = "warehouse";
     let network_str = "aleo";
     let mint_nineties_bleach_function_str = "mint_nineties_bleach";
     let mint_fake_compliance_cert_function_str = "mint_fake_compliance_cert";
-    
+
     let program_name_field = Identifier::<CurrentNetwork>::from_str(program_name_str).unwrap().to_field().unwrap();
     let network_field = Identifier::<CurrentNetwork>::from_str(network_str).unwrap().to_field().unwrap();
-    let mint_nineties_bleach_function_field = Identifier::<CurrentNetwork>::from_str(mint_nineties_bleach_function_str).unwrap().to_field().unwrap();
-    let mint_fake_compliance_cert_function_field = Identifier::<CurrentNetwork>::from_str(mint_fake_compliance_cert_function_str).unwrap().to_field().unwrap();
+    let mint_nineties_bleach_function_field =
+        Identifier::<CurrentNetwork>::from_str(mint_nineties_bleach_function_str).unwrap().to_field().unwrap();
+    let mint_fake_compliance_cert_function_field =
+        Identifier::<CurrentNetwork>::from_str(mint_fake_compliance_cert_function_str).unwrap().to_field().unwrap();
 
     let rng = &mut TestRng::default();
 
@@ -1745,7 +1753,8 @@ fn test_get_dynamic_record() {
         production_date: [10u8.private, 7u8.private, 87u8.private],
         _nonce: 0group.public,
         _version: 1u8.public
-    }}"#);
+    }}"#
+    );
 
     let record_static = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_str(&record_static_str).unwrap();
     let record_dynamic = DynamicRecord::<CurrentNetwork>::from_record(&record_static).unwrap();
@@ -1780,15 +1789,17 @@ fn test_get_dynamic_record() {
     // dynamic by the caller; and the caller then proceeds to field two fields with the same name
     // that the two static-record types happen to have.
 
-    let transaction_2 = vm.execute(
-        &caller_private_key,
-        ("warehouse.aleo", "production_year_difference"),
-        Vec::<Value<CurrentNetwork>>::new().into_iter(),
-        None,
-        0,
-        None,
-        rng,
-    ).unwrap();
+    let transaction_2 = vm
+        .execute(
+            &caller_private_key,
+            ("warehouse.aleo", "production_year_difference"),
+            Vec::<Value<CurrentNetwork>>::new().into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
 
     let expected_output = Plaintext::<CurrentNetwork>::from_str("25u8").unwrap();
 

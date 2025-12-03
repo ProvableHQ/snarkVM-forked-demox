@@ -14,7 +14,11 @@
 // limitations under the License.
 
 use crate::{
-    InputStorage, InputStore, OutputStorage, OutputStore, TransitionStorage,
+    InputStorage,
+    InputStore,
+    OutputStorage,
+    OutputStore,
+    TransitionStorage,
     helpers::rocksdb::{self, DataMap, Database, MapID, TransitionInputMap, TransitionMap, TransitionOutputMap},
 };
 use console::{
