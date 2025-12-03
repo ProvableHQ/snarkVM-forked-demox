@@ -253,7 +253,7 @@ impl<N: Network> GetDynamicRecord<N> {
         let circuit_path = circuit::merkle_tree::MerklePath::new(Mode::Private, console_path);
 
         // Verifying the path inside the circuit
-        circuit_path.verify(&circuit_leaf_hasher, &circuit_path_hasher, &circuit_root, &circuit_leaf);
+        A::assert(circuit_path.verify(&circuit_leaf_hasher, &circuit_path_hasher, &circuit_root, &circuit_leaf));
 
         let circuit_entry_plaintext = match circuit_entry {
             circuit::Entry::Constant(plaintext) => plaintext,

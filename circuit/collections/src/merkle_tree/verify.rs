@@ -51,7 +51,7 @@ impl<E: Environment, const DEPTH: u8> MerklePath<E, DEPTH> {
             current_hash = path_hasher.hash_children(&left, &right);
         }
 
-        // Ensure the final hash matches the given root.
+        // Determine whether the final hash matches the given root or not.
         root.is_equal(&current_hash)
     }
 }
