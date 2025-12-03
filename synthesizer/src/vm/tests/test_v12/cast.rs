@@ -258,7 +258,7 @@ fn test_cast_simple() {
 
     add_and_test(&vm, &caller_private_key, &[transaction_get_age], &mut rng);
 
-    /*********** Case 1: Incorrect cast usage (double consumption) ***********/
+    /*********** Case 2: Incorrect cast usage (double consumption) ***********/
     println!("Calling hatchery.aleo/get_age_in_years_stat_caller...");
     let transaction_get_age_stat_caller = vm.execute(
         &caller_private_key,

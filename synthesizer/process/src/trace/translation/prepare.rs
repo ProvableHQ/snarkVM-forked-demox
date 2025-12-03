@@ -142,7 +142,7 @@ impl<N: Network> Translation<N> {
 
             ensure!(
                 transition.caller_inputs().is_some() == transition.caller_outputs().is_some(),
-                "The caller inputs and caller outputs should either both be Some or both be None, but found a discrepancy in transition {}: caller inputs = {}, caller outputs = {}",
+                "The caller inputs and caller outputs should either both be Some or both be None, but a discrepancy was found in transition {}: caller inputs = {}, caller outputs = {}",
                 transition.id(),
                 if transition.caller_inputs().is_some() { "Some" } else { "None" },
                 if transition.caller_outputs().is_some() { "Some" } else { "None" }

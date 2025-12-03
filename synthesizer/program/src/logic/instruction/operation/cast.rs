@@ -616,7 +616,6 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
             CastType::ExternalRecord(_locator) => {
                 bail!("Illegal operation: Cannot cast to an external record.")
             }
-            // TODO (Antonio) change syntax in the spec; no input type is needed
             CastType::DynamicRecord => {
                 ensure!(inputs.len() == 1, "Casting to a dynamic record requires exactly 1 operand");
                 

@@ -96,11 +96,11 @@ pub fn execution_cost_for_authorization<N: Network>(
     // Compute the size of the proof that will result from proving the
     // Authorization. The first step is to compute the Varuna batch sizes. The
     // Varuna circuits that must be proved as part of an Execution are:
-    // - the circuits of each Transition
-    // - one inclusion circuit for input records to *all* of those Transitions
-
-    // TODO(dynamic_dispatch): will cause a third type of
-    // circuit to appear which needs to be accounted for here.
+    // - the circuit instances of each Transition
+    // - one inclusion circuit instance per input record to all of those Transitions
+    // - one translation circuit instance per record-translation task derived from those Transitions
+    // For each of the types above, if several instances correspond to the same circuit, they are
+    // grouped into a single Varuna batch.
 
     let mut circuit_frequencies = HashMap::new();
 
@@ -114,12 +114,16 @@ pub fn execution_cost_for_authorization<N: Network>(
 
     let mut batch_sizes: Vec<usize> = circuit_frequencies.values().cloned().collect();
 
-    // We now add the single batch of inclusion circuits for input records, if
+    // Add the single batch of inclusion circuits for input records, if
     // any:
     let n_input_records = Authorization::number_of_input_records(authorization.transitions().values());
     if n_input_records > 0 {
         batch_sizes.push(n_input_records);
     }
+
+    // Add the batches corresponding to translation tasks
+    let translation_batches = Authorization::translation_batches(process,authorization.transitions().values())?;
+    batch_sizes.extend(translation_batches);
 
     // Varuna is always run in hiding (i. e. ZK) mode when proving Executions.
     let hiding_mode = true;
@@ -145,6 +149,7 @@ pub fn deploy_compute_cost_in_microcredits(
     cost_details: DeployCostDetails,
     consensus_version: ConsensusVersion,
 ) -> Result<u64> {
+    // TODO (dynamic_dispatch): add translation-circuit-related storage costs? (eg. verifying keys)
     let (storage_cost, synthesis_cost, constructor_cost, _) = cost_details;
     let cost_to_check = if consensus_version >= ConsensusVersion::V10 {
         // From V10, only include the constructor compute cost for
