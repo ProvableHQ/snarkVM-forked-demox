@@ -651,21 +651,20 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                 .collect::<Vec<_>>(),
                         )?;
 
-                        // Anonymous helper to get a record translation proving key.
-                        let get_record_translation_proving_key = |program_id: &ProgramID<N>,
+                        // Anonymous helper which synthesizes the translation
+                        // key for a given program-record combination (if it has
+                        // not been synthesized yet) and stores it in the
+                        // program's stack.
+                        let ensure_translation_proving_key = |program_id: &ProgramID<N>,
                                                                   record_name: &Identifier<N>,
                                                                   rng: &mut R|
-                         -> Result<ProvingKey<N>> {
+                         -> Result<()> {
                             let record_stack = match program_id == stack.program_id() {
                                 true => stack,
                                 false => &stack.get_stack_unchecked(program_id)?,
                             };
 
-                            // TODO (dynamic_dispatch) this is meant to be the equivalent of the block with the comment
-                            // "If the circuit is in `Synthesize` or `Execute` mode, synthesize the circuit key, if it does not exist." stack/execute.rs
-                            // Think whether this is the right approach
-                            record_stack.synthesize_translation_key::<A, R>(record_name, rng)?;
-                            record_stack.get_translation_proving_key(record_name)
+                            record_stack.synthesize_translation_key::<A, R>(record_name, rng)
                         };
 
                         let caller_console_input_ids = callee_request.caller_input_ids().clone().unwrap_or_default();
@@ -758,12 +757,9 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                 ) => {
                                     let program_id = *callee_request.program_id();
 
-                                    let translation_proving_key =
-                                        get_record_translation_proving_key(&program_id, &record_name, rng)?;
+                                    ensure_translation_proving_key(&program_id, &record_name, rng)?;
 
                                     translation_data.push(RecordTranslationData {
-                                        // TODO: consider using a mapping from (program_id, record_name) to (proving_key, other data)
-                                        translation_proving_key,
                                         record_static: record_static.clone(),
                                         record_dynamic,
                                         program_id,
@@ -790,12 +786,9 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                     let program_id = *record_locator.program_id();
                                     let record_name = *record_locator.resource();
 
-                                    let translation_proving_key =
-                                        get_record_translation_proving_key(&program_id, &record_name, rng)?;
+                                    ensure_translation_proving_key(&program_id, &record_name, rng)?;
 
                                     translation_data.push(RecordTranslationData {
-                                        // TODO: consider using a mapping from (program_id, record_name) to (proving_key, other data)
-                                        translation_proving_key,
                                         record_static: record_static.clone(),
                                         record_dynamic,
                                         program_id,
@@ -897,12 +890,9 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                 ) => {
                                     let program_id = *callee_request.program_id();
 
-                                    let translation_proving_key =
-                                        get_record_translation_proving_key(&program_id, &record_name, rng)?;
+                                    ensure_translation_proving_key(&program_id, &record_name, rng)?;
 
                                     translation_data.push(RecordTranslationData {
-                                        // TODO: consider using a mapping from (program_id, record_name) to (proving_key, other data)
-                                        translation_proving_key,
                                         record_static: record_static.clone(),
                                         record_dynamic: record_dynamic.clone(),
                                         program_id,
@@ -950,12 +940,9 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                     let program_id = *record_locator.program_id();
                                     let record_name = *record_locator.resource();
 
-                                    let translation_proving_key =
-                                        get_record_translation_proving_key(&program_id, &record_name, rng)?;
+                                    ensure_translation_proving_key(&program_id, &record_name, rng)?;
 
                                     translation_data.push(RecordTranslationData {
-                                        // TODO: consider using a mapping from (program_id, record_name) to (proving_key, other data)
-                                        translation_proving_key,
                                         record_static: record_static.clone(),
                                         record_dynamic: record_dynamic.clone(),
                                         program_id,

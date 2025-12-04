@@ -20,8 +20,9 @@ mod inclusion;
 pub use inclusion::*;
 
 mod translation;
-use snarkvm_synthesizer_program::RecordTranslationData;
 pub use translation::*;
+
+use crate::Process;
 
 use circuit::Assignment;
 use console::{
@@ -31,6 +32,7 @@ use console::{
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use snarkvm_ledger_block::{Execution, Fee, Transition};
 use snarkvm_ledger_query::QueryTrait;
+use snarkvm_synthesizer_program::{RecordTranslationData, StackTrait};
 use snarkvm_synthesizer_snark::{Proof, ProvingKey, VerifyingKey};
 
 use std::{collections::HashMap, sync::OnceLock};
@@ -159,24 +161,36 @@ impl<N: Network> Trace<N> {
 
 impl<N: Network> Trace<N> {
     /// Returns the inclusion assignments and global state root for the current transition(s).
-    pub fn prepare(&mut self, query: &dyn QueryTrait<N>) -> Result<()> {
+    pub fn prepare(&mut self, process: &Process<N>, query: &dyn QueryTrait<N>) -> Result<()> {
         // Compute the inclusion and translation assignments.
         let (inclusion_assignments, global_state_root) = self.inclusion_tasks.prepare(&self.transitions, query)?;
-        let translation_assignments = self.translation_tasks.prepare(&self.transitions, &self.call_graph)?;
+        let translation_assignments_without_keys = self.translation_tasks.prepare(&self.transitions, &self.call_graph)?;
 
         // Store the inclusion and translation assignments and global state root.
         self.inclusion_assignments
             .set(inclusion_assignments)
             .map_err(|_| anyhow!("Failed to set inclusion assignments"))?;
 
+        // Fetch the translation proving keys, which have already been
+        // synthesized in call/dynamic.rs::execute for all detected translations
+        let translation_assignments = translation_assignments_without_keys.into_iter().map(
+            |((program_id, record_name), assignments)| {
+                let stack = process.get_stack(program_id)?;
+                let proving_key = stack.get_translation_proving_key(&record_name)?;
+                Ok((proving_key, assignments))
+            }
+        ).collect::<Result<Vec<(ProvingKey<N>, Vec<TranslationAssignment<N>>)>>>()?;
+
         self.translation_assignments
             .set(translation_assignments)
             .map_err(|_| anyhow!("Failed to set translation assignments"))?;
 
         self.global_state_root.set(global_state_root).map_err(|_| anyhow!("Failed to set global state root"))?;
+
         Ok(())
     }
 
+    // TODO (dynamic_dispatch) should translation keys also be added to this async path?
     /// Returns the inclusion assignments and global state root for the current transition(s).
     #[cfg(feature = "async")]
     pub async fn prepare_async(&mut self, query: &dyn QueryTrait<N>) -> Result<()> {

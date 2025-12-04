@@ -13,24 +13,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use snarkvm_synthesizer_snark::ProvingKey;
-
 use crate::Process;
 
 use super::*;
 
 impl<N: Network> Translation<N> {
-    /// Returns the translation assignments for the given transitions.
+    /// Returns the translation assignments for the given transitions grouped by
+    /// program ID and record name.
     pub fn prepare(
         &self,
         transitions: &[Transition<N>],
         call_graph: &HashMap<N::TransitionID, Vec<N::TransitionID>>,
-        // TODO (dynamic_dispatch) Consider using pointers or Arcs to proving keys
-    ) -> Result<Vec<(ProvingKey<N>, Vec<TranslationAssignment<N>>)>> {
+    ) -> Result<Vec<((ProgramID<N>, Identifier<N>), Vec<TranslationAssignment<N>>)>> {
         // Initialize a vector for the batched assignments.
         let mut batched_assignments: HashMap<(ProgramID<N>, Identifier<N>), Vec<TranslationAssignment<N>>> =
             HashMap::new();
-        let mut proving_keys: HashMap<(ProgramID<N>, Identifier<N>), ProvingKey<N>> = HashMap::new();
 
         let mut translation_count = 0;
 
@@ -80,7 +77,6 @@ impl<N: Network> Translation<N> {
             *next_task += 1;
 
             let RecordTranslationData {
-                translation_proving_key,
                 record_dynamic,
                 record_static,
                 program_id,
@@ -98,17 +94,6 @@ impl<N: Network> Translation<N> {
 
             // Checks associated to input-record translation
             let batch = &mut batched_assignments.entry((*program_id, *record_name)).or_insert(vec![]);
-
-            if let Some(previous_key) = proving_keys.get(&(*program_id, *record_name)) {
-                ensure!(
-                    previous_key == translation_proving_key,
-                    "Proving key mismatch for record {}/{}",
-                    program_id,
-                    record_name
-                );
-            } else {
-                proving_keys.insert((*program_id, *record_name), translation_proving_key.clone());
-            }
 
             batch.push(TranslationAssignment::new(
                 record_static.clone(),
@@ -195,11 +180,7 @@ impl<N: Network> Translation<N> {
             );
         }
 
-        // Replace program ID + record name by proving key
-        Ok(batched_assignments
-            .into_iter()
-            .map(|(key, value)| (proving_keys.get(&key).unwrap().clone(), value))
-            .collect())
+        Ok(batched_assignments.into_iter().collect())
     }
 
     // TODO (dynamic_dispatch) should this really be the same as prepare?
@@ -209,7 +190,7 @@ impl<N: Network> Translation<N> {
         &self,
         transitions: &[Transition<N>],
         call_graph: &HashMap<N::TransitionID, Vec<N::TransitionID>>,
-    ) -> Result<Vec<(ProvingKey<N>, Vec<TranslationAssignment<N>>)>> {
+    ) -> Result<Vec<((ProgramID<N>, Identifier<N>), Vec<TranslationAssignment<N>>)>> {
         self.prepare(transitions, call_graph)
     }
 }

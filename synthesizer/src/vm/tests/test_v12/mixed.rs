@@ -284,3 +284,56 @@ fn test_execution_cost_for_authorization() {
     // Ensuring transaction verification passes
     add_and_test(&vm, &caller_private_key, &[transaction], rng);
 }
+
+// #[test]
+// fn test_translation_get_dynamic_cast_to_dynamic() {
+
+//     let program_a_name = Identifier::<CurrentNetwork>::from_str("factory").unwrap();
+//     let program_a_name = Identifier::<CurrentNetwork>::from_str("manager").unwrap();
+
+//     let program_a_str = format!(r"
+//         program {program_a_name}.aleo;
+
+//         record toy:
+//             owner as address.private;
+
+//             // The ID of the type of toy
+//             type_id = u16.public;
+//             // The unique (also across ladders below) ID of this specific product
+//             product_id = field.private;
+//             years_old as u8.private;
+//             // Signature of the client who requested the toy
+//             client_signature = group.public;
+
+//         record ladder:
+//             owner as address.private;
+
+//             // The unique (also across toys above) ID of this specific product
+//             product_id = field.private;
+//             // Whether the ladder has been painted or not
+//             painted = boolean.false;
+//             client_signature = group.public;
+
+//         // Consume the toy
+//         decomission_toy:
+//             input r0 as toy.record;
+
+//             call.dynamic MANAGER/DECOMISSION_CERTIFICATE
+
+//         //
+        
+//         // Paint the ladder
+//         paint_ladder:
+//             input r0 as ladder.record;
+
+//             cast r0.owner r0.product_id r0.client_signature into r1 as ladder.record;
+
+//             output r1 as ladder.record;
+//         "
+//     );
+
+//     // TEST the toy cannot be decomissioned twice
+
+//     // 1. The factory receives a request for a toy/ladder from a client and generates a random product ID
+//     // 2. The factory communicates
+// }

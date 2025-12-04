@@ -44,11 +44,11 @@ use snarkvm_synthesizer_snark::{ProvingKey, VerifyingKey};
 // TODO (dynamic_dispatch) document
 // TODO (dynamic_dispatch) move to a better place (cannot be in process:Translation because of circular dependencies)
 // TODO (dynamic_dispatch) change visibility of internals, add constructors
-/// Data collected during execution to prove record translation in dynamic calls. It largely mirrors the `TranslationAssignment` struct in `process::trace::translation::assignment.rs`.
+/// Data collected during execution to prove record translation in dynamic
+/// calls. It largely mirrors the `TranslationAssignment` struct in
+/// `process::trace::translation::assignment.rs`.
 #[derive(Clone, Debug)]
 pub struct RecordTranslationData<N: Network> {
-    /// The proving key for the translation circuit.
-    pub translation_proving_key: ProvingKey<N>,
     /// The static record.
     pub record_static: Record<N, Plaintext<N>>,
     /// The dynamic record.

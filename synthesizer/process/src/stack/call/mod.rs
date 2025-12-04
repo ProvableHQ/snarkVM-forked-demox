@@ -45,7 +45,6 @@ use snarkvm_synthesizer_program::{
     RegistersTrait as _,
     StackTrait,
 };
-use snarkvm_synthesizer_snark::ProvingKey;
 use snarkvm_utilities::dev_eprintln;
 
 use std::sync::Arc;

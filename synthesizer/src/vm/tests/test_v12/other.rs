@@ -1,4 +1,3 @@
-
 // Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
