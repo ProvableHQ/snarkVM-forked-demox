@@ -302,7 +302,6 @@ fn test_complex_dynamic_graph_construction_internal(
     assert_eq!(graph[tids[6]], &[]);
     assert_eq!(graph[tids[7]], &[]);
 
-    let block = sample_next_block(&vm, &caller_private_key, &[transaction.clone()], rng).unwrap();
     add_and_test(&vm, &caller_private_key, &[transaction.clone()], rng);
 }
 

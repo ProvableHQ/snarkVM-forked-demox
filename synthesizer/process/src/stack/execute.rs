@@ -536,7 +536,6 @@ impl<N: Network> Stack<N> {
             // Add the transition to the trace.
             trace.write().insert_transition(
                 console_request.input_ids(),
-                console_request.inputs(),
                 &transition,
                 (proving_key, assignment),
                 registers.record_translation_data(),

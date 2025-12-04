@@ -17,7 +17,7 @@ use super::*;
 
 #[test]
 fn test_get_dynamic_record() {
-    // Parameters for dynamic-function calls
+    // Parameters for dynamic function calls
     let program_name_str = "warehouse";
     let network_str = "aleo";
     let mint_nineties_bleach_function_str = "mint_nineties_bleach";
@@ -34,7 +34,6 @@ fn test_get_dynamic_record() {
 
     let caller_private_key = sample_genesis_private_key(rng);
     let caller_address = Address::try_from(&caller_private_key).unwrap();
-    let caller_view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
 
     // Initialize a new program.
     let program_string = format!(
@@ -66,6 +65,11 @@ fn test_get_dynamic_record() {
             input r0 as dynamic.record;
             get.dynamic.record r0.production_date into r1 as [u8; 3u32];
             output r1[1u32] as u8.public;
+
+        function production_month_as_u16:
+            input r0 as dynamic.record;
+            get.dynamic.record r0.production_date into r1 as [u16; 3u32];
+            output r1[1u32] as u16.public;
         
         function production_year_difference:
             call.dynamic {program_name_field} {network_field} {mint_nineties_bleach_function_field} into r0 (as dynamic.record);
@@ -93,6 +97,11 @@ fn test_get_dynamic_record() {
             cast {caller_address} 2u64 91u16 2group 1field r0 r1 into r2 as non_consumable.record;
 
             output r2 as non_consumable.record;
+
+        function read_producer_country:
+            input r0 as dynamic.record;
+            get.dynamic.record r0.producer_country_code into r1 as u16;
+            output r1 as u16.public;
 
         constructor:
             assert.eq true true;
@@ -130,7 +139,7 @@ fn test_get_dynamic_record() {
         .execute(
             &caller_private_key,
             ("warehouse.aleo", "production_month"),
-            vec![Value::<CurrentNetwork>::DynamicRecord(record_dynamic)].into_iter(),
+            vec![Value::<CurrentNetwork>::DynamicRecord(record_dynamic.clone())].into_iter(),
             None,
             0,
             None,
@@ -151,10 +160,11 @@ fn test_get_dynamic_record() {
 
     /************** Case 2: Read from minted records (using polymorphy) **************/
 
-    // Here this case a function outputs two static records of different types that are received as
+    // In this case a function outputs two static records of different types that are received as
     // dynamic by the caller; and the caller then proceeds to field two fields with the same name
     // that the two static-record types happen to have.
 
+    println!("Executing root function warehouse.aleo/production_year_difference...");
     let transaction_2 = vm
         .execute(
             &caller_private_key,
@@ -178,4 +188,95 @@ fn test_get_dynamic_record() {
     );
 
     add_and_test(&vm, &caller_private_key, &[transaction_2], rng);
+
+    /************** Case 3: Various incorrect readings **************/
+
+    // We trigger get.dynamic.record failures in various ways
+
+    // Case 3.1: We attempt to read the field "producer_country_code" from a
+    // dynamic record derived from a static consumable.record, which does not
+    // have one.
+    
+    println!("Executing root function warehouse.aleo/read_producer_country (should fail)...");
+
+    assert!(vm.execute(
+            &caller_private_key,
+            ("warehouse.aleo", "read_producer_country"),
+            vec![Value::<CurrentNetwork>::DynamicRecord(record_dynamic.clone())].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        ).unwrap_err().to_string().contains("does not contain entry entry producer_country_code")
+    );
+
+    // Case 3.2: We manipulate the root of the already created dynamic record,
+    // which will cause the Merkle root to fail in a read which would otherwise
+    // succeed. Note that failure already occurs at the (honest) prover side,
+    // since it also checks circuit satisfaction.
+    let manipulated_record_dynamic = DynamicRecord::new_unchecked(
+        *record_dynamic.owner(),
+        Uniform::rand(rng),
+        *record_dynamic.nonce(),
+        *record_dynamic.version(),
+        None,
+        record_dynamic.data().clone(),
+    );
+
+    println!("Executing root function warehouse.aleo/production_month (should fail)...");
+
+    assert!(vm.execute(
+            &caller_private_key,
+            ("warehouse.aleo", "production_month"),
+            vec![Value::<CurrentNetwork>::DynamicRecord(manipulated_record_dynamic)].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        ).unwrap_err().to_string().contains("not satisfied")
+    );
+
+    // Case 3.3: We attempt to read the field "production_date" as an array of
+    // u16 instead of the actual u8.
+    println!("Executing root function warehouse.aleo/production_month_as_u16 (should fail)...");
+
+    assert!(vm.execute(
+            &caller_private_key,
+            ("warehouse.aleo", "production_month_as_u16"),
+            vec![Value::<CurrentNetwork>::DynamicRecord(record_dynamic.clone())].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        ).unwrap_err().to_string().contains("Type mismatch")
+    );
+
+    // Case 3.4: We attempt to read the field "production_date" from a different
+    // leaf index than it had when the Merkle root was computed.
+
+    let mut manipulated_record_data = record_dynamic.data().clone().unwrap();
+    assert!(manipulated_record_data.get_index_of(&Identifier::<CurrentNetwork>::from_str("production_date").unwrap()).unwrap() == 2);
+    manipulated_record_data.swap_indices(1, 2);
+
+    let manipulated_record_dynamic_2 = DynamicRecord::new_unchecked(
+        *record_dynamic.owner(),
+        Uniform::rand(rng),
+        *record_dynamic.nonce(),
+        *record_dynamic.version(),
+        None,
+        Some(manipulated_record_data),
+    );
+
+    println!("Executing root function warehouse.aleo/production_month (should fail)...");
+
+    assert!(vm.execute(
+            &caller_private_key,
+            ("warehouse.aleo", "production_month"),
+            vec![Value::<CurrentNetwork>::DynamicRecord(manipulated_record_dynamic_2)].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        ).unwrap_err().to_string().contains("not satisfied")
+    );
 }

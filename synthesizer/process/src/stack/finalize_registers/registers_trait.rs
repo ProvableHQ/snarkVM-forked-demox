@@ -97,7 +97,7 @@ impl<N: Network> RegistersTrait<N> for FinalizeRegisters<N> {
             // Ensure the future value matches the register type.
             (Ok(FinalizeType::Future(locator)), Value::Future(future)) => stack.matches_future(future, &locator)?,
             // TODO (@d0cd): Verify semantics.
-            (Ok(FinalizeType::DynamicFuture), Value::DynamicFuture(dynamic_future)) => {}
+            (Ok(FinalizeType::DynamicFuture), Value::DynamicFuture(_dynamic_future)) => {}
             // Ensure the load is valid in a finalize context.
             (Ok(finalize_type), stack_value) => bail!(
                 "Attempted to load a '{stack_value}' value from a register '{register}' of type '{finalize_type}' in a finalize scope",
@@ -139,7 +139,7 @@ impl<N: Network> RegistersTrait<N> for FinalizeRegisters<N> {
                     }
                     // Ensure the dynamic future value matches the dynamic future type.
                     // TODO (@d0cd): Verify semantics.
-                    (Ok(FinalizeType::DynamicFuture), Value::DynamicFuture(dynamic_future)) => {}
+                    (Ok(FinalizeType::DynamicFuture), Value::DynamicFuture(_dynamic_future)) => {}
                     // Ensure the store is valid in a finalize context.
                     (Ok(finalize_type), stack_value) => bail!(
                         "Attempted to store a '{stack_value}' value in a register '{register}' of type '{finalize_type}' in a finalize scope",

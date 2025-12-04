@@ -44,7 +44,7 @@ impl<N: Network> Process<N> {
             // Retrieve the stack.
             let stack = self.get_stack(transition.program_id())?;
             // Ensure the number of calls matches the number of transitions.
-            let number_of_calls = stack.get_number_of_calls(transition.function_name())?;
+            let _number_of_calls = stack.get_number_of_calls(transition.function_name())?;
 
             // TODO (dynamic_dispatch) re-introduce or redesign, fails to account for dynamic calls
             // ensure!(
@@ -252,7 +252,7 @@ impl<N: Network> Process<N> {
             // Note: This number does *NOT* include the number of constants. This is safe because
             // this program is never deployed, as it is a first-class citizen of the protocol.
             // TODO (dynamic_dispatch) should this be used?
-            let num_variables = verifying_key.circuit_info.num_public_and_private_variables as u64;
+            let _num_variables = verifying_key.circuit_info.num_public_and_private_variables as u64;
             // Insert the inclusion verifier inputs.
             verifier_inputs.push((verifying_key.clone(), batch_translation_inputs_for_record));
         }
@@ -373,7 +373,7 @@ impl<N: Network> Process<N> {
                     {
                         match (caller_output, caller_destination_type) {
                             // In the case of a DynamicFuture, the verifier computes the hash of the dynamic future directly.
-                            (Output::Future(id, future), ValueType::DynamicFuture) => {
+                            (Output::Future(_id, future), ValueType::DynamicFuture) => {
                                 let Some(future) = future else {
                                     bail!("Future is not present for child transition {}", child_transition.id());
                                 };

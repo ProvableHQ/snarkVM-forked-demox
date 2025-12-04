@@ -81,14 +81,10 @@ fn test_fibonacci() {
 
     // Initialize a new caller.
     let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
-    let caller_view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
 
     // Initialize the VM at the V12 height.
     let v12_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap();
     let vm = crate::vm::test_helpers::sample_vm_at_height(v12_height, rng);
-
-    let fibonacci_index = 5;
-    let expected_num_transitions = 15;
 
     // Deploy the program
     println!("Deploying program {recursive_calls_program_name}.aleo...");
@@ -172,7 +168,6 @@ fn test_recursive_dynamic_record_calls() {
     let two_field = two_name.to_field().unwrap();
 
     let three_name = Identifier::<CurrentNetwork>::from_str("three").unwrap();
-    let three_field = three_name.to_field().unwrap();
 
     let four_name = Identifier::<CurrentNetwork>::from_str("four").unwrap();
     let four_field = four_name.to_field().unwrap();
@@ -237,10 +232,8 @@ constructor:
     let test_functions_program_name = Identifier::<CurrentNetwork>::from_str("test_functions").unwrap();
 
     let five_name = Identifier::<CurrentNetwork>::from_str("five").unwrap();
-    let five_field = five_name.to_field().unwrap();
 
     let six_name = Identifier::<CurrentNetwork>::from_str("six").unwrap();
-    let six_field = six_name.to_field().unwrap();
 
     let seven_name = Identifier::<CurrentNetwork>::from_str("seven").unwrap();
     let seven_field = seven_name.to_field().unwrap();

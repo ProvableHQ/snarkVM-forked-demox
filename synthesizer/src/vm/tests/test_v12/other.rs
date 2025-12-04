@@ -532,7 +532,6 @@ fn test_conditional_execution() {
 
     // Initialize a new caller.
     let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
-    let caller_view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
 
     // Initialize the VM at the V12 height.
     let v12_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap();

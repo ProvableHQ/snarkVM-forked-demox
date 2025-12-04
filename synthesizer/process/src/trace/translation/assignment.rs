@@ -15,7 +15,6 @@
 
 use circuit::{
     Aleo,
-    merkle_tree::MerkleTree,
     Poseidon2,
     Poseidon8,
     RecordDataTree,

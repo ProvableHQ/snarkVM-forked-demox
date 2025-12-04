@@ -200,7 +200,7 @@ fn test_execution_cost_for_authorization() {
         ]),
     ];
 
-    let mut transactions_and_records = record_data.into_iter().map(|(record_name, entry_values)| {
+    let transactions_and_records = record_data.into_iter().map(|(record_name, entry_values)| {
 
         let function_name = format!("mint_{record_name}");
 

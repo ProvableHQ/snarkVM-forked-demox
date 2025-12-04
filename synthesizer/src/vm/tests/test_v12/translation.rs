@@ -42,7 +42,6 @@ fn test_translation(
 
     let get_liquid_liters_function_name = Identifier::<CurrentNetwork>::from_str("get_liquid_liters").unwrap();
     let get_gas_liters_function_name = Identifier::<CurrentNetwork>::from_str("get_gas_liters").unwrap();
-    let consume_dynamic_blob_function_name = Identifier::<CurrentNetwork>::from_str("consume_dynamic_blob").unwrap();
     let nitrogen_pump_function_name = Identifier::<CurrentNetwork>::from_str("nitrogen_pump").unwrap();
     let get_external_liters_function_name = Identifier::<CurrentNetwork>::from_str("get_external_liters").unwrap();
     let gas_pipe_function_name = Identifier::<CurrentNetwork>::from_str("gas_pipe").unwrap();
@@ -52,7 +51,6 @@ fn test_translation(
 
     let get_liquid_liters_function_field = get_liquid_liters_function_name.to_field().unwrap();
     let get_gas_liters_function_field = get_gas_liters_function_name.to_field().unwrap();
-    let consume_dynamic_blob_function_field = consume_dynamic_blob_function_name.to_field().unwrap();
     let nitrogen_pump_function_field = nitrogen_pump_function_name.to_field().unwrap();
     let get_external_liters_function_field = get_external_liters_function_name.to_field().unwrap();
     let gas_pipe_function_field = gas_pipe_function_name.to_field().unwrap();
@@ -316,12 +314,8 @@ fn test_translation_input_dynamic_non_external() {
     }}"#
     );
 
-    // Construct the static and dynamic records.
     let r0_static = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_str(&record_static_str).unwrap();
-    let r0_dynamic = DynamicRecord::<CurrentNetwork>::from_record(&r0_static).unwrap();
 
-    // Input and expected output
-    let r0_value = Value::<CurrentNetwork>::DynamicRecord(r0_dynamic);
     let expected_output = Plaintext::<CurrentNetwork>::from_str("1888u64").unwrap();
 
     test_translation(
@@ -361,12 +355,8 @@ fn test_translation_input_dynamic_external() {
     }}"#
     );
 
-    // Construct the static and dynamic records.
     let r0_static = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_str(&record_static_str).unwrap();
-    let r0_dynamic = DynamicRecord::<CurrentNetwork>::from_record(&r0_static).unwrap();
 
-    // Input and expected output
-    let r0_value = Value::<CurrentNetwork>::DynamicRecord(r0_dynamic);
     let expected_output = Plaintext::<CurrentNetwork>::from_str("292u64").unwrap();
 
     test_translation(
@@ -409,7 +399,7 @@ fn test_translation_output_external_dynamic() {
         "pump_and_send_through_pipe",
         None,
         Some(r0_static),
-        None,
+        Some(vec![expected_output]),
         rng,
     );
 }
@@ -446,7 +436,7 @@ fn test_translation_triple() {
     // Input and expected output (10 liters have leaked)
     let expected_output = Plaintext::<CurrentNetwork>::from_str("323u64").unwrap();
 
-    test_translation(&caller_private_key, "flow.aleo", "dynamic_gas_leak", None, Some(r0_static), None, rng);
+    test_translation(&caller_private_key, "flow.aleo", "dynamic_gas_leak", None, Some(r0_static), Some(vec![expected_output]), rng);
 }
 
 #[test]
@@ -473,7 +463,6 @@ fn test_translation_traversal_consistency() {
     let program_name_field = Identifier::<CurrentNetwork>::from_str(program_name_str).unwrap().to_field().unwrap();
     let network_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
 
-    let quadruple_caller_function_name = Identifier::<CurrentNetwork>::from_str("quadruple_caller").unwrap();
     let double_caller_one_zero_function_name =
         Identifier::<CurrentNetwork>::from_str("double_caller_one_zero").unwrap();
     let leaf_two_one_function_name = Identifier::<CurrentNetwork>::from_str("leaf_two_one").unwrap();
@@ -481,7 +470,6 @@ fn test_translation_traversal_consistency() {
     let leaf_one_one_function_name = Identifier::<CurrentNetwork>::from_str("leaf_one_one").unwrap();
     let leaf_zero_one_function_name = Identifier::<CurrentNetwork>::from_str("leaf_zero_one").unwrap();
 
-    let quadruple_caller_function_field = quadruple_caller_function_name.to_field().unwrap();
     let double_caller_one_zero_function_field = double_caller_one_zero_function_name.to_field().unwrap();
     let leaf_two_one_function_field = leaf_two_one_function_name.to_field().unwrap();
     let leaf_one_two_function_field = leaf_one_two_function_name.to_field().unwrap();
@@ -505,10 +493,6 @@ fn test_translation_traversal_consistency() {
     let processed_quixote_quote = process_quote(quixote_quote);
     let processed_hamlet_quote = process_quote(hamlet_quote);
     let processed_lotr_quote = process_quote(lotr_quote);
-
-    let mint_quixote_quote = format!("cast {caller_address} {processed_quixote_quote} into");
-    let mint_hamlet_quote = format!("cast {caller_address} {processed_hamlet_quote} false into");
-    let mint_lotr_quote = format!("cast {caller_address} {processed_lotr_quote} 1u8 true into");
 
     let program_string = format!(
         r"

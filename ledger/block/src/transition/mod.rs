@@ -346,7 +346,7 @@ impl<N: Network> Transition<N> {
             .collect::<Result<Vec<_>>>()?;
 
         // Construct and verify the optional caller outputs.
-        let caller_outputs = if let Some(caller_request) = request.caller_request() {
+        let caller_outputs = if request.caller_request().is_some() {
             let Some(caller_output_types) = request.caller_output_types() else {
                 bail!("Expected caller output types to be present");
             };

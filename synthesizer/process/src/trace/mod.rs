@@ -26,7 +26,7 @@ pub use translation::*;
 use circuit::Assignment;
 use console::{
     network::prelude::*,
-    program::{InputID, Locator, Value},
+    program::{InputID, Locator},
 };
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use snarkvm_ledger_block::{Execution, Fee, Transition};
@@ -97,7 +97,6 @@ impl<N: Network> Trace<N> {
     pub fn insert_transition(
         &mut self,
         input_ids: &[InputID<N>],
-        input_values: &[Value<N>],
         transition: &Transition<N>,
         (proving_key, assignment): (ProvingKey<N>, Assignment<N::Field>),
         // TODO (dynamic_dispatch): Result isn't a good interface

@@ -132,13 +132,9 @@ impl<N: Network> Translation<N> {
             Ok(())
         };
 
-        // Iterate through the transitions (consistent with the verifier)
+        // Iterate through the transitions (consistent order with the verifier)
         for transition in transitions {
             let transition_id = transition.id();
-
-            let Some(translation_tasks) = self.translation_tasks.get(transition_id) else {
-                bail!("Translation tasks not found for transition ID {transition_id}");
-            };
 
             ensure!(
                 transition.caller_inputs().is_some() == transition.caller_outputs().is_some(),

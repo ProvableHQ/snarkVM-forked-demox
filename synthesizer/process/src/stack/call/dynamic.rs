@@ -670,12 +670,6 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
 
                         let caller_console_input_ids = callee_request.caller_input_ids().clone().unwrap_or_default();
                         let callee_console_input_ids = callee_request.input_ids();
-                        let caller_console_request = registers.request()?;
-                        let caller_console_function_id = compute_function_id(
-                            caller_console_request.network_id(),
-                            caller_console_request.program_id(),
-                            caller_console_request.function_name(),
-                        )?;
                         let callee_console_function_id = compute_function_id(
                             &U16::<N>::new(N::ID),
                             callee_request.program_id(),

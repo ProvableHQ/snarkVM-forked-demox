@@ -238,8 +238,7 @@ impl<N: Network> Stack<N> {
             .program()
             .records()
             .iter()
-            .zip(deployment.translation_verifying_keys())
-            .map(|((record_name, record_type), (_, (verifying_key, _)))| {
+            .map(|(record_name, _record_type)| {
                 // Initialize a private key.
                 let private_key = PrivateKey::new(rng)?;
                 // Compute the address.
@@ -263,7 +262,6 @@ impl<N: Network> Stack<N> {
                 let id_dynamic = record_dynamic.to_id(function_id, tvk, U16::new(input_output_index)).unwrap();
                 let is_input = Uniform::rand(rng);
                 let static_is_external = Uniform::rand(rng);
-                let commitment: Field<N> = Uniform::rand(rng);
                 let id_static = Uniform::rand(rng);
 
                 lap!(timer, "Sample the inputs to the translation circuit for record {record_name}");

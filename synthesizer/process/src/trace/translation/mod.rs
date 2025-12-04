@@ -78,9 +78,7 @@ impl<N: Network> Translation<N> {
         transition_map: &HashMap<N::TransitionID, (&Transition<N>, Function<N>)>,
         translation_verifying_keys: &HashMap<(ProgramID<N>, Identifier<N>), VerifyingKey<N>>,
     ) -> Result<Vec<(VerifyingKey<N>, Vec<Vec<N::Field>>)>> {
-        // Determine the number of transitions.
-        let num_transitions = transitions.len();
-
+        
         let mut batch_verifier_inputs: HashMap<(ProgramID<N>, Identifier<N>), Vec<Vec<N::Field>>> = HashMap::new();
 
         let mut translation_count: u16 = 0;

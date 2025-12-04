@@ -14,10 +14,10 @@
 // limitations under the License.
 
 use crate::{Opcode, Operand, RegistersCircuit, RegistersTrait, StackTrait};
-use circuit::{Inject, Mode, Eject, traits::{ToField, ToFields}};
+use circuit::{Inject, Mode, Eject, traits::ToField};
 use console::{
     network::prelude::*,
-    program::{Access, Address, Entry, EntryType, Field, Identifier, Plaintext, PlaintextType, Register, RegisterType, U64, Value, ToFields as ConsoleToFields, ToField as ConsoleToField, RECORD_DATA_TREE_DEPTH},
+    program::{Access, Address, Entry, Field, Identifier, PlaintextType, Register, RegisterType, U64, Value, ToFields as ConsoleToFields, ToField as ConsoleToField, RECORD_DATA_TREE_DEPTH},
     collections::merkle_tree::MerklePath,
 };
 
@@ -211,7 +211,7 @@ impl<N: Network> GetDynamicRecord<N> {
         
         // This verification is only a sanity check and not performed in-circuit. The type of the
         // in-circuit entry is encoded into the circuit structure (and therefore the proving and
-        // is encoded into the circuit structure (and therefore the proving and verifying keys).
+        // is encoded into the circuit structure (and therefore the proving and verifying keys)).
         {
             let plaintext = match &console_entry {
                 Entry::Constant(plaintext) => plaintext,
@@ -268,7 +268,7 @@ impl<N: Network> GetDynamicRecord<N> {
 
     /// Finalizes the instruction.
     #[inline]
-    pub fn finalize(&self, stack: &impl StackTrait<N>, registers: &mut impl RegistersTrait<N>) -> Result<()> {
+    pub fn finalize(&self, _stack: &impl StackTrait<N>, _registers: &mut impl RegistersTrait<N>) -> Result<()> {
         bail!("Forbidden operation: Finalize cannot invoke 'get.dynamic.record'.")
     }
 

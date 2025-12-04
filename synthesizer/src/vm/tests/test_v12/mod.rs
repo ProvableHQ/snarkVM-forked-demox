@@ -40,7 +40,7 @@ use anyhow::Result;
 use console::{
     account::{Address, ViewKey},
     network::ConsensusVersion,
-    program::{DynamicRecord, Entry, Identifier, OutputID, Value},
+    program::{DynamicRecord, Entry, Identifier, Value},
 };
 use snarkvm_synthesizer_program::Program;
 use snarkvm_synthesizer_process::execution_cost_for_authorization;
@@ -49,19 +49,6 @@ use snarkvm_utilities::TestRng;
 // TODO (dynamic_dispatch)
 // - Test the case with the interface of a dynamic call doesn't match the mode
 // - Conditional execution with finalize scopes
-
-fn get_main_field(output_id: OutputID<CurrentNetwork>) -> Field<CurrentNetwork> {
-    match output_id {
-        OutputID::Constant(field)
-        | OutputID::Public(field)
-        | OutputID::Private(field)
-        | OutputID::Record(field, _, _)
-        | OutputID::ExternalRecord(field)
-        | OutputID::Future(field)
-        | OutputID::DynamicRecord(field)
-        | OutputID::DynamicFuture(field) => field,
-    }
-}
 
 fn add_and_test(
     vm: &VM<CurrentNetwork, LedgerType>,
