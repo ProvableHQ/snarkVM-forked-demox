@@ -144,17 +144,6 @@ impl<N: Network> Stack<N> {
             "The number of records in the program does not match the number of translation verifying keys"
         );
 
-        // TODO (Antono) remove
-        println!("Program: {}", self.program.id());
-        println!("Function verifying keys: ");
-        for (function_name, (key, _)) in deployment.verifying_keys() {
-            println!("  - {function_name}: {}", key.id);
-        }
-        println!("Translation verifying keys: ");
-        for (record_name, (key, _)) in deployment.translation_verifying_keys() {
-            println!("  - {record_name}: {}", key.id);
-        }
-
         // TODO (dynamic_dispatch) how does this check relate to translation verifying keys and consensus versions?
         #[cfg(not(any(test, feature = "test")))]
         // Skip the certificate verification if the consensus version is before ConsensusVersion::V8.
