@@ -156,9 +156,6 @@ impl<N: Network> Process<N> {
                     {
                         let verifying_key = N::translation_credits_verifying_key().clone();
 
-                        // TODO (Antonio) remove
-                        println!(" ^ Fetching translation_credits_verifying_key: {}", verifying_key.id);
-
                         // Retrieve the number of public and private variables.
                         // Note: This number does *NOT* include the number of constants. This is safe because
                         // this program is never deployed, as it is a first-class citizen of the protocol.
@@ -248,12 +245,6 @@ impl<N: Network> Process<N> {
             &transition_map,
             &translation_verifying_keys,
         )?;
-
-        // TODO (Antonio) remove
-        println!("@ Translation inputs: {}", batch_translation_inputs.len());
-        for (verifying_key, inputs) in batch_translation_inputs.iter() {
-            println!("  - {}: {}", verifying_key.id, inputs.len());
-        }
 
         // TODO(dynamic_dispatch): bring appropriate new measurement functions from execution_cost_for_authorization to here.
 
