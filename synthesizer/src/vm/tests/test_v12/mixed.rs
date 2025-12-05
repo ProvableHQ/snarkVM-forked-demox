@@ -285,55 +285,150 @@ fn test_execution_cost_for_authorization() {
     add_and_test(&vm, &caller_private_key, &[transaction], rng);
 }
 
-// #[test]
-// fn test_translation_get_dynamic_cast_to_dynamic() {
+#[test]
+fn test_translation_get_dynamic_cast_to_dynamic() {
 
-//     let program_a_name = Identifier::<CurrentNetwork>::from_str("factory").unwrap();
-//     let program_a_name = Identifier::<CurrentNetwork>::from_str("manager").unwrap();
+    let rng = &mut TestRng::default();
 
-//     let program_a_str = format!(r"
-//         program {program_a_name}.aleo;
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
+    let caller_view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
 
-//         record toy:
-//             owner as address.private;
+    let program_a_name = Identifier::<CurrentNetwork>::from_str("manager").unwrap();
+    let program_b_name = Identifier::<CurrentNetwork>::from_str("factory").unwrap();
+    let network_name = Identifier::<CurrentNetwork>::from_str("aleo").unwrap();
+    let function_verify_signature_name = Identifier::<CurrentNetwork>::from_str("verify_signature").unwrap();
 
-//             // The ID of the type of toy
-//             type_id = u16.public;
-//             // The unique (also across ladders below) ID of this specific product
-//             product_id = field.private;
-//             years_old as u8.private;
-//             // Signature of the client who requested the toy
-//             client_signature = group.public;
+    let program_a_field = program_a_name.to_field().unwrap();
+    let program_b_field = program_b_name.to_field().unwrap();
+    let network_field = network_name.to_field().unwrap();
+    let function_verify_signature_field = function_verify_signature_name.to_field().unwrap();
 
-//         record ladder:
-//             owner as address.private;
+    let program_a_str = format!(r"
+        program {program_a_name}.aleo;
 
-//             // The unique (also across toys above) ID of this specific product
-//             product_id = field.private;
-//             // Whether the ladder has been painted or not
-//             painted = boolean.false;
-//             client_signature = group.public;
+        // Checks that the equation s * G == owner_address + (product_id * G) holds,
+        // where s is a private value passed as the second input and G is the
+        // generator of the distinguished subgroup inside the protocol curve.
+        function {function_verify_signature_name}:
+            input r0 as dynamic.record;
+            input r1 as field.private;
 
-//         // Consume the toy
-//         decomission_toy:
-//             input r0 as toy.record;
+            // Left-hand side (the group element is G)
+            mul r1 1540945439182663264862696551825005342995406165131907382295858612069623286213group into r2;
+            
+            // Right-hand side
+            cast r0.owner into r2 as group;
+            get.dynamic.record r0.product_id into r3 as field;
+            mul r3 1540945439182663264862696551825005342995406165131907382295858612069623286213group into r4;
+            add r0.owner r4 into r5;
 
-//             call.dynamic MANAGER/DECOMISSION_CERTIFICATE
+            is.eq r2 r5 into r6;
 
-//         //
+            output r6 as boolean.public;
+
+        constructor:
+            assert.eq true true;
+        "
+    );
+
+    let program_b_str = format!(r"
+        import {program_a_name}.aleo;
+    
+        program {program_b_name}.aleo;
+
+        record toy:
+            owner as address.private;
+            
+            // The ID of the type of toy
+            type_id = u16.public;
+            // The unique (also across ladders below) ID of this specific product
+            // It is private for toys
+            product_id = field.private;
+            // Years since the toy was manufactured
+            years_old as u8.private;
+
+        record ladder:
+            owner as address.private;
+
+            // The unique (also across toys above) ID of this specific product
+            // It is private for ladders
+            product_id = field.private;
+            // Whether the ladder has been painted or not
+            painted = boolean.false;
+
+        function manufacture_toy:
+            input r0 as address.private;
+            input r1 as u16.public;
+            input r2 as field.private;
+
+            cast r0 r1 r2 0u8 into r3 as toy.record;
+
+            output r3 as toy.record;
+
+        function manufacture_ladder:
+            input r0 as address.private;
+            input r1 as field.private;
+
+            cast r0 r1 false into r2 as ladder.record;
+
+            output r2 as ladder.record;
+
+        // Consume the toy assuming the provided secret is valid
+        decomission_toy:
+            input r0 as toy.record;
+            input r1 as field.private;
+
+            cast r0 into r2 as dynamic.record;
+
+            call.dynamic {program_a_field} {network_field} {function_verify_signature_field}
+                with r2 r1 (as dynamic.record field.private)
+                into r3 (as boolean.private);
+
+            assert.eq r3 true;
         
-//         // Paint the ladder
-//         paint_ladder:
-//             input r0 as ladder.record;
+        // Consume the ladder assuming the provided secret is valid
+        decomission_ladder:
+            input r0 as ladder.record;
+            input r1 as field.private;
 
-//             cast r0.owner r0.product_id r0.client_signature into r1 as ladder.record;
+            cast r0 into r2 as dynamic.record;
 
-//             output r1 as ladder.record;
-//         "
-//     );
+            call.dynamic {program_a_field} {network_field} {function_verify_signature_field}
+                with r2 r1 (as dynamic.record field.private)
+                into r3 (as boolean.private);
 
-//     // TEST the toy cannot be decomissioned twice
+            assert.eq r3 true;
 
-//     // 1. The factory receives a request for a toy/ladder from a client and generates a random product ID
-//     // 2. The factory communicates
-// }
+        // Paint the ladder
+        paint_ladder:
+            input r0 as ladder.record;
+
+            cast r0.owner r0.product_id r0.client_signature into r1 as ladder.record;
+
+            output r1 as ladder.record;
+        "
+    );
+
+    let program_a = Program::<CurrentNetwork>::from_str(&program_a_str).unwrap();
+    let program_b = Program::<CurrentNetwork>::from_str(&program_b_str).unwrap();
+
+    // Initialize the VM.
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap(), rng);
+
+    // Deploy the programs.
+    println!("Deploying program {program_a_str}.aleo...");
+    let transaction_deploy_a = vm.deploy(&caller_private_key, &program_a, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[transaction_deploy_a], rng);
+
+    println!("Deploying program {program_b_str}.aleo...");
+    let transaction_deploy_b = vm.deploy(&caller_private_key, &program_b, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[transaction_deploy_b], rng);
+
+    // TEST the toy cannot be decomissioned twice
+
+    // 1. The factory receives a request for a toy/ladder from a client and generates a random product ID (it keeps an off-chain registry to avoid duplicates)
+    // 2. The factory communicates the product ID to the client
+
+    // Upon decomissioning, the client (who is the owner of the record)
+}

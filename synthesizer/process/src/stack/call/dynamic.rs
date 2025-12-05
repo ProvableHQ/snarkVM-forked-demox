@@ -664,7 +664,14 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                 false => &stack.get_stack_unchecked(program_id)?,
                             };
 
-                            record_stack.synthesize_translation_key::<A, R>(record_name, rng)
+                            // TODO (Antonio) reintroduce and remove the rest
+                            // record_stack.synthesize_translation_key::<A, R>(record_name, rng)
+
+                            // TODO (Antonio) remove
+                            record_stack.synthesize_translation_key::<A, R>(record_name, rng)?;
+                            println!(" & Synthesizing translation key for {}/{}", record_stack.program_id(), record_name);
+                            println!("     - {}\n     - {}", record_stack.get_translation_proving_key(record_name)?.circuit_verifying_key.id, record_stack.get_translation_verifying_key(record_name)?.id);
+                            Ok(())
                         };
 
                         let caller_console_input_ids = callee_request.caller_input_ids().clone().unwrap_or_default();

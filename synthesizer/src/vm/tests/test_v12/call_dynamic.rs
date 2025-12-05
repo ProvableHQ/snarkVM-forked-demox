@@ -18,7 +18,9 @@ use super::*;
 // This test verifiers that a dynamic call to the `credits` functions work as expected.
 #[test]
 fn test_dynamic_calls_to_credits_aleo() -> Result<()> {
-    let rng = &mut TestRng::default();
+
+    // TODO (dynamic_dispatch) set back to &mut TestRng::default();
+    let rng = &mut TestRng::from_seed(123);
 
     // Initialize a new caller.
     let caller_private_key = sample_genesis_private_key(rng);
@@ -102,7 +104,7 @@ fn test_dynamic_calls_to_credits_aleo() -> Result<()> {
     assert_eq!(block.aborted_transaction_ids().len(), 0);
     vm.add_next_block(&block)?;
 
-    // TODO: Uncomment this once we can parse identifiers as literals.
+    // TODO (dynamic_dispatch) Uncomment this once we can parse identifiers as literals.
     // Execute the "static" function.
     // println!("Executing the `static` function...");
     // let transaction = vm.execute(
@@ -139,6 +141,9 @@ fn test_dynamic_calls_to_credits_aleo() -> Result<()> {
     assert_eq!(program_id_fields.len(), 2);
     assert_eq!(program_id_fields[0], credits_field);
     assert_eq!(program_id_fields[1], aleo_field);
+    
+    // TODO (Antonio) remove
+    println!(" * CHECKPOINT 0");
 
     // Execute 'two_transfer_publics'.
     let transaction = vm.execute(
@@ -157,12 +162,23 @@ fn test_dynamic_calls_to_credits_aleo() -> Result<()> {
         None,
         rng,
     )?;
+
+    // TODO (Antonio) remove
+    println!(" * CHECKPOINT 0.5");
+
     vm.check_transaction(&transaction, None, rng)?;
+
+    // TODO (Antonio) remove
+    println!(" * CHECKPOINT 0.75");
+
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
     assert_eq!(block.aborted_transaction_ids().len(), 0);
     vm.add_next_block(&block)?;
+
+    // TODO (Antonio) remove
+    println!(" * CHECKPOINT 1");
 
     // Execute 'dynamic_transfer_public_to_private'.
     let transaction = vm.execute(
@@ -181,17 +197,31 @@ fn test_dynamic_calls_to_credits_aleo() -> Result<()> {
         None,
         rng,
     )?;
+
+    // TODO (Antonio) remove
+    println!(" * CHECKPOINT 1.5");
+    
     vm.check_transaction(&transaction, None, rng)?;
+
+    // TODO (Antonio) remove
+    println!(" * CHECKPOINT 2");
+    
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
     assert_eq!(block.aborted_transaction_ids().len(), 0);
     vm.add_next_block(&block)?;
 
+    // TODO (Antonio) remove
+    println!(" * CHECKPOINT 2.5");
+
     // Collect the record
     ensure!(block.records().collect_vec().len() == 1, "Expected 1 record, got {}", block.records().collect_vec().len());
     let record = block.records().collect_vec().last().unwrap().1.decrypt(&caller_view_key).unwrap();
     let dynamic_record = DynamicRecord::<CurrentNetwork>::from_record(&record).unwrap();
+
+    // TODO (Antonio) remove
+    println!(" * CHECKPOINT 3");
 
     // Execute 'dynamic_transfer_private'.
     println!("Executing 'dynamic_transfer_private'...");
@@ -212,7 +242,15 @@ fn test_dynamic_calls_to_credits_aleo() -> Result<()> {
         None,
         rng,
     )?;
+
+    // TODO (Antonio) remove
+    println!(" * CHECKPOINT 3.5");
+
     vm.check_transaction(&transaction, None, rng)?;
+
+    // TODO (Antonio) remove
+    println!(" * CHECKPOINT 4");
+    
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);

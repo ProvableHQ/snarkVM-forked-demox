@@ -110,6 +110,9 @@ impl<N: Network> Trace<N> {
         ensure!(self.translation_assignments.get().is_none());
         ensure!(self.global_state_root.get().is_none());
 
+        // TODO (Antonio) remove
+        println!("Inserting transition for {} with proving key {}", transition.function_name(), proving_key.circuit_verifying_key.id);
+
         // Insert the transition into the inclusion and translation tasks.
         self.inclusion_tasks.insert_transition(input_ids, transition)?;
         self.translation_tasks.insert_transition(*transition.id(), record_translation_data)?;
@@ -171,6 +174,13 @@ impl<N: Network> Trace<N> {
             .set(inclusion_assignments)
             .map_err(|_| anyhow!("Failed to set inclusion assignments"))?;
 
+        // TODO (Antonio) remove
+        for ((program_id, record_name), assignments) in translation_assignments_without_keys.iter() {
+            let stack = process.get_stack(program_id)?;
+            let proving_key = stack.get_translation_proving_key(&record_name)?;
+            println!("  % {} (for {}/{}): {}", proving_key.circuit_verifying_key.id, program_id, record_name, assignments.len());
+        }
+
         // Fetch the translation proving keys, which have already been
         // synthesized in call/dynamic.rs::execute for all detected translations
         let translation_assignments = translation_assignments_without_keys.into_iter().map(
@@ -230,6 +240,18 @@ impl<N: Network> Trace<N> {
             self.translation_assignments.get().ok_or_else(|| anyhow!("Translation assignments have not been set"))?;
         // Construct the proving tasks.
         let proving_tasks = self.transition_tasks.values().cloned().collect();
+
+        // TODO (Antonio) remove
+        println!("# Inclusion assignments: {}", inclusion_assignments.len());
+        println!("# Translation assignments: {}", translation_assignments.len());
+        for (key, assignments) in translation_assignments.iter() {
+            println!("  - {}: {}", key.circuit_verifying_key.id, assignments.len());
+        }
+        println!("# Transition assignments: {}", self.transition_tasks.len());
+        for (locator, (proving_key, assignments)) in self.transition_tasks.iter() {
+            println!("  - {locator}: {}", proving_key.circuit_verifying_key.id);
+        }
+
         // Compute the proof.
         let (global_state_root, proof) = Self::prove_batch::<A, R>(
             locator,
