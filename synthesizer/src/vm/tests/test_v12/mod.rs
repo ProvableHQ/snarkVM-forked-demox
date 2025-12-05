@@ -17,13 +17,11 @@ mod cast;
 
 mod get_dynamic_record;
 
-mod graph;
-
 mod dynamic_mapping_operations;
 
 mod mixed;
 
-mod other;
+mod call_dynamic;
 
 mod recursion;
 
