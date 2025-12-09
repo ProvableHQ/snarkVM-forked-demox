@@ -317,26 +317,41 @@ impl<N: Network> Process<N> {
             Some(function) => function
                 .instructions()
                 .iter()
-                .filter(|instruction| matches!(instruction, Instruction::CallDynamic(_) | Instruction::Call(_)))
-                .map(|instruction| Some(instruction.clone()))
-                .collect::<Vec<_>>(),
-            None => vec![None; child_transition_ids.len()],
+                .filter_map(|instruction| match instruction {
+                    Instruction::CallDynamic(..) => Some((true, instruction.clone())),
+                    Instruction::Call(..) => Some((false, instruction.clone())),
+                    _ => None,
+                })
+                .collect_vec(),
+            // TODO (dynamic_dispatch) when can this happen?
+            None => bail!("Function not found"),
         };
+
         ensure!(
             parent_function_calls.len() == child_transition_ids.len(),
             "The number of parent function calls and child transition IDs do not match"
         );
+
         // TODO(@vicsn): in case we stick to encoding and using *all* of the caller_{inputs, outputs} instead of just the dynamic ones,
         // we'll have to assert they equal the child's inputs/outputs.
-        for (child_transition_id, parent_function_call) in child_transition_ids.iter().zip(parent_function_calls) {
+        for (child_transition_id, (is_dynamic, parent_function_call)) in child_transition_ids.iter().zip(parent_function_calls) {
             // Note: This unwrap is safe, as we are processing transitions in post-order,
             // which implies that all child transition IDs have been added to `transition_map`.
             let (child_transition, _) = transition_map.get(child_transition_id).unwrap();
+
             let child_function_id =
                 compute_function_id(&U16::new(N::ID), child_transition.program_id(), child_transition.function_name())?;
 
+            ensure!(
+                is_dynamic == child_transition.is_dynamic(),
+                "Function {} contains a dynamic call to {}, but the corresponding child transition {} does not contain dynamic-call data.",
+                transition.function_name(),
+                child_transition.function_name(),
+                child_transition_id,
+            );
+
             // [Inputs] Extend the verifier inputs with the program ID and function name if the child transition is dynamic.
-            if child_transition.is_dynamic() {
+            if is_dynamic {
                 verifier_inputs.extend(child_transition.program_id().to_fields()?.into_iter().map(|field| *field));
                 verifier_inputs.extend([*child_transition.function_name().to_field()?]);
                 verifier_inputs.extend([*compute_function_id(
@@ -347,58 +362,74 @@ impl<N: Network> Process<N> {
             }
             // [Inputs] Extend the verifier inputs with the transition commitment of the external call.
             verifier_inputs.extend([**child_transition.tcm()]);
+
             // [Inputs] Extend the verifier inputs with the input IDs of the external call.
-            let child_inputs = match (child_transition.is_dynamic(), child_transition.caller_inputs()) {
-                (true, Some(caller_inputs)) => caller_inputs,
-                (true, None) => bail!("Dynamic transition has no caller inputs"),
-                (false, _) => child_transition.inputs(),
+            let child_inputs = if is_dynamic {
+                // Since is_dynamic has been checked to match child_transition.is_dynamic(),
+                // which guarantees caller_inputs.is_some() when true, this ? should always unwrap successfully.
+                child_transition.caller_inputs().ok_or_else(|| anyhow!(
+                    "Dynamic-call transition {} (function: {}) has no caller_inputs",
+                    child_transition.id(),
+                    child_transition.function_name(),
+                ))?
+            } else {
+                child_transition.inputs()
             };
             let num_inputs = child_transition.inputs().len();
 
             verifier_inputs.extend(child_inputs.iter().flat_map(|input| input.verifier_inputs()));
+
             // [Inputs] Extend the verifier inputs with the output IDs of the external call.
-            let output_ids = match (child_transition.is_dynamic(), child_transition.caller_outputs()) {
-                (false, _) => child_transition.output_ids().map(|id| **id).collect::<Vec<_>>(),
-                (true, None) => bail!("Dynamic transition has no caller outputs"),
-                (true, Some(caller_outputs)) => {
-                    let Some(Instruction::CallDynamic(dynamic_call)) = parent_function_call else {
-                        bail!("Parent function call is not a dynamic call: {parent_function_call:?}");
-                    };
-                    let mut caller_output_ids = vec![];
-                    ensure!(
-                        caller_outputs.len() == dynamic_call.destination_types().len(),
-                        "The number of caller outputs and dynamic call outputs do not match"
-                    );
-                    for (index, (caller_output, caller_destination_type)) in
-                        caller_outputs.iter().zip(dynamic_call.destination_types().iter()).enumerate()
-                    {
-                        match (caller_output, caller_destination_type) {
-                            // In the case of a DynamicFuture, the verifier computes the hash of the dynamic future directly.
-                            (Output::Future(_id, future), ValueType::DynamicFuture) => {
-                                let Some(future) = future else {
-                                    bail!("Future is not present for child transition {}", child_transition.id());
-                                };
-                                let dynamic_future = DynamicFuture::from_future(future)?;
-                                let dynamic_future_id = {
-                                    let index = Field::from_u16(
-                                        u16::try_from(num_inputs + index).or_halt_with::<N>("Output index exceeds u16"),
-                                    );
-                                    // Construct the preimage as `(function ID || output || tcm || index)`.
-                                    let mut preimage = Vec::new();
-                                    preimage.push(child_function_id);
-                                    preimage.extend(dynamic_future.to_fields()?);
-                                    preimage.push(*child_transition.tcm());
-                                    preimage.push(index);
-                                    // Hash the output to a field element.
-                                    N::hash_psd8(&preimage)?
-                                };
-                                caller_output_ids.push(*dynamic_future_id);
-                            }
-                            _ => caller_output_ids.push(**caller_output.id()),
+            let output_ids = if is_dynamic {
+                // This ? should always unwrap successfully for the same reason as in the definition of
+                // child_inputs above.
+                let caller_outputs = child_transition.caller_outputs().ok_or_else(|| anyhow!(
+                    "Dynamic-call transition {} (function: {}) has no caller_outputs",
+                    child_transition.id(),
+                    child_transition.function_name(),
+                ))?;
+
+                let Instruction::CallDynamic(dynamic_call) = parent_function_call else {
+                    // This should never occur by construction of parent_function_calls
+                    bail!("Parent function call is not a dynamic call: {parent_function_call:?}");
+                };
+                let mut caller_output_ids = vec![];
+                ensure!(
+                    caller_outputs.len() == dynamic_call.destination_types().len(),
+                    "The number of caller outputs and dynamic call outputs do not match"
+                );
+                for (index, (caller_output, caller_destination_type)) in
+                    caller_outputs.iter().zip(dynamic_call.destination_types().iter()).enumerate()
+                {
+                    match (caller_output, caller_destination_type) {
+                        // In the case of a DynamicFuture, the verifier computes the hash of the dynamic future directly.
+                        (Output::Future(_id, future), ValueType::DynamicFuture) => {
+                            let Some(future) = future else {
+                                bail!("Future is not present for child transition {}", child_transition.id());
+                            };
+                            let dynamic_future = DynamicFuture::from_future(future)?;
+                            let dynamic_future_id = {
+                                let index = Field::from_u16(
+                                    u16::try_from(num_inputs + index).or_halt_with::<N>("Output index exceeds u16"),
+                                );
+                                // Construct the preimage as `(function ID || output || tcm || index)`.
+                                let mut preimage = Vec::new();
+                                preimage.push(child_function_id);
+                                preimage.extend(dynamic_future.to_fields()?);
+                                preimage.push(*child_transition.tcm());
+                                preimage.push(index);
+                                // Hash the output to a field element.
+                                N::hash_psd8(&preimage)?
+                            };
+                            caller_output_ids.push(*dynamic_future_id);
                         }
+                        _ => caller_output_ids.push(**caller_output.id()),
                     }
-                    caller_output_ids
                 }
+
+                caller_output_ids
+            } else {
+                child_transition.output_ids().map(|id| **id).collect::<Vec<_>>()
             };
             verifier_inputs.extend(output_ids);
         }

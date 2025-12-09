@@ -13,6 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use snarkvm_ledger_block::Transition;
+
 use super::*;
 
 fn test_translation(
@@ -701,4 +703,146 @@ fn test_translation_traversal_consistency() {
     // This indeed results of three batches for translation proving/verification:
     // one of size 3 for a.record, one of size 8 for b.record, and one of size 2 for c.record.
     add_and_test(&vm, &caller_private_key, &[transaction], rng);
+}
+
+#[test]
+fn test_malicious_caller_inputs_outputs() {
+    
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
+
+    let glass_pane_program_str = Identifier::<CurrentNetwork>::from_str("glass_panes").unwrap();
+    let network_str = Identifier::<CurrentNetwork>::from_str("aleo").unwrap();
+    let consume_glass_statically_function_str = Identifier::<CurrentNetwork>::from_str("consume_glass_statically").unwrap();
+
+    let glass_pane_program_field = glass_pane_program_str.to_field().unwrap();
+    let network_field = network_str.to_field().unwrap();
+    let consume_glass_statically_function_field = consume_glass_statically_function_str.to_field().unwrap();
+
+    let program_string = format!(
+        r"
+        program {glass_pane_program_str}.aleo;
+
+        record stained_glass:
+            owner as address.private;
+            color as u8.public;
+
+        function produce:
+            input r0 as address.private;
+            input r1 as u8.public;
+
+            cast r0 r1 into r2 as stained_glass.record;
+
+            output r2 as stained_glass.record;
+
+        function consume_glass_dynamically:
+            input r0 as dynamic.record;
+
+            call.dynamic {glass_pane_program_field} {network_field} {consume_glass_statically_function_field}
+                with r0 (as dynamic.record);
+
+        function consume_glass_statically:
+            input r0 as stained_glass.record;
+
+        constructor:
+            assert.eq true true;
+    "
+    );
+
+    let program = Program::<CurrentNetwork>::from_str(&program_string).unwrap();
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap(), rng);
+
+    // Deploy the program.
+    let transaction_deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[transaction_deploy], rng);
+
+    // Mint a record and decrypt it
+    let transaction_mint = vm
+        .execute(
+            &caller_private_key,
+            ("glass_panes.aleo", "produce"),
+            [Value::from_str(&caller_address.to_string()).unwrap(), Value::from_str("1u8").unwrap()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    let output_record = transaction_mint.transitions().next().unwrap().outputs().iter().next().unwrap();
+
+    let output_record = match output_record {
+        Output::Record(_, _, record_ciphertext, _) => {
+            record_ciphertext.as_ref().unwrap().decrypt(&caller_view_key).unwrap()
+        }
+        _ => panic!("Minted record is not a record"),
+    };
+
+    add_and_test(&vm, &caller_private_key, &[transaction_mint], rng);
+
+    // Convert the static record into a dynamic one and pass it to consume_glass_dynamically
+    let dynamic_record = DynamicRecord::from_record(&output_record).unwrap();
+
+    let transaction_consume = vm
+        .execute(
+            &caller_private_key,
+            ("glass_panes.aleo", "consume_glass_dynamically"),
+            [Value::DynamicRecord(dynamic_record)].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    // The transaction contains three transitions:
+    //    [child (= consume_glass_statically), parent (= consume_glass_dynamically), fee].
+    // Since the child transition corresponds to a dynamic call, its
+    // caller_inputs and caller_outputs are set to Some.
+    let child_transition = transaction_consume.transitions().next().unwrap();
+
+    assert!(transaction_consume.transitions().count() == 3);
+    assert_eq!(*child_transition.function_name(), consume_glass_statically_function_str);
+    assert!(child_transition.caller_inputs().is_some());
+    assert!(child_transition.caller_outputs().is_some());
+
+    // ***************** Case 1: Stipping caller inputs *****************
+    // Here a malicious prover removes caller_inputs from a dynamic-call transition
+    // and the verifier detects it.
+
+    // We tamper with the transition by removing the caller inputs and outputs:
+    let tampered_child_transition = Transition::new(
+        *child_transition.program_id(),
+        *child_transition.function_name(),
+        child_transition.inputs().to_vec(),
+        child_transition.outputs().to_vec(),
+        *child_transition.tpk(),
+        *child_transition.tcm(),
+        *child_transition.scm(),
+        None,
+        None,
+    ).unwrap();
+
+    let mut tampered_transitions = transaction_consume.transitions().cloned().collect_vec();
+
+    // We remove the fee transition, which added separately when creating the transaction below.
+    tampered_transitions.pop().unwrap();
+
+    tampered_transitions[0] = tampered_child_transition;
+
+    let tampered_execution = Execution::from(
+        tampered_transitions.into_iter(),
+        transaction_consume.execution().unwrap().global_state_root(),
+        transaction_consume.execution().unwrap().proof().cloned(),
+    ).unwrap();
+
+    let tampered_transaction = Transaction::from_execution(tampered_execution, transaction_consume.fee_transition()).unwrap();
+
+    assert_eq!(tampered_transaction.id(), transaction_consume.id());
+
+    vm.check_transaction(&tampered_transaction, None, rng).unwrap();
 }

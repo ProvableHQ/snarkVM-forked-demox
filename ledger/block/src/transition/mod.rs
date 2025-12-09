@@ -431,6 +431,7 @@ impl<N: Network> Transition<N> {
         &self.scm
     }
 
+    // TODO (dynamic_dispatch) we might want to make this return Result<bool> and check that self.caller_inputs.is_some() == self.caller_outputs.is_some(), as is our convention
     /// Returns whether or not the transition is dynamic.
     pub fn is_dynamic(&self) -> bool {
         self.caller_inputs.is_some() || self.caller_outputs.is_some()

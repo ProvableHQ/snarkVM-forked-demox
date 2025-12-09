@@ -47,6 +47,7 @@ use snarkvm_utilities::TestRng;
 // TODO (dynamic_dispatch)
 // - Test the case with the interface of a dynamic call doesn't match the mode
 // - Conditional execution with finalize scopes
+// - Make tests more realistic (and comprehensive) by minting records with different owners than the genesis address
 
 fn add_and_test(
     vm: &VM<CurrentNetwork, LedgerType>,
