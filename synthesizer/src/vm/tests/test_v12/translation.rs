@@ -716,11 +716,11 @@ fn test_malicious_caller_inputs_outputs() {
 
     let glass_pane_program_str = Identifier::<CurrentNetwork>::from_str("glass_panes").unwrap();
     let network_str = Identifier::<CurrentNetwork>::from_str("aleo").unwrap();
-    let consume_glass_statically_function_str = Identifier::<CurrentNetwork>::from_str("consume_glass_statically").unwrap();
+    let decolor_glass_statically_function_str = Identifier::<CurrentNetwork>::from_str("decolor_glass_statically").unwrap();
 
     let glass_pane_program_field = glass_pane_program_str.to_field().unwrap();
     let network_field = network_str.to_field().unwrap();
-    let consume_glass_statically_function_field = consume_glass_statically_function_str.to_field().unwrap();
+    let decolor_glass_statically_function_field = decolor_glass_statically_function_str.to_field().unwrap();
 
     let program_string = format!(
         r"
@@ -738,14 +738,24 @@ fn test_malicious_caller_inputs_outputs() {
 
             output r2 as stained_glass.record;
 
-        function consume_glass_dynamically:
+        function decolor_glass_dynamically:
             input r0 as dynamic.record;
 
-            call.dynamic {glass_pane_program_field} {network_field} {consume_glass_statically_function_field}
-                with r0 (as dynamic.record);
+            call.dynamic {glass_pane_program_field} {network_field} {decolor_glass_statically_function_field}
+                with r0 (as dynamic.record)
+                into r1 (as dynamic.record);
 
-        function consume_glass_statically:
+            output r1 as dynamic.record;
+
+        function decolor_glass_statically:
             input r0 as stained_glass.record;
+
+            // Cannot decolor a glass that is not stained
+            assert.neq r0.color 0u8;
+            
+            cast r0.owner 0u8 into r1 as stained_glass.record;
+
+            output r1 as stained_glass.record;
 
         constructor:
             assert.eq true true;
@@ -784,13 +794,13 @@ fn test_malicious_caller_inputs_outputs() {
 
     add_and_test(&vm, &caller_private_key, &[transaction_mint], rng);
 
-    // Convert the static record into a dynamic one and pass it to consume_glass_dynamically
+    // Convert the static record into a dynamic one and pass it to decolor_glass_dynamically
     let dynamic_record = DynamicRecord::from_record(&output_record).unwrap();
 
     let transaction_consume = vm
         .execute(
             &caller_private_key,
-            ("glass_panes.aleo", "consume_glass_dynamically"),
+            ("glass_panes.aleo", "decolor_glass_dynamically"),
             [Value::DynamicRecord(dynamic_record)].into_iter(),
             None,
             1000u64,
@@ -800,13 +810,13 @@ fn test_malicious_caller_inputs_outputs() {
         .unwrap();
 
     // The transaction contains three transitions:
-    //    [child (= consume_glass_statically), parent (= consume_glass_dynamically), fee].
+    //    [child (= decolor_glass_statically), parent (= decolor_glass_dynamically), fee].
     // Since the child transition corresponds to a dynamic call, its
     // caller_inputs and caller_outputs are set to Some.
     let child_transition = transaction_consume.transitions().next().unwrap();
 
     assert!(transaction_consume.transitions().count() == 3);
-    assert_eq!(*child_transition.function_name(), consume_glass_statically_function_str);
+    assert_eq!(*child_transition.function_name(), decolor_glass_statically_function_str);
     assert!(child_transition.caller_inputs().is_some());
     assert!(child_transition.caller_outputs().is_some());
 
@@ -912,14 +922,66 @@ fn test_malicious_caller_inputs_outputs() {
 
     println!("Attempting to execute transaction with malicious caller_inputs...");
 
-    // Interim classification message: this should panic because of incorrect caller_input types, not because of Varuna::batch_verify failing!
-    vm.check_transaction(&transaction, None, rng).unwrap();
+    assert!(vm.check_transaction(&transaction, None, rng).unwrap_err().to_string().contains("Caller input 0 in dynamic call to decolor_glass_statically should be of type"));
 
-    // ******** Case 3: Tampering caller_outputs to avoid translation triggering ********
+    // ********* Case 3: Tampering caller_outputs to avoid translation triggering ********
 
-    // In this subtler attack, a malicious prover leaves caller_inputs as Some,
-    // but replaces a dynamic record therein by a static one (as present in the
-    // callee's view of the inputs) to try and prevent the verifier from
-    // detecting the need to check a translation-circuit instance.
+    // This is analogous to case 2 but with the dishonest prover tampering with
+    // caller_outputs instead of caller_inputs
 
+    let honest_caller_outputs = child_transition.caller_outputs().unwrap().to_vec();
+    assert!(matches!(honest_caller_outputs[0], Output::DynamicRecord(..)));
+    let mut dishonest_caller_outputs = honest_caller_outputs;
+
+    let static_record_output = child_transition.outputs()[0].clone();
+    assert!(matches!(static_record_output, Output::Record(..)));
+
+    dishonest_caller_outputs[0] = static_record_output;
+
+    let output_tampered_child_transition = Transition::new(
+        *child_transition.program_id(),
+        *child_transition.function_name(),
+        child_transition.inputs().to_vec(),
+        child_transition.outputs().to_vec(),
+        *child_transition.tpk(),
+        *child_transition.tcm(),
+        *child_transition.scm(),
+        Some(child_transition.caller_inputs().unwrap().to_vec()),
+        Some(dishonest_caller_outputs),
+    ).unwrap();
+
+    let mut output_tampered_transitions = transaction_consume.transitions().cloned().collect_vec();
+
+    // We remove the fee transition, which added separately when creating the transaction below.
+    output_tampered_transitions.pop().unwrap();
+
+    output_tampered_transitions[0] = output_tampered_child_transition;
+
+    let output_tampered_execution = Execution::from(
+        output_tampered_transitions.into_iter(),
+        transaction_consume.execution().unwrap().global_state_root(),
+        transaction_consume.execution().unwrap().proof().cloned(),
+    ).unwrap();
+
+    // Extra funds need to be added to the fee to account for the
+    // increased size of the modifiedexecution: using the previously constructed
+    // transaction_consume.fee_transition() causes an earlier error than the one
+    // we want to test due to the fee being insufficient.
+    let fee_authorization = vm.process().read().authorize_fee_public::<CurrentAleo, _>(
+        &caller_private_key,
+        10000,
+        0,
+        output_tampered_execution.to_execution_id().unwrap(),
+        rng,
+    ).unwrap();
+
+    let fee = vm.execute_fee_authorization(fee_authorization, None, rng).unwrap();
+    
+    // The full transaction can now be reconstructed using the modified child
+    // and fee transitions.
+    let transaction = Transaction::from_execution(output_tampered_execution, Some(fee)).unwrap();
+
+    println!("Attempting to execute transaction with malicious caller_outputs...");
+
+    assert!(vm.check_transaction(&transaction, None, rng).unwrap_err().to_string().contains("Caller output 0 in dynamic call to decolor_glass_statically should be of type"));
 }

@@ -278,6 +278,7 @@ impl<N: Network> Process<N> {
         program_checksum: Option<N::Field>,
         transition_map: &mut HashMap<N::TransitionID, (&Transition<N>, Function<N>)>,
     ) -> Result<Vec<N::Field>> {
+
         // Compute the x- and y-coordinate of `tpk`.
         let (tpk_x, tpk_y) = transition.tpk().to_xy_coordinates();
 
@@ -342,6 +343,11 @@ impl<N: Network> Process<N> {
             let child_function_id =
                 compute_function_id(&U16::new(N::ID), child_transition.program_id(), child_transition.function_name())?;
 
+            let call_dynamic_instruction_opt = match parent_function_call {
+                Instruction::CallDynamic(call_dynamic) => Some(call_dynamic),
+                _ => None,
+            };
+
             ensure!(
                 is_dynamic == child_transition.is_dynamic(),
                 "Function {} contains a dynamic call to {}, but the corresponding child transition {} does not contain dynamic-call data.",
@@ -365,13 +371,28 @@ impl<N: Network> Process<N> {
 
             // [Inputs] Extend the verifier inputs with the input IDs of the external call.
             let child_inputs = if is_dynamic {
+                println!("     inside if is_dynamic");
+
                 // Since is_dynamic has been checked to match child_transition.is_dynamic(),
                 // which guarantees caller_inputs.is_some() when true, this ? should always unwrap successfully.
-                child_transition.caller_inputs().ok_or_else(|| anyhow!(
+                let caller_inputs = child_transition.caller_inputs().ok_or_else(|| anyhow!(
                     "Dynamic-call transition {} (function: {}) has no caller_inputs",
                     child_transition.id(),
                     child_transition.function_name(),
-                ))?
+                ))?;
+
+                // Note call_dynamic_instruction.unwrap().operand_types() cannot panic by construction (is_dynamic is true)
+                for (i, (input, input_type)) in caller_inputs.iter().zip(call_dynamic_instruction_opt.clone().unwrap().operand_types().iter()).enumerate() {
+                    ensure!(
+                        input.is_type(input_type),
+                        "Caller input {i} in dynamic call to {} should be of type {}, found: {}",
+                        child_transition.function_name(),
+                        input_type,
+                        input,
+                    );
+                }
+
+                caller_inputs
             } else {
                 child_transition.inputs()
             };
@@ -389,17 +410,16 @@ impl<N: Network> Process<N> {
                     child_transition.function_name(),
                 ))?;
 
-                let Instruction::CallDynamic(dynamic_call) = parent_function_call else {
-                    // This should never occur by construction of parent_function_calls
-                    bail!("Parent function call is not a dynamic call: {parent_function_call:?}");
-                };
+                // As above, this unwrap cannot panic by construction (is_dynamic is true)
+                let call_dynamic_instruction = call_dynamic_instruction_opt.unwrap();
+
                 let mut caller_output_ids = vec![];
                 ensure!(
-                    caller_outputs.len() == dynamic_call.destination_types().len(),
+                    caller_outputs.len() == call_dynamic_instruction.destination_types().len(),
                     "The number of caller outputs and dynamic call outputs do not match"
                 );
                 for (index, (caller_output, caller_destination_type)) in
-                    caller_outputs.iter().zip(dynamic_call.destination_types().iter()).enumerate()
+                    caller_outputs.iter().zip(call_dynamic_instruction.destination_types().iter()).enumerate()
                 {
                     match (caller_output, caller_destination_type) {
                         // In the case of a DynamicFuture, the verifier computes the hash of the dynamic future directly.
@@ -423,7 +443,17 @@ impl<N: Network> Process<N> {
                             };
                             caller_output_ids.push(*dynamic_future_id);
                         }
-                        _ => caller_output_ids.push(**caller_output.id()),
+                        _ => {
+                            ensure!(
+                                caller_output.is_type(caller_destination_type),
+                                "Caller output {index} in dynamic call to {} should be of type {}, found: {}",
+                                child_transition.function_name(),
+                                caller_destination_type,
+                                caller_output,
+                            );
+
+                            caller_output_ids.push(**caller_output.id());
+                        }
                     }
                 }
 
