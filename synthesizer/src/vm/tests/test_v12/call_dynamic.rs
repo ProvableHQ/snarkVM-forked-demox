@@ -19,8 +19,7 @@ use super::*;
 #[test]
 fn test_dynamic_calls_to_credits_aleo() -> Result<()> {
 
-    // TODO (dynamic_dispatch) set back to &mut TestRng::default();
-    let rng = &mut TestRng::from_seed(123);
+    let rng = &mut TestRng::default();
 
     // Initialize a new caller.
     let caller_private_key = sample_genesis_private_key(rng);

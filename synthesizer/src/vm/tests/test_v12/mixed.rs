@@ -13,6 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use console::types::Scalar;
+
 use super::*;
 
 // These tests mix translation, casting to dynamic.record and get.dynamic.record.
@@ -290,9 +292,17 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
 
     let rng = &mut TestRng::default();
 
-    let caller_private_key = sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key).unwrap();
-    let caller_view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
+    let factory_private_key = sample_genesis_private_key(rng);
+    let factory_address = Address::try_from(&factory_private_key).unwrap();
+    let factory_view_key = ViewKey::<CurrentNetwork>::try_from(factory_private_key).unwrap();
+
+    let client_1_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+    let client_1_address = Address::try_from(&client_1_private_key).unwrap();
+    let client_1_view_key = ViewKey::<CurrentNetwork>::try_from(client_1_private_key).unwrap();
+
+    let client_2_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+    let client_2_address = Address::try_from(&client_2_private_key).unwrap();
+    let client_2_view_key = ViewKey::<CurrentNetwork>::try_from(client_2_private_key).unwrap();
 
     let program_a_name = Identifier::<CurrentNetwork>::from_str("manager").unwrap();
     let program_b_name = Identifier::<CurrentNetwork>::from_str("factory").unwrap();
@@ -304,6 +314,22 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
     let network_field = network_name.to_field().unwrap();
     let function_verify_signature_field = function_verify_signature_name.to_field().unwrap();
 
+    let generator = CurrentNetwork::g_scalar_multiply(&Scalar::one());
+
+    // Signatures for products operate as follows:
+    // 1. The factory receives a request for a toy/ladder from a client and
+    //    generates a random product ID (it keeps an off-chain registry to avoid
+    //    duplicates). It then produces the requested product record, which
+    //    includes the generated ID.
+    // 2. The client can decrypt the record and compute the signature
+    //        s = vk + product_id
+    //    where vk is the client account' view key
+    // 3. A function called by the client and receiving this signature as a
+    //    private input can verify it by checking
+    //        s * G = owner_address + (product_id * G),
+    //    since owner_address = vk * G Disclaimer: this is not a secure signing
+    //    scheme. Do not use.
+
     let program_a_str = format!(r"
         program {program_a_name}.aleo;
 
@@ -312,20 +338,21 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
         // generator of the distinguished subgroup inside the protocol curve.
         function {function_verify_signature_name}:
             input r0 as dynamic.record;
-            input r1 as field.private;
+            input r1 as scalar.private;
 
             // Left-hand side (the group element is G)
-            mul r1 1540945439182663264862696551825005342995406165131907382295858612069623286213group into r2;
+            mul r1 {generator} into r2;
             
             // Right-hand side
-            cast r0.owner into r2 as group;
-            get.dynamic.record r0.product_id into r3 as field;
-            mul r3 1540945439182663264862696551825005342995406165131907382295858612069623286213group into r4;
-            add r0.owner r4 into r5;
+            // TODO (dynamic_dispatch) cast r0.owner into r3 as group;
+            cast {client_1_address} into r3 as group;
+            get.dynamic.record r0.product_id into r4 as scalar;
+            mul r4 {generator} into r5;
+            add r3 r5 into r6;
 
-            is.eq r2 r5 into r6;
+            is.eq r2 r6 into r7;
 
-            output r6 as boolean.public;
+            output r7 as boolean.public;
 
         constructor:
             assert.eq true true;
@@ -341,10 +368,10 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
             owner as address.private;
             
             // The ID of the type of toy
-            type_id = u16.public;
+            type_id as u16.public;
             // The unique (also across ladders below) ID of this specific product
             // It is private for toys
-            product_id = field.private;
+            product_id as scalar.private;
             // Years since the toy was manufactured
             years_old as u8.private;
 
@@ -352,15 +379,15 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
             owner as address.private;
 
             // The unique (also across toys above) ID of this specific product
-            // It is private for ladders
-            product_id = field.private;
+            // It is public for ladders
+            product_id as scalar.public;
             // Whether the ladder has been painted or not
-            painted = boolean.false;
+            painted as boolean.public;
 
         function manufacture_toy:
             input r0 as address.private;
             input r1 as u16.public;
-            input r2 as field.private;
+            input r2 as scalar.private;
 
             cast r0 r1 r2 0u8 into r3 as toy.record;
 
@@ -368,45 +395,54 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
 
         function manufacture_ladder:
             input r0 as address.private;
-            input r1 as field.private;
+            input r1 as scalar.private;
 
             cast r0 r1 false into r2 as ladder.record;
 
             output r2 as ladder.record;
 
         // Consume the toy assuming the provided secret is valid
-        decomission_toy:
+        function decomission_toy:
             input r0 as toy.record;
-            input r1 as field.private;
+            input r1 as scalar.private;
 
             cast r0 into r2 as dynamic.record;
 
             call.dynamic {program_a_field} {network_field} {function_verify_signature_field}
-                with r2 r1 (as dynamic.record field.private)
-                into r3 (as boolean.private);
+                with r2 r1 (as dynamic.record scalar.private)
+                into r3 (as boolean.public);
 
             assert.eq r3 true;
         
         // Consume the ladder assuming the provided secret is valid
-        decomission_ladder:
+        function decomission_ladder:
             input r0 as ladder.record;
-            input r1 as field.private;
+            input r1 as scalar.private;
 
             cast r0 into r2 as dynamic.record;
 
             call.dynamic {program_a_field} {network_field} {function_verify_signature_field}
-                with r2 r1 (as dynamic.record field.private)
-                into r3 (as boolean.private);
+                with r2 r1 (as dynamic.record scalar.private)
+                into r3 (as boolean.public);
 
             assert.eq r3 true;
 
         // Paint the ladder
-        paint_ladder:
+        function paint_ladder:
             input r0 as ladder.record;
 
-            cast r0.owner r0.product_id r0.client_signature into r1 as ladder.record;
+            assert.eq r0.painted false;
+
+            cast r0.owner r0.product_id true into r1 as ladder.record;
 
             output r1 as ladder.record;
+
+        // TODO (dynamic_dispatch) remove
+        function test_generator:
+            assert.eq group::GEN {generator};
+
+        constructor:
+            assert.eq true true;
         "
     );
 
@@ -417,18 +453,111 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap(), rng);
 
     // Deploy the programs.
-    println!("Deploying program {program_a_str}.aleo...");
-    let transaction_deploy_a = vm.deploy(&caller_private_key, &program_a, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[transaction_deploy_a], rng);
+    println!("Deploying program {program_a_name}.aleo...");
+    let transaction_deploy_a = vm.deploy(&factory_private_key, &program_a, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &factory_private_key, &[transaction_deploy_a], rng);
 
-    println!("Deploying program {program_b_str}.aleo...");
-    let transaction_deploy_b = vm.deploy(&caller_private_key, &program_b, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[transaction_deploy_b], rng);
+    println!("Deploying program {program_b_name}.aleo...");
+    let transaction_deploy_b = vm.deploy(&factory_private_key, &program_b, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &factory_private_key, &[transaction_deploy_b], rng);
+
+    // Fund the clients so they can call functions, e. g. to decomission toys
+    let transaction_funding_1 = vm.execute(
+        &factory_private_key,
+        ("credits.aleo", "transfer_public"),
+        [Value::from_str(&format!("{client_1_address}")).unwrap(), Value::from_str("10000u64").unwrap()].iter(),
+        None,
+        0,
+        None,
+        rng,
+    ).unwrap();
+
+    let transaction_funding_2 = vm.execute(
+        &factory_private_key,
+        ("credits.aleo", "transfer_public"),
+        [Value::from_str(&format!("{client_2_address}")).unwrap(), Value::from_str("10000u64").unwrap()].iter(),
+        None,
+        0,
+        None,
+        rng,
+    ).unwrap();
+
+    add_and_test(&vm, &factory_private_key, &[transaction_funding_1, transaction_funding_2], rng);
+
+    // TODO (dynamic_dispatch) remove
+    let transaction_test_generator = vm.execute(
+        &factory_private_key,
+        ("factory.aleo", "test_generator"),
+        Vec::<Value<CurrentNetwork>>::new().iter(),
+        None,
+        0,
+        None,
+        rng,
+    ).unwrap();
+
+    add_and_test(&vm, &factory_private_key, &[transaction_test_generator], rng);
+
+    // ************************** Case 1: Toy decomissioning **************************
+
+    // Manufacture a toy for client 1
+    let toy_1_id: Scalar::<CurrentNetwork> = Uniform::rand(rng);
+
+    let toy_1_inputs = [
+        Value::from_str(&client_1_address.to_string()).unwrap(),
+        Value::from_str("34u16").unwrap(),
+        Value::from_str(&toy_1_id.to_string()).unwrap(),
+    ];
+    
+    let transaction_mint_toy_1 = vm.execute(
+        &client_1_private_key,
+        ("factory.aleo", "manufacture_toy"),
+        toy_1_inputs.into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    ).unwrap();
+
+    let toy_1_record = match &transaction_mint_toy_1.transitions().next().unwrap().outputs()[0] {
+        Output::Record(_, _, record_ciphertext, _) => {
+            record_ciphertext.as_ref().unwrap().decrypt(&client_1_view_key).unwrap()
+        }
+        _ => panic!("Expected output record is not a record"),
+    };
+
+    add_and_test(&vm, &client_1_private_key, &[transaction_mint_toy_1], rng);
+
+    // Computing the signature
+    let toy_1_signature = toy_1_id + *client_1_view_key;
+
+    let decomission_toy_inputs = [
+        Value::from_str(&toy_1_record.to_string()).unwrap(),
+        Value::from_str(&toy_1_signature.to_string()).unwrap(),
+    ];
+
+    // TODO (Antonio) remove
+    // Check natively that the signature is correct:
+    let toy_1_signature_native = toy_1_id + *client_1_view_key;
+    let lhs = CurrentNetwork::g_scalar_multiply(&toy_1_signature);
+    let rhs = *client_1_address + CurrentNetwork::g_scalar_multiply(&toy_1_id);
+    assert_eq!(*client_1_address, CurrentNetwork::g_scalar_multiply(&client_1_view_key));
+    assert_eq!(lhs, rhs);
+    // let group_element = CurrentNetwork::g_scalar_multiply(&Scalar::one());
+    // let expected_group_element = Group::from_str("1540945439182663264862696551825005342995406165131907382295858612069623286213group").unwrap();
+    // assert_eq!(group_element, expected_group_element);
+    println!("Signature is correct");
+    
+    let transaction_decomission_toy_1 = vm.execute(
+        &client_1_private_key,
+        ("factory.aleo", "decomission_toy"),
+        decomission_toy_inputs.into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    ).unwrap();
+
+    add_and_test(&vm, &client_1_private_key, &[transaction_decomission_toy_1], rng);
 
     // TEST the toy cannot be decomissioned twice
-
-    // 1. The factory receives a request for a toy/ladder from a client and generates a random product ID (it keeps an off-chain registry to avoid duplicates)
-    // 2. The factory communicates the product ID to the client
-
-    // Upon decomissioning, the client (who is the owner of the record)
 }
