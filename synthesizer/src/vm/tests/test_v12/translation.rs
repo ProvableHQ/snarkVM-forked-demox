@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use snarkvm_ledger_block::Transition;
+use snarkvm_ledger_block::{Input, Transition};
 
 use super::*;
 
@@ -793,7 +793,7 @@ fn test_malicious_caller_inputs_outputs() {
             ("glass_panes.aleo", "consume_glass_dynamically"),
             [Value::DynamicRecord(dynamic_record)].into_iter(),
             None,
-            0,
+            1000u64,
             None,
             rng,
         )
@@ -810,7 +810,8 @@ fn test_malicious_caller_inputs_outputs() {
     assert!(child_transition.caller_inputs().is_some());
     assert!(child_transition.caller_outputs().is_some());
 
-    // ***************** Case 1: Stipping caller inputs *****************
+    // ************************* Case 1: Stipping caller inputs *************************
+
     // Here a malicious prover removes caller_inputs from a dynamic-call transition
     // and the verifier detects it.
 
@@ -844,5 +845,81 @@ fn test_malicious_caller_inputs_outputs() {
 
     assert_eq!(tampered_transaction.id(), transaction_consume.id());
 
-    vm.check_transaction(&tampered_transaction, None, rng).unwrap();
+    // Make sure translation verification fails already at
+    // verifier-input-construction time, and not later at proof-verification
+    // time.
+    assert!(vm.check_transaction(&tampered_transaction, None, rng).unwrap_err().to_string().contains("does not contain dynamic-call data"));
+
+    // ********* Case 2: Tampering caller_inputs to avoid translation triggering *********
+
+    // In this subtler attack, a malicious prover leaves caller_inputs as Some,
+    // but replaces a dynamic record therein by a static one (as present in the
+    // callee's view of the inputs) to try and prevent the verifier from
+    // detecting the need to check a translation-circuit instance.
+
+    // We first modify the child transition
+    let honest_caller_inputs = child_transition.caller_inputs().unwrap().to_vec();
+    assert!(matches!(honest_caller_inputs[0], Input::DynamicRecord(..)));
+    let mut dishonest_caller_inputs = honest_caller_inputs;
+
+    let static_record_input = child_transition.inputs()[0].clone();
+    assert!(matches!(static_record_input, Input::Record(..)));
+
+    dishonest_caller_inputs[0] = static_record_input;
+
+    let input_tampered_child_transition = Transition::new(
+        *child_transition.program_id(),
+        *child_transition.function_name(),
+        child_transition.inputs().to_vec(),
+        child_transition.outputs().to_vec(),
+        *child_transition.tpk(),
+        *child_transition.tcm(),
+        *child_transition.scm(),
+        Some(dishonest_caller_inputs),
+        Some(child_transition.caller_outputs().unwrap().to_vec()),
+    ).unwrap();
+
+    let mut input_tampered_transitions = transaction_consume.transitions().cloned().collect_vec();
+
+    // We remove the fee transition, which added separately when creating the transaction below.
+    input_tampered_transitions.pop().unwrap();
+
+    input_tampered_transitions[0] = input_tampered_child_transition;
+
+    let input_tampered_execution = Execution::from(
+        input_tampered_transitions.into_iter(),
+        transaction_consume.execution().unwrap().global_state_root(),
+        transaction_consume.execution().unwrap().proof().cloned(),
+    ).unwrap();
+
+    // Extra funds need to be added to the fee to account for the
+    // increased size of the modifiedexecution: using the previously constructed
+    // transaction_consume.fee_transition() causes an earlier error than the one
+    // we want to test due to the fee being insufficient.
+    let fee_authorization = vm.process().read().authorize_fee_public::<CurrentAleo, _>(
+        &caller_private_key,
+        10000,
+        0,
+        input_tampered_execution.to_execution_id().unwrap(),
+        rng,
+    ).unwrap();
+
+    let fee = vm.execute_fee_authorization(fee_authorization, None, rng).unwrap();
+    
+    // The full transaction can now be reconstructed using the modified child
+    // and fee transitions.
+    let transaction = Transaction::from_execution(input_tampered_execution, Some(fee)).unwrap();
+
+    println!("Attempting to execute transaction with malicious caller_inputs...");
+
+    // Interim classification message: this should panic because of incorrect caller_input types, not because of Varuna::batch_verify failing!
+    vm.check_transaction(&transaction, None, rng).unwrap();
+
+    // ******** Case 3: Tampering caller_outputs to avoid translation triggering ********
+
+    // In this subtler attack, a malicious prover leaves caller_inputs as Some,
+    // but replaces a dynamic record therein by a static one (as present in the
+    // callee's view of the inputs) to try and prevent the verifier from
+    // detecting the need to check a translation-circuit instance.
+
 }
