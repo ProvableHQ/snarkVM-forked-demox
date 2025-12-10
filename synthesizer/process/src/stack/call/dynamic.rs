@@ -982,15 +982,15 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             use circuit::Inject;
 
             // Inject the network ID as `Mode::Constant`.
-            let network_id = circuit::U16::constant(*request.network_id());
+            let network_id = circuit::U16::constant(request.network_id);
             // Inject the program ID name as `Mode::Public`.
-            let program_id = circuit::ProgramID::public(*request.program_id());
+            let program_id = circuit::ProgramID::public(request.program_id);
             // Inject the function name as `Mode::Public`.
-            let function_name = circuit::Identifier::public(*request.function_name());
+            let function_name = circuit::Identifier::public(request.function_name);
             // Inject the function ID as `Mode::Public`.
             let function_id = circuit::Field::new(
                 circuit::Mode::Public,
-                compute_function_id(request.network_id(), request.program_id(), request.function_name())?,
+                compute_function_id(&request.network_id, &request.program_id, &request.function_name)?,
             );
 
             // Ensure that the program and function names in the registers match the witnessed values.
@@ -1002,13 +1002,13 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             ensure!(A::num_public() == num_public + 4, "Forbidden: 'call.dynamic' injected excess public variables");
 
             // Inject the `signer` (from the request) as `Mode::Private`.
-            let signer = circuit::Address::new(circuit::Mode::Private, *request.signer());
+            let signer = circuit::Address::new(circuit::Mode::Private, request.signer);
             // Inject the `sk_tag` (from the request) as `Mode::Private`.
-            let sk_tag = circuit::Field::new(circuit::Mode::Private, *request.sk_tag());
+            let sk_tag = circuit::Field::new(circuit::Mode::Private, request.sk_tag);
             // Inject the `tvk` (from the request) as `Mode::Private`.
-            let tvk = circuit::Field::new(circuit::Mode::Private, *request.tvk());
+            let tvk = circuit::Field::new(circuit::Mode::Private, request.tvk);
             // Inject the `tcm` (from the request) as `Mode::Public`.
-            let tcm = circuit::Field::new(circuit::Mode::Public, *request.tcm());
+            let tcm = circuit::Field::new(circuit::Mode::Public, request.tcm);
             // Compute the transition commitment as `Hash(tvk)`.
             let candidate_tcm = A::hash_psd2(&[tvk.clone()]);
             // Ensure the transition commitment matches the computed transition commitment.
@@ -1127,48 +1127,6 @@ impl<N: Network> RequestVerificationInputs<N> {
             tcm: *request.tcm(),
             caller_input_ids: caller_input_ids.clone(),
         })
-    }
-}
-
-impl<N: Network> RequestVerificationInputs<N> {
-    /// Returns the request signer.
-    pub const fn signer(&self) -> &Address<N> {
-        &self.signer
-    }
-
-    /// Returns the network ID.
-    pub const fn network_id(&self) -> &U16<N> {
-        &self.network_id
-    }
-
-    /// Returns the program ID.
-    pub const fn program_id(&self) -> &ProgramID<N> {
-        &self.program_id
-    }
-
-    /// Returns the function name.
-    pub const fn function_name(&self) -> &Identifier<N> {
-        &self.function_name
-    }
-
-    /// Returns the tag secret key `sk_tag`.
-    pub const fn sk_tag(&self) -> &Field<N> {
-        &self.sk_tag
-    }
-
-    /// Returns the transition view key `tvk`.
-    pub const fn tvk(&self) -> &Field<N> {
-        &self.tvk
-    }
-
-    /// Returns the transition commitment `tcm`.
-    pub const fn tcm(&self) -> &Field<N> {
-        &self.tcm
-    }
-
-    /// Returns the caller input IDs.
-    pub fn caller_input_ids(&self) -> &[InputID<N>] {
-        &self.caller_input_ids
     }
 }
 

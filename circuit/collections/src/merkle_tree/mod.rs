@@ -330,7 +330,6 @@ mod tests {
                 (0..leaf_length).map(|_| console::Field::<CurrentNetwork>::rand(rng)).collect_vec()
             }).collect_vec();
 
-            let console_tree = ConsoleMerkleTree::<CurrentNetwork, NativeLH, NativePH, DEPTH>::new(&console_leaf_hasher, &console_path_hasher, &console_leaves).unwrap();
             let console_tree = ConsoleMerkleTree::<CurrentNetwork, NativeLH, NativePH, DEPTH>::new(
                 &console_leaf_hasher,
                 &console_path_hasher,

@@ -40,7 +40,7 @@ use crate::{
 };
 
 use snarkvm_console_algorithms::{Poseidon2, Poseidon8};
-use snarkvm_console_collections::merkle_tree::{MerklePath, MerkleTree};
+use snarkvm_console_collections::merkle_tree::MerkleTree;
 use snarkvm_console_network::*;
 
 use indexmap::IndexMap;
@@ -50,8 +50,6 @@ pub const RECORD_DATA_TREE_DEPTH: u8 = 5;
 
 /// The record data tree.
 pub type RecordDataTree<E> = MerkleTree<E, Poseidon8<E>, Poseidon2<E>, RECORD_DATA_TREE_DEPTH>;
-/// The record data path.
-pub type RecordDataPath<E> = MerklePath<E, RECORD_DATA_TREE_DEPTH>;
 
 /// A dynamic record is a fixed-size representation of a record.
 /// Like static `Record`s, a dynamic record contains an owner, nonce, and a version.

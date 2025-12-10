@@ -311,7 +311,12 @@ impl<N: Network> Process<N> {
         verifier_inputs.extend([*is_root, *parent_x, *parent_y]);
 
         // If there are function calls, append their inputs and outputs.
-        let child_transition_ids = call_graph.get(transition.id()).unwrap();
+        let child_transition_ids = call_graph.get(transition.id()).ok_or_else(|| anyhow!(
+            "Child transition IDs not found for transition {} (function: {})",
+            transition.id(),
+            transition.function_name())
+        )?;
+
         let parent_function = transition_map.get(transition.id()).map(|(_, function)| function.clone());
 
         let parent_function_calls = match parent_function {
@@ -324,7 +329,10 @@ impl<N: Network> Process<N> {
                     _ => None,
                 })
                 .collect_vec(),
-            // TODO (dynamic_dispatch) when can this happen?
+            // This should never occur, since call_graph.get(transition.id())
+            // was successful above before and call_graph is constructed
+            // together with transition_map, from which parent_function is
+            // sourced.
             None => bail!("Function not found"),
         };
 

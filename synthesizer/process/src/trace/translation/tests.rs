@@ -15,7 +15,7 @@
 
 use circuit::{environment::compare_constraints, prelude::count_is};
 use console::{
-    program::{Plaintext, ProgramID, Record},
+    program::{InputID, Plaintext, ProgramID, Record, Value},
     types::{Address, Field, U16},
 };
 

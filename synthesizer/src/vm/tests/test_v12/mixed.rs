@@ -293,16 +293,13 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
     let rng = &mut TestRng::default();
 
     let factory_private_key = sample_genesis_private_key(rng);
-    let factory_address = Address::try_from(&factory_private_key).unwrap();
-    let factory_view_key = ViewKey::<CurrentNetwork>::try_from(factory_private_key).unwrap();
-
+    
     let client_1_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
     let client_1_address = Address::try_from(&client_1_private_key).unwrap();
     let client_1_view_key = ViewKey::<CurrentNetwork>::try_from(client_1_private_key).unwrap();
 
     let client_2_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
     let client_2_address = Address::try_from(&client_2_private_key).unwrap();
-    let client_2_view_key = ViewKey::<CurrentNetwork>::try_from(client_2_private_key).unwrap();
 
     let program_a_name = Identifier::<CurrentNetwork>::from_str("manager").unwrap();
     let program_b_name = Identifier::<CurrentNetwork>::from_str("factory").unwrap();
@@ -310,11 +307,14 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
     let function_verify_signature_name = Identifier::<CurrentNetwork>::from_str("verify_signature").unwrap();
 
     let program_a_field = program_a_name.to_field().unwrap();
-    let program_b_field = program_b_name.to_field().unwrap();
     let network_field = network_name.to_field().unwrap();
     let function_verify_signature_field = function_verify_signature_name.to_field().unwrap();
 
     let generator = CurrentNetwork::g_scalar_multiply(&Scalar::one());
+
+    // TODO (dynamic_dispatch) discuss; It seems generator != generator2 is expected behaviour
+    // let generator2 = Group::<CurrentNetwork>::new(<CurrentNetwork as Environment>::Affine::prime_subgroup_generator());
+    // assert_eq!(generator, generator2);
 
     // Signatures for products operate as follows:
     // 1. The factory receives a request for a toy/ladder from a client and
@@ -438,8 +438,8 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
             output r1 as ladder.record;
 
         // TODO (dynamic_dispatch) remove
-        function test_generator:
-            assert.eq group::GEN {generator};
+        // function test_generator:
+        //    assert.eq group::GEN {generator};
 
         constructor:
             assert.eq true true;
@@ -484,19 +484,6 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
 
     add_and_test(&vm, &factory_private_key, &[transaction_funding_1, transaction_funding_2], rng);
 
-    // TODO (dynamic_dispatch) remove
-    let transaction_test_generator = vm.execute(
-        &factory_private_key,
-        ("factory.aleo", "test_generator"),
-        Vec::<Value<CurrentNetwork>>::new().iter(),
-        None,
-        0,
-        None,
-        rng,
-    ).unwrap();
-
-    add_and_test(&vm, &factory_private_key, &[transaction_test_generator], rng);
-
     // ************************** Case 1: Toy decomissioning **************************
 
     // Manufacture a toy for client 1
@@ -534,18 +521,6 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
         Value::from_str(&toy_1_record.to_string()).unwrap(),
         Value::from_str(&toy_1_signature.to_string()).unwrap(),
     ];
-
-    // TODO (Antonio) remove
-    // Check natively that the signature is correct:
-    let toy_1_signature_native = toy_1_id + *client_1_view_key;
-    let lhs = CurrentNetwork::g_scalar_multiply(&toy_1_signature);
-    let rhs = *client_1_address + CurrentNetwork::g_scalar_multiply(&toy_1_id);
-    assert_eq!(*client_1_address, CurrentNetwork::g_scalar_multiply(&client_1_view_key));
-    assert_eq!(lhs, rhs);
-    // let group_element = CurrentNetwork::g_scalar_multiply(&Scalar::one());
-    // let expected_group_element = Group::from_str("1540945439182663264862696551825005342995406165131907382295858612069623286213group").unwrap();
-    // assert_eq!(group_element, expected_group_element);
-    println!("Signature is correct");
     
     let transaction_decomission_toy_1 = vm.execute(
         &client_1_private_key,

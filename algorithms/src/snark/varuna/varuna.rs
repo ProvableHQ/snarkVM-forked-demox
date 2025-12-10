@@ -383,7 +383,7 @@ where
                 .ok_or(anyhow!("[Varuna::prove_batch] Batch not found for circuit {:?}", pk.circuit.id)))
                 .collect::<Result<Vec<_>>>()?;
 
-            println!("[Varuna::prove_batch] Batch sizes: {:?}\n", batch_sizes);
+            println!("[Varuna::prove_batch] Batch sizes: {batch_sizes:?}\n");
 
             for (i, (key, batch_size)) in keys_to_constraints.keys().zip(batch_sizes.iter()).enumerate() {
                 println!("  - Circuit {i}: {} ({batch_size} instance(s))\n", key.circuit_verifying_key.id);

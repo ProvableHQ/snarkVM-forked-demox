@@ -101,7 +101,7 @@ impl<N: Network> GetDynamicRecord<N> {
             if let Value::DynamicRecord(dynamic_record) = value {
                 dynamic_record
             } else {
-                bail!("Expected DynamicRecord, found {value}")
+                bail!("Expected dynamic record, found {value}")
             }
         };
 
@@ -109,10 +109,10 @@ impl<N: Network> GetDynamicRecord<N> {
             if let Some(entry) = data.get(&self.entry_identifier) {
                 entry
             } else {
-                bail!("Entry {} not found in DynamicRecord", self.entry_identifier)
+                bail!("Entry {} not found in dynamic record", self.entry_identifier)
             }
         } else {
-            bail!("DynamicRecord data has not been populated")
+            bail!("Dynamic record data has not been populated")
         };
 
         let plaintext = match entry {
@@ -123,7 +123,7 @@ impl<N: Network> GetDynamicRecord<N> {
 
         ensure!(
             stack.matches_plaintext(&plaintext, &self.plaintext_type).is_ok(),
-            "Type mismatch in DynamicRecord entry {:?}: expected {:?}, found {:?}",
+            "Type mismatch in dynamic record entry {:?}: expected {:?}, found {:?}",
             self.entry_identifier,
             self.plaintext_type,
             entry
@@ -146,7 +146,7 @@ impl<N: Network> GetDynamicRecord<N> {
             if let circuit::Value::DynamicRecord(dynamic_record) = value {
                 dynamic_record
             } else {
-                bail!("Expected DynamicRecord, found {:?}", value.eject_value())
+                bail!("Expected dynamic record, found {:?}", value.eject_value())
             }
         };
 
@@ -220,7 +220,7 @@ impl<N: Network> GetDynamicRecord<N> {
             };
             ensure!(
                 stack.matches_plaintext(&plaintext, &self.plaintext_type).is_ok(),
-                "Type mismatch in DynamicRecord entry {:?}: expected {:?}, found {:?}",
+                "Type mismatch in dynamic record entry {:?}: expected {:?}, found {:?}",
                 self.entry_identifier,
                 self.plaintext_type,
                 console_entry
