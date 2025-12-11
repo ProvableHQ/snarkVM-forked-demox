@@ -109,6 +109,7 @@ pub trait OutputStorage<N: Network>: Clone + Send + Sync {
             || self.record_sender_map().is_atomic_in_progress()
             || self.external_record_map().is_atomic_in_progress()
             || self.future_map().is_atomic_in_progress()
+            || self.dynamic_record_map().is_atomic_in_progress()
     }
 
     /// Checkpoints the atomic batch.
@@ -123,6 +124,7 @@ pub trait OutputStorage<N: Network>: Clone + Send + Sync {
         self.record_sender_map().atomic_checkpoint();
         self.external_record_map().atomic_checkpoint();
         self.future_map().atomic_checkpoint();
+        self.dynamic_record_map().atomic_checkpoint();
     }
 
     /// Clears the latest atomic batch checkpoint.
@@ -167,6 +169,8 @@ pub trait OutputStorage<N: Network>: Clone + Send + Sync {
         self.record_sender_map().abort_atomic();
         self.external_record_map().abort_atomic();
         self.future_map().abort_atomic();
+        self.dynamic_record_map().abort_atomic();
+        // self.dynamic_future_map().abort_atomic();
     }
 
     /// Finishes an atomic batch write operation.
@@ -180,7 +184,9 @@ pub trait OutputStorage<N: Network>: Clone + Send + Sync {
         self.record_nonce_map().finish_atomic()?;
         self.record_sender_map().finish_atomic()?;
         self.external_record_map().finish_atomic()?;
-        self.future_map().finish_atomic()
+        self.future_map().finish_atomic()?;
+        self.dynamic_record_map().finish_atomic()
+        // self.dynamic_future_map().finish_atomic()
     }
 
     /// Stores the given `(transition ID, output)` pair into storage.

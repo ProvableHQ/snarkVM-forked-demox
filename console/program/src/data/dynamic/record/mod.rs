@@ -15,12 +15,14 @@
 
 mod bytes;
 mod equal;
+mod find;
 mod parse;
 mod to_bits;
 mod to_fields;
 mod to_id;
 
 use crate::{
+    Access,
     Address,
     Boolean,
     Entry,
@@ -37,10 +39,11 @@ use crate::{
     ToFields,
     U8,
     U16,
+    Value,
 };
 
 use snarkvm_console_algorithms::{Poseidon2, Poseidon8};
-use snarkvm_console_collections::merkle_tree::{MerklePath, MerkleTree};
+use snarkvm_console_collections::merkle_tree::MerkleTree;
 use snarkvm_console_network::*;
 
 use indexmap::IndexMap;
@@ -48,10 +51,10 @@ use indexmap::IndexMap;
 /// The depth of the record data tree.
 pub const RECORD_DATA_TREE_DEPTH: u8 = 5;
 
-/// The record data tree.
+/// the record data tree.
 pub type RecordDataTree<E> = MerkleTree<E, Poseidon8<E>, Poseidon2<E>, RECORD_DATA_TREE_DEPTH>;
-/// The record data path.
-pub type RecordDataPath<E> = MerklePath<E, RECORD_DATA_TREE_DEPTH>;
+/// The console data.
+pub type RecordData<N> = IndexMap<Identifier<N>, Entry<N, Plaintext<N>>>;
 
 /// A dynamic record is a fixed-size representation of a record.
 /// Like static `Record`s, a dynamic record contains an owner, nonce, and a version.
@@ -102,8 +105,8 @@ pub struct DynamicRecord<N: Network> {
     version: U8<N>,
     /// The optional Merkle tree of the record data.
     tree: Option<RecordDataTree<N>>,
-    /// The optional program data.
-    data: Option<IndexMap<Identifier<N>, Entry<N, Plaintext<N>>>>,
+    /// The optional record data.
+    data: Option<RecordData<N>>,
 }
 
 impl<N: Network> DynamicRecord<N> {
@@ -114,7 +117,7 @@ impl<N: Network> DynamicRecord<N> {
         nonce: Group<N>,
         version: U8<N>,
         tree: Option<RecordDataTree<N>>,
-        data: Option<IndexMap<Identifier<N>, Entry<N, Plaintext<N>>>>,
+        data: Option<RecordData<N>>,
     ) -> Self {
         Self { owner, root, nonce, version, tree, data }
     }
@@ -147,7 +150,7 @@ impl<N: Network> DynamicRecord<N> {
     }
 
     /// Returns the optional record data.
-    pub const fn data(&self) -> &Option<IndexMap<Identifier<N>, Entry<N, Plaintext<N>>>> {
+    pub const fn data(&self) -> &Option<RecordData<N>> {
         &self.data
     }
 

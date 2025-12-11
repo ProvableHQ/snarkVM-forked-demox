@@ -13,6 +13,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use console::program::DynamicRecord;
+
+use crate::TranslationAssignment;
+
 use super::*;
 
 impl<N: Network> Stack<N> {
@@ -63,17 +67,21 @@ impl<N: Network> Stack<N> {
         let caller = None;
 
         // Compute the request, with a burner private key.
+        // TODO(dynamic_dispatch): turning this into sign_dynamic causes certificate verification to fail.
         let request = Request::sign(
             &burner_private_key,
             *program_id,
             *function_name,
-            inputs.into_iter(),
-            &input_types,
+            inputs.clone().into_iter(),
+            &input_types.clone(),
+            // inputs.into_iter(),
+            // &input_types,
             root_tvk,
             is_root,
             program_checksum,
             rng,
         )?;
+
         // Initialize the authorization.
         let authorization = Authorization::new(request.clone());
         // Initialize the call stack.
@@ -106,5 +114,64 @@ impl<N: Network> Stack<N> {
         self.insert_proving_key(function_name, proving_key)?;
         // Insert the verifying key.
         self.insert_verifying_key(function_name, verifying_key)
+    }
+
+    /// Synthesizes the proving key and verifying key for the translation circuit of the record with the given name.
+    #[inline]
+    pub fn synthesize_translation_key<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
+        &self,
+        record_name: &Identifier<N>,
+        rng: &mut R,
+    ) -> Result<()> {
+        // If the translation proving and verifying key already exist, skip the synthesis for this record.
+        if self.contains_translation_proving_key(record_name) && self.contains_translation_verifying_key(record_name) {
+            return Ok(());
+        }
+
+        // Construct a TranslationAssignment:
+        let private_key = PrivateKey::new(rng)?;
+        let address = Address::try_from(&private_key)?;
+        let program_id = *self.program_id();
+        let function_id = Field::<N>::from_u64(Uniform::rand(rng));
+        let record_name = *record_name;
+        let record_static = self.sample_record(&address, &record_name, Group::rand(rng), rng)?;
+        let record_dynamic = DynamicRecord::<N>::from_record(&record_static)?;
+        let translation_count = Uniform::rand(rng);
+        let tvk = Uniform::rand(rng);
+        let input_output_index = Uniform::rand(rng);
+        let record_view_key = Uniform::rand(rng);
+        let gamma = Uniform::rand(rng);
+        let id_dynamic = record_dynamic.to_id(function_id, tvk, U16::new(input_output_index)).unwrap();
+        let is_input = Uniform::rand(rng);
+        let static_is_external = Uniform::rand(rng);
+        let id_static = Uniform::rand(rng);
+
+        let translation_assignment = TranslationAssignment::new(
+            record_static,
+            record_dynamic,
+            program_id,
+            function_id,
+            record_name,
+            is_input,
+            static_is_external,
+            translation_count,
+            tvk,
+            input_output_index,
+            id_dynamic,
+            id_static,
+            record_view_key,
+            gamma,
+        );
+
+        // Construct the translation circuit.
+        let circuit_assignment = translation_assignment.to_circuit_assignment::<A>()?;
+
+        // Synthesize the proving and verifying key.
+        let (proving_key, verifying_key) =
+            self.universal_srs.to_circuit_key(&record_name.to_string(), &circuit_assignment)?;
+        // Insert the proving key.
+        self.insert_translation_proving_key(&record_name, proving_key)?;
+        // Insert the verifying key.
+        self.insert_translation_verifying_key(&record_name, verifying_key)
     }
 }

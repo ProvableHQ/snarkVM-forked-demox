@@ -23,7 +23,7 @@ use console::{
 };
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use snarkvm_ledger_block::{Deployment, Execution, Transaction};
-use snarkvm_synthesizer_program::{CallDynamic, CastType, Command, Instruction, Operand};
+use snarkvm_synthesizer_program::{CallDynamic, CastType, Command, GetDynamicRecord, Instruction, Operand};
 use snarkvm_synthesizer_snark::proof_size;
 
 pub type MinimumCost = u64;
@@ -46,6 +46,8 @@ pub fn deployment_cost<N: Network>(
     } else {
         deployment_cost_v1(process, deployment)
     }
+
+    // TODO (dynamic_dispatch): call deployment_cost_v3 from the relevant consensus version onwards.
 }
 
 /// Returns the execution cost in microcredits for a given execution.
@@ -94,11 +96,11 @@ pub fn execution_cost_for_authorization<N: Network>(
     // Compute the size of the proof that will result from proving the
     // Authorization. The first step is to compute the Varuna batch sizes. The
     // Varuna circuits that must be proved as part of an Execution are:
-    // - the circuits of each Transition
-    // - one inclusion circuit for input records to *all* of those Transitions
-
-    // TODO: Dynamic dispatch, once implemented, will cause a third type of
-    // circuit to appear which needs to be accounted for here.
+    // - the circuit instances of each Transition
+    // - one inclusion circuit instance per input record to all of those Transitions
+    // - one translation circuit instance per record-translation task derived from those Transitions
+    // For each of the types above, if several instances correspond to the same circuit, they are
+    // grouped into a single Varuna batch.
 
     let mut circuit_frequencies = HashMap::new();
 
@@ -112,12 +114,16 @@ pub fn execution_cost_for_authorization<N: Network>(
 
     let mut batch_sizes: Vec<usize> = circuit_frequencies.values().cloned().collect();
 
-    // We now add the single batch of inclusion circuits for input records, if
+    // Add the single batch of inclusion circuits for input records, if
     // any:
     let n_input_records = Authorization::number_of_input_records(authorization.transitions().values());
     if n_input_records > 0 {
         batch_sizes.push(n_input_records);
     }
+
+    // Add the batches corresponding to translation tasks
+    let translation_batches = Authorization::translation_batches(process, authorization.transitions().values())?;
+    batch_sizes.extend(translation_batches);
 
     // Varuna is always run in hiding (i. e. ZK) mode when proving Executions.
     let hiding_mode = true;
@@ -143,6 +149,7 @@ pub fn deploy_compute_cost_in_microcredits(
     cost_details: DeployCostDetails,
     consensus_version: ConsensusVersion,
 ) -> Result<u64> {
+    // TODO (dynamic_dispatch): add translation-circuit-related storage costs? (eg. verifying keys)
     let (storage_cost, synthesis_cost, constructor_cost, _) = cost_details;
     let cost_to_check = if consensus_version >= ConsensusVersion::V10 {
         // From V10, only include the constructor compute cost for
@@ -179,6 +186,14 @@ pub fn execute_compute_cost_in_microcredits(
             .ok_or(anyhow!("The storage and finalize cost computation overflowed for an execution"))?
     };
     Ok(cost_to_check)
+}
+
+pub fn deployment_cost_v3<N: Network>(
+    _process: &Process<N>,
+    _deployment: &Deployment<N>,
+) -> Result<(MinimumCost, DeployCostDetails)> {
+    // TODO (dynamic_dispatch): implement this. Add translation-circuit-related costs (e. g. synthesis)
+    bail!("deployment_cost_v3 is not implemented");
 }
 
 /// Returns the *minimum* cost in microcredits to publish the given deployment using the ARC_0005_COMPUTE_DISCOUNT.
@@ -507,6 +522,8 @@ pub fn cost_per_command<N: Network>(
             | CastType::GroupYCoordinate
             | CastType::Record(_)
             | CastType::ExternalRecord(_) => Ok(500),
+            // TODO (dynamic_dispatch) cost; note the input can be a non-external record or an external record but the circuits are the same
+            CastType::DynamicRecord => Ok(500),
         },
         Command::Instruction(Instruction::CastLossy(cast_lossy)) => match cast_lossy.cast_type() {
             CastType::Plaintext(PlaintextType::Literal(_)) => Ok(500),
@@ -517,6 +534,8 @@ pub fn cost_per_command<N: Network>(
             | CastType::GroupYCoordinate
             | CastType::Record(_)
             | CastType::ExternalRecord(_) => Ok(500),
+            // TODO (dynamic_dispatch) in principle a cast to dynamic record should never go through the lossy pathway. Handle this better?
+            CastType::DynamicRecord => Ok(500),
         },
         Command::Instruction(Instruction::CommitBHP256(commit)) => {
             cost_in_size(stack, finalize_types, commit.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
@@ -616,6 +635,9 @@ pub fn cost_per_command<N: Network>(
         }
         Command::Instruction(Instruction::ECDSAVerifySha3_512Eth(ecdsa)) => {
             cost_in_size(stack, finalize_types, ecdsa.operands(), HASH_PER_BYTE_COST, ECDSA_VERIFY_ETH_BASE_COST)
+        }
+        Command::Instruction(Instruction::GetDynamicRecord(_get_dynamic_record)) => {
+            bail!("'{}' is not supported in finalize", GetDynamicRecord::<N>::opcode())
         }
         Command::Instruction(Instruction::GreaterThan(_)) => Ok(500),
         Command::Instruction(Instruction::GreaterThanOrEqual(_)) => Ok(500),
@@ -823,10 +845,19 @@ pub fn cost_per_command<N: Network>(
         Command::Contains(command) => {
             cost_in_size(stack, finalize_types, [command.key()], MAPPING_PER_BYTE_COST, mapping_base_cost)
         }
+        Command::ContainsDynamic(command) => {
+            cost_in_size(stack, finalize_types, [command.key()], MAPPING_PER_BYTE_COST, mapping_base_cost)
+        }
         Command::Get(command) => {
             cost_in_size(stack, finalize_types, [command.key()], MAPPING_PER_BYTE_COST, mapping_base_cost)
         }
+        Command::GetDynamic(command) => {
+            cost_in_size(stack, finalize_types, [command.key()], MAPPING_PER_BYTE_COST, mapping_base_cost)
+        }
         Command::GetOrUse(command) => {
+            cost_in_size(stack, finalize_types, [command.key()], MAPPING_PER_BYTE_COST, mapping_base_cost)
+        }
+        Command::GetOrUseDynamic(command) => {
             cost_in_size(stack, finalize_types, [command.key()], MAPPING_PER_BYTE_COST, mapping_base_cost)
         }
         Command::RandChaCha(_) => Ok(25_000),

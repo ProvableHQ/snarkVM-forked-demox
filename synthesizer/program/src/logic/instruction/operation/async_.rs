@@ -15,7 +15,6 @@
 
 use crate::{Opcode, Operand, RegistersCircuit, RegistersTrait, Result, StackTrait};
 
-use circuit::DynamicFuture;
 use console::{
     network::prelude::*,
     program::{Argument, FinalizeType, Future, Identifier, Locator, Register, RegisterType, Value},

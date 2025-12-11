@@ -171,6 +171,7 @@ serial = [
   "snarkvm-utilities/serial",
   "snarkvm-ledger?/serial"
 ]
+snark-print = [ "snarkvm-algorithms?/snark-print" ]
 
 [workspace.dependencies.snarkvm-algorithms]
 path = "algorithms"

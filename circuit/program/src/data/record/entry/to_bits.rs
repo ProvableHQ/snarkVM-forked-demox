@@ -15,21 +15,34 @@
 
 use super::*;
 
-impl<A: Aleo> ToBits for Entry<A, Plaintext<A>> {
-    type Boolean = Boolean<A>;
-
+impl<A: Aleo> Entry<A, Plaintext<A>> {
     /// Returns this entry as a list of **little-endian** bits.
-    fn write_bits_le(&self, vec: &mut Vec<Boolean<A>>) {
+    pub(super) fn write_bits_le_with_visibility_mode(&self, vec: &mut Vec<Boolean<A>>, visibility_mode: Mode) {
         match self {
-            Self::Constant(..) => vec.extend_from_slice(&[Boolean::constant(false), Boolean::constant(false)]),
-            Self::Public(..) => vec.extend_from_slice(&[Boolean::constant(false), Boolean::constant(true)]),
-            Self::Private(..) => vec.extend_from_slice(&[Boolean::constant(true), Boolean::constant(false)]),
+            Self::Constant(..) => {
+                vec.extend_from_slice(&[Boolean::new(visibility_mode, false), Boolean::new(visibility_mode, false)])
+            }
+            Self::Public(..) => {
+                vec.extend_from_slice(&[Boolean::new(visibility_mode, false), Boolean::new(visibility_mode, true)])
+            }
+            Self::Private(..) => {
+                vec.extend_from_slice(&[Boolean::new(visibility_mode, true), Boolean::new(visibility_mode, false)])
+            }
         };
         match self {
             Self::Constant(plaintext) => plaintext.write_bits_le(vec),
             Self::Public(plaintext) => plaintext.write_bits_le(vec),
             Self::Private(plaintext) => plaintext.write_bits_le(vec),
         };
+    }
+}
+
+impl<A: Aleo> ToBits for Entry<A, Plaintext<A>> {
+    type Boolean = Boolean<A>;
+
+    /// Returns this entry as a list of **little-endian** bits.
+    fn write_bits_le(&self, vec: &mut Vec<Boolean<A>>) {
+        self.write_bits_le_with_visibility_mode(vec, Mode::Constant);
     }
 
     /// Returns this entry as a list of **big-endian** bits.

@@ -3389,6 +3389,7 @@ dependencies = [
  "anyhow",
  "bincode",
  "indexmap 2.11.4",
+ "itertools 0.14.0",
  "rayon",
  "serde_json",
  "snarkvm-algorithms",
@@ -3706,6 +3707,7 @@ dependencies = [
  "snarkvm-utilities",
  "tempfile",
  "tracing",
+ "tracing-subscriber",
  "walkdir",
 ]
 
@@ -3718,6 +3720,7 @@ dependencies = [
  "colored 3.0.0",
  "criterion",
  "indexmap 2.11.4",
+ "itertools 0.14.0",
  "locktick",
  "parking_lot",
  "rand 0.8.5",

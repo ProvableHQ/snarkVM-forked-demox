@@ -1,0 +1,1341 @@
+// Copyright (c) 2019-2025 Provable Inc.
+// This file is part of the snarkVM library.
+
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at:
+
+// http://www.apache.org/licenses/LICENSE-2.0
+
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use super::*;
+
+// A helper function to create a program that sets and removes values from a mapping.
+fn basic_program(program_name: &str, mapping_name: &str) -> Program<CurrentNetwork> {
+    Program::from_str(&format!(
+        r"
+program {program_name}.aleo;
+
+mapping {mapping_name}:
+    key as u32.public;
+    value as u32.public;
+
+function set_mapping:
+    input r0 as u32.public;
+    input r1 as u32.public;
+    async set_mapping r0 r1 into r2;
+    output r2 as {program_name}.aleo/set_mapping.future;
+finalize set_mapping:
+    input r0 as u32.public;
+    input r1 as u32.public;
+    set r1 into {mapping_name}[r0];
+
+function remove_mapping:
+    input r0 as u32.public;
+    async remove_mapping r0 into r1;
+    output r1 as {program_name}.aleo/remove_mapping.future;
+finalize remove_mapping:
+    input r0 as u32.public;
+    remove {mapping_name}[r0];
+
+constructor:
+    assert.eq true true;
+"
+    ))
+    .unwrap()
+}
+
+// This test verifies that `contains.dynamic`:
+// - returns a result when called on an external program and mapping.
+// - returns a result when called on a mapping in the current program.
+// - fails when the program or mapping does not exist.
+// - fails when the key is of the wrong type.
+#[test]
+fn test_dynamic_contains() {
+    // Initialize an RNG.
+    let rng = &mut TestRng::default();
+
+    // Initialize a new caller.
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+
+    // Initialize the VM at the V12 height.
+    let v12_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap();
+    let vm = crate::vm::test_helpers::sample_vm_at_height(v12_height, rng);
+
+    // Initialize two instances of the basic program.
+    let program_0 = basic_program("basic_program0", "data0");
+    let program_1 = basic_program("basic_program1", "data1");
+
+    // Initialize the main program.
+    let main_program = Program::from_str(
+        r"
+program main_program.aleo;
+
+mapping data_main:
+    key as u32.public;
+    value as u32.public;
+
+function test_dynamic_contains:
+    input r0 as field.public;
+    input r1 as field.public;
+    input r2 as field.public;
+    input r3 as u32.public;
+    input r4 as boolean.public;
+    async test_dynamic_contains r0 r1 r2 r3 r4 into r5;
+    output r5 as main_program.aleo/test_dynamic_contains.future;
+finalize test_dynamic_contains:
+    input r0 as field.public;
+    input r1 as field.public;
+    input r2 as field.public;
+    input r3 as u32.public;
+    input r4 as boolean.public;
+    contains.dynamic r0 r1 r2[r3] into r5;
+    assert.eq r5 r4;
+
+
+function set_mapping:
+    input r0 as u32.public;
+    input r1 as u32.public;
+    async set_mapping r0 r1 into r2;
+    output r2 as main_program.aleo/set_mapping.future;
+finalize set_mapping:
+    input r0 as u32.public;
+    input r1 as u32.public;
+    set r1 into data_main[r0];
+
+function remove_mapping:
+    input r0 as u32.public;
+    async remove_mapping r0 into r1;
+    output r1 as main_program.aleo/remove_mapping.future;
+finalize remove_mapping:
+    input r0 as u32.public;
+    remove data_main[r0];
+
+constructor:
+    assert.eq true true;",
+    )
+    .unwrap();
+
+    // Deploy the programs individually.
+    for program in [&program_0, &program_1, &main_program] {
+        println!("Deploying program: {}", program.id());
+        let deployment = vm.deploy(&caller_private_key, program, None, 0, None, rng).unwrap();
+        add_and_test(&vm, &caller_private_key, &[deployment], rng);
+    }
+
+    // Create a helper to execute the `test_dynamic_contains` function.
+    let test_dynamic_contains = |program_name: &str,
+                                 program_network: &str,
+                                 mapping_name: &str,
+                                 key: Value<CurrentNetwork>,
+                                 expected: Option<bool>, // If None, expect an error.
+                                 rng: &mut TestRng| {
+        println!(
+            "Testing dynamic contains for program: {program_name}, network: {program_network}, mapping: {mapping_name}, key: {key}, expected: {expected:?}"
+        );
+        // Create the program name as a field element.
+        let program_name_as_field = Value::from_str(
+            &Identifier::<CurrentNetwork>::from_str(program_name).unwrap().to_field().unwrap().to_string(),
+        )
+        .unwrap();
+        // Create the program network as a field element.
+        let program_network_as_field = Value::from_str(
+            &Identifier::<CurrentNetwork>::from_str(program_network).unwrap().to_field().unwrap().to_string(),
+        )
+        .unwrap();
+        // Create the mapping name as a field element.
+        let mapping_name_as_field = Value::from_str(
+            &Identifier::<CurrentNetwork>::from_str(mapping_name).unwrap().to_field().unwrap().to_string(),
+        )
+        .unwrap();
+        // Create the transaction to call `test_dynamic_contains`.
+        let transaction = match vm.execute(
+            &caller_private_key,
+            ("main_program.aleo".to_string(), "test_dynamic_contains"),
+            vec![
+                program_name_as_field,
+                program_network_as_field,
+                mapping_name_as_field,
+                key,
+                Value::from_str(&expected.unwrap_or(false).to_string()).unwrap(),
+            ]
+            .into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        ) {
+            Ok(tx) => tx,
+            Err(e) if expected.is_none() => {
+                println!("Expected error occurred: {e}");
+                return;
+            }
+            Err(e) => panic!("Unexpected error occurred: {e}"),
+        };
+        // Check and add the transaction to the VM.
+        vm.check_transaction(&transaction, None, rng).map_err(|e| anyhow!("Transaction check failed: {e}")).unwrap();
+        let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
+        assert_eq!(block.transactions().num_accepted(), expected.is_some() as usize);
+        assert_eq!(block.transactions().num_rejected(), expected.is_none() as usize);
+        assert_eq!(block.aborted_transaction_ids().len(), 0);
+        vm.add_next_block(&block).unwrap();
+    };
+
+    // Check that the local mapping does not contain the key 42 initially.
+    test_dynamic_contains("main_program", "aleo", "data_main", Value::from_str("42u32").unwrap(), Some(false), rng);
+
+    // Set the key 42 in the local mapping.
+    let set_tx = vm
+        .execute(
+            &caller_private_key,
+            ("main_program.aleo", "set_mapping"),
+            vec![Value::from_str("42u32").unwrap(), Value::from_str("100u32").unwrap()].iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[set_tx], rng);
+
+    // Check that the local mapping now contains the key 42.
+    test_dynamic_contains("main_program", "aleo", "data_main", Value::from_str("42u32").unwrap(), Some(true), rng);
+
+    // Check that if the program does not exist, an error is returned.
+    test_dynamic_contains("main_progra", "aleo", "data_main", Value::from_str("42u32").unwrap(), None, rng);
+    // Check that if the network is wrong, an error is returned.
+    test_dynamic_contains("main_program", "aleoo", "data_main", Value::from_str("42u32").unwrap(), None, rng);
+    // Check that if the mapping does not exist, an error is returned.
+    test_dynamic_contains("main_program", "aleoo", "data_maine", Value::from_str("42u32").unwrap(), None, rng);
+    // Check that if the key is of the wrong type, an error is returned.
+    test_dynamic_contains("main_program", "aleo", "data_main", Value::from_str("true").unwrap(), None, rng);
+
+    // Remove the key 42 from the local mapping.
+    let remove_tx = vm
+        .execute(
+            &caller_private_key,
+            ("main_program.aleo", "remove_mapping"),
+            vec![Value::from_str("42u32").unwrap()].iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[remove_tx], rng);
+
+    // Check that the local mapping no longer contains the key 42.
+    test_dynamic_contains("main_program", "aleo", "data_main", Value::from_str("42u32").unwrap(), Some(false), rng);
+
+    // Set the key 7 in the first external program's mapping.
+    let set_tx = vm
+        .execute(
+            &caller_private_key,
+            ("basic_program0.aleo", "set_mapping"),
+            vec![Value::from_str("7u32").unwrap(), Value::from_str("200u32").unwrap()].iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[set_tx], rng);
+
+    // Set the key 15 in the second external program's mapping.
+    let set_tx = vm
+        .execute(
+            &caller_private_key,
+            ("basic_program1.aleo", "set_mapping"),
+            vec![Value::from_str("15u32").unwrap(), Value::from_str("300u32").unwrap()].iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[set_tx], rng);
+
+    // Check that the first external mapping contains the key 7.
+    test_dynamic_contains("basic_program0", "aleo", "data0", Value::from_str("7u32").unwrap(), Some(true), rng);
+    // Check that the second external mapping contains the key 15.
+    test_dynamic_contains("basic_program1", "aleo", "data1", Value::from_str("15u32").unwrap(), Some(true), rng);
+
+    // Remove the key 7 from the first external program's mapping.
+    let remove_tx = vm
+        .execute(
+            &caller_private_key,
+            ("basic_program0.aleo", "remove_mapping"),
+            vec![Value::from_str("7u32").unwrap()].iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[remove_tx], rng);
+
+    // Remove the key 15 from the second external program's mapping.
+    let remove_tx = vm
+        .execute(
+            &caller_private_key,
+            ("basic_program1.aleo", "remove_mapping"),
+            vec![Value::from_str("15u32").unwrap()].iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[remove_tx], rng);
+
+    // Check that the first external mapping no longer contains the key 7.
+    test_dynamic_contains("basic_program0", "aleo", "data0", Value::from_str("7u32").unwrap(), Some(false), rng);
+    // Check that the second external mapping no longer contains the key 15.
+    test_dynamic_contains("basic_program1", "aleo", "data1", Value::from_str("15u32").unwrap(), Some(false), rng);
+}
+
+// A helper function to create a program with a struct-valued mapping.
+fn struct_program(program_name: &str, mapping_name: &str) -> Program<CurrentNetwork> {
+    Program::from_str(&format!(
+        r"
+program {program_name}.aleo;
+
+struct data_struct:
+    a as u32;
+    b as u64;
+
+mapping {mapping_name}:
+    key as u32.public;
+    value as data_struct.public;
+
+function set_mapping:
+    input r0 as u32.public;
+    input r1 as u32.public;
+    input r2 as u64.public;
+    async set_mapping r0 r1 r2 into r3;
+    output r3 as {program_name}.aleo/set_mapping.future;
+finalize set_mapping:
+    input r0 as u32.public;
+    input r1 as u32.public;
+    input r2 as u64.public;
+    cast r1 r2 into r3 as data_struct;
+    set r3 into {mapping_name}[r0];
+
+function remove_mapping:
+    input r0 as u32.public;
+    async remove_mapping r0 into r1;
+    output r1 as {program_name}.aleo/remove_mapping.future;
+finalize remove_mapping:
+    input r0 as u32.public;
+    remove {mapping_name}[r0];
+
+constructor:
+    assert.eq true true;
+"
+    ))
+    .unwrap()
+}
+
+// This test verifies that `get.dynamic`:
+// - returns a value when called on an external program and mapping.
+// - returns a value when called on a mapping in the current program.
+// - fails when the key does not exist in the mapping.
+// - fails when the program or mapping does not exist.
+// - fails when the key is of the wrong type.
+// - fails when the destination type does not match the mapping value type.
+// - works with struct value types.
+#[test]
+fn test_dynamic_get() {
+    // Initialize an RNG.
+    let rng = &mut TestRng::default();
+
+    // Initialize a new caller.
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+
+    // Initialize the VM at the V12 height.
+    let v12_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap();
+    let vm = crate::vm::test_helpers::sample_vm_at_height(v12_height, rng);
+
+    // Initialize two instances of the basic program (u32 values).
+    let program_0 = basic_program("basic_program0", "data0");
+    let program_1 = basic_program("basic_program1", "data1");
+
+    // Initialize a struct program (struct values).
+    let struct_program_0 = struct_program("struct_program0", "struct_data0");
+
+    // Initialize the main program with test functions for get.dynamic.
+    let main_program = Program::from_str(
+        r"
+program main_program.aleo;
+
+struct data_struct:
+    a as u32;
+    b as u64;
+
+mapping data_main:
+    key as u32.public;
+    value as u32.public;
+
+mapping struct_data_main:
+    key as u32.public;
+    value as data_struct.public;
+
+// Test get.dynamic with u32 value type.
+function test_dynamic_get_u32:
+    input r0 as field.public;
+    input r1 as field.public;
+    input r2 as field.public;
+    input r3 as u32.public;
+    input r4 as u32.public;
+    async test_dynamic_get_u32 r0 r1 r2 r3 r4 into r5;
+    output r5 as main_program.aleo/test_dynamic_get_u32.future;
+finalize test_dynamic_get_u32:
+    input r0 as field.public;
+    input r1 as field.public;
+    input r2 as field.public;
+    input r3 as u32.public;
+    input r4 as u32.public;
+    get.dynamic r0 r1 r2[r3] into r5 as u32;
+    assert.eq r5 r4;
+
+// Test get.dynamic with struct value type.
+function test_dynamic_get_struct:
+    input r0 as field.public;
+    input r1 as field.public;
+    input r2 as field.public;
+    input r3 as u32.public;
+    input r4 as u32.public;
+    input r5 as u64.public;
+    async test_dynamic_get_struct r0 r1 r2 r3 r4 r5 into r6;
+    output r6 as main_program.aleo/test_dynamic_get_struct.future;
+finalize test_dynamic_get_struct:
+    input r0 as field.public;
+    input r1 as field.public;
+    input r2 as field.public;
+    input r3 as u32.public;
+    input r4 as u32.public;
+    input r5 as u64.public;
+    get.dynamic r0 r1 r2[r3] into r6 as data_struct;
+    assert.eq r6.a r4;
+    assert.eq r6.b r5;
+
+// Test get.dynamic with wrong destination type (u64 instead of u32).
+function test_dynamic_get_wrong_type:
+    input r0 as field.public;
+    input r1 as field.public;
+    input r2 as field.public;
+    input r3 as u32.public;
+    async test_dynamic_get_wrong_type r0 r1 r2 r3 into r4;
+    output r4 as main_program.aleo/test_dynamic_get_wrong_type.future;
+finalize test_dynamic_get_wrong_type:
+    input r0 as field.public;
+    input r1 as field.public;
+    input r2 as field.public;
+    input r3 as u32.public;
+    get.dynamic r0 r1 r2[r3] into r4 as u64;
+
+function set_mapping:
+    input r0 as u32.public;
+    input r1 as u32.public;
+    async set_mapping r0 r1 into r2;
+    output r2 as main_program.aleo/set_mapping.future;
+finalize set_mapping:
+    input r0 as u32.public;
+    input r1 as u32.public;
+    set r1 into data_main[r0];
+
+function set_struct_mapping:
+    input r0 as u32.public;
+    input r1 as u32.public;
+    input r2 as u64.public;
+    async set_struct_mapping r0 r1 r2 into r3;
+    output r3 as main_program.aleo/set_struct_mapping.future;
+finalize set_struct_mapping:
+    input r0 as u32.public;
+    input r1 as u32.public;
+    input r2 as u64.public;
+    cast r1 r2 into r3 as data_struct;
+    set r3 into struct_data_main[r0];
+
+function remove_mapping:
+    input r0 as u32.public;
+    async remove_mapping r0 into r1;
+    output r1 as main_program.aleo/remove_mapping.future;
+finalize remove_mapping:
+    input r0 as u32.public;
+    remove data_main[r0];
+
+function remove_struct_mapping:
+    input r0 as u32.public;
+    async remove_struct_mapping r0 into r1;
+    output r1 as main_program.aleo/remove_struct_mapping.future;
+finalize remove_struct_mapping:
+    input r0 as u32.public;
+    remove struct_data_main[r0];
+
+constructor:
+    assert.eq true true;",
+    )
+    .unwrap();
+
+    // Deploy the programs individually.
+    for program in [&program_0, &program_1, &struct_program_0, &main_program] {
+        println!("Deploying program: {}", program.id());
+        let deployment = vm.deploy(&caller_private_key, program, None, 0, None, rng).unwrap();
+        add_and_test(&vm, &caller_private_key, &[deployment], rng);
+    }
+
+    // Create a helper to execute the `test_dynamic_get_u32` function.
+    let test_dynamic_get_u32 = |vm: &VM<CurrentNetwork, _>,
+                                program_name: &str,
+                                program_network: &str,
+                                mapping_name: &str,
+                                key: u32,
+                                expected: Option<u32>, // If None, expect an error.
+                                rng: &mut TestRng| {
+        println!(
+            "Testing dynamic get (u32) for program: {program_name}, network: {program_network}, mapping: {mapping_name}, key: {key}, expected: {expected:?}"
+        );
+        // Create the program name as a field element.
+        let program_name_as_field = Value::from_str(
+            &Identifier::<CurrentNetwork>::from_str(program_name).unwrap().to_field().unwrap().to_string(),
+        )
+        .unwrap();
+        // Create the program network as a field element.
+        let program_network_as_field = Value::from_str(
+            &Identifier::<CurrentNetwork>::from_str(program_network).unwrap().to_field().unwrap().to_string(),
+        )
+        .unwrap();
+        // Create the mapping name as a field element.
+        let mapping_name_as_field = Value::from_str(
+            &Identifier::<CurrentNetwork>::from_str(mapping_name).unwrap().to_field().unwrap().to_string(),
+        )
+        .unwrap();
+        // Create the transaction to call `test_dynamic_get_u32`.
+        let transaction = match vm.execute(
+            &caller_private_key,
+            ("main_program.aleo", "test_dynamic_get_u32"),
+            vec![
+                program_name_as_field,
+                program_network_as_field,
+                mapping_name_as_field,
+                Value::from_str(&format!("{key}u32")).unwrap(),
+                Value::from_str(&format!("{}u32", expected.unwrap_or(0))).unwrap(),
+            ]
+            .into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        ) {
+            Ok(tx) => tx,
+            Err(e) if expected.is_none() => {
+                println!("Expected error occurred: {e}");
+                return;
+            }
+            Err(e) => panic!("Unexpected error occurred: {e}"),
+        };
+        // Check and add the transaction to the VM.
+        vm.check_transaction(&transaction, None, rng).map_err(|e| anyhow!("Transaction check failed: {e}")).unwrap();
+        let block = sample_next_block(vm, &caller_private_key, &[transaction], rng).unwrap();
+        assert_eq!(block.transactions().num_accepted(), expected.is_some() as usize);
+        assert_eq!(block.transactions().num_rejected(), expected.is_none() as usize);
+        assert_eq!(block.aborted_transaction_ids().len(), 0);
+        vm.add_next_block(&block).unwrap();
+    };
+
+    // Create a helper to execute the `test_dynamic_get_struct` function.
+    let test_dynamic_get_struct = |vm: &VM<CurrentNetwork, _>,
+                                   program_name: &str,
+                                   program_network: &str,
+                                   mapping_name: &str,
+                                   key: u32,
+                                   expected: Option<(u32, u64)>, // If None, expect an error.
+                                   rng: &mut TestRng| {
+        println!(
+            "Testing dynamic get (struct) for program: {program_name}, network: {program_network}, mapping: {mapping_name}, key: {key}, expected: {expected:?}"
+        );
+        // Create the program name as a field element.
+        let program_name_as_field = Value::from_str(
+            &Identifier::<CurrentNetwork>::from_str(program_name).unwrap().to_field().unwrap().to_string(),
+        )
+        .unwrap();
+        // Create the program network as a field element.
+        let program_network_as_field = Value::from_str(
+            &Identifier::<CurrentNetwork>::from_str(program_network).unwrap().to_field().unwrap().to_string(),
+        )
+        .unwrap();
+        // Create the mapping name as a field element.
+        let mapping_name_as_field = Value::from_str(
+            &Identifier::<CurrentNetwork>::from_str(mapping_name).unwrap().to_field().unwrap().to_string(),
+        )
+        .unwrap();
+        let (expected_a, expected_b) = expected.unwrap_or((0, 0));
+        // Create the transaction to call `test_dynamic_get_struct`.
+        let transaction = match vm.execute(
+            &caller_private_key,
+            ("main_program.aleo", "test_dynamic_get_struct"),
+            vec![
+                program_name_as_field,
+                program_network_as_field,
+                mapping_name_as_field,
+                Value::from_str(&format!("{key}u32")).unwrap(),
+                Value::from_str(&format!("{expected_a}u32")).unwrap(),
+                Value::from_str(&format!("{expected_b}u64")).unwrap(),
+            ]
+            .into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        ) {
+            Ok(tx) => tx,
+            Err(e) if expected.is_none() => {
+                println!("Expected error occurred: {e}");
+                return;
+            }
+            Err(e) => panic!("Unexpected error occurred: {e}"),
+        };
+        // Check and add the transaction to the VM.
+        vm.check_transaction(&transaction, None, rng).map_err(|e| anyhow!("Transaction check failed: {e}")).unwrap();
+        let block = sample_next_block(vm, &caller_private_key, &[transaction], rng).unwrap();
+        assert_eq!(block.transactions().num_accepted(), expected.is_some() as usize);
+        assert_eq!(block.transactions().num_rejected(), expected.is_none() as usize);
+        assert_eq!(block.aborted_transaction_ids().len(), 0);
+        vm.add_next_block(&block).unwrap();
+    };
+
+    // Create a helper to test get.dynamic with wrong destination type.
+    let test_dynamic_get_wrong_type = |vm: &VM<CurrentNetwork, _>,
+                                       program_name: &str,
+                                       program_network: &str,
+                                       mapping_name: &str,
+                                       key: u32,
+                                       rng: &mut TestRng| {
+        println!(
+            "Testing dynamic get (wrong type) for program: {program_name}, network: {program_network}, mapping: {mapping_name}, key: {key}"
+        );
+        // Create the program name as a field element.
+        let program_name_as_field = Value::from_str(
+            &Identifier::<CurrentNetwork>::from_str(program_name).unwrap().to_field().unwrap().to_string(),
+        )
+        .unwrap();
+        // Create the program network as a field element.
+        let program_network_as_field = Value::from_str(
+            &Identifier::<CurrentNetwork>::from_str(program_network).unwrap().to_field().unwrap().to_string(),
+        )
+        .unwrap();
+        // Create the mapping name as a field element.
+        let mapping_name_as_field = Value::from_str(
+            &Identifier::<CurrentNetwork>::from_str(mapping_name).unwrap().to_field().unwrap().to_string(),
+        )
+        .unwrap();
+        // Create the transaction to call `test_dynamic_get_wrong_type`.
+        let transaction = match vm.execute(
+            &caller_private_key,
+            ("main_program.aleo", "test_dynamic_get_wrong_type"),
+            vec![
+                program_name_as_field,
+                program_network_as_field,
+                mapping_name_as_field,
+                Value::from_str(&format!("{key}u32")).unwrap(),
+            ]
+            .into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        ) {
+            Ok(tx) => tx,
+            Err(e) => {
+                println!("Expected error occurred during execution: {e}");
+                return;
+            }
+        };
+        // Check and add the transaction to the VM - expect rejection due to type mismatch.
+        vm.check_transaction(&transaction, None, rng).map_err(|e| anyhow!("Transaction check failed: {e}")).unwrap();
+        let block = sample_next_block(vm, &caller_private_key, &[transaction], rng).unwrap();
+        assert_eq!(block.transactions().num_accepted(), 0);
+        assert_eq!(block.transactions().num_rejected(), 1);
+        assert_eq!(block.aborted_transaction_ids().len(), 0);
+        vm.add_next_block(&block).unwrap();
+    };
+
+    // Check that get.dynamic fails when the key does not exist in the local mapping.
+    test_dynamic_get_u32(&vm, "main_program", "aleo", "data_main", 42, None, rng);
+
+    // Set the key 42 in the local mapping.
+    let set_tx = vm
+        .execute(
+            &caller_private_key,
+            ("main_program.aleo", "set_mapping"),
+            vec![Value::from_str("42u32").unwrap(), Value::from_str("100u32").unwrap()].iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[set_tx], rng);
+
+    // Check that get.dynamic returns the correct value for the local mapping.
+    test_dynamic_get_u32(&vm, "main_program", "aleo", "data_main", 42, Some(100), rng);
+
+    // Check that get.dynamic fails if the program does not exist.
+    test_dynamic_get_u32(&vm, "main_progra", "aleo", "data_main", 42, None, rng);
+    // Check that get.dynamic fails if the network is wrong.
+    test_dynamic_get_u32(&vm, "main_program", "aleoo", "data_main", 42, None, rng);
+    // Check that get.dynamic fails if the mapping does not exist.
+    test_dynamic_get_u32(&vm, "main_program", "aleo", "data_maine", 42, None, rng);
+
+    // Check that get.dynamic fails with destination type mismatch.
+    test_dynamic_get_wrong_type(&vm, "main_program", "aleo", "data_main", 42, rng);
+
+    // Remove the key 42 from the local mapping.
+    let remove_tx = vm
+        .execute(
+            &caller_private_key,
+            ("main_program.aleo", "remove_mapping"),
+            vec![Value::from_str("42u32").unwrap()].iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[remove_tx], rng);
+
+    // Check that get.dynamic fails after removal.
+    test_dynamic_get_u32(&vm, "main_program", "aleo", "data_main", 42, None, rng);
+
+    // Set the key 7 in the first external program's mapping.
+    let set_tx = vm
+        .execute(
+            &caller_private_key,
+            ("basic_program0.aleo", "set_mapping"),
+            vec![Value::from_str("7u32").unwrap(), Value::from_str("200u32").unwrap()].iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[set_tx], rng);
+
+    // Set the key 15 in the second external program's mapping.
+    let set_tx = vm
+        .execute(
+            &caller_private_key,
+            ("basic_program1.aleo", "set_mapping"),
+            vec![Value::from_str("15u32").unwrap(), Value::from_str("300u32").unwrap()].iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[set_tx], rng);
+
+    // Check that get.dynamic returns correct values from external programs.
+    test_dynamic_get_u32(&vm, "basic_program0", "aleo", "data0", 7, Some(200), rng);
+    test_dynamic_get_u32(&vm, "basic_program1", "aleo", "data1", 15, Some(300), rng);
+
+    // Check that get.dynamic fails for non-existent keys in external programs.
+    test_dynamic_get_u32(&vm, "basic_program0", "aleo", "data0", 99, None, rng);
+    test_dynamic_get_u32(&vm, "basic_program1", "aleo", "data1", 99, None, rng);
+
+    // Remove the keys from external programs.
+    let remove_tx = vm
+        .execute(
+            &caller_private_key,
+            ("basic_program0.aleo", "remove_mapping"),
+            vec![Value::from_str("7u32").unwrap()].iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[remove_tx], rng);
+
+    let remove_tx = vm
+        .execute(
+            &caller_private_key,
+            ("basic_program1.aleo", "remove_mapping"),
+            vec![Value::from_str("15u32").unwrap()].iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[remove_tx], rng);
+
+    // Check that get.dynamic fails after removal from external programs.
+    test_dynamic_get_u32(&vm, "basic_program0", "aleo", "data0", 7, None, rng);
+    test_dynamic_get_u32(&vm, "basic_program1", "aleo", "data1", 15, None, rng);
+
+    // Set a struct value in the local struct mapping.
+    let set_tx = vm
+        .execute(
+            &caller_private_key,
+            ("main_program.aleo", "set_struct_mapping"),
+            vec![
+                Value::from_str("10u32").unwrap(),
+                Value::from_str("111u32").unwrap(),
+                Value::from_str("222u64").unwrap(),
+            ]
+            .iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[set_tx], rng);
+
+    // Check that get.dynamic returns the correct struct value from the local mapping.
+    test_dynamic_get_struct(&vm, "main_program", "aleo", "struct_data_main", 10, Some((111, 222)), rng);
+
+    // Set a struct value in the external struct program's mapping.
+    let set_tx = vm
+        .execute(
+            &caller_private_key,
+            ("struct_program0.aleo", "set_mapping"),
+            vec![
+                Value::from_str("20u32").unwrap(),
+                Value::from_str("333u32").unwrap(),
+                Value::from_str("444u64").unwrap(),
+            ]
+            .iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[set_tx], rng);
+
+    // Check that get.dynamic returns the correct struct value from the external mapping.
+    test_dynamic_get_struct(&vm, "struct_program0", "aleo", "struct_data0", 20, Some((333, 444)), rng);
+
+    // Check that get.dynamic fails for non-existent struct keys.
+    test_dynamic_get_struct(&vm, "main_program", "aleo", "struct_data_main", 99, None, rng);
+    test_dynamic_get_struct(&vm, "struct_program0", "aleo", "struct_data0", 99, None, rng);
+
+    // Remove struct values.
+    let remove_tx = vm
+        .execute(
+            &caller_private_key,
+            ("main_program.aleo", "remove_struct_mapping"),
+            vec![Value::from_str("10u32").unwrap()].iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[remove_tx], rng);
+
+    let remove_tx = vm
+        .execute(
+            &caller_private_key,
+            ("struct_program0.aleo", "remove_mapping"),
+            vec![Value::from_str("20u32").unwrap()].iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[remove_tx], rng);
+
+    // Check that get.dynamic fails after struct removal.
+    test_dynamic_get_struct(&vm, "main_program", "aleo", "struct_data_main", 10, None, rng);
+    test_dynamic_get_struct(&vm, "struct_program0", "aleo", "struct_data0", 20, None, rng);
+}
+
+// This test verifies that `get.or_use.dynamic`:
+// - returns the stored value when the key exists in the mapping.
+// - returns the default value when the key does not exist in the mapping.
+// - works with external programs and mappings.
+// - works with the current program's mapping.
+// - fails when the program or mapping does not exist.
+// - works with struct value types.
+// Note: destination type mismatches and default value type mismatches are caught at
+// deployment time (static type check in check_get_or_use_dynamic), not at runtime.
+#[test]
+fn test_dynamic_get_or_use() {
+    // Initialize an RNG.
+    let rng = &mut TestRng::default();
+
+    // Initialize a new caller.
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+
+    // Initialize the VM at the V12 height.
+    let v12_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap();
+    let vm = crate::vm::test_helpers::sample_vm_at_height(v12_height, rng);
+
+    // Initialize two instances of the basic program (u32 values).
+    let program_0 = basic_program("basic_program0", "data0");
+    let program_1 = basic_program("basic_program1", "data1");
+
+    // Initialize a struct program (struct values).
+    let struct_program_0 = struct_program("struct_program0", "struct_data0");
+
+    // Initialize the main program with test functions for get.or_use.dynamic.
+    let main_program = Program::from_str(
+        r"
+program main_program.aleo;
+
+struct data_struct:
+    a as u32;
+    b as u64;
+
+mapping data_main:
+    key as u32.public;
+    value as u32.public;
+
+mapping struct_data_main:
+    key as u32.public;
+    value as data_struct.public;
+
+// Test get.or_use.dynamic with u32 value type.
+function test_dynamic_get_or_use_u32:
+    input r0 as field.public;
+    input r1 as field.public;
+    input r2 as field.public;
+    input r3 as u32.public;
+    input r4 as u32.public;
+    input r5 as u32.public;
+    async test_dynamic_get_or_use_u32 r0 r1 r2 r3 r4 r5 into r6;
+    output r6 as main_program.aleo/test_dynamic_get_or_use_u32.future;
+finalize test_dynamic_get_or_use_u32:
+    input r0 as field.public;
+    input r1 as field.public;
+    input r2 as field.public;
+    input r3 as u32.public;
+    input r4 as u32.public;
+    input r5 as u32.public;
+    get.or_use.dynamic r0 r1 r2[r3] r4 into r6 as u32;
+    assert.eq r6 r5;
+
+// Test get.or_use.dynamic with struct value type.
+function test_dynamic_get_or_use_struct:
+    input r0 as field.public;
+    input r1 as field.public;
+    input r2 as field.public;
+    input r3 as u32.public;
+    input r4 as u32.public;
+    input r5 as u64.public;
+    input r6 as u32.public;
+    input r7 as u64.public;
+    async test_dynamic_get_or_use_struct r0 r1 r2 r3 r4 r5 r6 r7 into r8;
+    output r8 as main_program.aleo/test_dynamic_get_or_use_struct.future;
+finalize test_dynamic_get_or_use_struct:
+    input r0 as field.public;
+    input r1 as field.public;
+    input r2 as field.public;
+    input r3 as u32.public;
+    input r4 as u32.public;
+    input r5 as u64.public;
+    input r6 as u32.public;
+    input r7 as u64.public;
+    cast r4 r5 into r8 as data_struct;
+    get.or_use.dynamic r0 r1 r2[r3] r8 into r9 as data_struct;
+    assert.eq r9.a r6;
+    assert.eq r9.b r7;
+
+function set_mapping:
+    input r0 as u32.public;
+    input r1 as u32.public;
+    async set_mapping r0 r1 into r2;
+    output r2 as main_program.aleo/set_mapping.future;
+finalize set_mapping:
+    input r0 as u32.public;
+    input r1 as u32.public;
+    set r1 into data_main[r0];
+
+function set_struct_mapping:
+    input r0 as u32.public;
+    input r1 as u32.public;
+    input r2 as u64.public;
+    async set_struct_mapping r0 r1 r2 into r3;
+    output r3 as main_program.aleo/set_struct_mapping.future;
+finalize set_struct_mapping:
+    input r0 as u32.public;
+    input r1 as u32.public;
+    input r2 as u64.public;
+    cast r1 r2 into r3 as data_struct;
+    set r3 into struct_data_main[r0];
+
+function remove_mapping:
+    input r0 as u32.public;
+    async remove_mapping r0 into r1;
+    output r1 as main_program.aleo/remove_mapping.future;
+finalize remove_mapping:
+    input r0 as u32.public;
+    remove data_main[r0];
+
+function remove_struct_mapping:
+    input r0 as u32.public;
+    async remove_struct_mapping r0 into r1;
+    output r1 as main_program.aleo/remove_struct_mapping.future;
+finalize remove_struct_mapping:
+    input r0 as u32.public;
+    remove struct_data_main[r0];
+
+constructor:
+    assert.eq true true;",
+    )
+    .unwrap();
+
+    // Deploy the programs individually.
+    for program in [&program_0, &program_1, &struct_program_0, &main_program] {
+        println!("Deploying program: {}", program.id());
+        let deployment = vm.deploy(&caller_private_key, program, None, 0, None, rng).unwrap();
+        add_and_test(&vm, &caller_private_key, &[deployment], rng);
+    }
+
+    // Create a helper to execute the `test_dynamic_get_or_use_u32` function.
+    let test_dynamic_get_or_use_u32 = |vm: &VM<CurrentNetwork, _>,
+                                       program_name: &str,
+                                       program_network: &str,
+                                       mapping_name: &str,
+                                       key: u32,
+                                       default_value: u32,
+                                       expected: Option<u32>, // If None, expect an error.
+                                       rng: &mut TestRng| {
+        println!(
+            "Testing dynamic get_or_use (u32) for program: {program_name}, network: {program_network}, mapping: {mapping_name}, key: {key}, default: {default_value}, expected: {expected:?}"
+        );
+        // Create the program name as a field element.
+        let program_name_as_field = Value::from_str(
+            &Identifier::<CurrentNetwork>::from_str(program_name).unwrap().to_field().unwrap().to_string(),
+        )
+        .unwrap();
+        // Create the program network as a field element.
+        let program_network_as_field = Value::from_str(
+            &Identifier::<CurrentNetwork>::from_str(program_network).unwrap().to_field().unwrap().to_string(),
+        )
+        .unwrap();
+        // Create the mapping name as a field element.
+        let mapping_name_as_field = Value::from_str(
+            &Identifier::<CurrentNetwork>::from_str(mapping_name).unwrap().to_field().unwrap().to_string(),
+        )
+        .unwrap();
+        // Create the transaction to call `test_dynamic_get_or_use_u32`.
+        let transaction = match vm.execute(
+            &caller_private_key,
+            ("main_program.aleo", "test_dynamic_get_or_use_u32"),
+            vec![
+                program_name_as_field,
+                program_network_as_field,
+                mapping_name_as_field,
+                Value::from_str(&format!("{key}u32")).unwrap(),
+                Value::from_str(&format!("{default_value}u32")).unwrap(),
+                Value::from_str(&format!("{}u32", expected.unwrap_or(0))).unwrap(),
+            ]
+            .into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        ) {
+            Ok(tx) => tx,
+            Err(e) if expected.is_none() => {
+                println!("Expected error occurred: {e}");
+                return;
+            }
+            Err(e) => panic!("Unexpected error occurred: {e}"),
+        };
+        // Check and add the transaction to the VM.
+        vm.check_transaction(&transaction, None, rng).map_err(|e| anyhow!("Transaction check failed: {e}")).unwrap();
+        let block = sample_next_block(vm, &caller_private_key, &[transaction], rng).unwrap();
+        assert_eq!(block.transactions().num_accepted(), expected.is_some() as usize);
+        assert_eq!(block.transactions().num_rejected(), expected.is_none() as usize);
+        assert_eq!(block.aborted_transaction_ids().len(), 0);
+        vm.add_next_block(&block).unwrap();
+    };
+
+    // Create a helper to execute the `test_dynamic_get_or_use_struct` function.
+    let test_dynamic_get_or_use_struct = |vm: &VM<CurrentNetwork, _>,
+                                          program_name: &str,
+                                          program_network: &str,
+                                          mapping_name: &str,
+                                          key: u32,
+                                          default_value: (u32, u64),
+                                          expected: Option<(u32, u64)>, // If None, expect an error.
+                                          rng: &mut TestRng| {
+        println!(
+            "Testing dynamic get_or_use (struct) for program: {program_name}, network: {program_network}, mapping: {mapping_name}, key: {key}, default: {default_value:?}, expected: {expected:?}"
+        );
+        // Create the program name as a field element.
+        let program_name_as_field = Value::from_str(
+            &Identifier::<CurrentNetwork>::from_str(program_name).unwrap().to_field().unwrap().to_string(),
+        )
+        .unwrap();
+        // Create the program network as a field element.
+        let program_network_as_field = Value::from_str(
+            &Identifier::<CurrentNetwork>::from_str(program_network).unwrap().to_field().unwrap().to_string(),
+        )
+        .unwrap();
+        // Create the mapping name as a field element.
+        let mapping_name_as_field = Value::from_str(
+            &Identifier::<CurrentNetwork>::from_str(mapping_name).unwrap().to_field().unwrap().to_string(),
+        )
+        .unwrap();
+        let (expected_a, expected_b) = expected.unwrap_or((0, 0));
+        // Create the transaction to call `test_dynamic_get_or_use_struct`.
+        let transaction = match vm.execute(
+            &caller_private_key,
+            ("main_program.aleo", "test_dynamic_get_or_use_struct"),
+            vec![
+                program_name_as_field,
+                program_network_as_field,
+                mapping_name_as_field,
+                Value::from_str(&format!("{key}u32")).unwrap(),
+                Value::from_str(&format!("{}u32", default_value.0)).unwrap(),
+                Value::from_str(&format!("{}u64", default_value.1)).unwrap(),
+                Value::from_str(&format!("{expected_a}u32")).unwrap(),
+                Value::from_str(&format!("{expected_b}u64")).unwrap(),
+            ]
+            .into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        ) {
+            Ok(tx) => tx,
+            Err(e) if expected.is_none() => {
+                println!("Expected error occurred: {e}");
+                return;
+            }
+            Err(e) => panic!("Unexpected error occurred: {e}"),
+        };
+        // Check and add the transaction to the VM.
+        vm.check_transaction(&transaction, None, rng).map_err(|e| anyhow!("Transaction check failed: {e}")).unwrap();
+        let block = sample_next_block(vm, &caller_private_key, &[transaction], rng).unwrap();
+        assert_eq!(block.transactions().num_accepted(), expected.is_some() as usize);
+        assert_eq!(block.transactions().num_rejected(), expected.is_none() as usize);
+        assert_eq!(block.aborted_transaction_ids().len(), 0);
+        vm.add_next_block(&block).unwrap();
+    };
+
+    // Check that get.or_use.dynamic returns the default value when key doesn't exist.
+    test_dynamic_get_or_use_u32(&vm, "main_program", "aleo", "data_main", 42, 999, Some(999), rng);
+
+    // Set the key 42 in the local mapping.
+    let set_tx = vm
+        .execute(
+            &caller_private_key,
+            ("main_program.aleo", "set_mapping"),
+            vec![Value::from_str("42u32").unwrap(), Value::from_str("100u32").unwrap()].iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[set_tx], rng);
+
+    // Check that get.or_use.dynamic returns the stored value (not the default) when key exists.
+    test_dynamic_get_or_use_u32(&vm, "main_program", "aleo", "data_main", 42, 999, Some(100), rng);
+
+    // Check that get.or_use.dynamic fails if the program does not exist.
+    test_dynamic_get_or_use_u32(&vm, "main_progra", "aleo", "data_main", 42, 999, None, rng);
+    // Check that get.or_use.dynamic fails if the network is wrong.
+    test_dynamic_get_or_use_u32(&vm, "main_program", "aleoo", "data_main", 42, 999, None, rng);
+    // Check that get.or_use.dynamic fails if the mapping does not exist.
+    test_dynamic_get_or_use_u32(&vm, "main_program", "aleo", "data_maine", 42, 999, None, rng);
+
+    // Note: destination type mismatch is caught at deployment time (static type check),
+    // so it cannot be tested as a runtime failure like get.dynamic.
+
+    // Remove the key 42 from the local mapping.
+    let remove_tx = vm
+        .execute(
+            &caller_private_key,
+            ("main_program.aleo", "remove_mapping"),
+            vec![Value::from_str("42u32").unwrap()].iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[remove_tx], rng);
+
+    // Check that get.or_use.dynamic returns default after removal.
+    test_dynamic_get_or_use_u32(&vm, "main_program", "aleo", "data_main", 42, 888, Some(888), rng);
+
+    // Check default value for non-existent keys in external programs.
+    test_dynamic_get_or_use_u32(&vm, "basic_program0", "aleo", "data0", 7, 500, Some(500), rng);
+    test_dynamic_get_or_use_u32(&vm, "basic_program1", "aleo", "data1", 15, 600, Some(600), rng);
+
+    // Set the key 7 in the first external program's mapping.
+    let set_tx = vm
+        .execute(
+            &caller_private_key,
+            ("basic_program0.aleo", "set_mapping"),
+            vec![Value::from_str("7u32").unwrap(), Value::from_str("200u32").unwrap()].iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[set_tx], rng);
+
+    // Set the key 15 in the second external program's mapping.
+    let set_tx = vm
+        .execute(
+            &caller_private_key,
+            ("basic_program1.aleo", "set_mapping"),
+            vec![Value::from_str("15u32").unwrap(), Value::from_str("300u32").unwrap()].iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[set_tx], rng);
+
+    // Check that get.or_use.dynamic returns stored values from external programs.
+    test_dynamic_get_or_use_u32(&vm, "basic_program0", "aleo", "data0", 7, 500, Some(200), rng);
+    test_dynamic_get_or_use_u32(&vm, "basic_program1", "aleo", "data1", 15, 600, Some(300), rng);
+
+    // Check default values for different non-existent keys in external programs.
+    test_dynamic_get_or_use_u32(&vm, "basic_program0", "aleo", "data0", 99, 777, Some(777), rng);
+    test_dynamic_get_or_use_u32(&vm, "basic_program1", "aleo", "data1", 99, 888, Some(888), rng);
+
+    // Remove the keys from external programs.
+    let remove_tx = vm
+        .execute(
+            &caller_private_key,
+            ("basic_program0.aleo", "remove_mapping"),
+            vec![Value::from_str("7u32").unwrap()].iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[remove_tx], rng);
+
+    let remove_tx = vm
+        .execute(
+            &caller_private_key,
+            ("basic_program1.aleo", "remove_mapping"),
+            vec![Value::from_str("15u32").unwrap()].iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[remove_tx], rng);
+
+    // Check that get.or_use.dynamic returns default after removal from external programs.
+    test_dynamic_get_or_use_u32(&vm, "basic_program0", "aleo", "data0", 7, 111, Some(111), rng);
+    test_dynamic_get_or_use_u32(&vm, "basic_program1", "aleo", "data1", 15, 222, Some(222), rng);
+
+    // Check default struct value for non-existent key.
+    test_dynamic_get_or_use_struct(&vm, "main_program", "aleo", "struct_data_main", 10, (50, 60), Some((50, 60)), rng);
+
+    // Set a struct value in the local struct mapping.
+    let set_tx = vm
+        .execute(
+            &caller_private_key,
+            ("main_program.aleo", "set_struct_mapping"),
+            vec![
+                Value::from_str("10u32").unwrap(),
+                Value::from_str("111u32").unwrap(),
+                Value::from_str("222u64").unwrap(),
+            ]
+            .iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[set_tx], rng);
+
+    // Check that get.or_use.dynamic returns the stored struct value (not default).
+    test_dynamic_get_or_use_struct(
+        &vm,
+        "main_program",
+        "aleo",
+        "struct_data_main",
+        10,
+        (50, 60),
+        Some((111, 222)),
+        rng,
+    );
+
+    // Check default struct value for external program's non-existent key.
+    test_dynamic_get_or_use_struct(&vm, "struct_program0", "aleo", "struct_data0", 20, (70, 80), Some((70, 80)), rng);
+
+    // Set a struct value in the external struct program's mapping.
+    let set_tx = vm
+        .execute(
+            &caller_private_key,
+            ("struct_program0.aleo", "set_mapping"),
+            vec![
+                Value::from_str("20u32").unwrap(),
+                Value::from_str("333u32").unwrap(),
+                Value::from_str("444u64").unwrap(),
+            ]
+            .iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[set_tx], rng);
+
+    // Check that get.or_use.dynamic returns the stored struct value from external mapping.
+    test_dynamic_get_or_use_struct(&vm, "struct_program0", "aleo", "struct_data0", 20, (70, 80), Some((333, 444)), rng);
+
+    // Check default for non-existent struct keys.
+    test_dynamic_get_or_use_struct(&vm, "main_program", "aleo", "struct_data_main", 99, (1, 2), Some((1, 2)), rng);
+    test_dynamic_get_or_use_struct(&vm, "struct_program0", "aleo", "struct_data0", 99, (3, 4), Some((3, 4)), rng);
+
+    // Remove struct values.
+    let remove_tx = vm
+        .execute(
+            &caller_private_key,
+            ("main_program.aleo", "remove_struct_mapping"),
+            vec![Value::from_str("10u32").unwrap()].iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[remove_tx], rng);
+
+    let remove_tx = vm
+        .execute(
+            &caller_private_key,
+            ("struct_program0.aleo", "remove_mapping"),
+            vec![Value::from_str("20u32").unwrap()].iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[remove_tx], rng);
+
+    // Check that get.or_use.dynamic returns default after struct removal.
+    test_dynamic_get_or_use_struct(&vm, "main_program", "aleo", "struct_data_main", 10, (5, 6), Some((5, 6)), rng);
+    test_dynamic_get_or_use_struct(&vm, "struct_program0", "aleo", "struct_data0", 20, (7, 8), Some((7, 8)), rng);
+}

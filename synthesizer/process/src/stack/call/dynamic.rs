@@ -24,7 +24,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         registers: &mut Registers<N, A>,
         rng: &mut R,
     ) -> Result<()> {
-        let timer = timer!("Call::evaluate");
+        let timer = timer!("CallDynamic::evaluate");
 
         // Load the operands values.
         let inputs: Vec<_> = self.operands().iter().map(|operand| registers.load(stack, operand)).try_collect()?;
@@ -33,67 +33,47 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         let Value::Plaintext(Plaintext::Literal(Literal::Field(program_name_as_field), _)) = &inputs[0] else {
             bail!("Expected the first operand of `call.dynamic` to be a 'Field' literal.")
         };
-        let program_name = Identifier::from_field(program_name_as_field)?;
 
         // Get the program network.
         let Value::Plaintext(Plaintext::Literal(Literal::Field(program_network_id), _)) = &inputs[1] else {
             bail!("Expected the second operand of `call.dynamic` to be a 'Field' literal.")
         };
-        let program_network = Identifier::from_field(program_network_id)?;
-
-        // Construct the program ID.
-        let program_id = ProgramID::try_from((program_name, program_network))?;
 
         // Get the function name.
         let Value::Plaintext(Plaintext::Literal(Literal::Field(function_name_as_field), _)) = &inputs[2] else {
             bail!("Expected the third operand of `call.dynamic` to be a 'Field' literal.")
         };
-        let function_name = Identifier::from_field(function_name_as_field)?;
 
         // Separate the remaining inputs as the function inputs.
         let inputs = &inputs[3..];
 
-        // Retrieve the optional external stack and resource.
-        let external_stack = match stack.program().id() == &program_id {
-            // Retrieve the call stack and resource from the locator.
-            false => {
-                // Check the external call locator.
-                let is_credits_program = &program_id.to_string() == "credits.aleo";
-                let is_fee_private = function_name.to_string() == "fee_private";
-                let is_fee_public = &function_name.to_string() == "fee_public";
+        // Resolve the program and function.
+        let target = resolve_dynamic_target(
+            registers.call_stack_ref(),
+            stack,
+            program_name_as_field,
+            program_network_id,
+            function_name_as_field,
+        )?;
 
-                // Ensure the external call is not to 'credits.aleo/fee_private' or 'credits.aleo/fee_public'.
-                if is_credits_program && (is_fee_private || is_fee_public) {
-                    bail!("Cannot perform an external call to 'credits.aleo/fee_private' or 'credits.aleo/fee_public'.")
-                } else {
-                    Some(stack.get_external_stack(&program_id)?)
-                }
-            }
-            true => {
-                // TODO (howardwu): Revisit this decision to forbid calling internal functions. A record cannot be spent again.
-                //  But there are legitimate uses for passing a record through to an internal function.
-                //  We could invoke the internal function without a state transition, but need to match visibility.
-                // TODO (@d0cd): Resolve recursion with records.
-                if stack.program().contains_function(&function_name) {
-                    bail!("Cannot dynamically evaluate a local '{function_name}' ")
-                }
-                None
-            }
+        // Get the target (in evaluate mode, we must have a valid target).
+        let Some(target) = target else {
+            bail!("Failed to resolve the target of the dynamic call in 'evaluate' mode.")
         };
-        // Retrieve the substack.
-        let substack = match &external_stack {
-            Some(external_stack) => external_stack.as_ref(),
-            None => stack,
-        };
+
+        // Retrieve the program ID, function name, and substack from the resolved target.
+        let program_id = target.program_id();
+        let function_name = target.function_name();
+        let substack = target.substack();
         lap!(timer, "Retrieved the substack");
 
         // If the operator is a closure, retrieve the closure and compute the output.
-        let outputs = if substack.program().get_closure(&function_name).is_ok() {
+        let outputs = if substack.program().get_closure(function_name).is_ok() {
             // A closure cannot be dynamically called.
             bail!("Cannot dynamically evaluate a closure: {function_name}")
         }
         // If the operator is a function, retrieve the function and compute the output.
-        else if let Ok(function) = substack.program().get_function(&function_name) {
+        else if let Ok(function) = substack.program().get_function(function_name) {
             // Ensure the number of inputs matches the number of input statements.
             if function.inputs().len() != inputs.len() {
                 bail!("Expected {} inputs, found {}", function.inputs().len(), inputs.len())
@@ -120,7 +100,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                 };
 
                 // Get the input types of the callee.
-                let input_types = substack.program().get_function_ref(&function_name)?.input_types();
+                let input_types = substack.program().get_function_ref(function_name)?.input_types();
                 // Ensure that the number of inputs match.
                 if input_types.len() != inputs.len() {
                     bail!("Expected {} inputs, found {}", input_types.len(), inputs.len())
@@ -128,39 +108,41 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
 
                 // Convert the inputs to the callee's context.
                 // TODO (@d0cd): Do we need to check that they match? I think no because `CallDynamic::output_types should have`
+                ensure!(
+                    inputs.len() == input_types.len(),
+                    "[evaluate Authorize] Expected {} inputs, but {} were provided.",
+                    input_types.len(),
+                    inputs.len()
+                );
                 let callee_inputs = inputs
                     .iter()
-                    .zip_eq(input_types.iter())
-                    .map(|(input, input_type)| match (input, input_type) {
-                        (Value::Record(record), ValueType::DynamicRecord) => {
-                            Ok(Value::DynamicRecord(DynamicRecord::from_record(&record)?))
-                        }
-                        (Value::Future(future), ValueType::DynamicFuture) => {
-                            Ok(Value::DynamicFuture(DynamicFuture::from_future(future)?))
-                        }
-                        (Value::DynamicRecord(dynamic_record), ValueType::Record(record_name)) => {
-                            // Look up the owner visibility.
-                            let owner_is_private =
-                                substack.program().get_record(record_name)?.owner().is_private();
-                            Ok(Value::Record(dynamic_record.to_record(owner_is_private)?))
-                        }
-                        (Value::DynamicFuture(dynamic_future), ValueType::Future(locator)) => {
-                            // Construct the dynamic future.
-                            let future = dynamic_future.to_future()?;
-                            // Ensure that the locator matches.
-                            ensure!(
-                                future.program_id() == locator.program_id(),
-                                "Locator program ID does not match for dynamic future."
-                            );
-                            ensure!(
-                                future.function_name() == locator.resource(),
-                                "Locator resource does not match for dynamic future."
-                            );
+                    .zip(input_types.iter())
+                    .map(|(input, input_type)| {
+                        let value = match (input, input_type) {
+                            (Value::DynamicRecord(dynamic_record), ValueType::Record(record_name)) => {
+                                // Look up the owner visibility.
+                                let owner_is_private = substack.program().get_record(record_name)?.owner().is_private();
+                                Value::Record(dynamic_record.to_record(owner_is_private)?)
+                            }
+                            (Value::DynamicRecord(dynamic_record), ValueType::ExternalRecord(locator)) => {
+                                let record_program_id = locator.program_id();
+                                let record_name = locator.resource();
 
-                            Ok(Value::Future(dynamic_future.to_future()?))
-                        }
-                        // For other types, we assume they are directly compatible.
-                        _ => Ok(input.clone()),
+                                // Obtain the program where the external record is defined (which must be imported inside the callee)
+                                // TODO (dynamic_dispatch) make sure this handles substack-fetching correctly
+                                let external_record_stack = substack.get_external_stack(record_program_id)?;
+
+                                // Look up the owner visibility.
+                                let owner_is_private =
+                                    external_record_stack.program().get_record(record_name)?.owner().is_private();
+
+                                Value::Record(dynamic_record.to_record(owner_is_private)?)
+                            }
+                            // For other types, we assume they are directly compatible.
+                            _ => input.clone(),
+                        };
+                        // TODO(@d0cd) Check that the converted input matches the input type.
+                        Ok(value)
                     })
                     .collect::<Result<Vec<_>>>()?;
 
@@ -169,9 +151,12 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                     private_key,
                     *substack.program_id(),
                     *function.name(),
-                    inputs.iter(),
+                    callee_inputs.iter(),
                     &function.input_types(),
+                    inputs.iter(),
                     self.operand_types(),
+                    self.destination_types(),
+                    registers.request()?,
                     root_tvk,
                     is_root,
                     program_checksum,
@@ -188,7 +173,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             // Evaluate the function.
             let response = substack.evaluate_function::<A, R>(call_stack, console_caller, root_tvk, rng)?;
             // Convert the callee's outputs to the caller's context.
-            response.dynamic_call_outputs()?
+            response.dynamic_call_outputs(self.destination_types())?
         }
         // Else, throw an error.
         else {
@@ -197,7 +182,13 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         lap!(timer, "Computed outputs");
 
         // Assign the outputs to the destination registers.
-        for (output, register) in outputs.into_iter().zip_eq(&self.destinations()) {
+        ensure!(
+            outputs.len() == self.destinations().len(),
+            "[evaluate Dynamic] Expected {} outputs, but {} were provided.",
+            self.destinations().len(),
+            outputs.len()
+        );
+        for (output, register) in outputs.into_iter().zip(&self.destinations()) {
             // Assign the output to the register.
             registers.store(stack, register, output)?;
         }
@@ -216,7 +207,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
     ) -> Result<()> {
         use circuit::Eject;
 
-        let timer = timer!("Call::execute");
+        let timer = timer!("CallDynamic::execute");
 
         // Load the operands values.
         let inputs: Vec<_> =
@@ -255,15 +246,6 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         let outputs = {
             lap!(timer, "Execute the function");
 
-            // Resolve the program and function.
-            let target = resolve_dynamic_target(
-                registers.call_stack_ref(),
-                stack,
-                &program_name_as_field.eject_value(),
-                &program_network_as_field.eject_value(),
-                &function_name_as_field.eject_value(),
-            )?;
-
             // Retrieve the number of public variables in the circuit.
             let num_public = A::num_public();
 
@@ -272,7 +254,16 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
 
             // Eject the existing circuit.
             let r1cs = A::eject_r1cs_and_reset();
-            let (request, caller_response_outputs) = {
+            let (request, caller_response_outputs, translation_data) = {
+                // Resolve the program and function.
+                let target = resolve_dynamic_target(
+                    registers.call_stack_ref(),
+                    stack,
+                    &program_name_as_field.eject_value(),
+                    &program_network_as_field.eject_value(),
+                    &function_name_as_field.eject_value(),
+                )?;
+
                 // Eject the circuit inputs.
                 let inputs = inputs.eject_value();
 
@@ -313,13 +304,16 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         }
                         // Convert the inputs to the callee's context.
                         // TODO (@d0cd): Do we need to check that they match? I think no because `CallDynamic::output_types should have`
+                        ensure!(
+                            inputs.len() == input_types.len(),
+                            "[execute Authorize] Expected {} inputs, but {} were provided.",
+                            input_types.len(),
+                            inputs.len()
+                        );
                         let callee_inputs = inputs
                             .iter()
-                            .zip_eq(input_types.iter())
+                            .zip(input_types.iter())
                             .map(|(input, input_type)| match (input, input_type) {
-                                (Value::Record(record), ValueType::DynamicRecord) => {
-                                    Ok(Value::DynamicRecord(DynamicRecord::from_record(&record)?))
-                                }
                                 (Value::Future(future), ValueType::DynamicFuture) => {
                                     Ok(Value::DynamicFuture(DynamicFuture::from_future(future)?))
                                 }
@@ -327,6 +321,22 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                     // Look up the owner visibility.
                                     let owner_is_private =
                                         target.substack().program().get_record(record_name)?.owner().is_private();
+                                    Ok(Value::Record(dynamic_record.to_record(owner_is_private)?))
+                                }
+                                (Value::DynamicRecord(dynamic_record), ValueType::ExternalRecord(locator)) => {
+                                    let record_program_id = locator.program_id();
+                                    let record_name = locator.resource();
+
+                                    // Obtain the program where the external record is defined (which must be imported inside the callee)
+                                    // TODO (dynamic_dispatch) make sure this handles substack-fetching correctly
+                                    // TODO (dynamic_dispatch) verify that we want to be using `get_exteranl_stack`, ditto for others.
+                                    let external_record_stack =
+                                        target.substack().get_external_stack(record_program_id)?;
+
+                                    // Look up the owner visibility.
+                                    let owner_is_private =
+                                        external_record_stack.program().get_record(record_name)?.owner().is_private();
+
                                     Ok(Value::Record(dynamic_record.to_record(owner_is_private)?))
                                 }
                                 (Value::DynamicFuture(dynamic_future), ValueType::Future(locator)) => {
@@ -356,7 +366,10 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             *function.name(),
                             callee_inputs.iter(),
                             input_types,
+                            inputs.iter(),
                             self.operand_types(),
+                            self.destination_types(),
+                            registers.request()?,
                             root_tvk,
                             is_root,
                             program_checksum,
@@ -378,10 +391,11 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             target.substack().execute_function::<A, R>(call_stack, console_caller, root_tvk, rng)?;
 
                         // Convert the callee's outputs to the caller's context.
-                        let caller_response_outputs = callee_response.dynamic_call_outputs()?;
+                        let caller_response_outputs = callee_response
+                            .dynamic_call_outputs(callee_request.caller_output_types().as_ref().unwrap())?;
 
                         // Return the request verification inputs and response.
-                        (request_verification_inputs, caller_response_outputs)
+                        (request_verification_inputs, caller_response_outputs, None)
                     }
                     // TODO (@d0cd): Synthesize based on the declared outputs of the instruction.
                     // In Synthesize mode (with an existing proving key) or CheckDeployment mode, we generate dummy outputs to avoid building a full sub-circuit.
@@ -443,7 +457,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             .collect::<Result<Vec<_>>>()?;
 
                         // Return the request verification inputs and response.
-                        (request_verification_inputs, callee_response_outputs)
+                        (request_verification_inputs, callee_response_outputs, None)
                     }
                     // In PackageRun mode, we sign and execute the request once.
                     CallStack::PackageRun(_, private_key, ..) => {
@@ -474,13 +488,16 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         }
                         // Convert the inputs to the callee's context.
                         // TODO (@d0cd): Do we need to check that they match? I think no because `CallDynamic::output_types should have`
+                        ensure!(
+                            inputs.len() == input_types.len(),
+                            "[execute PackageRun] Expected {} inputs, but {} were provided.",
+                            input_types.len(),
+                            inputs.len()
+                        );
                         let callee_inputs = inputs
                             .iter()
-                            .zip_eq(input_types.iter())
+                            .zip(input_types.iter())
                             .map(|(input, input_type)| match (input, input_type) {
-                                (Value::Record(record), ValueType::DynamicRecord) => {
-                                    Ok(Value::DynamicRecord(DynamicRecord::from_record(&record)?))
-                                }
                                 (Value::Future(future), ValueType::DynamicFuture) => {
                                     Ok(Value::DynamicFuture(DynamicFuture::from_future(future)?))
                                 }
@@ -488,6 +505,21 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                     // Look up the owner visibility.
                                     let owner_is_private =
                                         target.substack().program().get_record(record_name)?.owner().is_private();
+                                    Ok(Value::Record(dynamic_record.to_record(owner_is_private)?))
+                                }
+                                (Value::DynamicRecord(dynamic_record), ValueType::ExternalRecord(locator)) => {
+                                    let record_program_id = locator.program_id();
+                                    let record_name = locator.resource();
+
+                                    // Obtain the program where the external record is defined (which must be imported inside the callee)
+                                    // TODO (dynamic_dispatch) make sure this handles substack-fetching correctly
+                                    let external_record_stack =
+                                        target.substack().get_external_stack(record_program_id)?;
+
+                                    // Look up the owner visibility.
+                                    let owner_is_private =
+                                        external_record_stack.program().get_record(record_name)?.owner().is_private();
+
                                     Ok(Value::Record(dynamic_record.to_record(owner_is_private)?))
                                 }
                                 (Value::DynamicFuture(dynamic_future), ValueType::Future(locator)) => {
@@ -516,7 +548,10 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             *function.name(),
                             callee_inputs.iter(),
                             input_types,
+                            inputs.iter(),
                             self.operand_types(),
+                            self.destination_types(),
+                            registers.request()?,
                             root_tvk,
                             is_root,
                             program_checksum,
@@ -536,10 +571,11 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             target.substack().execute_function::<A, _>(call_stack, console_caller, root_tvk, rng)?;
 
                         // Convert the callee's outputs to the caller's context.
-                        let caller_response_outputs = callee_response.dynamic_call_outputs()?;
+                        let caller_response_outputs = callee_response
+                            .dynamic_call_outputs(callee_request.caller_output_types().as_ref().unwrap())?;
 
                         // Return the request verification inputs and response.
-                        (request_verification_inputs, caller_response_outputs)
+                        (request_verification_inputs, caller_response_outputs, None)
                     }
                     // If the circuit is in evaluate mode, then throw an error.
                     CallStack::Evaluate(..) => {
@@ -552,9 +588,9 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             bail!("Failed to resolve the target of the dynamic call in 'Authorize' mode.")
                         };
                         // Get the function.
-                        let function = target.substack().program().get_function_ref(target.function_name())?;
+                        let callee_function = target.substack().program().get_function_ref(target.function_name())?;
                         // Retrieve the number of inputs.
-                        let num_inputs = function.inputs().len();
+                        let num_inputs = callee_function.inputs().len();
                         // Ensure the number of inputs matches the number of input statements.
                         if num_inputs != inputs.len() {
                             bail!("Expected {} inputs, found {}", num_inputs, inputs.len())
@@ -564,7 +600,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         let callee_request = authorization.peek_next()?;
 
                         // Construct the request verification inputs.
-                        let request_verification_inputs = RequestVerificationInputs::from(&callee_request)?;
+                        let callee_request_verification_inputs = RequestVerificationInputs::from(&callee_request)?;
 
                         // Evaluate the function, and load the outputs.
                         let console_callee_response = target.substack().evaluate_function::<A, R>(
@@ -588,18 +624,355 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                 console_callee_response.outputs(),
                                 callee_response.outputs()
                             );
-                            bail!("Function '{}' outputs do not match in a 'call' instruction.", function.name())
+                            bail!("Function '{}' outputs do not match in a 'call' instruction.", callee_function.name())
                         }
 
                         // Convert the callee's outputs to the caller's context.
-                        let caller_response_outputs = callee_response.dynamic_call_outputs()?;
+                        // TODO (@d0cd). This is an inelgant way to pass around this data. Redesign, including translation data preparation below.
+                        let caller_response = Response::new(
+                            callee_request.signer(),
+                            callee_request.network_id(),
+                            callee_request.program_id(),
+                            callee_request.function_name(),
+                            callee_request.inputs().len(),
+                            callee_request.tvk(),
+                            callee_request.tcm(),
+                            callee_response.dynamic_call_outputs(self.destination_types())?,
+                            self.destination_types(),
+                            &target
+                                .substack()
+                                .get_function_ref(target.function_name())?
+                                .outputs()
+                                .iter()
+                                .map(|output| match output.operand() {
+                                    Operand::Register(register) => Some(register.clone()),
+                                    _ => None,
+                                })
+                                .collect::<Vec<_>>(),
+                        )?;
+
+                        // Anonymous helper which synthesizes the translation
+                        // key for a given program-record combination (if it has
+                        // not been synthesized yet) and stores it in the
+                        // program's stack.
+                        let ensure_translation_proving_key =
+                            |program_id: &ProgramID<N>, record_name: &Identifier<N>, rng: &mut R| -> Result<()> {
+                                let record_stack = match program_id == stack.program_id() {
+                                    true => stack,
+                                    false => &stack.get_stack_unchecked(program_id)?,
+                                };
+
+                                record_stack.synthesize_translation_key::<A, R>(record_name, rng)
+                            };
+
+                        let caller_console_input_ids = callee_request.caller_input_ids().clone().unwrap_or_default();
+                        let callee_console_input_ids = callee_request.input_ids();
+                        let callee_console_function_id = compute_function_id(
+                            &U16::<N>::new(N::ID),
+                            callee_request.program_id(),
+                            callee_request.function_name(),
+                        )?;
+
+                        let caller_input_types = self.operand_types();
+                        let callee_input_types = callee_function.input_types();
+                        let caller_console_inputs = inputs;
+                        let callee_console_inputs = callee_request.inputs();
+                        let mut translation_data = Vec::new();
+
+                        // TODO (dynamic_dispatch) move to a separate function to avoid clutter?
+                        // TODO (dynamic_dispatch) some of these might be redundant with earlier checks (others are not, caught bug here)
+                        assert_eq!(
+                            caller_input_types.len(),
+                            callee_input_types.len(),
+                            "Caller and callee input types should have the same length ({} vs. {})",
+                            caller_input_types.len(),
+                            callee_input_types.len()
+                        );
+                        assert_eq!(
+                            caller_console_inputs.len(),
+                            callee_console_inputs.len(),
+                            "Caller and callee console inputs should have the same length ({} vs. {})",
+                            caller_console_inputs.len(),
+                            callee_console_inputs.len()
+                        );
+                        assert_eq!(
+                            caller_console_input_ids.len(),
+                            callee_console_input_ids.len(),
+                            "Caller and callee console input IDs should have the same length ({} vs. {})",
+                            caller_console_input_ids.len(),
+                            callee_console_input_ids.len()
+                        );
+                        assert_eq!(
+                            caller_input_types.len(),
+                            caller_console_input_ids.len(),
+                            "Caller input types and input IDs should have the same length ({} vs. {})",
+                            caller_input_types.len(),
+                            caller_console_input_ids.len()
+                        );
+                        assert_eq!(
+                            caller_input_types.len(),
+                            caller_console_inputs.len(),
+                            "Caller input types and inputs should have the same length ({} vs. {})",
+                            caller_input_types.len(),
+                            caller_console_inputs.len()
+                        );
+
+                        for (
+                            operand_index,
+                            (
+                                caller_input_value,
+                                caller_input_id,
+                                caller_input_type,
+                                callee_input_value,
+                                callee_input_id,
+                                callee_input_type,
+                            ),
+                        ) in itertools::izip!(
+                            caller_console_inputs,
+                            caller_console_input_ids,
+                            caller_input_types,
+                            callee_console_inputs,
+                            callee_console_input_ids,
+                            callee_input_types
+                        )
+                        .enumerate()
+                        {
+                            match (
+                                caller_input_value,
+                                caller_input_id,
+                                caller_input_type,
+                                callee_input_value,
+                                callee_input_id,
+                                callee_input_type,
+                            ) {
+                                (
+                                    Value::DynamicRecord(record_dynamic),
+                                    InputID::DynamicRecord(id_dynamic),
+                                    ValueType::DynamicRecord,
+                                    Value::Record(record_static),
+                                    InputID::Record(_record_commitment, gamma, record_view_key, serial_number, _tag),
+                                    ValueType::Record(record_name),
+                                ) => {
+                                    let program_id = *callee_request.program_id();
+
+                                    ensure_translation_proving_key(&program_id, &record_name, rng)?;
+
+                                    translation_data.push(RecordTranslationData {
+                                        record_static: record_static.clone(),
+                                        record_dynamic,
+                                        program_id,
+                                        function_id: callee_console_function_id,
+                                        record_name,
+                                        is_input: true,
+                                        static_is_external: false,
+                                        tvk: *callee_request.tvk(),
+                                        record_view_key: Some(*record_view_key),
+                                        gamma: Some(*gamma),
+                                        id_static: *serial_number,
+                                        id_dynamic,
+                                        input_output_index: operand_index as u16,
+                                    });
+                                }
+                                (
+                                    Value::DynamicRecord(record_dynamic),
+                                    InputID::DynamicRecord(id_dynamic),
+                                    ValueType::DynamicRecord,
+                                    Value::Record(record_static),
+                                    InputID::ExternalRecord(id_static),
+                                    ValueType::ExternalRecord(record_locator),
+                                ) => {
+                                    let program_id = *record_locator.program_id();
+                                    let record_name = *record_locator.resource();
+
+                                    ensure_translation_proving_key(&program_id, &record_name, rng)?;
+
+                                    translation_data.push(RecordTranslationData {
+                                        record_static: record_static.clone(),
+                                        record_dynamic,
+                                        program_id,
+                                        function_id: callee_console_function_id,
+                                        record_name,
+                                        is_input: true,
+                                        static_is_external: true,
+                                        tvk: *callee_request.tvk(),
+                                        record_view_key: None,
+                                        gamma: None,
+                                        id_static: *id_static,
+                                        id_dynamic,
+                                        input_output_index: operand_index as u16,
+                                    });
+                                }
+                                _ => {} // No translation to perform.
+                            }
+                        }
+                        // Collect record outputs to translate.
+                        let caller_console_outputs = caller_response.outputs();
+                        let caller_console_output_ids = caller_response.output_ids();
+                        let caller_output_types = self.destination_types();
+                        let callee_console_outputs = console_callee_response.outputs();
+                        let callee_console_output_ids = console_callee_response.output_ids();
+                        let callee_output_types = callee_function.output_types();
+
+                        // Check that all the lengths are the same.
+                        assert_eq!(
+                            caller_console_outputs.len(),
+                            callee_console_outputs.len(),
+                            "Caller and callee console outputs should have the same length ({} vs. {})",
+                            caller_console_outputs.len(),
+                            callee_console_outputs.len()
+                        );
+                        assert_eq!(
+                            caller_console_outputs.len(),
+                            caller_console_output_ids.len(),
+                            "Caller console outputs and output IDs should have the same length ({} vs. {})",
+                            caller_console_outputs.len(),
+                            caller_console_output_ids.len()
+                        );
+                        assert_eq!(
+                            caller_console_outputs.len(),
+                            caller_output_types.len(),
+                            "Caller console outputs and output types should have the same length ({} vs. {})",
+                            caller_console_outputs.len(),
+                            caller_output_types.len()
+                        );
+                        assert_eq!(
+                            callee_console_outputs.len(),
+                            callee_output_types.len(),
+                            "Callee console outputs and output types should have the same length ({} vs. {})",
+                            callee_console_outputs.len(),
+                            callee_output_types.len()
+                        );
+                        assert_eq!(
+                            callee_console_outputs.len(),
+                            callee_console_output_ids.len(),
+                            "Callee console outputs and output IDs should have the same length ({} vs. {})",
+                            callee_console_outputs.len(),
+                            callee_console_output_ids.len()
+                        );
+
+                        for (
+                            operand_index,
+                            (
+                                caller_output_value,
+                                caller_output_id,
+                                caller_output_type,
+                                callee_output_value,
+                                callee_output_id,
+                                callee_output_type,
+                            ),
+                        ) in itertools::izip!(
+                            caller_console_outputs,
+                            caller_console_output_ids,
+                            caller_output_types,
+                            callee_console_outputs,
+                            callee_console_output_ids,
+                            callee_output_types
+                        )
+                        .enumerate()
+                        {
+                            match (
+                                caller_output_value,
+                                caller_output_id,
+                                caller_output_type,
+                                callee_output_value,
+                                callee_output_id,
+                                callee_output_type,
+                            ) {
+                                (
+                                    Value::DynamicRecord(record_dynamic),
+                                    OutputID::DynamicRecord(id_dynamic),
+                                    ValueType::DynamicRecord,
+                                    Value::Record(record_static),
+                                    OutputID::Record(id_static, _checksum, _sender_ciphertext),
+                                    ValueType::Record(record_name),
+                                ) => {
+                                    let program_id = *callee_request.program_id();
+
+                                    ensure_translation_proving_key(&program_id, &record_name, rng)?;
+
+                                    translation_data.push(RecordTranslationData {
+                                        record_static: record_static.clone(),
+                                        record_dynamic: record_dynamic.clone(),
+                                        program_id,
+                                        function_id: callee_console_function_id,
+                                        record_name,
+                                        is_input: false,
+                                        static_is_external: false,
+                                        tvk: *callee_request.tvk(),
+                                        record_view_key: {
+                                            // Get the output index.
+                                            let Some(Operand::Register(register)) = target
+                                                .substack()
+                                                .get_function_ref(target.function_name())?
+                                                .outputs()
+                                                .get_index(operand_index)
+                                                .map(|op| op.operand())
+                                            else {
+                                                bail!("Expected output to be a register");
+                                            };
+                                            // Prepare the index as a field element.
+                                            let index = Field::from_u64(register.locator());
+                                            // Compute the randomizer as `HashToScalar(tvk || index)`.
+                                            let randomizer = N::hash_to_scalar_psd2(&[*callee_request.tvk(), index])?;
+                                            // Compute the record view key.
+                                            let rvk =
+                                                (*record_static.owner().to_group() * randomizer).to_x_coordinate();
+
+                                            Some(rvk)
+                                        },
+                                        // gamma does not exist for output records and is irrelevant in the circuit when is_input = false
+                                        gamma: None,
+                                        id_static: *id_static,
+                                        id_dynamic: *id_dynamic,
+                                        input_output_index: (num_inputs + operand_index) as u16,
+                                    });
+                                }
+                                (
+                                    Value::DynamicRecord(record_dynamic),
+                                    OutputID::DynamicRecord(id_dynamic),
+                                    ValueType::DynamicRecord,
+                                    Value::Record(record_static),
+                                    OutputID::ExternalRecord(id_static),
+                                    ValueType::ExternalRecord(record_locator),
+                                ) => {
+                                    let program_id = *record_locator.program_id();
+                                    let record_name = *record_locator.resource();
+
+                                    ensure_translation_proving_key(&program_id, &record_name, rng)?;
+
+                                    translation_data.push(RecordTranslationData {
+                                        record_static: record_static.clone(),
+                                        record_dynamic: record_dynamic.clone(),
+                                        program_id,
+                                        function_id: callee_console_function_id,
+                                        record_name,
+                                        is_input: false,
+                                        static_is_external: true,
+                                        tvk: *callee_request.tvk(),
+                                        record_view_key: None,
+                                        gamma: None,
+                                        id_static: *id_static,
+                                        id_dynamic: *id_dynamic,
+                                        input_output_index: (num_inputs + operand_index) as u16,
+                                    });
+                                }
+                                _ => {} // No translation to perform.
+                            }
+                        }
 
                         // Return the caller's request and response.
-                        (request_verification_inputs, caller_response_outputs)
+                        (callee_request_verification_inputs, caller_response.outputs().to_vec(), Some(translation_data))
                     }
                 }
             };
             lap!(timer, "Computed the request and response");
+
+            // TODO(dynamic_dispatch): If we let Registers keep e.g. an Arc<Stack>, we can just access Registers above.
+            if let Some(translation_data) = translation_data {
+                for translation_datum in translation_data {
+                    registers.insert_record_translation_data(translation_datum);
+                }
+            }
 
             // Inject the existing circuit.
             A::inject_r1cs(r1cs);
@@ -607,11 +980,16 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             use circuit::Inject;
 
             // Inject the network ID as `Mode::Constant`.
-            let network_id = circuit::U16::constant(*request.network_id());
+            let network_id = circuit::U16::constant(request.network_id);
             // Inject the program ID name as `Mode::Public`.
-            let program_id = circuit::ProgramID::public(*request.program_id());
+            let program_id = circuit::ProgramID::public(request.program_id);
             // Inject the function name as `Mode::Public`.
-            let function_name = circuit::Identifier::public(*request.function_name());
+            let function_name = circuit::Identifier::public(request.function_name);
+            // Inject the function ID as `Mode::Public`.
+            let function_id = circuit::Field::new(
+                circuit::Mode::Public,
+                compute_function_id(&request.network_id, &request.program_id, &request.function_name)?,
+            );
 
             // Ensure that the program and function names in the registers match the witnessed values.
             A::assert_eq(program_id.name(), program_name_as_field);
@@ -619,16 +997,16 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             A::assert_eq(&function_name, function_name_as_field);
 
             // Ensure the number of public variables remains the same.
-            ensure!(A::num_public() == num_public + 3, "Forbidden: 'call.dynamic' injected excess public variables");
+            ensure!(A::num_public() == num_public + 4, "Forbidden: 'call.dynamic' injected excess public variables");
 
             // Inject the `signer` (from the request) as `Mode::Private`.
-            let signer = circuit::Address::new(circuit::Mode::Private, *request.signer());
+            let signer = circuit::Address::new(circuit::Mode::Private, request.signer);
             // Inject the `sk_tag` (from the request) as `Mode::Private`.
-            let sk_tag = circuit::Field::new(circuit::Mode::Private, *request.sk_tag());
+            let sk_tag = circuit::Field::new(circuit::Mode::Private, request.sk_tag);
             // Inject the `tvk` (from the request) as `Mode::Private`.
-            let tvk = circuit::Field::new(circuit::Mode::Private, *request.tvk());
+            let tvk = circuit::Field::new(circuit::Mode::Private, request.tvk);
             // Inject the `tcm` (from the request) as `Mode::Public`.
-            let tcm = circuit::Field::new(circuit::Mode::Public, *request.tcm());
+            let tcm = circuit::Field::new(circuit::Mode::Public, request.tcm);
             // Compute the transition commitment as `Hash(tvk)`.
             let candidate_tcm = A::hash_psd2(&[tvk.clone()]);
             // Ensure the transition commitment matches the computed transition commitment.
@@ -654,7 +1032,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                 &tvk,
                 &tcm,
                 None,
-                true,
+                Some(function_id.clone()),
             );
             A::assert(check_input_ids);
             lap!(timer, "Checked the input ids");
@@ -679,18 +1057,25 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                 inputs.len(),
                 &tvk,
                 &tcm,
-                caller_response_outputs,
+                caller_response_outputs.clone(),
                 self.destination_types(),
                 &output_registers,
-                true,
+                Some(function_id),
             );
             lap!(timer, "Checked the outputs");
+
             // Return the circuit outputs.
             outputs
         };
 
         // Assign the outputs to the destination registers.
-        for (output, register) in outputs.into_iter().zip_eq(&self.destinations()) {
+        ensure!(
+            outputs.len() == self.destinations().len(),
+            "[execute Dynamic] Expected {} outputs, but {} were provided.",
+            self.destinations().len(),
+            outputs.len()
+        );
+        for (output, register) in outputs.into_iter().zip(&self.destinations()) {
             // Assign the output to the register.
             registers.store_circuit(stack, register, output)?;
         }
@@ -740,48 +1125,6 @@ impl<N: Network> RequestVerificationInputs<N> {
             tcm: *request.tcm(),
             caller_input_ids: caller_input_ids.clone(),
         })
-    }
-}
-
-impl<N: Network> RequestVerificationInputs<N> {
-    /// Returns the request signer.
-    pub const fn signer(&self) -> &Address<N> {
-        &self.signer
-    }
-
-    /// Returns the network ID.
-    pub const fn network_id(&self) -> &U16<N> {
-        &self.network_id
-    }
-
-    /// Returns the program ID.
-    pub const fn program_id(&self) -> &ProgramID<N> {
-        &self.program_id
-    }
-
-    /// Returns the function name.
-    pub const fn function_name(&self) -> &Identifier<N> {
-        &self.function_name
-    }
-
-    /// Returns the tag secret key `sk_tag`.
-    pub const fn sk_tag(&self) -> &Field<N> {
-        &self.sk_tag
-    }
-
-    /// Returns the transition view key `tvk`.
-    pub const fn tvk(&self) -> &Field<N> {
-        &self.tvk
-    }
-
-    /// Returns the transition commitment `tcm`.
-    pub const fn tcm(&self) -> &Field<N> {
-        &self.tcm
-    }
-
-    /// Returns the caller input IDs.
-    pub fn caller_input_ids(&self) -> &[InputID<N>] {
-        &self.caller_input_ids
     }
 }
 
@@ -845,10 +1188,7 @@ fn resolve_dynamic_target<'a, N: Network>(
     function_name_as_field: &Field<N>,
 ) -> Result<Option<ResolvedTarget<'a, N>>> {
     // Determine whether we are in "dummy" (`Synthesize` or `CheckDeployment`) mode.
-    let in_dummy_mode = match call_stack {
-        CallStack::Synthesize(..) | CallStack::CheckDeployment(..) => true,
-        _ => false,
-    };
+    let in_dummy_mode = matches!(call_stack, CallStack::Synthesize(..) | CallStack::CheckDeployment(..));
 
     // Decode the program name, exiting gracefully in dummy mode if it fails.
     let program_name = match Identifier::from_field(program_name_as_field) {
@@ -896,7 +1236,7 @@ fn resolve_dynamic_target<'a, N: Network>(
 
     // Retrieve the optional external stack.
     let external_stack = match stack.program().id() == &program_id {
-        false => match stack.get_external_stack(&program_id) {
+        false => match stack.get_stack_unchecked(&program_id) {
             Ok(ext_stack) => Some(ext_stack),
             Err(_) if in_dummy_mode => {
                 return Ok(None);

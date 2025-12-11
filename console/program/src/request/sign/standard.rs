@@ -81,7 +81,7 @@ impl<N: Network> Request<N> {
         // Retrieve the network ID.
         let network_id = U16::new(N::ID);
         // Compute the function ID.
-        let function_id = compute_function_id(&network_id, &program_id, &function_name, false)?;
+        let function_id = compute_function_id(&network_id, &program_id, &function_name)?;
 
         // Construct the hash input as `(r * G, pk_sig, pr_sig, signer, [tvk, tcm, function ID, is_root, program checksum?, input IDs])`.
         let mut message = Vec::with_capacity(9 + 2 * inputs.len());
@@ -96,7 +96,13 @@ impl<N: Network> Request<N> {
         let mut input_ids = Vec::with_capacity(inputs.len());
 
         // Prepare the inputs.
-        for (index, (input, input_type)) in inputs.iter().zip_eq(input_types).enumerate() {
+        ensure!(
+            inputs.len() == input_types.len(),
+            "Expected {} inputs, but {} were provided.",
+            input_types.len(),
+            inputs.len()
+        );
+        for (index, (input, input_type)) in inputs.iter().zip(input_types).enumerate() {
             // Convert index to u16.
             let index = u16::try_from(index).or_halt_with::<N>("Input index exceeds u16");
             // Process the inputs.
@@ -128,7 +134,7 @@ impl<N: Network> Request<N> {
                 // A record input is computed to its serial number.
                 ValueType::Record(record_name) => {
                     let input_id =
-                        InputID::record(&program_id, &record_name, input, &signer, &view_key, &sk_sig, sk_tag)?;
+                        InputID::record(&program_id, record_name, input, &signer, &view_key, &sk_sig, sk_tag)?;
 
                     // Extract the components for the message.
                     if let InputID::Record(commitment, gamma, _, _, tag) = input_id {
@@ -188,6 +194,9 @@ impl<N: Network> Request<N> {
             tcm,
             scm,
             caller_input_ids: None,
+            caller_inputs: None,
+            caller_output_types: None,
+            caller_request: None,
         })
     }
 }

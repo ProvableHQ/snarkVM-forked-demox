@@ -390,6 +390,7 @@ function dummy:
         deployment_0.edition() + 1,
         deployment_0.program().clone(),
         deployment_0.verifying_keys().clone(),
+        Vec::new(),
         deployment_0.program_checksum(),
         deployment_0.program_owner(),
     )?;
@@ -435,6 +436,7 @@ function dummy:
         1,
         program.clone(),
         deployment_0.verifying_keys().clone(),
+        Vec::new(),
         Some(deployment_0.program().to_checksum()),
         Some(address),
     )?;

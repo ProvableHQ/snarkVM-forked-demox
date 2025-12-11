@@ -17,7 +17,7 @@ use circuit::{
     Aleo,
     Poseidon2,
     Poseidon8,
-    merkle_tree::MerkleTree,
+    RecordDataTree,
     traits::{ToField, ToFields},
 };
 
@@ -28,37 +28,41 @@ type CircuitPH<A> = Poseidon2<A>;
 type ConsoleLH<N> = console::algorithms::Poseidon8<N>;
 type ConsolePH<N> = console::algorithms::Poseidon2<N>;
 
-pub type RecordMerkleTree<A> = MerkleTree<A, CircuitLH<A>, CircuitPH<A>, RECORD_DATA_TREE_DEPTH>;
-
 /// An assignment for the record translation circuit.
 #[derive(Clone, Debug)]
 pub struct TranslationAssignment<N: Network> {
-    /// The static record.
+    /// The static record (whether external or not).
     pub(super) record_static: Record<N, Plaintext<N>>,
-    /// The ID of the program where the static record is defined.
-    pub(super) program_id: ProgramID<N>,
-    /// The function ID of the caller.
-    pub(super) function_id: Field<N>,
-    /// The name of the static record.
-    pub(super) record_name: Identifier<N>,
-    /// The dynamic record representing the static one.
+    /// The dynamic record.
     pub(super) record_dynamic: DynamicRecord<N>,
-    /// True if the dynamic record is being translated to the static one, false if translation is happening in the opposite direction.
-    pub(super) to_static_record: bool,
+    /// The ID of the program where the static record is defined (whether external or not), to be embedded as a constant.
+    pub(super) program_id: ProgramID<N>,
+    /// The function ID of the callee in the dynamic call.
+    pub(super) function_id: Field<N>,
+    /// The name of the static record (to be embedded as a constant).
+    pub(super) record_name: Identifier<N>,
+    /// True if translation is happening for an input to `dynamic.call` (static record is being produced) or an output of `dynamic.call` (static record is being consumed).
+    pub(super) is_input: bool,
+    /// Whether the value type corresponding to the static record is `Record` or that of an `ExternalRecord`.
+    pub(super) static_is_external: bool,
     /// The number of times a translation circuit has been invoked in the current batch.
     pub(super) translation_count: u16,
-    /// The view key of the transaction which produces or consumes the dynamic record.
+    /// The view key of the transition containing the dynamic call.
     pub(super) tvk: Field<N>,
-    /// Input or output index of the record.
-    pub(super) register_index: u16,
+    /// Index of the input operand or output destination that contains the (dynamic and static) record.
+    // Note that the first three dynamic.call operands are reserved for call-related data, *however* this operand index still starts at 0 and is the same for caller and callee.
+    pub(super) input_output_index: u16,
     /// The ID of the dynamic record.
     pub(super) id_dynamic: Field<N>,
-    /// The commitment (if producing `record_static`) or serial number (if consuming `record_static`) of the static record.
+    /// The ID of the static record:
+    /// - If the static record is external, this is its `InputID` = `OutputID`.
+    /// - If the static record is not external, this is
+    ///    - Its `InputID`, i. e. its serial number, if the record is an input.
+    ///    - Its `OutputID`, i. e. its commitment, if the record is an output.
     pub(super) id_static: Field<N>,
-    /// The record view key of the static record.
+    /// The record view key of the static record. Irrelevant if `static_is_external` is true.
     pub(super) record_view_key: Field<N>,
-    /// The additional point used to produce the record commitment and serial number.
-    /// Irrelevant if `to_static_record` is false.
+    /// The additional point used to produce the serial number. Irrelevant if `is_input` is false or `static_is_external` is true.
     pub(super) gamma: Group<N>,
 }
 
@@ -66,18 +70,19 @@ impl<N: Network> TranslationAssignment<N> {
     /// Initializes a new translation assignment.
     pub fn new(
         record_static: Record<N, Plaintext<N>>,
+        record_dynamic: DynamicRecord<N>,
         program_id: ProgramID<N>,
         function_id: Field<N>,
         record_name: Identifier<N>,
-        record_dynamic: DynamicRecord<N>,
-        to_static_record: bool,
+        is_input: bool,
+        static_is_external: bool,
         translation_count: u16,
         tvk: Field<N>,
-        register_index: u16,
+        input_output_index: u16,
         id_dynamic: Field<N>,
         id_static: Field<N>,
-        record_view_key: Field<N>,
-        gamma: Group<N>,
+        record_view_key: Option<Field<N>>,
+        gamma: Option<Group<N>>,
     ) -> Self {
         Self {
             record_static,
@@ -85,14 +90,15 @@ impl<N: Network> TranslationAssignment<N> {
             function_id,
             record_name,
             record_dynamic,
-            to_static_record,
+            is_input,
+            static_is_external,
             translation_count,
             tvk,
-            register_index,
+            input_output_index,
             id_dynamic,
             id_static,
-            record_view_key,
-            gamma,
+            record_view_key: record_view_key.unwrap_or_else(Field::zero),
+            gamma: gamma.unwrap_or_else(Group::zero),
         }
     }
 
@@ -105,7 +111,7 @@ impl<N: Network> TranslationAssignment<N> {
         assert_eq!(A::count(), (0, 1, 0, 0, (0, 0, 0)));
         A::reset();
 
-        // ******** Initial constants
+        // ******** Constants
 
         // Inject the program ID as `Mode::Constant`.
         let circuit_program_id = circuit::ProgramID::<A>::constant(self.program_id);
@@ -113,29 +119,34 @@ impl<N: Network> TranslationAssignment<N> {
         // Inject the record name as `Mode::Constant`.
         let circuit_record_name = circuit::Identifier::<A>::constant(self.record_name);
 
-        // ******** Public inputs and field-name constants
+        // ******** Public inputs
 
         // Inject the translation-direction flag as `Mode::Public`.
-        let circuit_to_static_record = circuit::Boolean::<A>::new(circuit::Mode::Public, self.to_static_record);
+        let circuit_is_input = circuit::Boolean::<A>::new(circuit::Mode::Public, self.is_input);
+
+        // Inject the external-record flag as `Mode::Public`.
+        let circuit_static_is_external = circuit::Boolean::<A>::new(circuit::Mode::Public, self.static_is_external);
 
         // Inject the calling function id as `Mode::Public`.
         let circuit_function_id = circuit::Field::<A>::new(circuit::Mode::Public, self.function_id);
 
         // Inject the translation count as `Mode::Public`.
+        // TODO (@d0cd) This can be optimized by just injecting a field element.
         let _circuit_translation_count =
             circuit::U16::<A>::new(circuit::Mode::Public, console::types::U16::<N>::new(self.translation_count));
 
         // Inject the register index as `Mode::Public`.
-        let circuit_register_index =
-            circuit::U16::<A>::new(circuit::Mode::Public, console::types::U16::<N>::new(self.register_index));
+        // TODO (@d0cd) This can be optimized by just injecting a field element.
+        let circuit_input_output_index =
+            circuit::U16::<A>::new(circuit::Mode::Public, console::types::U16::<N>::new(self.input_output_index));
 
-        // Inject the commitment or serial number of the static record as `Mode::Public`.
+        // Inject the commitment or serial number of the non-external record (if `static_is_external`) or the input/output ID of the external record (if not `static_is_external`) as `Mode::Public`.
         let circuit_id_static = circuit::Field::<A>::new(circuit::Mode::Public, self.id_static);
 
         // Inject the ID of the dynamic record as `Mode::Public`.
         let circuit_id_dynamic = circuit::Field::<A>::new(circuit::Mode::Public, self.id_dynamic);
 
-        // ******** Private inputs
+        // ******** Private inputs (including implicit constants such as record-field names)
 
         // Inject the static record as `Mode::Private`.
         let circuit_record_static =
@@ -156,7 +167,11 @@ impl<N: Network> TranslationAssignment<N> {
 
         // ******** Computing the IDs of the dynamic and static records
 
-        let actual_id_dynamic = circuit_record_dynamic.to_id(circuit_function_id, circuit_tvk, circuit_register_index);
+        let actual_id_dynamic = circuit_record_dynamic.to_id(
+            circuit_function_id.clone(),
+            circuit_tvk.clone(),
+            circuit_input_output_index.clone(),
+        );
 
         let circuit_static_commitment =
             circuit_record_static.to_commitment(&circuit_program_id, &circuit_record_name, &circuit_record_view_key);
@@ -166,10 +181,32 @@ impl<N: Network> TranslationAssignment<N> {
             circuit_static_commitment.clone(),
         );
 
+        // Input/output ID of the static record if it is not external (serial number of or commitment)
+        let actual_id_static_non_external =
+            circuit::Field::<A>::ternary(&circuit_is_input, &circuit_static_serial_number, &circuit_static_commitment);
+
+        // Input/output ID of the static record if it is external
+        // TODO All instances of this code should point to a single place
+        // instead of being duplicated; and the fact that the InputID and
+        // OutputID cases are the same for ExternalRecords could/should be
+        // enforced by the code.
+        let actual_id_static_external = {
+            let mut preimage = Vec::new();
+            preimage.push(circuit_function_id);
+            preimage.extend(circuit_record_static.to_fields());
+            preimage.push(circuit_tvk);
+            // TODO (dynamic_dispatch): This conversion will go away if we
+            // implement the optimisation in one of the previous TODOs to treat
+            // input_output_index as a Field.
+            preimage.push(circuit_input_output_index.to_field());
+
+            A::hash_psd8(&preimage)
+        };
+
         let actual_id_static = circuit::Field::<A>::ternary(
-            &circuit_to_static_record,
-            &circuit_static_serial_number,
-            &circuit_static_commitment,
+            &circuit_static_is_external,
+            &actual_id_static_external,
+            &actual_id_static_non_external,
         );
 
         // ******** Merkelizing the static-record data
@@ -189,8 +226,7 @@ impl<N: Network> TranslationAssignment<N> {
             })
             .collect::<Vec<Vec<circuit::Field<A>>>>();
 
-        let circuit_tree =
-            RecordMerkleTree::<A>::new(circuit_leaf_hasher, circuit_path_hasher, &circuit_leaves).unwrap();
+        let circuit_tree = RecordDataTree::<A>::new(circuit_leaf_hasher, circuit_path_hasher, &circuit_leaves).unwrap();
         let circuit_data_root = circuit_tree.root();
 
         // ******** Assertions
@@ -210,24 +246,26 @@ impl<N: Network> TranslationAssignment<N> {
     /// # Operation outline
     /// The `[[ ]]` notation is used to denote public inputs or constants.
     /// ```ignore
-    ///     cm = commit(static_record, [[program_id]], [[record_name]], record_view_key)
+    ///     cm = commit([[program_id]], [[record_name]], record_static, record_view_key)
     ///     sn = serial_number(cm, gamma)
-    ///     internal_id_static_record = to_static_record ? sn : cm
-    ///     internal_id_dynamic_record = HashPSD8([[calling_function_id]] | dynamic_record | tvk | [[register_index]])
+    ///     actual_id_non_external = is_input ? sn : cm
+    ///     actual_id_external =  HashPSD8([[function_id]] | record_static | tvk | [[input_output_index]])
+    ///     actual_id_static = is_external ? actual_id_external : actual_id_non_external
+    ///     actual_id_dynamic = HashPSD8([[function_id]] | record_dynamic | tvk | [[input_output_index]])
     ///
-    ///     assert static_record.owner == dynamic_record.owner
-    ///     assert static_record.nonce == dynamic_record.nonce
-    ///     assert static_record.version == dynamic_record.version
-    ///     assert merkleize(static_record) == dynamic_record.root
-    ///     assert [[id_static_record]] == internal_id_static_record
-    ///     assert [[id_dynamic_record]] == internal_id_dynamic_record
+    ///     assert record_static.owner == record_dynamic.owner
+    ///     assert record_static.nonce == record_dynamic.nonce
+    ///     assert record_static.version == record_dynamic.version
+    ///     assert merkleize(record_static) == record_dynamic.root
+    ///     assert [[id_record_static]] == actual_id_static
+    ///     assert [[id_record_dynamic]] == actual_id_dynamic
     /// ```
     pub fn to_circuit_assignment<A: circuit::Aleo<Network = N>>(&self) -> Result<circuit::Assignment<N::Field>> {
         self.to_circuit_assignment_internal::<A>()?;
-        Stack::log_circuit::<A>(format_args!(
-            "Translation circuit for dynamic record with nonce {}",
-            self.record_static.nonce()
-        ));
+        Stack::log_circuit::<A>(
+            format_args!("Translation circuit for dynamic record with nonce {}", self.record_static.nonce()),
+            "TranslationAssignment".to_string(),
+        );
         Ok(A::eject_assignment_and_reset())
     }
 }

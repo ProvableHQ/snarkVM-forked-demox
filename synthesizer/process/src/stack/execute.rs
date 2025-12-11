@@ -210,11 +210,13 @@ impl<N: Network> Stack<N> {
         })?;
         lap!(timer, "Verify the input types");
 
-        // Retrieve the program checksum, if the program has a constructor or if the request is dynamic.
-        let program_checksum = match self.program().contains_constructor() || console_request.is_dynamic() {
+        // Retrieve the program checksum, if the program has a constructor.
+        let program_checksum = match self.program().contains_constructor() {
             true => Some(self.program_checksum_as_field()?),
             false => None,
         };
+
+        let call_stack_type = call_stack.type_as_string();
 
         // Ensure the request is well-formed.
         ensure!(
@@ -237,6 +239,9 @@ impl<N: Network> Stack<N> {
 
         // If a program checksum was passed in, Inject it as `Mode::Public`.
         let program_checksum = program_checksum.map(|c| circuit::Field::<A>::new(circuit::Mode::Public, c));
+
+        // Set the request.
+        registers.set_request(console_request.clone());
 
         use circuit::{Eject, Inject};
 
@@ -273,7 +278,7 @@ impl<N: Network> Stack<N> {
 
         lap!(timer, "Initialize the registers");
 
-        Self::log_circuit::<A>("Request");
+        Self::log_circuit::<A>("Request", call_stack_type.clone());
 
         // Retrieve the number of constraints for verifying the request in the circuit.
         let num_request_constraints = A::num_constraints();
@@ -414,7 +419,7 @@ impl<N: Network> Stack<N> {
             })
             .collect::<Vec<_>>();
 
-        Self::log_circuit::<A>(format!("Function '{}()'", function.name()));
+        Self::log_circuit::<A>(format!("Function '{}()'", function.name()), call_stack_type.clone());
 
         // Retrieve the number of constraints for executing the function in the circuit.
         let num_function_constraints = A::num_constraints().saturating_sub(num_request_constraints);
@@ -440,17 +445,16 @@ impl<N: Network> Stack<N> {
             outputs,
             &output_types,
             &output_registers,
-            request.is_dynamic(),
         );
         lap!(timer, "Construct the response");
 
-        Self::log_circuit::<A>("Response");
+        Self::log_circuit::<A>("Response", call_stack_type.clone());
 
         // Retrieve the number of constraints for verifying the response in the circuit.
         let num_response_constraints =
             A::num_constraints().saturating_sub(num_request_constraints).saturating_sub(num_function_constraints);
 
-        Self::log_circuit::<A>("Complete");
+        Self::log_circuit::<A>("Complete", call_stack_type.clone());
 
         // Eject the response.
         let response = response.eject_value();
@@ -489,6 +493,7 @@ impl<N: Network> Stack<N> {
         if let CallStack::Authorize(_, _, authorization) = registers.call_stack_ref() {
             // Construct the transition.
             let transition = Transition::from(&console_request, &response, &output_types, &output_registers)?;
+
             // Add the transition to the authorization.
             authorization.insert_transition(transition)?;
             lap!(timer, "Save the transition");
@@ -513,6 +518,7 @@ impl<N: Network> Stack<N> {
             registers.ensure_console_and_circuit_registers_match()?;
 
             // Construct the transition.
+            // TODO(perf): we already have the transition from the Authorization at this point.
             let transition = Transition::from(&console_request, &response, &output_types, &output_registers)?;
 
             // Retrieve the proving key.
@@ -532,6 +538,7 @@ impl<N: Network> Stack<N> {
                 console_request.input_ids(),
                 &transition,
                 (proving_key, assignment),
+                registers.record_translation_data(),
                 metrics,
             )?;
         }
@@ -561,7 +568,7 @@ impl<N: Network> Stack<N> {
 impl<N: Network> Stack<N> {
     /// Prints the current state of the circuit.
     #[allow(unused_variables)]
-    pub(crate) fn log_circuit<A: circuit::Aleo<Network = N>>(scope: impl std::fmt::Display) {
+    pub(crate) fn log_circuit<A: circuit::Aleo<Network = N>>(scope: impl std::fmt::Display, call_stack_type: String) {
         #[cfg(debug_assertions)]
         {
             use snarkvm_utilities::dev_println;
@@ -577,7 +584,7 @@ impl<N: Network> Stack<N> {
 
             // Print the log.
             dev_println!(
-                "{is_satisfied} {scope:width$} (Constant: {num_constant}, Public: {num_public}, Private: {num_private}, Constraints: {num_constraints}, NonZeros: {num_nonzeros:?})",
+                "{is_satisfied} {call_stack_type:width$} {scope:width$} (Constant: {num_constant}, Public: {num_public}, Private: {num_private}, Constraints: {num_constraints}, NonZeros: {num_nonzeros:?})",
                 width = 20
             );
         }

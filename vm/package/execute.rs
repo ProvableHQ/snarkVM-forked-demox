@@ -62,6 +62,7 @@ impl<N: Network> Package<N> {
         let function = program.get_function(&function_name)?;
         // Save all the prover and verifier files for any function calls that are made.
         for instruction in function.instructions() {
+            // TODO(dynamic_dispatch): review all locations using Call and consider adding CallDynamic variants.
             if let Instruction::Call(call) = instruction {
                 // Retrieve the external stack and resource.
                 let (external_stack, resource) = match call.operator() {
@@ -120,7 +121,7 @@ impl<N: Network> Package<N> {
             false => VarunaVersion::V2,
         };
         // Prepare the trace.
-        trace.prepare(&query)?;
+        trace.prepare(&process, &query)?;
 
         // Prove the execution.
         let execution = trace.prove_execution::<A, R>(&locator.to_string(), varuna_version, rng)?;

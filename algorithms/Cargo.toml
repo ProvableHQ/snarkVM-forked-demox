@@ -144,3 +144,4 @@ serial = [
 ]
 test_exports = [ ]
 dev-print = [ "snarkvm-utilities/dev-print" ]
+snark-print = [ ]

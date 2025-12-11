@@ -21,6 +21,7 @@ use console::{
     network::Network,
     prelude::{Result, bail},
     program::{
+        DynamicRecord,
         Future,
         Identifier,
         Literal,
@@ -31,6 +32,7 @@ use console::{
         Record,
         Register,
         RegisterType,
+        Request,
         Value,
         ValueType,
     },
@@ -39,6 +41,47 @@ use console::{
 use rand::{CryptoRng, Rng};
 use snarkvm_synthesizer_snark::{ProvingKey, VerifyingKey};
 
+// TODO (dynamic_dispatch) document
+// TODO (dynamic_dispatch) move to a better place (cannot be in process:Translation because of circular dependencies)
+// TODO (dynamic_dispatch) change visibility of internals, add constructors
+/// Data collected during execution to prove record translation in dynamic
+/// calls. It largely mirrors the `TranslationAssignment` struct in
+/// `process::trace::translation::assignment.rs`.
+#[derive(Clone, Debug)]
+pub struct RecordTranslationData<N: Network> {
+    /// The static record.
+    pub record_static: Record<N, Plaintext<N>>,
+    /// The dynamic record.
+    pub record_dynamic: DynamicRecord<N>,
+    /// The ID of the program where the static record is defined (whether external or not).
+    pub program_id: ProgramID<N>,
+    /// The function ID of the callee in the dynamic call.
+    pub function_id: Field<N>,
+    /// The name of the static record.
+    pub record_name: Identifier<N>,
+    /// True if translation is happening for an input to `dynamic.call` (static record is being produced) or an output of `dynamic.call` (static record is being consumed).
+    pub is_input: bool,
+    /// Whether the value type corresponding to the static record is `Record` or `ExternalRecord`.
+    pub static_is_external: bool,
+    /// The view key of the transition containing the dynamic call.
+    pub tvk: Field<N>,
+    /// The record view key of the static record. Irrelevant if `static_is_external` is true.
+    pub record_view_key: Option<Field<N>>,
+    /// The additional point used to produce the serial number. Irrelevant if `is_input` is false or `static_is_external` is true.
+    pub gamma: Option<Group<N>>,
+    // Note that the first three dynamic.call operands are reserved for call-related data, *however* this operand index still starts at 0 and is the same for caller and callee.
+    pub input_output_index: u16,
+    /// Index of the input operand or output destination that contains the (dynamic and static) record.
+    // Note that the first three dynamic.call operands are reserved for call-related data, *however* this operand index still starts at 0 and is the same for caller and callee.
+    pub id_dynamic: Field<N>,
+    /// The ID of the static record:
+    /// - If the static record is external, this is its `InputID` = `OutputID`.
+    /// - If the static record is not external, this is
+    ///    - Its `InputID`, i. e. its serial number, if the record is an input.
+    ///    - Its `OutputID`, i. e. its commitment, if the record is an output.
+    pub id_static: Field<N>,
+}
+
 /// This trait is intended to be implemented only by `snarkvm_synthesizer_process::Stack`.
 ///
 /// We make it a trait only to avoid circular dependencies.
@@ -46,26 +89,54 @@ pub trait StackTrait<N: Network> {
     /// Returns `true` if the proving key for the given function name exists.
     fn contains_proving_key(&self, function_name: &Identifier<N>) -> bool;
 
+    /// Returns `true` if the translation proving key for the given record name exists.
+    fn contains_translation_proving_key(&self, record_name: &Identifier<N>) -> bool;
+
     /// Returns the proving key for the given function name.
     fn get_proving_key(&self, function_name: &Identifier<N>) -> Result<ProvingKey<N>>;
+
+    /// Returns the translation proving key for the given record name.
+    fn get_translation_proving_key(&self, record_name: &Identifier<N>) -> Result<ProvingKey<N>>;
 
     /// Inserts the proving key for the given function name.
     fn insert_proving_key(&self, function_name: &Identifier<N>, proving_key: ProvingKey<N>) -> Result<()>;
 
+    /// Inserts the translation proving key for the given record name.
+    fn insert_translation_proving_key(&self, record_name: &Identifier<N>, proving_key: ProvingKey<N>) -> Result<()>;
+
     /// Removes the proving key for the given function name.
     fn remove_proving_key(&self, function_name: &Identifier<N>);
+
+    /// Removes the translation proving key for the given record name.
+    fn remove_translation_proving_key(&self, record_name: &Identifier<N>);
 
     /// Returns `true` if the verifying key for the given function name exists.
     fn contains_verifying_key(&self, function_name: &Identifier<N>) -> bool;
 
+    /// Returns `true` if the translation verifying key for the given record name exists.
+    fn contains_translation_verifying_key(&self, record_name: &Identifier<N>) -> bool;
+
     /// Returns the verifying key for the given function name.
     fn get_verifying_key(&self, function_name: &Identifier<N>) -> Result<VerifyingKey<N>>;
+
+    /// Returns the translation verifying key for the given record name.
+    fn get_translation_verifying_key(&self, record_name: &Identifier<N>) -> Result<VerifyingKey<N>>;
 
     /// Inserts the verifying key for the given function name.
     fn insert_verifying_key(&self, function_name: &Identifier<N>, verifying_key: VerifyingKey<N>) -> Result<()>;
 
+    /// Inserts the given translation verifying key for the given record name.
+    fn insert_translation_verifying_key(
+        &self,
+        record_name: &Identifier<N>,
+        verifying_key: VerifyingKey<N>,
+    ) -> Result<()>;
+
     /// Removes the verifying key for the given function name.
     fn remove_verifying_key(&self, function_name: &Identifier<N>);
+
+    /// Removes the translation verifying key for the given record name.
+    fn remove_translation_verifying_key(&self, record_name: &Identifier<N>);
 
     /// Checks that the given value matches the layout of the value type.
     fn matches_value_type(&self, value: &Value<N>, value_type: &ValueType<N>) -> Result<()>;
@@ -112,6 +183,14 @@ pub trait StackTrait<N: Network> {
 
     /// Returns the external stack for the given program ID.
     fn get_external_stack(&self, program_id: &ProgramID<N>) -> Result<Arc<Self>>;
+
+    /// Returns the external stack for the given program ID, without checking that:
+    ///
+    /// - The program ID is different from the current program ID.
+    /// - The program ID is imported by the current program.
+    ///
+    /// This function is only to be used for resolution during dynamic dispatch.
+    fn get_stack_unchecked(&self, program_id: &ProgramID<N>) -> Result<Arc<Self>>;
 
     /// Returns the function with the given function name.
     fn get_function(&self, function_name: &Identifier<N>) -> Result<Function<N>>;
@@ -188,6 +267,18 @@ pub trait RegistersSigner<N: Network>: RegistersTrait<N> {
 
     /// Sets the transition view key.
     fn set_tvk(&mut self, tvk: Field<N>);
+
+    /// Returns the record translation data.
+    fn record_translation_data(&self) -> Result<&Vec<RecordTranslationData<N>>>;
+
+    /// Sets the record translation data.
+    fn insert_record_translation_data(&mut self, new_record_translation_data: RecordTranslationData<N>);
+
+    /// Returns the request.
+    fn request(&self) -> Result<&Request<N>>;
+
+    /// Sets the request.
+    fn set_request(&mut self, request: Request<N>);
 }
 
 pub trait RegistersTrait<N: Network> {

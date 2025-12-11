@@ -26,7 +26,10 @@ impl<N: Network> Request<N> {
         function_name: Identifier<N>,
         inputs: impl ExactSizeIterator<Item = impl TryInto<Value<N>>>,
         input_types: &[ValueType<N>],
+        caller_inputs: impl ExactSizeIterator<Item = impl TryInto<Value<N>>>,
         caller_input_types: &[ValueType<N>],
+        caller_output_types: &[ValueType<N>],
+        caller_request: &Request<N>,
         root_tvk: Option<Field<N>>,
         is_root: bool,
         program_checksum: Option<Field<N>>,
@@ -37,6 +40,20 @@ impl<N: Network> Request<N> {
             bail!("Expected {} inputs, but {} were provided.", input_types.len(), inputs.len())
         }
 
+        // Ensure the number of inputs matches the number of input types.
+        if caller_input_types.len() != caller_inputs.len() {
+            bail!("Expected {} caller inputs, but {} were provided.", caller_input_types.len(), caller_inputs.len())
+        }
+
+        // Ensure the number of caller and callee inputs match.
+        if caller_inputs.len() != inputs.len() {
+            bail!(
+                "Number of caller inputs ({}) doesn't match that of callee ones ({}).",
+                caller_inputs.len(),
+                inputs.len()
+            )
+        }
+
         // Parse the inputs.
         let mut parsed_inputs = Vec::with_capacity(inputs.len());
         for (i, input) in inputs.enumerate() {
@@ -44,6 +61,14 @@ impl<N: Network> Request<N> {
             parsed_inputs.push(input);
         }
         let inputs = parsed_inputs;
+
+        // Parse the caller inputs.
+        let mut parsed_caller_inputs = Vec::with_capacity(caller_inputs.len());
+        for (i, input) in caller_inputs.into_iter().enumerate() {
+            let input = input.try_into().map_err(|_| anyhow!("Failed to parse caller input #{i}"))?;
+            parsed_caller_inputs.push(input);
+        }
+        let caller_inputs = parsed_caller_inputs;
 
         // Retrieve `sk_sig`.
         let sk_sig = private_key.sk_sig();
@@ -82,7 +107,7 @@ impl<N: Network> Request<N> {
         // Retrieve the network ID.
         let network_id = U16::new(N::ID);
         // Compute the function ID.
-        let function_id = compute_function_id(&network_id, &program_id, &function_name, true)?;
+        let function_id = compute_function_id(&network_id, &program_id, &function_name)?;
 
         // Construct the hash input as `(r * G, pk_sig, pr_sig, signer, [tvk, tcm, function ID, is_root, program checksum?, input IDs])`.
         let mut message = Vec::with_capacity(9 + 2 * inputs.len());
@@ -99,7 +124,13 @@ impl<N: Network> Request<N> {
         let mut caller_input_ids = Vec::with_capacity(inputs.len());
 
         // Prepare the inputs.
-        for (index, (input, input_type)) in inputs.iter().zip_eq(input_types).enumerate() {
+        ensure!(
+            inputs.len() == input_types.len(),
+            "Expected {} inputs, but {} were provided.",
+            input_types.len(),
+            inputs.len()
+        );
+        for (index, (input, input_type)) in inputs.iter().zip(input_types).enumerate() {
             // Convert index to u16.
             let index = u16::try_from(index).or_halt_with::<N>("Input index exceeds u16");
 
@@ -114,7 +145,7 @@ impl<N: Network> Request<N> {
                     ValueType::Private(..) => InputID::private(function_id, input, tvk, index),
                     // A record input is computed to its serial number.
                     ValueType::Record(record_name) => {
-                        InputID::record(&program_id, &record_name, input, &signer, &view_key, &sk_sig, sk_tag)
+                        InputID::record(&program_id, record_name, input, &signer, &view_key, &sk_sig, sk_tag)
                     }
                     // An external record input is hashed (using `tvk`) to a field element.
                     ValueType::ExternalRecord(..) => InputID::external_record(function_id, input, tvk, index),
@@ -149,13 +180,16 @@ impl<N: Network> Request<N> {
             // Retrieve the caller input type.
             // Note: This indexing is safe because we have already ensured that the lengths match.
             let caller_input_type = &caller_input_types[index as usize];
+            // Retrieve the caller input.
+            // Note: This indexing is safe because we have already ensured that the lengths match.
+            let caller_input = &caller_inputs[index as usize];
             // Compute the caller input ID.
-            let caller_input_id = compute_input_id(input, caller_input_type)?;
+            let caller_input_id = compute_input_id(caller_input, caller_input_type)?;
             // Update the caller input IDs
             caller_input_ids.push(caller_input_id);
         }
 
-        // Compute `challenge` as `HashToScalar(r * G, pk_sig, pr_sig, signer, [tvk, tcm, function ID, is_root, program checksum?, input IDs, dynamic input IDs?])`.
+        // Compute `challenge` as `HashToScalar(r * G, pk_sig, pr_sig, signer, [tvk, tcm, function ID, is_root, program checksum?, input IDs])`.
         let challenge = N::hash_to_scalar_psd8(&message)?;
         // Compute `response` as `r - challenge * sk_sig`.
         let response = r - challenge * sk_sig;
@@ -173,6 +207,9 @@ impl<N: Network> Request<N> {
             tcm,
             scm,
             caller_input_ids: Some(caller_input_ids),
+            caller_inputs: Some(caller_inputs),
+            caller_output_types: Some(caller_output_types.to_vec()),
+            caller_request: Some(Box::new(caller_request.clone())),
         })
     }
 }

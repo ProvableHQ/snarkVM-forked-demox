@@ -1583,6 +1583,7 @@ function do:
             deployment.edition(),
             deployment.program().clone(),
             vks_with_overreport,
+            Vec::new(),
             deployment.program_checksum(),
             deployment.program_owner(),
         )
@@ -1644,6 +1645,7 @@ function do:
             deployment.edition(),
             deployment.program().clone(),
             vks_with_underreport,
+            Vec::new(),
             deployment.program_checksum(),
             deployment.program_owner(),
         )
@@ -1725,6 +1727,7 @@ function do:
             deployment.edition(),
             deployment.program().clone(),
             vks_with_underreport,
+            Vec::new(),
             deployment.program_checksum(),
             deployment.program_owner(),
         )
@@ -2652,7 +2655,8 @@ finalize transfer_public_to_private:
             tpk,
             tcm,
             scm,
-            None, // This transition is not dynamic.
+            None,
+            None,
         )
         .unwrap();
 
@@ -2782,7 +2786,8 @@ finalize transfer_public_to_private:
             tpk,
             tcm,
             scm,
-            None, // This transition is not dynamic.
+            None,
+            None,
         )
         .unwrap();
         // Get the state root.
@@ -2918,7 +2923,8 @@ function add_thrice:
             tpk,
             tcm,
             scm,
-            None, // This transition is not dynamic.
+            None,
+            None,
         )
         .unwrap();
 

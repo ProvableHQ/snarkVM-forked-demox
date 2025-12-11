@@ -47,6 +47,7 @@ use console::{
     account::PrivateKey,
     network::prelude::*,
     program::{
+        DynamicFuture,
         Identifier,
         Literal,
         Locator,
@@ -56,6 +57,7 @@ use console::{
         Request,
         Response,
         Value,
+        ValueType,
         compute_function_id,
     },
     types::{Field, U16, U64},
@@ -68,6 +70,7 @@ use snarkvm_synthesizer_program::{
     Command,
     FinalizeGlobalState,
     FinalizeOperation,
+    Function,
     Instruction,
     Program,
     StackTrait,
@@ -117,6 +120,9 @@ impl<N: Network> Process<N> {
             stack.synthesize_key::<A, _>(function_name, rng)?;
             lap!(timer, "Synthesize circuit keys for {function_name}");
         }
+        let rng = &mut rand::thread_rng();
+        let credits_record_name = Identifier::<N>::from_str("credits").unwrap();
+        stack.synthesize_translation_key::<A, _>(&credits_record_name, rng)?;
         lap!(timer, "Synthesize credits program keys");
 
         // Add the 'credits.aleo' stack to the process.
@@ -455,6 +461,17 @@ impl<N: Network> Process<N> {
         // Synthesize the proving and verifying key.
         self.get_stack(program_id)?.synthesize_key::<A, R>(function_name, rng)
     }
+
+    /// Synthesizes the translation key for the given record name.
+    #[inline]
+    pub fn synthesize_translation_key<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
+        &self,
+        program_id: &ProgramID<N>,
+        record_name: &Identifier<N>,
+        rng: &mut R,
+    ) -> Result<()> {
+        self.get_stack(program_id)?.synthesize_translation_key::<A, R>(record_name, rng)
+    }
 }
 
 #[cfg(test)]
@@ -501,7 +518,7 @@ pub mod test_helpers {
         let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
 
         // Prepare the assignments from the block store.
-        trace.prepare(&snarkvm_ledger_query::Query::from(block_store)).unwrap();
+        trace.prepare(process, &snarkvm_ledger_query::Query::from(block_store)).unwrap();
 
         // Get the locator.
         let locator = format!("{:?}:{function_name:?}", program.id());
@@ -601,7 +618,7 @@ function compute:
                 assert_eq!(trace.transitions().len(), 1);
 
                 // Prepare the trace.
-                trace.prepare(&Query::from(block_store)).unwrap();
+                trace.prepare(&process, &Query::from(block_store)).unwrap();
                 // Compute the execution.
                 trace.prove_execution::<CurrentAleo, _>("testing", VarunaVersion::V1, rng).unwrap()
             })

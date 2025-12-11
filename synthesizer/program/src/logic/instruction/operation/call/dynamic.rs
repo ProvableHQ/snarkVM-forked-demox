@@ -73,14 +73,16 @@ impl<N: Network> CallDynamic<N> {
         // Ensure that the operand types do not contain a future, dynamic future, record, or external record type.
         for type_ in &operand_types {
             match type_ {
-                ValueType::Future(_) => bail!("A future cannot be passed in as input to a dynamic call."),
-                ValueType::DynamicFuture => bail!("A dynamic future cannot be passed in as input to a dynamic call."),
                 ValueType::Record(_) => {
                     bail!("A record cannot be passed in as input to a dynamic call, use `dynamic.record` instead.")
                 }
-                ValueType::ExternalRecord(_) => bail!(
-                    "An external record cannot be passed in as input to a dynamic call, use `dynamic.record` instead."
-                ),
+                ValueType::ExternalRecord(_) => {
+                    bail!(
+                        "An external record cannot be passed in as input to a dynamic call, use `dynamic.record` instead."
+                    )
+                }
+                ValueType::Future(_) => bail!("A future cannot be passed in as input to a dynamic call."),
+                ValueType::DynamicFuture => bail!("A dynamic future cannot be passed in as input to a dynamic call."),
                 _ => {}
             }
         }
@@ -94,11 +96,11 @@ impl<N: Network> CallDynamic<N> {
         // Ensure that the destination types do not contain a future, record, or external record type.
         for type_ in &destination_types {
             match type_ {
-                ValueType::Future(_) => bail!("A dynamic call cannot return a future, use `dynamic.future` instead."),
                 ValueType::Record(_) => bail!("A dynamic call cannot return a record, use `dynamic.record` instead."),
                 ValueType::ExternalRecord(_) => {
                     bail!("A dynamic call cannot return an external record, use `dynamic.record` instead.")
                 }
+                ValueType::Future(_) => bail!("A dynamic call cannot return a future, use `dynamic.future` instead."),
                 _ => {}
             }
         }
@@ -176,6 +178,7 @@ impl<N: Network> CallDynamic<N> {
         _stack: &impl StackTrait<N>,
         _input_types: &[RegisterType<N>],
     ) -> Result<Vec<RegisterType<N>>> {
+        // TODO (@d0cd) fix for type check static records...
         Ok(self.destination_types.clone().into_iter().map(RegisterType::from).collect())
     }
 }
@@ -447,11 +450,11 @@ mod tests {
         "call.dynamic r0 r1 r2 into r3 (as u8.constant)",
         "call.dynamic r0 r1 r2 into r3 r4 (as foo.public bar.private)",
         "call.dynamic r0 r1 r2 into r3 r4 r5 (as u64.public address.private dynamic.future)",
-        "call.dynamic r0 r1 r2 with r3 (as bool.private) into r4 (as u8.private)",
-        "call.dynamic r0 r1 r2 with r3 r4 (as u8.public foo.private) into r5 (as bool.public)",
+        "call.dynamic r0 r1 r2 with r3 (as boolean.private) into r4 (as u8.private)",
+        "call.dynamic r0 r1 r2 with r3 r4 (as u8.public foo.private) into r5 (as boolean.public)",
         "call.dynamic r0 r1 r2 with r3 r4 (as u8.public foo.private) into r5 r6 (as u8.private u64.public)",
-        "call.dynamic r0 r1 r2 with r3 r4 r5 (as foo.private dynamic.record bool.public) into r6 r7 (as u8.private u64.public)",
-        "call.dynamic r0 r1 r2 with r3 r4 r5 (as foo.private bar.public bool.public) into r6 r7 r8 (as u8.private dynamic.record dynamic.future)",
+        "call.dynamic r0 r1 r2 with r3 r4 r5 (as foo.private dynamic.record boolean.public) into r6 r7 (as u8.private u64.public)",
+        "call.dynamic r0 r1 r2 with r3 r4 r5 (as foo.private bar.public boolean.public) into r6 r7 r8 (as u8.private dynamic.record dynamic.future)",
         "call.dynamic r0 r1 r2 with r3 r4 (as address.public u64.public) into r5 (as dynamic.future)",
     ];
 

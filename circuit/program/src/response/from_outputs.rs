@@ -28,10 +28,9 @@ impl<A: Aleo> Response<A> {
         outputs: Vec<Value<A>>,
         output_types: &[console::ValueType<A::Network>], // Note: Console type
         output_registers: &[Option<console::Register<A::Network>>], // Note: Console type
-        is_dynamic: bool,
     ) -> Self {
         // Compute the function ID.
-        let function_id = compute_function_id(network_id, program_id, function_name, is_dynamic);
+        let function_id = compute_function_id(network_id, program_id, function_name);
 
         // Compute the output IDs.
         let output_ids = outputs
@@ -211,7 +210,7 @@ impl<A: Aleo> Response<A> {
                             }
                         }
                     }
-                    // For an dynamic record output, compute the hash (using `tvk`) of the output.
+                    // For a dynamic record output, compute the hash (using `tvk`) of the output.
                     console::ValueType::DynamicRecord => {
                         // Prepare the index as a constant field element.
                         let output_index = Field::constant(console::Field::from_u16((num_inputs + index) as u16));
@@ -267,7 +266,7 @@ impl<A: Aleo> Response<A> {
             .collect();
 
         // Return the response.
-        Self { output_ids, outputs, is_dynamic }
+        Self { output_ids, outputs, is_dynamic: false }
     }
 }
 
@@ -373,7 +372,6 @@ mod tests {
                 outputs.clone(),
                 &output_types,
                 &output_registers,
-                is_dynamic,
             )?;
 
             // Inject the signer, network ID, program ID, function name, `tvk`, `tcm`, and outputs.
@@ -404,7 +402,6 @@ mod tests {
                     outputs,
                     &output_types,
                     &output_registers,
-                    is_dynamic,
                 );
                 assert_eq!(response, candidate.eject_value());
                 expected_count.assert_matches(

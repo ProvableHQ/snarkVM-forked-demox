@@ -19,7 +19,7 @@ mod string;
 
 use console::{
     network::prelude::*,
-    program::{Ciphertext, Plaintext, TransitionLeaf},
+    program::{Ciphertext, Plaintext, TransitionLeaf, ValueType},
     types::Field,
 };
 
@@ -180,6 +180,32 @@ impl<N: Network> Input<N> {
                 false
             }
         }
+    }
+
+    /// Returns `true` if the two inputs match on their variants.
+    pub fn variants_match(&self, other: &Self) -> bool {
+        matches!(
+            (self, other),
+            (Self::Constant(..), Self::Constant(..))
+                | (Self::Public(..), Self::Public(..))
+                | (Self::Private(..), Self::Private(..))
+                | (Self::Record(..), Self::Record(..))
+                | (Self::ExternalRecord(_), Self::ExternalRecord(_))
+                | (Self::DynamicRecord(_), Self::DynamicRecord(_))
+        )
+    }
+
+    /// Returns `true` if the input matches the expected value type.
+    pub fn is_type(&self, expected_value_type: &ValueType<N>) -> bool {
+        matches!(
+            (self, expected_value_type),
+            (Self::Constant(..), ValueType::Constant(..))
+                | (Self::Public(..), ValueType::Public(..))
+                | (Self::Private(..), ValueType::Private(..))
+                | (Self::Record(..), ValueType::Record(..))
+                | (Self::ExternalRecord(..), ValueType::ExternalRecord(..))
+                | (Self::DynamicRecord(..), ValueType::DynamicRecord)
+        )
     }
 }
 

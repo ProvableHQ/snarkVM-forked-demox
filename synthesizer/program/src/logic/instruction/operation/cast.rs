@@ -18,6 +18,7 @@ use console::{
     network::prelude::*,
     program::{
         ArrayType,
+        DynamicRecord,
         Entry,
         EntryType,
         Identifier,
@@ -46,6 +47,7 @@ pub enum CastType<N: Network> {
     Plaintext(PlaintextType<N>),
     Record(Identifier<N>),
     ExternalRecord(Locator<N>),
+    DynamicRecord,
 }
 
 impl<N: Network> CastType<N> {
@@ -62,6 +64,9 @@ impl<N: Network> Parser for CastType<N> {
         alt((
             map(tag("group.x"), |_| Self::GroupXCoordinate),
             map(tag("group.y"), |_| Self::GroupYCoordinate),
+            // We match this variant outside its usual position to ensure "dynamic.record" is not
+            // parsed as a static record with identifier "dynamic"
+            map(tag("dynamic.record"), |_| Self::DynamicRecord),
             map(pair(Locator::parse, tag(".record")), |(locator, _)| Self::ExternalRecord(locator)),
             map(pair(Identifier::parse, tag(".record")), |(identifier, _)| Self::Record(identifier)),
             map(PlaintextType::parse, Self::Plaintext),
@@ -77,6 +82,7 @@ impl<N: Network> Display for CastType<N> {
             Self::Plaintext(plaintext_type) => write!(f, "{plaintext_type}"),
             Self::Record(identifier) => write!(f, "{identifier}.record"),
             Self::ExternalRecord(locator) => write!(f, "{locator}.record"),
+            Self::DynamicRecord => write!(f, "dynamic.record"),
         }
     }
 }
@@ -111,18 +117,19 @@ impl<N: Network> ToBytes for CastType<N> {
         match self {
             Self::GroupXCoordinate => 0u8.write_le(&mut writer),
             Self::GroupYCoordinate => 1u8.write_le(&mut writer),
-            CastType::Plaintext(plaintext_type) => {
+            Self::Plaintext(plaintext_type) => {
                 2u8.write_le(&mut writer)?;
                 plaintext_type.write_le(&mut writer)
             }
-            CastType::Record(identifier) => {
+            Self::Record(identifier) => {
                 3u8.write_le(&mut writer)?;
                 identifier.write_le(&mut writer)
             }
-            CastType::ExternalRecord(locator) => {
+            Self::ExternalRecord(locator) => {
                 4u8.write_le(&mut writer)?;
                 locator.write_le(&mut writer)
             }
+            Self::DynamicRecord => 5u8.write_le(&mut writer),
         }
     }
 }
@@ -137,7 +144,8 @@ impl<N: Network> FromBytes for CastType<N> {
             2 => Ok(Self::Plaintext(PlaintextType::read_le(&mut reader)?)),
             3 => Ok(Self::Record(Identifier::read_le(&mut reader)?)),
             4 => Ok(Self::ExternalRecord(Locator::read_le(&mut reader)?)),
-            5.. => Err(error(format!("Failed to deserialize cast type variant {variant}"))),
+            5 => Ok(Self::DynamicRecord),
+            6.. => Err(error(format!("Failed to deserialize cast type variant {variant}"))),
         }
     }
 }
@@ -326,6 +334,19 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
             }
             CastType::ExternalRecord(_locator) => {
                 bail!("Illegal operation: Cannot cast to an external record.")
+            }
+            CastType::DynamicRecord => {
+                ensure!(inputs.len() == 1, "Casting to a dynamic record requires exactly 1 operand");
+
+                // TODO (dynamic dispatch) do we have access to the type of the register self.operands[0]? I would like to add the sanity check
+                //     matches!(register_type, RegisterType::Record(..) | RegisterType::ExternalRecord(..))
+                // but cannot find the type in the stack or registers objects
+
+                let record = match &inputs[0] {
+                    Value::Record(record) => record,
+                    _ => bail!("Casting to a dynamic record requires the operand value to be a record"),
+                };
+                registers.store(stack, &self.destination, Value::DynamicRecord(DynamicRecord::from_record(record)?))
             }
         }
     }
@@ -610,6 +631,24 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
             CastType::ExternalRecord(_locator) => {
                 bail!("Illegal operation: Cannot cast to an external record.")
             }
+            CastType::DynamicRecord => {
+                ensure!(inputs.len() == 1, "Casting to a dynamic record requires exactly 1 operand");
+
+                // TODO (dynamic dispatch) do we have access to the type of the register self.operands[0]? I would like to add the sanity check
+                //     matches!(register_type, RegisterType::Record(..) | RegisterType::ExternalRecord(..))
+                // but cannot find the type in the stack or registers objects
+
+                let record = match &inputs[0] {
+                    circuit::Value::Record(record) => record,
+                    _ => bail!("Casting to a dynamic record requires the operand value to be a record"),
+                };
+
+                registers.store_circuit(
+                    stack,
+                    &self.destination,
+                    circuit::Value::DynamicRecord(circuit::DynamicRecord::from_record(record)?),
+                )
+            }
         }
     }
 
@@ -662,10 +701,13 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                 self.cast_to_array(stack, registers, array_type, inputs)
             }
             CastType::Record(_record_name) => {
-                bail!("Illegal operation: Cannot cast to a record in a finalize block.")
+                bail!("Illegal operation: Cannot cast to a record in a finalize scope.")
             }
             CastType::ExternalRecord(_locator) => {
-                bail!("Illegal operation: Cannot cast to an external record.")
+                bail!("Illegal operation: Cannot cast to an external record in a finalize scope.")
+            }
+            CastType::DynamicRecord => {
+                bail!("Illegal operation: Cannot cast to a dynamic record in a finalize scope.")
             }
         }
     }
@@ -896,6 +938,13 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
             CastType::ExternalRecord(_locator) => {
                 bail!("Illegal operation: Cannot cast to an external record.")
             }
+            CastType::DynamicRecord => {
+                ensure!(input_types.len() == 1, "Casting to a dynamic record requires exactly 1 operand");
+                ensure!(
+                    matches!(input_types[0], RegisterType::Record(..) | RegisterType::ExternalRecord(..)),
+                    "Casting to a dynamic record requires a static record (whether external or not) as the operand"
+                );
+            }
         }
 
         Ok(vec![match &self.cast_type {
@@ -904,6 +953,7 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
             CastType::Plaintext(plaintext_type) => RegisterType::Plaintext(plaintext_type.clone()),
             CastType::Record(identifier) => RegisterType::Record(*identifier),
             CastType::ExternalRecord(locator) => RegisterType::ExternalRecord(*locator),
+            CastType::DynamicRecord => RegisterType::DynamicRecord,
         }])
     }
 }
@@ -1058,7 +1108,23 @@ impl<N: Network, const VARIANT: u8> Parser for CastOperation<N, VARIANT> {
             CastType::Plaintext(PlaintextType::Struct(_)) => N::MAX_STRUCT_ENTRIES,
             CastType::Plaintext(PlaintextType::Array(_)) => N::MAX_ARRAY_ELEMENTS,
             CastType::Record(_) | CastType::ExternalRecord(_) => N::MAX_RECORD_ENTRIES,
+            CastType::DynamicRecord => 1,
         };
+
+        // TODO (dynamic_dispatch) improve modularity; perhaps add a constructor that unifies checks across parse(), from_byts(), etc.
+        if cast_type == CastType::DynamicRecord {
+            if operands.len() != 1 || !matches!(operands[0], Operand::Register(Register::Locator(_))) {
+                return map_res(fail, |_: ParserResult<Self>| {
+                    Err(error("Casting to a dynamic record requires a single operand of the form r<i>"))
+                })(string);
+            }
+            if !matches!(destination, Register::Locator(_)) {
+                return map_res(fail, |_: ParserResult<Self>| {
+                    Err(error("Casting to a dynamic record requires a destination of the form r<i>"))
+                })(string);
+            }
+        }
+
         match !operands.is_empty() && (operands.len() <= max_operands) {
             true => Ok((string, Self { operands, destination, cast_type })),
             false => {
@@ -1106,6 +1172,7 @@ impl<N: Network, const VARIANT: u8> Display for CastOperation<N, VARIANT> {
             CastType::Plaintext(PlaintextType::Struct(_)) => N::MAX_STRUCT_ENTRIES,
             CastType::Plaintext(PlaintextType::Array(_)) => N::MAX_ARRAY_ELEMENTS,
             CastType::Record(_) | CastType::ExternalRecord(_) => N::MAX_RECORD_ENTRIES,
+            CastType::DynamicRecord => 1,
         };
         if self.operands.is_empty() || self.operands.len() > max_operands {
             return Err(fmt::Error);
@@ -1155,6 +1222,7 @@ impl<N: Network, const VARIANT: u8> FromBytes for CastOperation<N, VARIANT> {
             CastType::Plaintext(PlaintextType::Struct(_)) => N::MAX_STRUCT_ENTRIES,
             CastType::Plaintext(PlaintextType::Array(_)) => N::MAX_ARRAY_ELEMENTS,
             CastType::Record(_) | CastType::ExternalRecord(_) => N::MAX_RECORD_ENTRIES,
+            CastType::DynamicRecord => 1,
         };
         if num_operands.is_zero() || num_operands > max_operands {
             return Err(error(format!("The number of operands must be nonzero and <= {max_operands}")));
@@ -1176,6 +1244,7 @@ impl<N: Network, const VARIANT: u8> ToBytes for CastOperation<N, VARIANT> {
             CastType::Plaintext(PlaintextType::Struct(_)) => N::MAX_STRUCT_ENTRIES,
             CastType::Plaintext(PlaintextType::Array(_)) => N::MAX_ARRAY_ELEMENTS,
             CastType::Record(_) | CastType::ExternalRecord(_) => N::MAX_RECORD_ENTRIES,
+            CastType::DynamicRecord => 1,
         };
         if self.operands.is_empty() || self.operands.len() > max_operands {
             return Err(error(format!("The number of operands must be nonzero and <= {max_operands}")));
@@ -1301,5 +1370,35 @@ mod tests {
         }
         string.push_str(&format!("into r{} as foo", CurrentNetwork::MAX_STRUCT_ENTRIES + 1));
         assert!(Cast::<CurrentNetwork>::parse(&string).is_err(), "Parser did not error");
+    }
+
+    #[test]
+    fn test_parse_cast_into_dynamic_record() {
+        let correct_cases = ["cast r0 into r1 as dynamic.record", "cast r1 into r5 as dynamic.record"];
+
+        let incorrect_cases = [
+            // Too few operands
+            "cast into r1 as dynamic.record",
+            // Too many operands (two)
+            "cast r0 r1 into r2 as dynamic.record",
+            // Too many operands
+            "cast r0 r1 r2 into r3 as dynamic.record",
+            // Too few destinations (with tag)
+            "cast r0 into as dynamic.record",
+            // Too few destinations (without tag)
+            "cast r0 as dynamic.record",
+            // Incorrect operand structure
+            "cast r0.owner into r1 as dynamic.record",
+            // Incorrect destination structure
+            "cast r0 into r1.owner as dynamic.record",
+        ];
+
+        for case in correct_cases {
+            assert!(Cast::<CurrentNetwork>::parse(case).is_ok(), "Parser failed for: {case}");
+        }
+
+        for case in incorrect_cases {
+            assert!(Cast::<CurrentNetwork>::parse(case).is_err(), "Parser did not fail for: {case}");
+        }
     }
 }

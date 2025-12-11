@@ -64,10 +64,14 @@ impl<N: Network> Process<N> {
         // Ensure the input and output types are equivalent to the ones defined in the function.
         // We only need to check that the variant type matches because we already check the hashes in
         // the `Input::verify` and `Output::verify` functions.
-        let fee_input_variants = fee.inputs().iter().map(Input::variant).collect::<Vec<_>>();
-        let fee_output_variants = fee.outputs().iter().map(Output::variant).collect::<Vec<_>>();
-        ensure!(function.input_variants() == fee_input_variants, "The fee input variants do not match");
-        ensure!(function.output_variants() == fee_output_variants, "The fee output variants do not match");
+        ensure!(function.input_types().len() == fee.inputs().len(), "The number of fee inputs is incorrect");
+        for (function_input, fee_input) in function.input_types().iter().zip(fee.inputs().iter()) {
+            ensure!(fee_input.is_type(function_input), "The fee input variants do not match");
+        }
+        ensure!(function.output_types().len() == fee.outputs().len(), "The number of fee outputs is incorrect");
+        for (function_output, fee_output) in function.output_types().iter().zip(fee.outputs().iter()) {
+            ensure!(fee_output.is_type(function_output), "The fee output variants do not match");
+        }
 
         // Retrieve the candidate deployment or execution ID.
         let Ok(candidate_id) = fee.deployment_or_execution_id() else {
@@ -103,12 +107,7 @@ impl<N: Network> Process<N> {
         // Retrieve the network ID.
         let network_id = U16::new(N::ID);
         // Compute the function ID.
-        let function_id = compute_function_id(
-            &network_id,
-            fee.program_id(),
-            fee.function_name(),
-            false, /* `is_dynamic` is `false` because `fee_private` is expected to be called directly. */
-        )?;
+        let function_id = compute_function_id(&network_id, fee.program_id(), fee.function_name())?;
 
         // Ensure the fee contains 1 input record.
         ensure!(
@@ -198,12 +197,7 @@ impl<N: Network> Process<N> {
         // Retrieve the network ID.
         let network_id = U16::new(N::ID);
         // Compute the function ID.
-        let function_id = compute_function_id(
-            &network_id,
-            fee.program_id(),
-            fee.function_name(),
-            false, /* `is_dynamic` is `false` because `fee_public` is expected to be called directly. */
-        )?;
+        let function_id = compute_function_id(&network_id, fee.program_id(), fee.function_name())?;
 
         // Ensure the fee contains all public inputs.
         ensure!(

@@ -208,6 +208,7 @@ pub struct Response<A: Aleo> {
     output_ids: Vec<OutputID<A>>,
     /// The function outputs.
     outputs: Vec<Value<A>>,
+    /// TODO (@d0cd): Consider removing
     /// Whether or not the response is dynamic.
     is_dynamic: bool,
 }

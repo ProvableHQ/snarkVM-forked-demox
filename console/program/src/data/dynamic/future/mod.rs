@@ -22,7 +22,7 @@ mod to_fields;
 use crate::{Argument, Boolean, Field, Future, Identifier, Network, ProgramID, Result, ToField, ToFields};
 
 use snarkvm_console_algorithms::{Poseidon2, Poseidon8};
-use snarkvm_console_collections::merkle_tree::{MerklePath, MerkleTree};
+use snarkvm_console_collections::merkle_tree::MerkleTree;
 use snarkvm_console_network::*;
 
 /// The depth of the future argument tree.
@@ -30,8 +30,6 @@ pub const FUTURE_ARGUMENT_TREE_DEPTH: u8 = 4;
 
 /// The future argument tree.
 pub type FutureArgumentTree<E> = MerkleTree<E, Poseidon8<E>, Poseidon2<E>, FUTURE_ARGUMENT_TREE_DEPTH>;
-/// The future argument path.
-pub type FutureArgumentPath<E> = MerklePath<E, FUTURE_ARGUMENT_TREE_DEPTH>;
 
 /// A dynamic future is a fixed-size representation of a future.
 /// Like static `Future`s, a dynamic future contains a program ID and function name.

@@ -13,6 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use snarkvm_synthesizer_program::RecordTranslationData;
+
 use super::*;
 
 impl<N: Network, A: circuit::Aleo<Network = N>> RegistersSigner<N> for Registers<N, A> {
@@ -31,7 +33,7 @@ impl<N: Network, A: circuit::Aleo<Network = N>> RegistersSigner<N> for Registers
     /// Returns the root transition view key.
     #[inline]
     fn root_tvk(&self) -> Result<Field<N>> {
-        self.root_tvk.ok_or_else(|| anyhow!("Root tvk (console) is not set in the registers."))
+        self.root_tvk.ok_or_else(|| anyhow!("Root tvk  (console) is not set in the registers."))
     }
 
     /// Sets the root transition view key.
@@ -62,6 +64,36 @@ impl<N: Network, A: circuit::Aleo<Network = N>> RegistersSigner<N> for Registers
     #[inline]
     fn set_tvk(&mut self, tvk: Field<N>) {
         self.tvk = Some(tvk);
+    }
+
+    /// Returns the record translation data.
+    #[inline]
+    fn record_translation_data(&self) -> Result<&Vec<RecordTranslationData<N>>> {
+        self.record_translation_data
+            .as_ref()
+            .ok_or_else(|| anyhow!("Record translation data is not set in the registers."))
+    }
+
+    /// Sets the record translation data.
+    #[inline]
+    fn insert_record_translation_data(&mut self, new_record_translation_data: RecordTranslationData<N>) {
+        if let Some(record_translation_data) = &mut self.record_translation_data {
+            record_translation_data.push(new_record_translation_data);
+        } else {
+            self.record_translation_data = Some(vec![new_record_translation_data]);
+        }
+    }
+
+    /// Returns the request.
+    #[inline]
+    fn request(&self) -> Result<&crate::Request<N>> {
+        self.request.as_ref().ok_or_else(|| anyhow!("Caller request is not set in the registers."))
+    }
+
+    /// Sets the caller request.
+    #[inline]
+    fn set_request(&mut self, request: crate::Request<N>) {
+        self.request = Some(request);
     }
 }
 
@@ -120,7 +152,7 @@ impl<N: Network, A: circuit::Aleo<Network = N>> RegistersTrait<N> for Registers<
                     // Retrieve the argument from the future.
                     Value::Future(future) => future.find(path)?,
                     // A dynamic record cannot be accessed directly.
-                    Value::DynamicRecord(_) => bail!("Cannot invoke `find` on a dynamic record value"),
+                    Value::DynamicRecord(dynamic_record) => dynamic_record.find(path)?,
                     // A dynamic future cannot be accessed directly.
                     Value::DynamicFuture(_) => bail!("Cannot invoke `find` on a dynamic future value"),
                 }

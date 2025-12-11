@@ -47,6 +47,11 @@ impl<N: Network> Process<N> {
         for (function_name, (verifying_key, _)) in deployment.verifying_keys() {
             stack.insert_verifying_key(function_name, verifying_key.clone())?;
         }
+
+        // Insert the translation verifying keys.
+        for (record_name, (verifying_key, _)) in deployment.translation_verifying_keys() {
+            stack.insert_translation_verifying_key(record_name, verifying_key.clone())?;
+        }
         lap!(timer, "Insert the verifying keys");
 
         // Determine which mappings must be initialized.
@@ -128,19 +133,20 @@ impl<N: Network> Process<N> {
         let transition = execution.peek()?;
         // Retrieve the stack.
         let stack = self.get_stack(transition.program_id())?;
+        // TODO (dynamic_dispatch) re-introduce or redesign, fails to account for dynamic calls
         // Ensure the number of calls matches the number of transitions.
-        let number_of_calls = stack.get_number_of_calls(transition.function_name())?;
-        ensure!(
-            number_of_calls == execution.len(),
-            "The number of transitions in the execution is incorrect. Expected {number_of_calls}, but found {}",
-            execution.len()
-        );
+        // let number_of_calls = stack.get_number_of_calls(transition.function_name())?;
+        // ensure!(
+        //     number_of_calls == execution.len(),
+        //     "The number of transitions in the execution is incorrect. Expected {number_of_calls}, but found {}",
+        //     execution.len()
+        // );
         lap!(timer, "Verify the number of transitions");
 
         // Construct the call graph.
         let consensus_version = N::CONSENSUS_VERSION(state.block_height())?;
         let call_graph = match (ConsensusVersion::V1..=ConsensusVersion::V2).contains(&consensus_version) {
-            true => self.construct_call_graph(execution)?,
+            true => self.construct_call_graph(execution.transitions())?,
             // If the height is greater than or equal to `ConsensusVersion::V3`, then provide an empty call graph, as it is no longer used during finalization.
             false => HashMap::new(),
         };
@@ -309,9 +315,11 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
     // Initialize a nonce for the finalize registers.
     // Note that this nonce must be unique for each sub-transition being finalized.
     let mut nonce = 0;
+    // Top-level outputs are always static futures.
+    let is_dynamic = false;
 
     // Initialize the top-level finalize state.
-    states.push(initialize_finalize_state(state, future, stack, *transition.id(), nonce)?);
+    states.push(initialize_finalize_state(state, future, stack, *transition.id(), nonce, is_dynamic)?);
 
     // While there are active finalize states, finalize them.
     'outer: while let Some(FinalizeState { mut counter, mut registers, stack, mut call_counter, mut awaited }) =
@@ -448,11 +456,13 @@ fn initialize_finalize_state<N: Network>(
     stack: &Arc<Stack<N>>,
     transition_id: N::TransitionID,
     nonce: u64,
+    is_dynamic: bool,
 ) -> Result<FinalizeState<N>> {
     // Get the stack.
-    let stack = match stack.program_id() == future.program_id() {
-        true => stack.clone(),
-        false => stack.get_external_stack(future.program_id())?,
+    let stack = match (stack.program_id() == future.program_id(), is_dynamic) {
+        (true, _) => stack.clone(),
+        (false, true) => stack.get_stack_unchecked(future.program_id())?,
+        (false, false) => stack.get_external_stack(future.program_id())?,
     };
     // Get the finalize logic and check that it exists.
     let Some(finalize) = stack.get_function_ref(future.function_name())?.finalize_logic() else {
@@ -551,12 +561,13 @@ fn setup_await<N: Network>(
     nonce: u64,
 ) -> Result<FinalizeState<N>> {
     // Retrieve the input as a future.
-    let future = match registers.load(stack.deref(), &Operand::Register(await_.register().clone()))? {
-        Value::Future(future) => future,
-        _ => bail!("The input to 'await' is not a future"),
+    let (future, is_dynamic) = match registers.load(stack.deref(), &Operand::Register(await_.register().clone()))? {
+        Value::Future(future) => (future, false),
+        Value::DynamicFuture(dynamic_future) => (dynamic_future.to_future()?, true),
+        _ => bail!("The input to 'await' is not a future or dynamic future"),
     };
     // Initialize the state.
-    initialize_finalize_state(state, &future, stack, transition_id, nonce)
+    initialize_finalize_state(state, &future, stack, transition_id, nonce, is_dynamic)
 }
 
 // A helper function that returns the index to branch to.

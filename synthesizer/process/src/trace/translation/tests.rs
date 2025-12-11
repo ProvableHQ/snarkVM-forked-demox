@@ -15,8 +15,8 @@
 
 use circuit::{environment::compare_constraints, prelude::count_is};
 use console::{
-    program::{Plaintext, ProgramID, Record},
-    types::{Field, U16},
+    program::{InputID, Plaintext, ProgramID, Record, Value},
+    types::{Address, Field, U16},
 };
 
 use crate::{
@@ -30,7 +30,8 @@ use std::str::FromStr;
 
 fn translation_assignment_from_record_str(
     record_str: &str,
-    to_static_record: bool,
+    is_input: bool,
+    static_is_external: bool,
     function_id_opt: Option<Field<CurrentNetwork>>,
     rng: &mut TestRng,
 ) -> TranslationAssignment<CurrentNetwork> {
@@ -41,17 +42,17 @@ fn translation_assignment_from_record_str(
     let record_name = Identifier::<CurrentNetwork>::from_str("spacecraft").unwrap();
     let translation_count = Uniform::rand(rng);
     let tvk = Uniform::rand(rng);
-    let register_index = Uniform::rand(rng);
+    let input_output_index = Uniform::rand(rng);
     let record_view_key = Uniform::rand(rng);
     let gamma = Uniform::rand(rng);
 
     // Dependent fields
     let record_dynamic = DynamicRecord::<CurrentNetwork>::from_record(&record_static).unwrap();
 
-    let id_dynamic = record_dynamic.to_id(function_id, tvk, U16::new(register_index)).unwrap();
+    let id_dynamic = record_dynamic.to_id(function_id, tvk, U16::new(input_output_index)).unwrap();
 
     let commitment = record_static.to_commitment(&program_id, &record_name, &record_view_key).unwrap();
-    let id_static = if to_static_record {
+    let id_static = if is_input {
         Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::serial_number_from_gamma(&gamma, commitment).unwrap()
     } else {
         commitment
@@ -59,23 +60,24 @@ fn translation_assignment_from_record_str(
 
     TranslationAssignment::<CurrentNetwork>::new(
         record_static,
+        record_dynamic,
         program_id,
         function_id,
         record_name,
-        record_dynamic,
-        to_static_record,
+        is_input,
+        static_is_external,
         translation_count,
         tvk,
-        register_index,
+        input_output_index,
         id_dynamic,
         id_static,
-        record_view_key,
-        gamma,
+        Some(record_view_key),
+        Some(gamma),
     )
 }
 
 fn print_rc1s_data(name: &str) {
-    println!("Translation R1CS for {}:", name);
+    println!("Translation R1CS for {name}:");
     println!("   nun_public: {}", <CurrentAleo as circuit::Environment>::num_public());
     println!("   num_private: {}", <CurrentAleo as circuit::Environment>::num_private());
     println!("   num_constraints: {}", <CurrentAleo as circuit::Environment>::num_constraints());
@@ -102,12 +104,12 @@ fn test_translation_simple() {
         _version: 1u8.public
     }"#;
 
-    // to_static_record = false
-    let translation_assignment = translation_assignment_from_record_str(record_static_str, false, None, &mut rng);
+    let translation_assignment =
+        translation_assignment_from_record_str(record_static_str, false, false, None, &mut rng);
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
     print_rc1s_data("simple");
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
-    let counts = count_is!(36040, 37, 23103, 23159);
+    let counts = count_is!(36081, 38, 24131, 24188);
     counts.assert_matches(
         <CurrentAleo as circuit::Environment>::num_constants(),
         <CurrentAleo as circuit::Environment>::num_public(),
@@ -115,12 +117,12 @@ fn test_translation_simple() {
         <CurrentAleo as circuit::Environment>::num_constraints(),
     );
 
-    // to_static_record = true
+    // is_input = true
     <CurrentAleo as circuit::Environment>::reset();
-    let translation_assignment = translation_assignment_from_record_str(record_static_str, true, None, &mut rng);
+    let translation_assignment = translation_assignment_from_record_str(record_static_str, true, false, None, &mut rng);
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
-    let counts = count_is!(6114, 37, 23103, 23159);
+    let counts = count_is!(6155, 38, 24131, 24188);
     counts.assert_matches(
         <CurrentAleo as circuit::Environment>::num_constants(),
         <CurrentAleo as circuit::Environment>::num_public(),
@@ -172,12 +174,13 @@ fn test_translation_recursive() {
         _version: 1u8.public
     }"#;
 
-    // to_static_record = false
-    let translation_assignment = translation_assignment_from_record_str(record_static_str, false, None, &mut rng);
+    // is_input = false
+    let translation_assignment =
+        translation_assignment_from_record_str(record_static_str, false, false, None, &mut rng);
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
     print_rc1s_data("recursive");
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
-    let counts = count_is!(38738, 37, 31178, 31238);
+    let counts = count_is!(38779, 38, 32721, 32782);
     counts.assert_matches(
         <CurrentAleo as circuit::Environment>::num_constants(),
         <CurrentAleo as circuit::Environment>::num_public(),
@@ -185,12 +188,13 @@ fn test_translation_recursive() {
         <CurrentAleo as circuit::Environment>::num_constraints(),
     );
 
-    // to_static_record = true
+    // is_input = true
     <CurrentAleo as circuit::Environment>::reset();
-    let translation_assignment = translation_assignment_from_record_str(record_static_str, true, None, &mut rng);
+    let translation_assignment = translation_assignment_from_record_str(record_static_str, true, false, None, &mut rng);
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
-    let counts = count_is!(8812, 37, 31178, 31238);
+
+    let counts = count_is!(8853, 38, 32721, 32782);
     counts.assert_matches(
         <CurrentAleo as circuit::Environment>::num_constants(),
         <CurrentAleo as circuit::Environment>::num_public(),
@@ -258,12 +262,13 @@ fn test_translation_complex() {
         _version: 1u8.public
     }"#;
 
-    // to_static_record = false
-    let translation_assignment = translation_assignment_from_record_str(record_static_str, false, None, &mut rng);
+    // is_input = false
+    let translation_assignment =
+        translation_assignment_from_record_str(record_static_str, false, false, None, &mut rng);
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
     print_rc1s_data("complex");
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
-    let counts = count_is!(41282, 37, 66225, 66302);
+    let counts = count_is!(41323, 38, 68798, 68876);
     counts.assert_matches(
         <CurrentAleo as circuit::Environment>::num_constants(),
         <CurrentAleo as circuit::Environment>::num_public(),
@@ -271,12 +276,12 @@ fn test_translation_complex() {
         <CurrentAleo as circuit::Environment>::num_constraints(),
     );
 
-    // to_static_record = true
+    // is_input = true
     <CurrentAleo as circuit::Environment>::reset();
-    let translation_assignment = translation_assignment_from_record_str(record_static_str, true, None, &mut rng);
+    let translation_assignment = translation_assignment_from_record_str(record_static_str, true, false, None, &mut rng);
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
-    let counts = count_is!(11356, 37, 66225, 66302);
+    let counts = count_is!(11397, 38, 68798, 68876);
     counts.assert_matches(
         <CurrentAleo as circuit::Environment>::num_constants(),
         <CurrentAleo as circuit::Environment>::num_public(),
@@ -388,18 +393,18 @@ fn test_definition_invariance() {
     // Other fields which the circuit should be independent of are generated
     // randomly inside translation_assignment_from_record_str
 
-    // We also play around with the flag to_static_record, which should not affect the circuit
+    // We also play around with the flag is_input, which should not affect the circuit
     let translation_assignments = [
-        translation_assignment_from_record_str(record_strings[0], false, function_id, &mut rng),
-        translation_assignment_from_record_str(record_strings[1], false, function_id, &mut rng),
-        translation_assignment_from_record_str(record_strings[1], true, function_id, &mut rng),
-        translation_assignment_from_record_str(record_strings[2], false, function_id, &mut rng),
-        translation_assignment_from_record_str(record_strings[2], true, function_id, &mut rng),
+        translation_assignment_from_record_str(record_strings[0], false, false, function_id, &mut rng),
+        translation_assignment_from_record_str(record_strings[1], false, false, function_id, &mut rng),
+        translation_assignment_from_record_str(record_strings[1], true, false, function_id, &mut rng),
+        translation_assignment_from_record_str(record_strings[2], false, false, function_id, &mut rng),
+        translation_assignment_from_record_str(record_strings[2], true, false, function_id, &mut rng),
     ];
 
     // Checking parameters of the first translation separately
     translation_assignments[0].to_circuit_assignment_internal::<CurrentAleo>().unwrap();
-    let counts = count_is!(37753, 37, 29500, 29558);
+    let counts = count_is!(37794, 38, 31043, 31102);
     counts.assert_matches(
         <CurrentAleo as circuit::Environment>::num_constants(),
         <CurrentAleo as circuit::Environment>::num_public(),
@@ -415,7 +420,7 @@ fn test_definition_invariance() {
         .collect_vec();
 
     for circuit_assignment in circuit_assignments.iter().skip(1) {
-        compare_constraints(&circuit_assignments[0], &circuit_assignment).unwrap();
+        compare_constraints(&circuit_assignments[0], circuit_assignment).unwrap();
     }
 }
 
@@ -494,7 +499,7 @@ fn test_definition_variance() {
 
     let mut translation_assignments = record_strings
         .iter()
-        .map(|record_str| translation_assignment_from_record_str(record_str, false, function_id, &mut rng))
+        .map(|record_str| translation_assignment_from_record_str(record_str, false, false, function_id, &mut rng))
         .collect_vec();
 
     // Modifying the program ID
@@ -513,6 +518,141 @@ fn test_definition_variance() {
         .collect_vec();
 
     for circuit_assignment in circuit_assignments.iter().skip(1) {
-        assert!(compare_constraints(&circuit_assignments[0], &circuit_assignment).is_err());
+        assert!(compare_constraints(&circuit_assignments[0], circuit_assignment).is_err());
     }
+}
+
+#[test]
+fn test_external_translation() {
+    // Tests whether the InputID and OutputID of an external record are the
+    // same. If this ceases to be the case, the TranslationAssigment circuit
+    // will need to be modified to account for the two scenarios.
+
+    let mut rng = TestRng::default();
+
+    let record_static_str = format!(
+        "
+        {{
+            owner: {}.private,
+            location_x: {}.public,
+            location_y: {}.public,
+            has_allies: {}.public,
+            codename: {}u64.public,
+            num_crew: {}u64.public,
+            stealth_mode: {}.private,
+            resources: {{
+                food: {}u32.private,
+                spice: {}u32.private
+            }},
+            targets: {{
+                main: {{
+                    name: {}u128.private,
+                    star: {}.private,
+                    interconnected: {}.private,
+                    coords: [
+                        {}u8.private,
+                        {}u8.private,
+                        {}u8.private
+                    ]
+                }},
+                secondary: {{
+                    name: {}u128.private,
+                    star: {}.private,
+                    interconnected: {}.private,
+                    coords: [
+                        {}u8.private,
+                        {}u8.private,
+                        {}u8.private
+                    ]
+                }}
+            }},
+            interstellar_signing_key: {}.private,
+            _nonce: {}.public,
+            _version: 1u8.public
+        }}",
+        Address::<CurrentNetwork>::rand(&mut rng),
+        Field::<CurrentNetwork>::rand(&mut rng),
+        Field::<CurrentNetwork>::rand(&mut rng),
+        bool::rand(&mut rng),
+        u64::rand(&mut rng),
+        u64::rand(&mut rng),
+        bool::rand(&mut rng),
+        u32::rand(&mut rng),
+        u32::rand(&mut rng),
+        u128::rand(&mut rng),
+        bool::rand(&mut rng),
+        bool::rand(&mut rng),
+        u8::rand(&mut rng),
+        u8::rand(&mut rng),
+        u8::rand(&mut rng),
+        u128::rand(&mut rng),
+        bool::rand(&mut rng),
+        bool::rand(&mut rng),
+        u8::rand(&mut rng),
+        u8::rand(&mut rng),
+        u8::rand(&mut rng),
+        Group::<CurrentNetwork>::rand(&mut rng),
+        Group::<CurrentNetwork>::rand(&mut rng),
+    );
+
+    let record_static = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_str(&record_static_str).unwrap();
+    let record_static_value = Value::Record(record_static.clone());
+
+    let function_id = Field::<CurrentNetwork>::from_u64(Uniform::rand(&mut rng));
+    let tvk = Uniform::rand(&mut rng);
+    let input_output_index = Uniform::rand(&mut rng);
+
+    let external_record_input_id =
+        InputID::<CurrentNetwork>::external_record(function_id, &record_static_value, tvk, input_output_index).unwrap();
+    let external_record_output_id = {
+        let mut preimage = Vec::new();
+        preimage.push(function_id);
+        preimage.extend(record_static.to_fields().unwrap());
+        preimage.push(tvk);
+        preimage.push(Field::<CurrentNetwork>::from_u64(input_output_index as u64));
+        CurrentNetwork::hash_psd8(&preimage).unwrap()
+    };
+
+    assert_eq!(*external_record_input_id.id(), external_record_output_id);
+
+    // TranslationAssignment data
+    let record_dynamic = DynamicRecord::<CurrentNetwork>::from_record(&record_static).unwrap();
+    let program_id = ProgramID::<CurrentNetwork>::from_str("logistics.aleo").unwrap();
+    let record_name = Identifier::<CurrentNetwork>::from_str("vehicle").unwrap();
+    let is_input = bool::rand(&mut rng);
+    // We specifically set the external-record flag to true
+    let static_is_external = true;
+    let translation_count = Uniform::rand(&mut rng);
+    let id_dynamic = record_dynamic.to_id(function_id, tvk, U16::new(input_output_index)).unwrap();
+    let id_static = external_record_output_id;
+    let record_view_key = Uniform::rand(&mut rng);
+    let gamma = Uniform::rand(&mut rng);
+
+    let translation_assignment = TranslationAssignment::<CurrentNetwork>::new(
+        record_static,
+        record_dynamic,
+        program_id,
+        function_id,
+        record_name,
+        is_input,
+        static_is_external,
+        translation_count,
+        tvk,
+        input_output_index,
+        id_dynamic,
+        id_static,
+        record_view_key,
+        gamma,
+    );
+
+    translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
+    assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
+
+    let counts = count_is!(38793, 38, 32562, 32623);
+    counts.assert_matches(
+        <CurrentAleo as circuit::Environment>::num_constants(),
+        <CurrentAleo as circuit::Environment>::num_public(),
+        <CurrentAleo as circuit::Environment>::num_private(),
+        <CurrentAleo as circuit::Environment>::num_constraints(),
+    );
 }

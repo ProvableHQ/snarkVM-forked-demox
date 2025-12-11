@@ -54,6 +54,15 @@ pub struct Request<N: Network> {
     /// The optional caller input IDs.
     /// Note. These are only present if and only if the request is dynamic.
     caller_input_ids: Option<Vec<InputID<N>>>,
+    /// The optional caller input values.
+    /// Note. These are only present if and only if the request is dynamic.
+    caller_inputs: Option<Vec<Value<N>>>,
+    /// The optional caller output types.
+    /// Note. These are only present if and only if the request is dynamic.
+    caller_output_types: Option<Vec<ValueType<N>>>,
+    /// The optional caller Request.
+    /// Note. These are only present if and only if the request is dynamic.
+    caller_request: Option<Box<Request<N>>>,
 }
 
 impl<N: Network>
@@ -70,6 +79,9 @@ impl<N: Network>
         Field<N>,
         Field<N>,
         Option<Vec<InputID<N>>>,
+        Option<Vec<Value<N>>>,
+        Option<Vec<ValueType<N>>>,
+        Option<Box<Request<N>>>,
     )> for Request<N>
 {
     /// Note: See `Request::sign` to create the request. This method is used to eject from a circuit.
@@ -87,6 +99,9 @@ impl<N: Network>
             tcm,
             scm,
             caller_input_ids,
+            caller_inputs,
+            caller_output_types,
+            caller_request,
         ): (
             Address<N>,
             U16<N>,
@@ -100,6 +115,9 @@ impl<N: Network>
             Field<N>,
             Field<N>,
             Option<Vec<InputID<N>>>,
+            Option<Vec<Value<N>>>,
+            Option<Vec<ValueType<N>>>,
+            Option<Box<Request<N>>>,
         ),
     ) -> Self {
         // TODO (@d0cd) Verify that adding checks here does not create failure cases.
@@ -111,15 +129,28 @@ impl<N: Network>
                 inputs.len()
             ))
         }
-        // Ensure that the correct number of caller input IDs are provided.
-        if let Some(caller_input_ids) = &caller_input_ids {
-            if caller_input_ids.len() != input_ids.len() {
-                N::halt(format!(
-                    "Invalid request: mismatching number of dynamic input IDs ({}) and inputs ({})",
-                    caller_input_ids.len(),
-                    inputs.len()
-                ))
+
+        match (caller_input_ids.as_ref(), caller_inputs.as_ref()) {
+            (Some(caller_input_ids), Some(caller_inputs)) => {
+                // Ensure that the number of caller inputs matches the number of caller input IDs.
+                if caller_inputs.len() != caller_input_ids.len() {
+                    N::halt(format!(
+                        "Invalid request: mismatching number of caller input IDs ({}) and caller inputs ({})",
+                        caller_input_ids.len(),
+                        caller_inputs.len()
+                    ))
+                }
+                // Ensure that the number of caller inputs matches the number of inputs.
+                if caller_inputs.len() != inputs.len() {
+                    N::halt(format!(
+                        "Invalid request: mismatching number of caller inputs ({}) and inputs ({})",
+                        caller_inputs.len(),
+                        inputs.len()
+                    ))
+                }
             }
+            (None, None) => {}
+            _ => N::halt("Invalid request: mismatching presence of caller input IDs and caller inputs"),
         }
 
         // Ensure the network ID is correct.
@@ -139,6 +170,9 @@ impl<N: Network>
                 tcm,
                 scm,
                 caller_input_ids,
+                caller_inputs,
+                caller_output_types,
+                caller_request,
             }
         }
     }
@@ -217,6 +251,21 @@ impl<N: Network> Request<N> {
         &self.caller_input_ids
     }
 
+    /// Returns the optional caller input values.
+    pub const fn caller_inputs(&self) -> &Option<Vec<Value<N>>> {
+        &self.caller_inputs
+    }
+
+    /// Returns the optional caller Request.
+    pub const fn caller_output_types(&self) -> &Option<Vec<ValueType<N>>> {
+        &self.caller_output_types
+    }
+
+    /// Returns the optional caller Request.
+    pub const fn caller_request(&self) -> &Option<Box<Request<N>>> {
+        &self.caller_request
+    }
+
     /// Returns whether or not the request is dynamic.
     pub fn is_dynamic(&self) -> bool {
         self.caller_input_ids.is_some()
@@ -278,7 +327,34 @@ mod test_helpers {
                 let request = if bool::rand(rng) {
                     Request::sign(&private_key, program_id, function_name, inputs.into_iter(), &input_types, root_tvk, is_root, program_checksum, rng).unwrap()
                 } else {
-                    Request::sign_dynamic(&private_key, program_id, function_name, inputs.into_iter(), &input_types, &input_types, root_tvk, is_root, program_checksum, rng).unwrap()
+                    // Sample the caller request.
+                    let caller_request = Request::sign(
+                        &private_key,
+                        program_id,
+                        Identifier::from_str("caller_function").unwrap(),
+                        inputs.clone().into_iter(),
+                        &input_types,
+                        root_tvk,
+                        is_root,
+                        program_checksum,
+                        rng,
+                    ).unwrap();
+                    // Compute the dynamic signed request.
+                    Request::sign_dynamic(
+                        &private_key,
+                        program_id,
+                        function_name,
+                        inputs.clone().into_iter(),
+                        &input_types,
+                        inputs.into_iter(),
+                        &input_types,
+                        &[],
+                        &caller_request,
+                        root_tvk,
+                        is_root,
+                        program_checksum,
+                        rng,
+                    ).unwrap()
                 };
                 assert!(request.verify(&input_types, is_root, program_checksum));
                 request

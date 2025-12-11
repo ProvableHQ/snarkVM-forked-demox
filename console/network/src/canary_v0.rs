@@ -328,6 +328,57 @@ impl Network for CanaryV0 {
         })
     }
 
+    #[cfg(not(feature = "wasm"))]
+    /// Returns the `proving key` for the credits.aleo credits record translation circuit.
+    fn translation_credits_proving_key() -> &'static Arc<VarunaProvingKey<Self>> {
+        static INSTANCE: OnceLock<Arc<VarunaProvingKey<Console>>> = OnceLock::new();
+        INSTANCE.get_or_init(|| {
+            // Skipping the first byte, which is the encoded version.
+            Arc::new(
+                CircuitProvingKey::from_bytes_le(&snarkvm_parameters::canary::TRANSLATION_CREDITS_PROVING_KEY[1..])
+                    .expect("Failed to load translation credits proving key."),
+            )
+        })
+    }
+
+    #[cfg(feature = "wasm")]
+    /// Returns the `proving key` for the translation credits circuit.
+    fn translation_credits_proving_key(
+        translation_credits_key_bytes: Option<Vec<u8>>,
+    ) -> &'static Arc<VarunaProvingKey<Self>> {
+        static INSTANCE: OnceLock<Arc<VarunaProvingKey<Console>>> = OnceLock::new();
+        INSTANCE.get_or_init(|| {
+            translation_credits_key_bytes
+                .map(|bytes| {
+                    snarkvm_parameters::canary::TranslationCreditsProver::verify_bytes(&bytes)
+                        .expect("Bytes provided did not match expected translation credits checksum.");
+                    Arc::new(
+                        CircuitProvingKey::from_bytes_le(&bytes[1..])
+                            .expect("Failed to load translation credits proving key."),
+                    )
+                })
+                .unwrap_or_else(|| {
+                    Arc::new(
+                        CircuitProvingKey::from_bytes_le(
+                            &snarkvm_parameters::canary::TRANSLATION_CREDITS_PROVING_KEY[1..],
+                        )
+                        .expect("Failed to load translation credits proving key."),
+                    )
+                })
+        })
+    }
+
+    /// Returns the `verifying key` for the translation circuit.
+    fn translation_credits_verifying_key() -> &'static Arc<VarunaVerifyingKey<Self>> {
+        static INSTANCE: OnceLock<Arc<VarunaVerifyingKey<Console>>> = OnceLock::new();
+        INSTANCE.get_or_init(|| {
+            Arc::new(
+                CircuitVerifyingKey::from_bytes_le(&snarkvm_parameters::canary::TRANSLATION_CREDITS_VERIFYING_KEY[1..])
+                    .expect("Failed to load translation verifying key."),
+            )
+        })
+    }
+
     /// Returns the powers of `G`.
     fn g_powers() -> &'static Vec<Group<Self>> {
         &GENERATOR_G

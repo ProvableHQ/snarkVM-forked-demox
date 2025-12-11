@@ -17,7 +17,13 @@ mod bytes;
 mod serialize;
 mod string;
 
-use console::{network::prelude::*, program::Request, types::Field};
+use crate::{Output, Process};
+
+use console::{
+    network::prelude::*,
+    program::{Request, ValueType},
+    types::Field,
+};
 use snarkvm_ledger_block::{Input, Transaction, Transition};
 use snarkvm_synthesizer_program::StackTrait;
 
@@ -295,6 +301,65 @@ impl<N: Network> Authorization<N> {
         transitions
             .map(|transition| transition.inputs().iter().filter(|input| matches!(input, Input::Record(_, _))).count())
             .sum()
+    }
+
+    /// Computes the number of different translation circuits resulting from the
+    /// given `Transition`s as well as the number of translations for each such
+    /// circuit.
+    pub fn translation_batches<'a>(
+        process: &Process<N>,
+        transitions: impl ExactSizeIterator<Item = &'a Transition<N>>,
+    ) -> Result<Vec<usize>> {
+        let mut batches = HashMap::new();
+
+        for transition in transitions {
+            let stack = process.get_stack(transition.program_id())?;
+            let function = stack.get_function(transition.function_name())?;
+
+            ensure!(
+                transition.caller_inputs().is_some() == transition.caller_outputs().is_some(),
+                "The caller inputs and caller outputs should either both be Some or both be None, but a discrepancy was found in transition {}: caller inputs = {}, caller outputs = {}",
+                transition.id(),
+                if transition.caller_inputs().is_some() { "Some" } else { "None" },
+                if transition.caller_outputs().is_some() { "Some" } else { "None" }
+            );
+
+            // Input translation
+            if let Some(caller_inputs) = transition.caller_inputs() {
+                let input_types = function.input_types();
+
+                for (caller_input, callee_input_type) in caller_inputs.iter().zip(input_types.iter()) {
+                    match (caller_input, callee_input_type) {
+                        (Input::DynamicRecord(..), ValueType::Record(record_name)) => {
+                            *batches.entry((*transition.program_id(), *record_name)).or_insert(0) += 1;
+                        }
+                        (Input::DynamicRecord(..), ValueType::ExternalRecord(locator)) => {
+                            *batches.entry((*locator.program_id(), *locator.resource())).or_insert(0) += 1;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+
+            // Output translation
+            if let Some(caller_outputs) = transition.caller_outputs() {
+                let output_types = function.output_types();
+
+                for (caller_output, callee_output_type) in caller_outputs.iter().zip(output_types.iter()) {
+                    match (caller_output, callee_output_type) {
+                        (Output::DynamicRecord(..), ValueType::Record(record_name)) => {
+                            *batches.entry((*transition.program_id(), *record_name)).or_insert(0) += 1;
+                        }
+                        (Output::DynamicRecord(..), ValueType::ExternalRecord(locator)) => {
+                            *batches.entry((*locator.program_id(), *locator.resource())).or_insert(0) += 1;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        Ok(batches.into_values().collect())
     }
 }
 

@@ -27,8 +27,23 @@ mod string;
 use console::{
     network::prelude::*,
     program::{
-        Ciphertext, Identifier, InputID, OutputID, ProgramID, Record, Register, Request, Response, TRANSITION_DEPTH,
-        TransitionLeaf, TransitionPath, TransitionTree, Value, ValueType, compute_function_id,
+        Ciphertext,
+        DynamicRecord,
+        Identifier,
+        InputID,
+        OutputID,
+        ProgramID,
+        Record,
+        Register,
+        Request,
+        Response,
+        TRANSITION_DEPTH,
+        TransitionLeaf,
+        TransitionPath,
+        TransitionTree,
+        Value,
+        ValueType,
+        compute_function_id,
     },
     types::{Field, Group},
 };
@@ -54,6 +69,9 @@ pub struct Transition<N: Network> {
     /// The optional caller inputs to the transition.
     /// Note. These are only present if and only if the transition is dynamic.
     caller_inputs: Option<Vec<Input<N>>>,
+    /// The optional caller outputs to the transition.
+    /// Note. These are only present if and only if the transition is dynamic.
+    caller_outputs: Option<Vec<Output<N>>>,
 }
 
 impl<N: Network> Transition<N> {
@@ -68,15 +86,27 @@ impl<N: Network> Transition<N> {
         tcm: Field<N>,
         scm: Field<N>,
         caller_inputs: Option<Vec<Input<N>>>,
+        caller_outputs: Option<Vec<Output<N>>>,
     ) -> Result<Self> {
         // Compute the transition ID.
         let function_tree = Self::function_tree(&inputs, &outputs)?;
         let id = N::hash_bhp512(&(*function_tree.root(), tcm).to_bits_le())?;
         // Return the transition.
-        Ok(Self { id: id.into(), program_id, function_name, inputs, outputs, tpk, tcm, scm, caller_inputs })
+        Ok(Self {
+            id: id.into(),
+            program_id,
+            function_name,
+            inputs,
+            outputs,
+            tpk,
+            tcm,
+            scm,
+            caller_inputs,
+            caller_outputs,
+        })
     }
 
-    /// Initializes a new transition from a request, response, and optional dynamic input types.
+    /// Initializes a new transition from a request, response, and optional dynamic outputs.
     pub fn from(
         request: &Request<N>,
         response: &Response<N>,
@@ -88,14 +118,8 @@ impl<N: Network> Transition<N> {
         let function_name = *request.function_name();
         let num_inputs = request.inputs().len();
 
-        // Ensure that the request and response are either both dynamic or both static.
-        ensure!(
-            request.is_dynamic() == response.is_dynamic(),
-            "The request and response must both be either dynamic or static"
-        );
-
         // Compute the function ID based on the whether the request and response are dynamic.
-        let function_id = compute_function_id(&network_id, &program_id, &function_name, request.is_dynamic())?;
+        let function_id = compute_function_id(&network_id, &program_id, &function_name)?;
 
         // A helper function to construct and verify the inputs.
         let construct_inputs = |input_ids: &[InputID<N>], inputs: &[Value<N>]| -> Result<Vec<Input<N>>> {
@@ -144,153 +168,213 @@ impl<N: Network> Transition<N> {
                         (InputID::ExternalRecord(input_hash), Value::Record(..)) => {
                             Ok(Input::ExternalRecord(*input_hash))
                         }
+                        (InputID::DynamicRecord(input_hash), Value::DynamicRecord(..)) => {
+                            // TODO (@d0cd) check that this is correct
+                            Ok(Input::DynamicRecord(*input_hash))
+                        }
                         _ => bail!("Malformed request input: {input_id:?}, {input}"),
                     }
                 })
                 .collect::<Result<Vec<_>>>()
         };
 
+        // A helper function to construct and verify the outputs.
+        let construct_output = |index: usize,
+                                output_id: &Option<OutputID<N>>,
+                                output: &Value<N>,
+                                output_type: &ValueType<N>,
+                                output_register: &Option<Register<N>>|
+         -> Result<Output<N>> {
+            // Construct the transition output.
+            match (output_id, output) {
+                (Some(OutputID::Constant(output_hash)), Value::Plaintext(plaintext)) => {
+                    // Construct the constant output.
+                    let output = Output::Constant(*output_hash, Some(plaintext.clone()));
+                    // Ensure the output is valid.
+                    match output.verify(function_id, request.tcm(), num_inputs + index) {
+                        true => Ok(output),
+                        false => bail!("Malformed constant transition output: '{output}'"),
+                    }
+                }
+                (Some(OutputID::Public(output_hash)), Value::Plaintext(plaintext)) => {
+                    // Construct the public output.
+                    let output = Output::Public(*output_hash, Some(plaintext.clone()));
+                    // Ensure the output is valid.
+                    match output.verify(function_id, request.tcm(), num_inputs + index) {
+                        true => Ok(output),
+                        false => bail!("Malformed public transition output: '{output}'"),
+                    }
+                }
+                (Some(OutputID::Private(output_hash)), Value::Plaintext(plaintext)) => {
+                    // Construct the (console) output index as a field element.
+                    let index = Field::from_u16(u16::try_from(num_inputs + index)?);
+                    // Compute the ciphertext, with the input view key as `Hash(function ID || tvk || index)`.
+                    let ciphertext =
+                        plaintext.encrypt_symmetric(N::hash_psd4(&[function_id, *request.tvk(), index])?)?;
+                    // Compute the ciphertext hash.
+                    let ciphertext_hash = N::hash_psd8(&ciphertext.to_fields()?)?;
+                    // Ensure the ciphertext hash matches.
+                    ensure!(*output_hash == ciphertext_hash, "The output ciphertext hash is incorrect");
+                    // Return the private output.
+                    Ok(Output::Private(*output_hash, Some(ciphertext)))
+                }
+                (Some(OutputID::Record(commitment, checksum, sender_ciphertext)), Value::Record(record)) => {
+                    // Retrieve the record name.
+                    let record_name = match output_type {
+                        ValueType::Record(record_name) => record_name,
+                        // Ensure the input type is a record.
+                        _ => bail!("Expected a record type at output {index}"),
+                    };
+
+                    // Retrieve the output register.
+                    let output_register = match output_register {
+                        Some(output_register) => output_register,
+                        None => bail!("Expected a register to be paired with a record output"),
+                    };
+
+                    // Construct the (console) output index as a field element.
+                    let index = Field::from_u64(output_register.locator());
+                    // Compute the encryption randomizer as `HashToScalar(tvk || index)`.
+                    let randomizer = N::hash_to_scalar_psd2(&[*request.tvk(), index])?;
+
+                    // Encrypt the record, using the randomizer.
+                    let (record_ciphertext, record_view_key) = record.encrypt_symmetric(randomizer)?;
+
+                    // Compute the record commitment.
+                    let candidate_cm = record.to_commitment(&program_id, record_name, &record_view_key)?;
+                    // Ensure the commitment matches.
+                    ensure!(*commitment == candidate_cm, "The output record commitment is incorrect");
+
+                    // Compute the record checksum, as the hash of the encrypted record.
+                    let ciphertext_checksum = N::hash_bhp1024(&record_ciphertext.to_bits_le())?;
+                    // Ensure the checksum matches.
+                    ensure!(*checksum == ciphertext_checksum, "The output record ciphertext checksum is incorrect");
+
+                    // Prepare a randomizer for the sender ciphertext.
+                    let randomizer = N::hash_psd4(&[N::encryption_domain(), record_view_key, Field::one()])?;
+                    // Encrypt the signer address using the randomizer.
+                    let candidate_sender_ciphertext = (**request.signer()).to_x_coordinate() + randomizer;
+                    // Ensure the sender ciphertext matches, or the sender ciphertext is zero.
+                    // Note: The option to allow a zero-value in the sender ciphertext allows
+                    // this feature to become optional or deactivated in the future.
+                    ensure!(
+                        (*sender_ciphertext == candidate_sender_ciphertext) || sender_ciphertext.is_zero(),
+                        "The output record sender ciphertext is incorrect"
+                    );
+
+                    // Return the record output.
+                    Ok(Output::Record(*commitment, *checksum, Some(record_ciphertext), Some(*sender_ciphertext)))
+                }
+                (Some(OutputID::ExternalRecord(hash)), Value::Record(record)) => {
+                    // Construct the (console) output index as a field element.
+                    let index = Field::from_u16(u16::try_from(num_inputs + index)?);
+                    // Construct the preimage as `(function ID || output || tvk || index)`.
+                    let mut preimage = Vec::new();
+                    preimage.push(function_id);
+                    preimage.extend(record.to_fields()?);
+                    preimage.push(*request.tvk());
+                    preimage.push(index);
+                    // Hash the output to a field element.
+                    let candidate_hash = N::hash_psd8(&preimage)?;
+                    // Ensure the hash matches.
+                    ensure!(*hash == candidate_hash, "The output external hash is incorrect");
+                    // Return the record output.
+                    Ok(Output::ExternalRecord(*hash))
+                }
+                (Some(OutputID::Future(output_hash)), Value::Future(future)) => {
+                    // Construct the future output.
+                    let output = Output::Future(*output_hash, Some(future.clone()));
+                    // Ensure the output is valid.
+                    match output.verify(function_id, request.tcm(), num_inputs + index) {
+                        true => Ok(output),
+                        false => bail!("Malformed future transition output: '{output}'"),
+                    }
+                }
+                (Some(OutputID::DynamicRecord(hash)), Value::DynamicRecord(dynamic_record)) => {
+                    // Construct the (console) output index as a field element.
+                    let index = Field::from_u16(u16::try_from(num_inputs + index)?);
+                    // Construct the preimage as `(function ID || output || tvk || index)`.
+                    let mut preimage = Vec::new();
+                    preimage.push(function_id);
+                    preimage.extend(dynamic_record.to_fields()?);
+                    preimage.push(*request.tvk());
+                    preimage.push(index);
+                    // Hash the output to a field element.
+                    let candidate_hash = N::hash_psd8(&preimage)?;
+                    // Ensure the hash matches.
+                    ensure!(*hash == candidate_hash, "The output external hash is incorrect");
+                    // Return the dynamic record output.
+                    Ok(Output::DynamicRecord(*hash))
+                }
+                (None, Value::DynamicRecord(dynamic_record)) => {
+                    // Construct the (console) output index as a field element.
+                    let index = Field::from_u16(u16::try_from(num_inputs + index)?);
+                    // Construct the preimage as `(function ID || output || tvk || index)`.
+                    let mut preimage = Vec::new();
+                    preimage.push(function_id);
+                    preimage.extend(dynamic_record.to_fields()?);
+                    preimage.push(*request.tvk());
+                    preimage.push(index);
+                    // Hash the output to a field element.
+                    let candidate_hash = N::hash_psd8(&preimage)?;
+                    // Return the dynamic record output.
+                    Ok(Output::DynamicRecord(candidate_hash))
+                }
+                _ => bail!("Malformed response output: {output_id:?}, {output}"),
+            }
+        };
+
         // Construct and verify the inputs.
         let inputs = construct_inputs(request.input_ids(), request.inputs())?;
 
+        // Compute and verify the optional caller inputs.
+        let caller_inputs = if let Some(caller_input_ids) = request.caller_input_ids() {
+            let Some(caller_inputs) = request.caller_inputs() else {
+                bail!("Caller input values not present in dynamic request");
+            };
+            Some(construct_inputs(caller_input_ids, caller_inputs)?)
+        } else {
+            None
+        };
+
         // Construct and verify the outputs.
-        let outputs = response
-            .output_ids()
-            .iter()
-            .zip_eq(response.outputs())
-            .zip_eq(output_types)
-            .zip_eq(output_registers)
+        let outputs = itertools::izip!(response.output_ids(), response.outputs(), output_types, output_registers)
             .enumerate()
-            .map(|(index, (((output_id, output), output_type), output_register))| {
-                // Construct the transition output.
-                match (output_id, output) {
-                    (OutputID::Constant(output_hash), Value::Plaintext(plaintext)) => {
-                        // Construct the constant output.
-                        let output = Output::Constant(*output_hash, Some(plaintext.clone()));
-                        // Ensure the output is valid.
-                        match output.verify(function_id, request.tcm(), num_inputs + index) {
-                            true => Ok(output),
-                            false => bail!("Malformed constant transition output: '{output}'"),
-                        }
-                    }
-                    (OutputID::Public(output_hash), Value::Plaintext(plaintext)) => {
-                        // Construct the public output.
-                        let output = Output::Public(*output_hash, Some(plaintext.clone()));
-                        // Ensure the output is valid.
-                        match output.verify(function_id, request.tcm(), num_inputs + index) {
-                            true => Ok(output),
-                            false => bail!("Malformed public transition output: '{output}'"),
-                        }
-                    }
-                    (OutputID::Private(output_hash), Value::Plaintext(plaintext)) => {
-                        // Construct the (console) output index as a field element.
-                        let index = Field::from_u16(u16::try_from(num_inputs + index)?);
-                        // Compute the ciphertext, with the input view key as `Hash(function ID || tvk || index)`.
-                        let ciphertext =
-                            plaintext.encrypt_symmetric(N::hash_psd4(&[function_id, *request.tvk(), index])?)?;
-                        // Compute the ciphertext hash.
-                        let ciphertext_hash = N::hash_psd8(&ciphertext.to_fields()?)?;
-                        // Ensure the ciphertext hash matches.
-                        ensure!(*output_hash == ciphertext_hash, "The output ciphertext hash is incorrect");
-                        // Return the private output.
-                        Ok(Output::Private(*output_hash, Some(ciphertext)))
-                    }
-                    (OutputID::Record(commitment, checksum, sender_ciphertext), Value::Record(record)) => {
-                        // Retrieve the record name.
-                        let record_name = match output_type {
-                            ValueType::Record(record_name) => record_name,
-                            // Ensure the input type is a record.
-                            _ => bail!("Expected a record type at output {index}"),
-                        };
-
-                        // Retrieve the output register.
-                        let output_register = match output_register {
-                            Some(output_register) => output_register,
-                            None => bail!("Expected a register to be paired with a record output"),
-                        };
-
-                        // Construct the (console) output index as a field element.
-                        let index = Field::from_u64(output_register.locator());
-                        // Compute the encryption randomizer as `HashToScalar(tvk || index)`.
-                        let randomizer = N::hash_to_scalar_psd2(&[*request.tvk(), index])?;
-
-                        // Encrypt the record, using the randomizer.
-                        let (record_ciphertext, record_view_key) = record.encrypt_symmetric(randomizer)?;
-
-                        // Compute the record commitment.
-                        let candidate_cm = record.to_commitment(&program_id, record_name, &record_view_key)?;
-                        // Ensure the commitment matches.
-                        ensure!(*commitment == candidate_cm, "The output record commitment is incorrect");
-
-                        // Compute the record checksum, as the hash of the encrypted record.
-                        let ciphertext_checksum = N::hash_bhp1024(&record_ciphertext.to_bits_le())?;
-                        // Ensure the checksum matches.
-                        ensure!(*checksum == ciphertext_checksum, "The output record ciphertext checksum is incorrect");
-
-                        // Prepare a randomizer for the sender ciphertext.
-                        let randomizer = N::hash_psd4(&[N::encryption_domain(), record_view_key, Field::one()])?;
-                        // Encrypt the signer address using the randomizer.
-                        let candidate_sender_ciphertext = (**request.signer()).to_x_coordinate() + randomizer;
-                        // Ensure the sender ciphertext matches, or the sender ciphertext is zero.
-                        // Note: The option to allow a zero-value in the sender ciphertext allows
-                        // this feature to become optional or deactivated in the future.
-                        ensure!(
-                            (*sender_ciphertext == candidate_sender_ciphertext) || sender_ciphertext.is_zero(),
-                            "The output record sender ciphertext is incorrect"
-                        );
-
-                        // Return the record output.
-                        Ok(Output::Record(*commitment, *checksum, Some(record_ciphertext), Some(*sender_ciphertext)))
-                    }
-                    (OutputID::ExternalRecord(hash), Value::Record(record)) => {
-                        // Construct the (console) output index as a field element.
-                        let index = Field::from_u16(u16::try_from(num_inputs + index)?);
-                        // Construct the preimage as `(function ID || output || tvk || index)`.
-                        let mut preimage = Vec::new();
-                        preimage.push(function_id);
-                        preimage.extend(record.to_fields()?);
-                        preimage.push(*request.tvk());
-                        preimage.push(index);
-                        // Hash the output to a field element.
-                        let candidate_hash = N::hash_psd8(&preimage)?;
-                        // Ensure the hash matches.
-                        ensure!(*hash == candidate_hash, "The output external hash is incorrect");
-                        // Return the record output.
-                        Ok(Output::ExternalRecord(*hash))
-                    }
-                    (OutputID::Future(output_hash), Value::Future(future)) => {
-                        // Construct the future output.
-                        let output = Output::Future(*output_hash, Some(future.clone()));
-                        // Ensure the output is valid.
-                        match output.verify(function_id, request.tcm(), num_inputs + index) {
-                            true => Ok(output),
-                            false => bail!("Malformed future transition output: '{output}'"),
-                        }
-                    }
-                    (OutputID::DynamicRecord(hash), Value::DynamicRecord(dynamic_record)) => {
-                        // Construct the (console) output index as a field element.
-                        let index = Field::from_u16(u16::try_from(num_inputs + index)?);
-                        // Construct the preimage as `(function ID || output || tvk || index)`.
-                        let mut preimage = Vec::new();
-                        preimage.push(function_id);
-                        preimage.extend(dynamic_record.to_fields()?);
-                        preimage.push(*request.tvk());
-                        preimage.push(index);
-                        // Hash the output to a field element.
-                        let candidate_hash = N::hash_psd8(&preimage)?;
-                        // Ensure the hash matches.
-                        ensure!(*hash == candidate_hash, "The output external hash is incorrect");
-                        // Return the dynamic record output.
-                        Ok(Output::DynamicRecord(*hash))
-                    }
-                    _ => bail!("Malformed response output: {output_id:?}, {output}"),
-                }
+            .map(|(output_index, (output_id, output, output_type, output_register))| {
+                construct_output(output_index, &Some(output_id.clone()), output, output_type, output_register)
             })
             .collect::<Result<Vec<_>>>()?;
 
-        // Compute and verify the optional caller inputs.
-        let caller_inputs = if let Some(caller_input_ids) = request.caller_input_ids() {
-            Some(construct_inputs(caller_input_ids, request.inputs())?)
+        // Construct and verify the optional caller outputs.
+        let caller_outputs = if request.caller_request().is_some() {
+            let Some(caller_output_types) = request.caller_output_types() else {
+                bail!("Expected caller output types to be present");
+            };
+            // Convert the outputs to the caller's context.
+            Some(
+                response
+                    .outputs()
+                    .iter()
+                    .zip(caller_output_types.iter())
+                    .zip(outputs.iter())
+                    .enumerate()
+                    .map(|(output_index, ((callee_output_value, caller_output_type), callee_output))| {
+                        match (callee_output_value, caller_output_type) {
+                            // Convert the record output to a dynamic record output.
+                            (Value::Record(record), ValueType::DynamicRecord) => {
+                                let caller_output_value = Value::DynamicRecord(DynamicRecord::from_record(record)?);
+                                construct_output(output_index, &None, &caller_output_value, caller_output_type, &None)
+                            }
+                            // Convert the dynamic record output to a record output.
+                            (_, ValueType::Record(_) | ValueType::ExternalRecord(_)) => {
+                                bail!("A dynamic call cannot return a static record to the caller.")
+                            }
+                            // Otherwise, just return the output as is.
+                            _ => Ok(callee_output.clone()),
+                        }
+                    })
+                    .collect::<Result<Vec<_>>>()?,
+            )
         } else {
             None
         };
@@ -302,7 +386,7 @@ impl<N: Network> Transition<N> {
         // Retrieve the `scm`.
         let scm = *request.scm();
         // Return the transition.
-        Self::new(program_id, function_name, inputs, outputs, tpk, tcm, scm, caller_inputs)
+        Self::new(program_id, function_name, inputs, outputs, tpk, tcm, scm, caller_inputs, caller_outputs)
     }
 }
 
@@ -347,14 +431,20 @@ impl<N: Network> Transition<N> {
         &self.scm
     }
 
+    // TODO (dynamic_dispatch) we might want to make this return Result<bool> and check that self.caller_inputs.is_some() == self.caller_outputs.is_some(), as is our convention
     /// Returns whether or not the transition is dynamic.
     pub fn is_dynamic(&self) -> bool {
-        self.caller_inputs.is_some()
+        self.caller_inputs.is_some() || self.caller_outputs.is_some()
     }
 
     /// Returns the optional caller inputs.
     pub fn caller_inputs(&self) -> Option<&[Input<N>]> {
         self.caller_inputs.as_deref()
+    }
+
+    /// Returns the optional caller outputs.
+    pub fn caller_outputs(&self) -> Option<&[Output<N>]> {
+        self.caller_outputs.as_deref()
     }
 }
 

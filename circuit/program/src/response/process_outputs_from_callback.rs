@@ -27,10 +27,13 @@ impl<A: Aleo> Response<A> {
         outputs: Vec<console::Value<A::Network>>,        // Note: Console type
         output_types: &[console::ValueType<A::Network>], // Note: Console type
         output_registers: &[Option<console::Register<A::Network>>], // Note: Console type
-        is_dynamic: bool,
+        function_id: Option<Field<A>>,
     ) -> Vec<Value<A>> {
         // Compute the function ID.
-        let function_id = compute_function_id(network_id, program_id, function_name, is_dynamic);
+        let function_id = match function_id {
+            Some(function_id) => function_id,
+            None => compute_function_id(network_id, program_id, function_name),
+        };
 
         match outputs
             .iter()
@@ -407,7 +410,6 @@ mod tests {
                 outputs.clone(),
                 &output_types,
                 &output_registers,
-                is_dynamic,
             )?;
 
             // Inject the signer, network ID, program ID, function name, `tvk`, `tcm`.
@@ -423,6 +425,8 @@ mod tests {
             };
             let tvk = Field::<Circuit>::new(mode, tvk);
             let tcm = Field::<Circuit>::new(mode, tcm);
+            let function_id =
+                if is_dynamic { Some(compute_function_id(&network_id, &program_id, &function_name)) } else { None };
 
             Circuit::scope(format!("Response {i}"), || {
                 let outputs = Response::process_outputs_from_callback(
@@ -435,7 +439,7 @@ mod tests {
                     response.outputs().to_vec(),
                     &output_types,
                     &output_registers,
-                    is_dynamic,
+                    function_id,
                 );
                 assert_eq!(response.outputs(), outputs.eject_value());
                 expected_count.assert_matches(
@@ -459,7 +463,6 @@ mod tests {
                 outputs,
                 &output_types,
                 &output_registers,
-                is_dynamic,
             );
             assert_eq!(response, candidate_b.eject_value());
 

@@ -13,8 +13,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::TranslationAssignment;
+
 use super::*;
 
+use console::program::DynamicRecord;
 use rand::{SeedableRng, rngs::StdRng};
 
 impl<N: Network> Stack<N> {
@@ -48,10 +51,42 @@ impl<N: Network> Stack<N> {
             verifying_keys.push((*function_name, (verifying_key, certificate)));
         }
 
+        // TODO(dynamic_dispatch): from new consensus version onwards, synthesize the record keys.
+
+        // Initialize a vector for the verifying keys and certificates.
+        let mut translation_verifying_keys = Vec::with_capacity(self.program.records().len());
+
+        for record_name in self.program.records().keys() {
+            // Synthesize the proving and verifying key.
+            self.synthesize_translation_key::<A, R>(record_name, rng)?;
+            lap!(timer, "Synthesize key for translation circuit for {record_name}");
+
+            // Retrieve the proving key.
+            let proving_key = self.get_translation_proving_key(record_name)?;
+
+            // Retrieve the verifying key.
+            let verifying_key = self.get_translation_verifying_key(record_name)?;
+            lap!(timer, "Retrieve the keys for translation circuit for {record_name}");
+
+            // Certify the circuit.
+            let certificate = Certificate::certify(&record_name.to_string(), &proving_key, &verifying_key)?;
+            lap!(timer, "Certify the circuit");
+
+            // Add the verifying key and certificate to the bundle.
+            translation_verifying_keys.push((*record_name, (verifying_key, certificate)));
+        }
+
         finish!(timer);
 
         // Return the deployment.
-        Deployment::new(*self.program_edition, self.program.clone(), verifying_keys, None, None)
+        Deployment::new(
+            *self.program_edition,
+            self.program.clone(),
+            verifying_keys,
+            translation_verifying_keys,
+            None,
+            None,
+        )
     }
 
     /// Checks each function in the program on the given verifying key and certificate.
@@ -83,10 +118,11 @@ impl<N: Network> Stack<N> {
         // Get the program ID.
         let program_id = self.program.id();
 
-        // Check that the number of combined variables does not exceed the deployment limit.
+        // Check that the number of combined variables and constraints does not exceed the deployment limit.
         ensure!(deployment.num_combined_variables()? <= N::MAX_DEPLOYMENT_VARIABLES);
-        // Check that the number of combined constraints does not exceed the deployment limit.
         ensure!(deployment.num_combined_constraints()? <= N::MAX_DEPLOYMENT_CONSTRAINTS);
+        ensure!(deployment.num_combined_translation_variables()? <= N::MAX_DEPLOYMENT_VARIABLES);
+        ensure!(deployment.num_combined_translation_constraints()? <= N::MAX_DEPLOYMENT_CONSTRAINTS);
 
         // Construct the call stacks and assignments used to verify the certificates.
         let mut call_stacks = Vec::with_capacity(deployment.verifying_keys().len());
@@ -102,6 +138,13 @@ impl<N: Network> Stack<N> {
             "The number of functions in the program does not match the number of verifying keys"
         );
 
+        // Check that the number of records matches the number of translation verifying keys.
+        ensure!(
+            deployment.program().records().len() == deployment.translation_verifying_keys().len(),
+            "The number of records in the program does not match the number of translation verifying keys"
+        );
+
+        // TODO (dynamic_dispatch) how does this check relate to translation verifying keys and consensus versions?
         #[cfg(not(any(test, feature = "test")))]
         // Skip the certificate verification if the consensus version is before ConsensusVersion::V8.
         // Circuit synthesis was changed in a backwards incompatible way in ConsensusVersion::V8.
@@ -186,6 +229,65 @@ impl<N: Network> Stack<N> {
             call_stacks.push((function.name(), call_stack, assignments));
         }
 
+        // Iterate through the program records and produce translation assignments.
+        ensure!(
+            deployment.program().records().len() == deployment.translation_verifying_keys().len(),
+            "The number of records in the program does not match the number of translation verifying keys"
+        );
+        let translation_names_assignments = deployment
+            .program()
+            .records()
+            .iter()
+            .map(|(record_name, _record_type)| {
+                // Initialize a private key.
+                let private_key = PrivateKey::new(rng)?;
+                // Compute the address.
+                let address = Address::try_from(&private_key)?;
+
+                // TODO (dynamic_dispatch) should stack::sample be used here instead
+                // of rand? Also, some small improvements can be made here, eg in
+                // principle private_key itself is not necessary
+
+                // Construct a TranslationAssignment:
+                let program_id = *self.program_id();
+                let function_id = Field::<N>::from_u64(Uniform::rand(rng));
+                let record_name = *record_name;
+                let record_static = self.sample_record(&address, &record_name, Group::rand(rng), rng)?;
+                let record_dynamic = DynamicRecord::<N>::from_record(&record_static)?;
+                let translation_count = Uniform::rand(rng);
+                let tvk = Uniform::rand(rng);
+                let input_output_index = Uniform::rand(rng);
+                let record_view_key: Option<Field<N>> = Uniform::rand(rng);
+                let gamma: Option<Group<N>> = Uniform::rand(rng);
+                let id_dynamic = record_dynamic.to_id(function_id, tvk, U16::new(input_output_index)).unwrap();
+                let is_input = Uniform::rand(rng);
+                let static_is_external = Uniform::rand(rng);
+                let id_static = Uniform::rand(rng);
+
+                lap!(timer, "Sample the inputs to the translation circuit for record {record_name}");
+
+                Ok((
+                    record_name,
+                    TranslationAssignment::new(
+                        record_static,
+                        record_dynamic,
+                        program_id,
+                        function_id,
+                        record_name,
+                        is_input,
+                        static_is_external,
+                        translation_count,
+                        tvk,
+                        input_output_index,
+                        id_dynamic,
+                        id_static,
+                        record_view_key,
+                        gamma,
+                    ),
+                ))
+            })
+            .collect::<Result<Vec<_>>>()?;
+
         // Verify the certificates.
         let rngs = (0..call_stacks.len()).map(|_| StdRng::from_seed(seeded_rng.r#gen())).collect::<Vec<_>>();
         cfg_into_iter!(call_stacks).zip_eq(deployment.verifying_keys()).zip_eq(rngs).try_for_each(
@@ -205,6 +307,29 @@ impl<N: Network> Stack<N> {
                     }
                 };
                 Ok(())
+            },
+        )?;
+
+        // Verify the translation certificates.
+        ensure!(
+            translation_names_assignments.len() == deployment.translation_verifying_keys().len(),
+            "The number of records in the program does not match the number of translation verifying keys"
+        );
+        cfg_into_iter!(translation_names_assignments).zip(deployment.translation_verifying_keys()).try_for_each(
+            |((record_name, translation_assignment), (_, (verifying_key, certificate)))| {
+                // Synthesize the circuit.
+                match translation_assignment.to_circuit_assignment::<A>() {
+                    Err(err) => Err(anyhow!("Failed to synthesize the circuit for '{record_name}': {err}")),
+                    Ok(circuit_assignment) => {
+                        // TODO (dynamic_dispatch): unlike in the transition-verifying-key case, we only need one assignment per record name, here, correct?
+                        // Ensure the certificate is valid.
+                        ensure!(
+                            certificate.verify(&record_name.to_string(), &circuit_assignment, verifying_key),
+                            "The translation-circuit certificate for record '{record_name}' is invalid in '{program_id}'"
+                        );
+                        Ok(())
+                    },
+                }
             },
         )?;
 

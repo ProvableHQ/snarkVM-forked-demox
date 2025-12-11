@@ -13,19 +13,36 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{CallStack, Registers, Stack, stack::Address};
+use crate::{CallStack, Registers, Stack, compute_function_id, stack::Address};
 use aleo_std::prelude::{finish, lap, timer};
 use console::{
     account::Field,
     network::prelude::*,
     program::{
-        DynamicFuture, DynamicRecord, Identifier, InputID, Literal, Plaintext, ProgramID, Register, Request, Value,
+        DynamicFuture,
+        Identifier,
+        InputID,
+        Literal,
+        OutputID,
+        Plaintext,
+        ProgramID,
+        Register,
+        Request,
+        Response,
+        Value,
         ValueType,
     },
     types::{Group, U16},
 };
 use snarkvm_synthesizer_program::{
-    Call, CallDynamic, CallOperator, Operand, RegistersCircuit as _, RegistersSigner as _, RegistersTrait as _,
+    Call,
+    CallDynamic,
+    CallOperator,
+    Operand,
+    RecordTranslationData,
+    RegistersCircuit as _,
+    RegistersSigner as _,
+    RegistersTrait as _,
     StackTrait,
 };
 use snarkvm_utilities::dev_eprintln;
@@ -33,10 +50,8 @@ use snarkvm_utilities::dev_eprintln;
 use std::sync::Arc;
 
 mod dynamic;
-pub use dynamic::*;
 
 mod standard;
-pub use standard::*;
 
 pub trait CallTrait<N: Network> {
     /// Evaluates the instruction.

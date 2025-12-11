@@ -20,7 +20,7 @@ mod string;
 use console::{
     account::{Address, ViewKey},
     network::prelude::*,
-    program::{Ciphertext, Future, Plaintext, Record, TransitionLeaf},
+    program::{Ciphertext, Future, Plaintext, Record, TransitionLeaf, ValueType},
     types::{Field, Group},
 };
 
@@ -348,6 +348,34 @@ impl<N: Network> Output<N> {
                 false
             }
         }
+    }
+
+    /// Returns `true` if the two inputs match on their variants.
+    pub fn variants_match(&self, other: &Self) -> bool {
+        matches!(
+            (self, other),
+            (Self::Constant(..), Self::Constant(..))
+                | (Self::Public(..), Self::Public(..))
+                | (Self::Private(..), Self::Private(..))
+                | (Self::Record(..), Self::Record(..))
+                | (Self::ExternalRecord(_), Self::ExternalRecord(_))
+                | (Self::Future(..), Self::Future(..))
+                | (Self::DynamicRecord(_), Self::DynamicRecord(_))
+        )
+    }
+
+    /// Returns `true` if the input matches the expected value type.
+    pub fn is_type(&self, expected_value_type: &ValueType<N>) -> bool {
+        matches!(
+            (self, expected_value_type),
+            (Self::Constant(..), ValueType::Constant(..))
+                | (Self::Public(..), ValueType::Public(..))
+                | (Self::Private(..), ValueType::Private(..))
+                | (Self::Record(..), ValueType::Record(..))
+                | (Self::ExternalRecord(..), ValueType::ExternalRecord(..))
+                | (Self::Future(..), ValueType::Future(..))
+                | (Self::DynamicRecord(..), ValueType::DynamicRecord)
+        )
     }
 }
 

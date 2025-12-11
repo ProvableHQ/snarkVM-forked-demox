@@ -59,6 +59,7 @@ wasm = [
   "snarkvm-synthesizer-snark/wasm"
 ]
 dev-print = [ "snarkvm-utilities/dev-print" ]
+snark-print = [ "snarkvm-algorithms/snark-print" ]
 
 [[bench]]
 name = "kary_merkle_tree"
@@ -149,6 +150,9 @@ features = [ "preserve_order" ]
 
 [dependencies.tracing]
 workspace = true
+
+[dependencies.tracing-subscriber]
+version = "0.3"
 
 [dev-dependencies.anyhow]
 workspace = true

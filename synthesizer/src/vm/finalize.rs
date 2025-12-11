@@ -16,7 +16,7 @@
 use super::*;
 
 use snarkvm_ledger_committee::{MAX_DELEGATORS, MIN_DELEGATOR_STAKE, MIN_VALIDATOR_SELF_STAKE};
-use snarkvm_utilities::{cfg_sort_by_cached_key, defer};
+use snarkvm_utilities::{cfg_sort_by_cached_key, defer, dev_eprintln};
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Speculates on the given list of transactions in the VM.
@@ -77,7 +77,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let unordered_aborted_transaction_ids: IndexMap<N::TransactionID, &String> =
             verification_aborted_transaction_ids.chain(speculation_aborted_transaction_ids).collect();
 
-        println!("Aborted transactions: {unordered_aborted_transaction_ids:?}");
+        dev_eprintln!("Unordered aborted transactions: {unordered_aborted_transaction_ids:?}");
 
         // Filter and order the aborted transaction ids according to candidate_transactions
         let aborted_transaction_ids: Vec<_> = candidate_transaction_ids
@@ -382,6 +382,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                 }
                                 // Construct the rejected deploy transaction.
                                 Err(error) => {
+                                    dev_eprintln!("Failed to finalize deploy tx {} - {error}", transaction.id());
                                     trace!("Failed to finalize deploy tx {} - {error}", transaction.id());
                                     match process_rejected_deployment(fee, *deployment.clone()) {
                                         Ok(result) => result,
@@ -410,6 +411,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             }
                             // Construct the rejected execute transaction.
                             Err(error) => {
+                                dev_eprintln!("Failed to finalize execute tx {} - {error}", transaction.id());
                                 trace!("Failed to finalize execute tx {} - {error}", transaction.id());
                                 match fee {
                                     // Finalize the fee, to ensure it is valid.

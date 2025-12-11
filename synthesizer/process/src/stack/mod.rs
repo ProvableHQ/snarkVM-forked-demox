@@ -42,15 +42,43 @@ use console::{
     account::{Address, PrivateKey},
     network::prelude::*,
     program::{
-        Argument, DynamicFuture, DynamicRecord, Entry, EntryType, FinalizeType, Future, Identifier, Literal, Locator,
-        Owner as RecordOwner, Plaintext, PlaintextType, ProgramID, Record, RecordType, RegisterType, Request, Response,
-        U8, U16, Value, ValueType,
+        Argument,
+        DynamicFuture,
+        DynamicRecord,
+        Entry,
+        EntryType,
+        FinalizeType,
+        Future,
+        Identifier,
+        Literal,
+        Locator,
+        Owner as RecordOwner,
+        Plaintext,
+        PlaintextType,
+        ProgramID,
+        Record,
+        RecordType,
+        RegisterType,
+        Request,
+        Response,
+        U8,
+        U16,
+        Value,
+        ValueType,
     },
     types::{Field, Group},
 };
 use snarkvm_ledger_block::{Deployment, Transaction, Transition};
 use snarkvm_synthesizer_program::{
-    CallOperator, Closure, Function, Instruction, Operand, Program, RegistersCircuit, RegistersSigner, RegistersTrait,
+    CallOperator,
+    Closure,
+    Function,
+    Instruction,
+    Operand,
+    Program,
+    RegistersCircuit,
+    RegistersSigner,
+    RegistersTrait,
     StackTrait,
 };
 use snarkvm_synthesizer_snark::{Certificate, ProvingKey, UniversalSRS, VerifyingKey};
@@ -70,7 +98,7 @@ use rayon::prelude::*;
 pub type Assignments<N> = Arc<RwLock<Vec<(circuit::Assignment<<N as Environment>::Field>, CallMetrics<N>)>>>;
 
 /// The `CallStack` is used to track the current state of the program execution.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum CallStack<N: Network> {
     /// Authorize an `Execute` transaction.
     Authorize(Vec<Request<N>>, Option<PrivateKey<N>>, Authorization<N>),
@@ -84,6 +112,20 @@ pub enum CallStack<N: Network> {
     Execute(Authorization<N>, Arc<RwLock<Trace<N>>>),
     /// Execute a function and create the circuit assignment.
     PackageRun(Vec<Request<N>>, PrivateKey<N>, Assignments<N>),
+}
+
+// impl to_string for CallStack<N>
+impl<N: Network> CallStack<N> {
+    fn type_as_string(&self) -> String {
+        match self {
+            CallStack::Authorize(..) => "Authorize".to_string(),
+            CallStack::Synthesize(..) => "Synthesize".to_string(),
+            CallStack::CheckDeployment(..) => "CheckDeployment".to_string(),
+            CallStack::Evaluate(..) => "Evaluate".to_string(),
+            CallStack::Execute(..) => "Execute".to_string(),
+            CallStack::PackageRun(..) => "PackageRun".to_string(),
+        }
+    }
 }
 
 impl<N: Network> CallStack<N> {
@@ -164,7 +206,7 @@ impl<N: Network> CallStack<N> {
     }
 
     /// Peeks at the next request from the stack.
-    pub fn peek(&mut self) -> Result<Request<N>> {
+    pub fn peek(&self) -> Result<Request<N>> {
         match self {
             CallStack::Authorize(requests, ..)
             | CallStack::Synthesize(requests, ..)
@@ -196,6 +238,10 @@ pub struct Stack<N: Network> {
     proving_keys: Arc<RwLock<IndexMap<Identifier<N>, ProvingKey<N>>>>,
     /// The mapping of function name to verifying key.
     verifying_keys: Arc<RwLock<IndexMap<Identifier<N>, VerifyingKey<N>>>>,
+    /// The mapping of record name to translation proving key.
+    translation_proving_keys: Arc<RwLock<IndexMap<Identifier<N>, ProvingKey<N>>>>,
+    /// The mapping of record name to translation verifying key.
+    translation_verifying_keys: Arc<RwLock<IndexMap<Identifier<N>, VerifyingKey<N>>>>,
     /// The program address.
     program_address: Address<N>,
     /// The program checksum.

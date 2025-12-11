@@ -49,9 +49,11 @@ impl<N: Network> Process<N> {
         lap!(timer, "Execute the function");
 
         // Extract the trace.
-        let trace = Arc::try_unwrap(trace).unwrap().into_inner();
+        let mut trace = Arc::try_unwrap(trace).unwrap().into_inner();
         // Ensure the trace is not empty.
         ensure!(!trace.transitions().is_empty(), "Execution of '{locator}' is empty");
+        // Construct the call graph.
+        trace.construct_call_graph(self)?;
 
         finish!(timer);
         Ok((response, trace))

@@ -202,7 +202,20 @@ impl<N: Network> RegisterTypes<N> {
             }
             RegisterType::Future(locator) => RegisterAccessType::Future(*locator),
             // A dynamic record cannot be accessed directly.
-            RegisterType::DynamicRecord => bail!("Cannot access a dynamic record value directly"),
+            RegisterType::DynamicRecord => {
+                // Retrieve the first access.
+                // Note: this unwrap is safe since the path is checked to be non-empty above.
+                let access = path_iter.next().unwrap();
+                // Retrieve the member type from the external record.
+                if access == &Access::Member(Identifier::from_str("owner")?) {
+                    // If the member is the owner, then output the address type.
+                    RegisterAccessType::Plaintext(literal_address_type)
+                } else {
+                    bail!(
+                        "Only the 'owner' of a dynamic record can be accessed directly, use 'get.dynamic.record' instead."
+                    )
+                }
+            }
             // A dynamic future cannot be accessed directly.
             RegisterType::DynamicFuture => bail!("Cannot access a dynamic future value directly"),
         };
