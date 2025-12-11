@@ -165,7 +165,7 @@ fn test_execution_cost_for_authorization() {
     let program_b = Program::<CurrentNetwork>::from_str(&program_b_string).unwrap();
 
     // Initialize the VM.
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap(), rng);
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
     // Deploy the programs.
     println!("Deploying program {program_a_str}.aleo...");
@@ -249,7 +249,7 @@ fn test_execution_cost_for_authorization() {
     // Checking the cost-estimation function computes the correct cost
     let execution = transaction.execution().unwrap();
 
-    let actual_cost = execution_cost(&vm.process().read(), execution, ConsensusVersion::V12).unwrap();
+    let actual_cost = execution_cost(&vm.process().read(), execution, ConsensusVersion::V14).unwrap();
 
     let authorization = Authorization::from_unchecked((vec![], execution.transitions().cloned().collect()));
 
@@ -265,7 +265,7 @@ fn test_execution_cost_for_authorization() {
     // - the next one comes from the (output) translation for welded_chunk.record
 
     let expected_cost =
-        execution_cost_for_authorization(&vm.process().read(), &authorization, ConsensusVersion::V12).unwrap();
+        execution_cost_for_authorization(&vm.process().read(), &authorization, ConsensusVersion::V14).unwrap();
 
     assert_eq!(actual_cost, expected_cost);
 
@@ -439,7 +439,7 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
     let program_b = Program::<CurrentNetwork>::from_str(&program_b_str).unwrap();
 
     // Initialize the VM.
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap(), rng);
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
     // Deploy the programs.
     println!("Deploying program {program_a_name}.aleo...");

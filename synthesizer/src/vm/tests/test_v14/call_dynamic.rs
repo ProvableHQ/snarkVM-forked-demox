@@ -91,7 +91,7 @@ fn test_dynamic_calls_to_credits_aleo() -> Result<()> {
     )?;
 
     // Initialize the VM.
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12)?, rng);
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14)?, rng);
 
     // Deploy the program.
     println!("Deploying program: {}", program.id());
@@ -319,7 +319,7 @@ fn test_universal_swap() {
     let caller_view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
 
     // Initialize the VM at the V12 height.
-    let v12_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap();
+    let v12_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
     let vm = crate::vm::test_helpers::sample_vm_at_height(v12_height, rng);
 
     // Deploy the program - one at a time so as not to surpass public payer limits.
@@ -536,7 +536,7 @@ fn test_conditional_execution() {
     let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
 
     // Initialize the VM at the V12 height.
-    let v12_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap();
+    let v12_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
     let vm = crate::vm::test_helpers::sample_vm_at_height(v12_height, rng);
 
     // Deploy the program - one at a time so as not to surpass public payer limits.
@@ -831,7 +831,7 @@ fn test_complex_dynamic_graph_construction_internal(
     // Initialize caller.
     let caller_private_key = sample_genesis_private_key(rng);
 
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap(), rng);
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
     for (program, program_name_str) in [
         (program0, program_0_name_str),

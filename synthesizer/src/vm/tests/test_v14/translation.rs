@@ -213,7 +213,7 @@ fn test_translation(
     let program_b = Program::<CurrentNetwork>::from_str(&program_b_string).unwrap();
 
     // Initialize the VM.
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap(), rng);
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
     // Deploy the programs.
     println!("Deploying program {program_b_name_str}...");
@@ -651,7 +651,7 @@ fn test_translation_traversal_consistency() {
 
     let program = Program::<CurrentNetwork>::from_str(&program_string).unwrap();
 
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap(), rng);
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
     // Deploy the program.
     let transaction = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
@@ -773,7 +773,7 @@ fn test_malicious_caller_inputs_outputs() {
 
     let program = Program::<CurrentNetwork>::from_str(&program_string).unwrap();
 
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap(), rng);
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
     // Deploy the program.
     let transaction_deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();

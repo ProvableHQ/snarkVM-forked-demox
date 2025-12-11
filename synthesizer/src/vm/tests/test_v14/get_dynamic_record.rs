@@ -111,7 +111,7 @@ fn test_get_dynamic_record() {
     let program = Program::<CurrentNetwork>::from_str(&program_string).unwrap();
 
     // Initialize the VM.
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap(), rng);
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
     // Deploy the program.
     println!("Deploying program warehouse.aleo...");

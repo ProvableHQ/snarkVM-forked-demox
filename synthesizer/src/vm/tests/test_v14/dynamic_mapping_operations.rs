@@ -64,7 +64,7 @@ fn test_dynamic_contains() {
     let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
 
     // Initialize the VM at the V12 height.
-    let v12_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap();
+    let v12_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
     let vm = crate::vm::test_helpers::sample_vm_at_height(v12_height, rng);
 
     // Initialize two instances of the basic program.
@@ -358,7 +358,7 @@ fn test_dynamic_get() {
     let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
 
     // Initialize the VM at the V12 height.
-    let v12_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap();
+    let v12_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
     let vm = crate::vm::test_helpers::sample_vm_at_height(v12_height, rng);
 
     // Initialize two instances of the basic program (u32 values).
@@ -878,7 +878,7 @@ fn test_dynamic_get_or_use() {
     let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
 
     // Initialize the VM at the V12 height.
-    let v12_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap();
+    let v12_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
     let vm = crate::vm::test_helpers::sample_vm_at_height(v12_height, rng);
 
     // Initialize two instances of the basic program (u32 values).

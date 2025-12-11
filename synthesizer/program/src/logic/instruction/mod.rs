@@ -451,7 +451,7 @@ macro_rules! instruction {
             SerializeBits,
             SerializeBitsRaw,
 
-            // Dynamic calls are introduced in `ConsensusVersion::V12`
+            // Dynamic calls are introduced in `ConsensusVersion::V14`
             CallDynamic,
             GetDynamicRecord,
 

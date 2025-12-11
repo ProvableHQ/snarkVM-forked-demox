@@ -202,7 +202,7 @@ fn test_cast_simple() {
     let program_b = Program::<CurrentNetwork>::from_str(&program_b_string).unwrap();
 
     // Initialize the VM.
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap(), &mut rng);
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), &mut rng);
 
     // Deploy the programs.
     println!("Deploying program garden_center.aleo...");

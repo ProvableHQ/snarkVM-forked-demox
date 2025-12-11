@@ -83,7 +83,7 @@ fn test_fibonacci() {
     let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
 
     // Initialize the VM at the V12 height.
-    let v12_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap();
+    let v12_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
     let vm = crate::vm::test_helpers::sample_vm_at_height(v12_height, rng);
 
     // Deploy the program
@@ -155,7 +155,7 @@ fn test_recursive_dynamic_record_calls() {
     let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Initialize the VM at the V12 height.
-    let v12_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap();
+    let v12_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
     let vm = crate::vm::test_helpers::sample_vm_at_height(v12_height, rng);
 
     // Define the first program that defines a record and functions `one`, `two`, `three`, and `four`.
