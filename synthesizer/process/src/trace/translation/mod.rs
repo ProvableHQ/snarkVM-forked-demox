@@ -395,6 +395,7 @@ impl<N: Network> Translation<N> {
                         }
                         // TODO (dynamic_dispatch): if this check is redundant with other ones already in place, remove it
                         // TODO (dynamic_dispatch): make sure this (and its input counterpart above) do not incorrectly reject valid type combinations; possibly do away with this check altogether
+                        // TODO (@d0cd) Consider dynamic futures.
                         _ => {
                             ensure!(
                                 Output::variants_match(caller_output, callee_output)

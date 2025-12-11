@@ -130,6 +130,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
 
                                 // Obtain the program where the external record is defined (which must be imported inside the callee)
                                 // TODO (dynamic_dispatch) make sure this handles substack-fetching correctly
+                                // TODO (@d0cd)
                                 let external_record_stack = substack.get_external_stack(record_program_id)?;
 
                                 // Look up the owner visibility.
@@ -328,7 +329,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                     let record_name = locator.resource();
 
                                     // Obtain the program where the external record is defined (which must be imported inside the callee)
-                                    // TODO (dynamic_dispatch) make sure this handles substack-fetching correctly
+                                    // TODO (dynamic_dispatch, @d0cd) make sure this handles substack-fetching correctly
                                     // TODO (dynamic_dispatch) verify that we want to be using `get_exteranl_stack`, ditto for others.
                                     let external_record_stack =
                                         target.substack().get_external_stack(record_program_id)?;
@@ -679,7 +680,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         let callee_console_inputs = callee_request.inputs();
                         let mut translation_data = Vec::new();
 
-                        // TODO (dynamic_dispatch) move to a separate function to avoid clutter?
+                        // TODO (dynamic_dispatch) move to a separate function to avoid clutter? Yes.
                         // TODO (dynamic_dispatch) some of these might be redundant with earlier checks (others are not, caught bug here)
                         assert_eq!(
                             caller_input_types.len(),
@@ -968,6 +969,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             lap!(timer, "Computed the request and response");
 
             // TODO(dynamic_dispatch): If we let Registers keep e.g. an Arc<Stack>, we can just access Registers above.
+            // TODO (@d0cd)
             if let Some(translation_data) = translation_data {
                 for translation_datum in translation_data {
                     registers.insert_record_translation_data(translation_datum);

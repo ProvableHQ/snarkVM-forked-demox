@@ -308,6 +308,7 @@ fn test_translation(
 /************************** Translation test cases ***************************/
 
 // TODO (dynamic_dispatch) remove the legend once working
+// Clean up but keep around.
 //
 // Single-translation test cases (O: coded, P: passing)
 // P input dynamic -> static external

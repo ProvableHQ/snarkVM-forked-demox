@@ -353,6 +353,9 @@ mod tests {
 
             // Check the count
             // TODO (dynamic_dispatch) re-introduce if necessary
+            // - Resolve by unrolling the loop.
+            // - Resolve by doing single iteration first.
+            // - Resolve by investigaing constant/variable creation.
             // count.assert_matches(
             //     Circuit::num_constants(),
             //     Circuit::num_public(),

@@ -27,23 +27,8 @@ mod string;
 use console::{
     network::prelude::*,
     program::{
-        Ciphertext,
-        DynamicRecord,
-        Identifier,
-        InputID,
-        OutputID,
-        ProgramID,
-        Record,
-        Register,
-        Request,
-        Response,
-        TRANSITION_DEPTH,
-        TransitionLeaf,
-        TransitionPath,
-        TransitionTree,
-        Value,
-        ValueType,
-        compute_function_id,
+        Ciphertext, DynamicRecord, Identifier, InputID, OutputID, ProgramID, Record, Register, Request, Response,
+        TRANSITION_DEPTH, TransitionLeaf, TransitionPath, TransitionTree, Value, ValueType, compute_function_id,
     },
     types::{Field, Group},
 };
@@ -432,6 +417,7 @@ impl<N: Network> Transition<N> {
     }
 
     // TODO (dynamic_dispatch) we might want to make this return Result<bool> and check that self.caller_inputs.is_some() == self.caller_outputs.is_some(), as is our convention
+    // TODO (@d0cd)
     /// Returns whether or not the transition is dynamic.
     pub fn is_dynamic(&self) -> bool {
         self.caller_inputs.is_some() || self.caller_outputs.is_some()

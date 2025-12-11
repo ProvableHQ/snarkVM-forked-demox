@@ -51,7 +51,7 @@ impl<N: Network> Stack<N> {
             verifying_keys.push((*function_name, (verifying_key, certificate)));
         }
 
-        // TODO(dynamic_dispatch): from new consensus version onwards, synthesize the record keys.
+        // TODO(dynamic_dispatch): from new consensus version onwards, synthesize the record keys. Gate by consensus version.
 
         // Initialize a vector for the verifying keys and certificates.
         let mut translation_verifying_keys = Vec::with_capacity(self.program.records().len());
