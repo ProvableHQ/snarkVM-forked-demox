@@ -382,8 +382,6 @@ impl<N: Network> Process<N> {
 
             // [Inputs] Extend the verifier inputs with the input IDs of the external call.
             let child_inputs = if is_dynamic {
-                println!("     inside if is_dynamic");
-
                 // Since is_dynamic has been checked to match child_transition.is_dynamic(),
                 // which guarantees caller_inputs.is_some() when true, this ? should always unwrap successfully.
                 let caller_inputs = child_transition.caller_inputs().ok_or_else(|| {

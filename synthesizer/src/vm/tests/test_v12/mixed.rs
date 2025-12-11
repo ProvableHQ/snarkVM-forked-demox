@@ -285,6 +285,7 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
 
     let client_2_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
     let client_2_address = Address::try_from(&client_2_private_key).unwrap();
+    let client_2_view_key = ViewKey::<CurrentNetwork>::try_from(client_2_private_key).unwrap();
 
     let program_a_name = Identifier::<CurrentNetwork>::from_str("manager").unwrap();
     let program_b_name = Identifier::<CurrentNetwork>::from_str("factory").unwrap();
@@ -303,17 +304,16 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
 
     // Signatures for products operate as follows:
     // 1. The factory receives a request for a toy/ladder from a client and
-    //    generates a random product ID (it keeps an off-chain registry to avoid
-    //    duplicates). It then produces the requested product record, which
-    //    includes the generated ID.
+    //    generates a random product ID (it can e. g. keep an off-chain registry
+    //    to avoid duplicates). It then produces the requested product record,
+    //    which includes the generated ID.
     // 2. The client can decrypt the record and compute the signature
     //        s = vk + product_id
     //    where vk is the client account' view key
     // 3. A function called by the client and receiving this signature as a
     //    private input can verify it by checking
     //        s * G = owner_address + (product_id * G),
-    //    since owner_address = vk * G Disclaimer: this is not a secure signing
-    //    scheme. Do not use.
+    //    since owner_address = vk * G.
 
     let program_a_str = format!(
         r"
@@ -344,6 +344,9 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
         "
     );
 
+    // Note: by making the product ID private for toys and public for ladders,
+    // we are also testing get.dynamic.crecord can read entries regardless of
+    // their visibility, as expected.
     let program_b_str = format!(
         r"
         import {program_a_name}.aleo;
@@ -452,7 +455,7 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
         .execute(
             &factory_private_key,
             ("credits.aleo", "transfer_public"),
-            [Value::from_str(&format!("{client_1_address}")).unwrap(), Value::from_str("10000u64").unwrap()].iter(),
+            [Value::from_str(&format!("{client_1_address}")).unwrap(), Value::from_str("1000000u64").unwrap()].iter(),
             None,
             0,
             None,
@@ -464,7 +467,7 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
         .execute(
             &factory_private_key,
             ("credits.aleo", "transfer_public"),
-            [Value::from_str(&format!("{client_2_address}")).unwrap(), Value::from_str("10000u64").unwrap()].iter(),
+            [Value::from_str(&format!("{client_2_address}")).unwrap(), Value::from_str("1000000u64").unwrap()].iter(),
             None,
             0,
             None,
@@ -484,6 +487,8 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
         Value::from_str("34u16").unwrap(),
         Value::from_str(&toy_1_id.to_string()).unwrap(),
     ];
+
+    println!("Executing {program_b_name}.aleo/manufacture_toy...");
 
     let transaction_mint_toy_1 = vm
         .execute(
@@ -525,6 +530,158 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
         .unwrap();
 
     add_and_test(&vm, &client_1_private_key, &[transaction_decomission_toy_1], rng);
+
+    // ********** Case 2: Ladder painting, failed and successful decomissioning **********
+
+    // TODO (dynamic_dispatch) change to client 2 once we have can access .owner in dynamic records and the function is updated
+    // Manufacture a ladder for client 1
+    let ladder_1_id: Scalar<CurrentNetwork> = Uniform::rand(rng);
+
+    let ladder_1_inputs =
+        [Value::from_str(&client_1_address.to_string()).unwrap(), Value::from_str(&ladder_1_id.to_string()).unwrap()];
+
+    println!("Executing {program_b_name}.aleo/manufacture_ladder...");
+
+    let transaction_mint_ladder_1 = vm
+        .execute(
+            &client_1_private_key,
+            ("factory.aleo", "manufacture_ladder"),
+            ladder_1_inputs.into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    let unpainted_ladder_1_record = match &transaction_mint_ladder_1.transitions().next().unwrap().outputs()[0] {
+        Output::Record(_, _, record_ciphertext, _) => {
+            record_ciphertext.as_ref().unwrap().decrypt(&client_1_view_key).unwrap()
+        }
+        _ => panic!("Expected output record is not a record"),
+    };
+
+    let painted_entry_1 = match unpainted_ladder_1_record
+        .data()
+        .get(&Identifier::<CurrentNetwork>::from_str("painted").unwrap())
+        .unwrap()
+    {
+        Entry::Public(plaintext) => plaintext,
+        _ => panic!("Expected painted entry to be public"),
+    };
+
+    assert_eq!(painted_entry_1, &Plaintext::from_str("false").unwrap());
+
+    add_and_test(&vm, &client_1_private_key, &[transaction_mint_ladder_1], rng);
+
+    println!("Executing {program_b_name}.aleo/paint_ladder...");
+
+    // Paint the ladder
+    let transaction_paint_ladder_1 = vm
+        .execute(
+            &client_1_private_key,
+            ("factory.aleo", "paint_ladder"),
+            [Value::Record(unpainted_ladder_1_record)].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    let painted_ladder_1_record = match &transaction_paint_ladder_1.transitions().next().unwrap().outputs()[0] {
+        Output::Record(_, _, record_ciphertext, _) => {
+            record_ciphertext.as_ref().unwrap().decrypt(&client_1_view_key).unwrap()
+        }
+        _ => panic!("Expected output record is not a record"),
+    };
+
+    let painted_entry_2 = match painted_ladder_1_record
+        .data()
+        .get(&Identifier::<CurrentNetwork>::from_str("painted").unwrap())
+        .unwrap()
+    {
+        Entry::Public(plaintext) => plaintext,
+        _ => panic!("Expected painted entry to be public"),
+    };
+
+    assert_eq!(painted_entry_2, &Plaintext::from_str("true").unwrap());
+
+    add_and_test(&vm, &client_1_private_key, &[transaction_paint_ladder_1], rng);
+
+    // TODO (dynamic_dispatch) change to client 1 once get.owner is available.
+    // Computing an incorrect signature (uses client 2's view key)
+    let ladder_1_incorrect_signature = ladder_1_id + *client_2_view_key;
+
+    let decomission_toy_inputs = [
+        Value::from_str(&painted_ladder_1_record.to_string()).unwrap(),
+        Value::from_str(&ladder_1_incorrect_signature.to_string()).unwrap(),
+    ];
+
+    println!("Executing {program_b_name}.aleo/decomission_ladder (incorrect)...");
+
+    assert!(
+        vm.execute(
+            &client_1_private_key,
+            ("factory.aleo", "decomission_ladder"),
+            decomission_toy_inputs.into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .is_err()
+    );
+
+    // Correctly decomission the ladder (uses client 1's view key)
+    let ladder_1_correct_signature = ladder_1_id + *client_1_view_key;
+
+    let decomission_ladder_inputs = [
+        Value::from_str(&painted_ladder_1_record.to_string()).unwrap(),
+        Value::from_str(&ladder_1_correct_signature.to_string()).unwrap(),
+    ];
+
+    println!("Executing {program_b_name}.aleo/decomission_ladder...");
+
+    let transaction_correct_decomission_ladder_1 = vm
+        .execute(
+            &client_1_private_key,
+            ("factory.aleo", "decomission_ladder"),
+            decomission_ladder_inputs.iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    println!("Executing {program_b_name}.aleo/decomission_ladder (incorrect)...");
+
+    // Attemtping to decomission the ladder again should fail (the record has already been nullified)
+    let transaction_decomission_ladder_1_again = vm
+        .execute(
+            &client_1_private_key,
+            ("factory.aleo", "decomission_ladder"),
+            decomission_ladder_inputs.into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    // TODO (Antonio) why is this okay?
+    vm.check_transaction(&transaction_decomission_ladder_1_again, None, rng).unwrap();
+
+    let decomission_ladder_1_again_id = transaction_decomission_ladder_1_again.id();
+
+    let ladder_1_decomission_transactions =
+        [transaction_correct_decomission_ladder_1, transaction_decomission_ladder_1_again];
+
+    let block = sample_next_block(&vm, &client_1_private_key, &ladder_1_decomission_transactions, rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids(), &[decomission_ladder_1_again_id]);
 
     // TEST the toy cannot be decomissioned twice
 }
