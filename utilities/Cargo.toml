@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-utilities"
-version = "4.2.1"
+version = "4.4.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Utilities for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -35,6 +35,9 @@ features = [ "cpu" ]
 workspace = true
 
 [dependencies.bincode]
+workspace = true
+
+[dependencies.colored]
 workspace = true
 
 [dependencies.num_cpus]
@@ -74,6 +77,9 @@ default-features = false
 [dependencies.zeroize]
 workspace = true
 features = [ "derive" ]
+
+[dev-dependencies.tracing-test]
+workspace = true
 
 [features]
 default = [ "derive" ]

@@ -19,6 +19,10 @@ use anyhow::Context;
 
 impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     /// Returns a candidate for the next block in the ledger, using a committed subdag and its transmissions.
+    /// This candidate can then be passed to [`Ledger::advance_to_next_block`] to be added to the ledger.
+    ///
+    /// # Panics
+    /// This function panics if called from an async context.
     pub fn prepare_advance_to_next_quorum_block<R: Rng + CryptoRng>(
         &self,
         subdag: Subdag<N>,
@@ -33,9 +37,8 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         // Currently, we do not support ratifications from the memory pool.
         ensure!(ratifications.is_empty(), "Ratifications are currently unsupported from the memory pool");
         // Construct the block template.
-        let (header, ratifications, solutions, aborted_solution_ids, transactions, aborted_transaction_ids) = self
-            .construct_block_template(&previous_block, Some(&subdag), ratifications, solutions, transactions, rng)
-            .with_context(|| "Failed to construct block template")?;
+        let (header, ratifications, solutions, aborted_solution_ids, transactions, aborted_transaction_ids) =
+            self.construct_block_template(&previous_block, Some(&subdag), ratifications, solutions, transactions, rng)?;
 
         // Construct the new quorum block.
         Block::new_quorum(
@@ -51,6 +54,13 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     }
 
     /// Returns a candidate for the next block in the ledger.
+    /// This candidate can then be passed to [`Ledger::advance_to_next_block`] to be added to the ledger.
+    ///
+    /// Note, that beacon blocks are only used for testing purposes.
+    /// Production code will most likely used `[Ledger::prepare_advance_to_next_quorum_block`] instead.
+    ///
+    /// # Panics
+    /// This function panics if called from an async context.
     pub fn prepare_advance_to_next_beacon_block<R: Rng + CryptoRng>(
         &self,
         private_key: &PrivateKey<N>,
@@ -74,8 +84,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
                 candidate_solutions,
                 candidate_transactions,
                 rng,
-            )
-            .with_context(|| "Failed to construct block template")?;
+            )?;
 
         // Construct the new beacon block.
         Block::new_beacon(
@@ -92,6 +101,14 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     }
 
     /// Adds the given block as the next block in the ledger.
+    ///
+    /// This function expects a valid block, that either was created by a trusted source, or successfully passed
+    /// the blocks checks (e.g. [`Ledger::check_next_block`]).
+    /// Note, that it is still possible that this function returns an error for a valid block, if there are concurrent tasks
+    /// updating the ledger.
+    ///
+    /// # Panics
+    /// This function panics if called from an async context.
     pub fn advance_to_next_block(&self, block: &Block<N>) -> Result<()> {
         // Acquire the write lock on the current block.
         let mut current_block = self.current_block.write();
@@ -212,6 +229,9 @@ where
 
 impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     /// Constructs a block template for the next block in the ledger.
+    ///
+    /// # Panics
+    /// This function panics if called from an async context.
     #[allow(clippy::type_complexity)]
     fn construct_block_template<R: Rng + CryptoRng>(
         &self,
@@ -345,10 +365,14 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             latest_coinbase_target,
         )?;
 
+        // Determine if the block timestamp should be included.
+        let next_block_timestamp =
+            (next_height >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default()).then_some(next_timestamp);
         // Construct the finalize state.
         let state = FinalizeGlobalState::new::<N>(
             next_round,
             next_height,
+            next_block_timestamp,
             next_cumulative_weight,
             next_cumulative_proof_target,
             previous_block.hash(),

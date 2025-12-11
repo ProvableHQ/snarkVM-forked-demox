@@ -80,18 +80,21 @@ impl<N: Network> FinalizeCore<N> {
         &self.positions
     }
 
+    /// Returns `true` if the finalize scope contains a string type.
+    pub fn contains_string_type(&self) -> bool {
+        self.input_types().iter().any(|input_type| {
+            matches!(input_type, FinalizeType::Plaintext(plaintext_type) if plaintext_type.contains_string_type())
+        }) || self.commands.iter().any(|command| {
+            command.contains_string_type()
+        })
+    }
+
     /// Returns `true` if the finalize scope contains an array type with a size that exceeds the given maximum.
     pub fn exceeds_max_array_size(&self, max_array_size: u32) -> bool {
-        self.inputs.iter().any(|input| {
-            matches!(
-                input.finalize_type(),
-                FinalizeType::Plaintext(plaintext_type) if plaintext_type.exceeds_max_array_size(max_array_size)
-            )
+        self.input_types().iter().any(|input_type| {
+            matches!(input_type, FinalizeType::Plaintext(plaintext_type) if plaintext_type.exceeds_max_array_size(max_array_size))
         }) || self.commands.iter().any(|command| {
-            matches!(
-                command,
-                Command::Instruction(instruction) if instruction.exceeds_max_array_size(max_array_size)
-            )
+            command.exceeds_max_array_size(max_array_size)
         })
     }
 }

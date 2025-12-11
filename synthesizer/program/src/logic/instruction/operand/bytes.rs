@@ -52,6 +52,7 @@ impl<N: Network> FromBytes for Operand<N> {
                 };
                 Ok(Self::ProgramOwner(program_id))
             }
+            10 => Ok(Self::BlockTimestamp),
             variant => Err(error(format!("Failed to deserialize operand variant {variant}"))),
         }
     }
@@ -109,6 +110,7 @@ impl<N: Network> ToBytes for Operand<N> {
                     }
                 }
             }
+            Self::BlockTimestamp => 10u8.write_le(&mut writer),
         }
     }
 }

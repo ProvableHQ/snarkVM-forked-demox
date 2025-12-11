@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-ledger-store"
-version = "4.2.1"
+version = "4.4.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A data store for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -109,6 +109,9 @@ workspace = true
 features = [ "write" ]
 optional = true
 
+[dependencies.tracing]
+workspace = true
+
 [dev-dependencies.aleo-std]
 workspace = true
 
@@ -126,7 +129,7 @@ path = "../../ledger/test-helpers"
 workspace = true
 
 [dev-dependencies.tracing-test]
-version = "0.2.5"
+workspace = true
 
 [dev-dependencies.tracing]
 workspace = true

@@ -84,6 +84,8 @@ impl<N: Network> Stack<N> {
                     Operand::Caller => Ok(Value::Plaintext(Plaintext::from(Literal::Address(registers.caller()?)))),
                     // If the operand is the block height, throw an error.
                     Operand::BlockHeight => bail!("Cannot retrieve the block height from a closure scope."),
+                    // If the operand is the block timestamp, throw an error.
+                    Operand::BlockTimestamp => bail!("Cannot retrieve the block timestamp from a closure scope."),
                     // If the operand is the network id, throw an error.
                     Operand::NetworkID => bail!("Cannot retrieve the network ID from a closure scope."),
                     // If the operand is the program checksum, throw an error.
@@ -240,6 +242,8 @@ impl<N: Network> Stack<N> {
                     Operand::Caller => Ok(Value::Plaintext(Plaintext::from(Literal::Address(registers.caller()?)))),
                     // If the operand is the block height, throw an error.
                     Operand::BlockHeight => bail!("Cannot retrieve the block height from a function scope."),
+                    // If the operand is the block timestamp, throw an error.
+                    Operand::BlockTimestamp => bail!("Cannot retrieve the block timestamp from a function scope."),
                     // If the operand is the network id, throw an error.
                     Operand::NetworkID => bail!("Cannot retrieve the network ID from a function scope."),
                     // If the operand is the program checksum, throw an error.

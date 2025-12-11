@@ -115,6 +115,10 @@ impl<N: Network> Stack<N> {
                     Operand::BlockHeight => {
                         bail!("Illegal operation: cannot retrieve the block height in a closure scope")
                     }
+                    // If the operand is the block timestamp, throw an error.
+                    Operand::BlockTimestamp => {
+                        bail!("Illegal operation: cannot retrieve the block timestamp in a closure scope")
+                    }
                     // If the operand is the network id, throw an error.
                     Operand::NetworkID => {
                         bail!("Illegal operation: cannot retrieve the network id in a closure scope")
@@ -388,6 +392,10 @@ impl<N: Network> Stack<N> {
                     // If the operand is the block height, throw an error.
                     Operand::BlockHeight => {
                         bail!("Illegal operation: cannot retrieve the block height in a function scope")
+                    }
+                    // If the operand is the block timestamp, throw an error.
+                    Operand::BlockTimestamp => {
+                        bail!("Illegal operation: cannot retrieve the block timestamp in a function scope")
                     }
                     // If the operand is the network id, throw an error.
                     Operand::NetworkID => {

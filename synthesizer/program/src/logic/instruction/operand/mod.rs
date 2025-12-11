@@ -41,6 +41,9 @@ pub enum Operand<N: Network> {
     /// The operand is the block height.
     /// Note: This variant is only accessible in the `finalize` scope.
     BlockHeight,
+    /// The operand is the block timestamp.
+    /// Note: This variant is only accessible in the `finalize` scope.
+    BlockTimestamp,
     /// The operand is the network ID.
     /// Note: This variant is only accessible in the `finalize` scope.
     NetworkID,
@@ -87,6 +90,13 @@ impl<N: Network> From<&Register<N>> for Operand<N> {
     #[inline]
     fn from(register: &Register<N>) -> Self {
         Operand::Register(register.clone())
+    }
+}
+
+impl<N: Network> Operand<N> {
+    /// Returns `true` if the operand contains a string type.
+    pub fn contains_string_type(&self) -> bool {
+        matches!(self, Self::Literal(Literal::String(_)))
     }
 }
 

@@ -18,11 +18,12 @@
 use super::*;
 use crate::helpers::{NestedMap, NestedMapRead};
 use console::prelude::{FromBytes, anyhow, cfg_into_iter};
-use snarkvm_utilities::{LoggableError, bytes::unchecked_deserialize};
+use snarkvm_utilities::{bytes::unchecked_deserialize, flatten_error};
 
 use anyhow::Context;
 use core::{fmt, fmt::Debug, hash::Hash, mem};
 use std::{borrow::Cow, sync::atomic::Ordering};
+use tracing::error;
 
 #[cfg(not(feature = "serial"))]
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -647,19 +648,31 @@ impl<
         let (map_key, value) = self.db_iter.item()?;
 
         // Extract the bytes belonging to the map and the key.
-        let (entry_map, entry_key) =
-            get_map_and_key(map_key).map_err(|err| err.log_error("RocksDB NestedIter get_map_and_key error")).ok()?;
+        let (entry_map, entry_key) = get_map_and_key(map_key)
+            .map_err(|err| {
+                error!("{}", &flatten_error(err.context("RocksDB Iter deserialize(key) error")));
+            })
+            .ok()?;
 
         // Deserialize the map, key, and value.
         let map = unchecked_deserialize(entry_map)
-            .map_err(|err| err.log_error("RocksDB NestedIter deserialize(map) error"))
+            .map_err(|err| {
+                let err: anyhow::Error = err.into();
+                error!("{}", &flatten_error(err.context("RocksDB NestedIter deserialize(map) error")));
+            })
             .ok()?;
         let key = unchecked_deserialize(entry_key)
-            .map_err(|err| err.log_error("RocksDB NestedIter deserialize(key) error"))
+            .map_err(|err| {
+                let err: anyhow::Error = err.into();
+                error!("{}", &flatten_error(err.context("RocksDB NestedIter deserialize(key) error")));
+            })
             .ok()?;
         // Deserialize the value.
         let value = unchecked_deserialize(value)
-            .map_err(|err| err.log_error("RocksDB NestedIter deserialize(value) error"))
+            .map_err(|err| {
+                let err: anyhow::Error = err.into();
+                error!("{}", &flatten_error(err.context("RocksDB NestedIter deserialize(value) error")));
+            })
             .ok()?;
 
         self.db_iter.next();
@@ -705,15 +718,24 @@ impl<
         let map_key = self.db_iter.key()?;
 
         // Extract the bytes belonging to the map and the key.
-        let (entry_map, entry_key) =
-            get_map_and_key(map_key).map_err(|err| err.log_error("RocksDB NestedKeys get_map_and_key error")).ok()?;
+        let (entry_map, entry_key) = get_map_and_key(map_key)
+            .map_err(|err| {
+                error!("{}", &flatten_error(err.context("RocksDB  NestedKeys get_map_and_key error")));
+            })
+            .ok()?;
 
         // Deserialize the map and key.
         let map = unchecked_deserialize(entry_map)
-            .map_err(|err| err.log_error("RocksDB NestedKeys deserialize(map) error"))
+            .map_err(|err| {
+                let err: anyhow::Error = err.into();
+                error!("{}", &flatten_error(err.context("RocksDB  NestedKeys deserialize(map) error")));
+            })
             .ok()?;
         let key = unchecked_deserialize(entry_key)
-            .map_err(|err| err.log_error("RocksDB NestedKeys deserialize(key) error"))
+            .map_err(|err| {
+                let err: anyhow::Error = err.into();
+                error!("{}", &flatten_error(err.context("RocksDB  NestedKeys deserialize(key) error")));
+            })
             .ok()?;
 
         self.db_iter.next();
@@ -747,7 +769,8 @@ impl<'a, V: 'a + Clone + Serialize + DeserializeOwned> Iterator for NestedValues
         // Deserialize the value.
         let value = unchecked_deserialize(value)
             .map_err(|err| {
-                err.log_error("RocksDB NestedValues deserialize(value) error");
+                let err: anyhow::Error = err.into();
+                error!("{}", &flatten_error(err.context("RocksDB  NestedValues deserialize(values) error")));
             })
             .ok()?;
 

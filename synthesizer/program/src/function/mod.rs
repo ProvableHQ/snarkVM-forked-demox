@@ -86,6 +86,14 @@ impl<N: Network> FunctionCore<N> {
         self.finalize_logic.as_ref()
     }
 
+    /// Returns `true` if the function contains a string type.
+    pub fn contains_string_type(&self) -> bool {
+        self.input_types().iter().any(|input| input.contains_string_type())
+            || self.output_types().iter().any(|output| output.contains_string_type())
+            || self.instructions.iter().any(|instruction| instruction.contains_string_type())
+            || self.finalize_logic.as_ref().map(|finalize| finalize.contains_string_type()).unwrap_or(false)
+    }
+
     /// Returns `true` if the function scope contains an array type with a size that exceeds the given maximum.
     pub fn exceeds_max_array_size(&self, max_array_size: u32) -> bool {
         self.inputs.iter().any(|input| input.value_type().exceeds_max_array_size(max_array_size))

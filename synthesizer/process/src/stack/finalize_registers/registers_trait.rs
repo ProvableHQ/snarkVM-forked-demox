@@ -41,6 +41,13 @@ impl<N: Network> RegistersTrait<N> for FinalizeRegisters<N> {
             Operand::BlockHeight => {
                 return Ok(Value::Plaintext(Plaintext::from(Literal::U32(U32::new(self.state.block_height())))));
             }
+            // If the operand is the block timestamp, load the block timestamp.
+            Operand::BlockTimestamp => match self.state.block_timestamp() {
+                Some(timestamp) => {
+                    return Ok(Value::Plaintext(Plaintext::from(Literal::I64(I64::new(timestamp)))));
+                }
+                None => bail!("The block timestamp is not available until ConsensusVersion::V12"),
+            },
             // If the operand is the network ID, load the network ID.
             Operand::NetworkID => {
                 return Ok(Value::Plaintext(Plaintext::from(Literal::U16(U16::new(N::ID)))));

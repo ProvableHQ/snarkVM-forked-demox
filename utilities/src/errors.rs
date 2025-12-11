@@ -13,7 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{borrow::Borrow, fmt::Display};
+use colored::Colorize;
+use std::borrow::Borrow;
 
 /// Generates an `io::Error` from the given string.
 #[inline]
@@ -27,40 +28,19 @@ pub fn io_error<S: ToString>(err: S) -> std::io::Error {
 #[inline]
 pub fn into_io_error<E: Into<anyhow::Error>>(err: E) -> std::io::Error {
     let err: anyhow::Error = err.into();
-    std::io::Error::other(flatten_anyhow_error(&err))
+    std::io::Error::other(flatten_error(&err))
 }
 
-/// Helper function for `log_error` and `log_warning`.
+/// Converts an `anyhow::Error` into a single-line string.
+///
+/// This follows the existing convention in the codebase that joins errors using em dashes.
+/// For example, an error "Invalid transaction" with a cause "Proof failed" would be logged
+/// as "Invalid transaction — Proof failed".
 #[inline]
-fn flatten_anyhow_error<E: Borrow<anyhow::Error>>(error: E) -> String {
+pub fn flatten_error<E: Borrow<anyhow::Error>>(error: E) -> String {
     let error = error.borrow();
-    let mut output = error.to_string();
-    for next in error.chain().skip(1) {
-        output = format!("{output} — {next}");
-    }
-    output
-}
-
-/// Logs `anyhow::Error`'s its error chain using the `ERROR` log level.
-///
-/// This follows the existing convention in the codebase that joins errors using em dashes.
-/// For example, an error "Invalid transaction" with a cause "Proof failed" would be logged
-/// as "Invalid transaction — Proof failed".
-#[inline]
-#[track_caller]
-pub fn log_error<E: Borrow<anyhow::Error>>(error: E) {
-    tracing::error!("{}", flatten_anyhow_error(error));
-}
-
-/// Logs `anyhow::Error`'s its error chain using the `WARN` log level.
-///
-/// This follows the existing convention in the codebase that joins errors using em dashes.
-/// For example, an error "Invalid transaction" with a cause "Proof failed" would be logged
-/// as "Invalid transaction — Proof failed".
-#[inline]
-#[track_caller]
-pub fn log_warning<E: Borrow<anyhow::Error>>(error: E) {
-    tracing::warn!("{}", flatten_anyhow_error(error));
+    let chain = error.chain().skip(1).map(|next| next.to_string()).collect::<Vec<String>>().join(" — ");
+    format!("{error}{}", format!(" — {chain}").dimmed())
 }
 
 /// Displays an `anyhow::Error`'s main error and its error chain to stderr.
@@ -68,7 +48,8 @@ pub fn log_warning<E: Borrow<anyhow::Error>>(error: E) {
 /// This can be used to show a "pretty" error to the end user.
 #[track_caller]
 #[inline]
-pub fn display_error(error: &anyhow::Error) {
+pub fn display_error<E: Borrow<anyhow::Error>>(error: E) {
+    let error = error.borrow();
     eprintln!("⚠️ {error}");
     error.chain().skip(1).for_each(|cause| eprintln!("     ↳ {cause}"));
 }
@@ -88,61 +69,15 @@ macro_rules! ensure_equals {
     };
 }
 
-/// A trait that allows printing the entire error chain of an Error (it is implemented for [`anyhow::Error`]) along with a custom context message.
-///
-/// This reduces the need for custom error printing code and ensures consistency across log messages.
-///
-/// # Example
-/// The following code will log `user-facing message - low level error` as an error.
-///
-/// ```rust
-/// use anyhow::anyhow;
-/// use snarkvm_utilities::LoggableError;
-///
-/// let my_error = anyhow!("low level problem");
-/// my_error.log_error("user-facing message");
-/// ```
-pub trait LoggableError {
-    /// Log the error with the given context and log level `ERROR`.
-    fn log_error<S: Send + Sync + Display + 'static>(self, context: S);
-    /// Log the error with the given context and log level `WARNING`.
-    fn log_warning<S: Send + Sync + Display + 'static>(self, context: S);
-    /// Log the error with the given context and log level `DEBUG`.
-    fn log_debug<S: Send + Sync + Display + 'static>(self, context: S);
-}
-
-impl<E: Into<anyhow::Error>> LoggableError for E {
-    /// Log the error with the given context and log level `ERROR`.
-    #[track_caller]
-    #[inline]
-    fn log_error<S: Send + Sync + Display + 'static>(self, context: S) {
-        let err: anyhow::Error = self.into();
-        log_error(err.context(context));
-    }
-
-    /// Log the error with the given context and log level `WARNING`.
-    #[track_caller]
-    #[inline]
-    fn log_warning<S: Send + Sync + Display + 'static>(self, context: S) {
-        let err: anyhow::Error = self.into();
-        log_warning(err.context(context));
-    }
-
-    /// Log the error with the given context and log level `DEBUG`.
-    #[track_caller]
-    #[inline]
-    fn log_debug<S: Send + Sync + Display + 'static>(self, context: S) {
-        let err: anyhow::Error = self.into();
-        log_warning(err.context(context));
-    }
-}
-
 /// A trait to provide a nicer way to unwarp `anyhow::Result`.
 pub trait PrettyUnwrap {
     type Inner;
 
     /// Behaves like [`std::result::Result::unwrap`] but will print the entire anyhow chain to stderr.
     fn pretty_unwrap(self) -> Self::Inner;
+
+    /// Behaves like [`std::result::Result::expect`] but will print the entire anyhow chain to stderr.
+    fn pretty_expect<S: ToString>(self, context: S) -> Self::Inner;
 }
 
 /// Helper for `PrettyUnwrap`, which creates a panic with the `anyhow::Error` nicely formatted and also logs the panic.
@@ -170,22 +105,34 @@ impl<T> PrettyUnwrap for anyhow::Result<T> {
             }
         }
     }
+
+    #[track_caller]
+    fn pretty_expect<S: ToString>(self, context: S) -> Self::Inner {
+        match self {
+            Ok(result) => result,
+            Err(error) => {
+                pretty_panic(&error.context(context.to_string()));
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{PrettyUnwrap, flatten_anyhow_error, pretty_panic};
+    use super::{PrettyUnwrap, flatten_error, pretty_panic};
 
     use anyhow::{Context, Result, anyhow, bail};
+    use colored::Colorize;
 
     const ERRORS: [&str; 3] = ["Third error", "Second error", "First error"];
 
     #[test]
-    fn flatten_error() {
-        let expected = format!("{} — {} — {}", ERRORS[0], ERRORS[1], ERRORS[2]);
+    fn test_flatten_error() {
+        // First error should be printed regularly, the other two dimmed.
+        let expected = format!("{}{}", ERRORS[0], format!(" — {} — {}", ERRORS[1], ERRORS[2]).dimmed());
 
         let my_error = anyhow!(ERRORS[2]).context(ERRORS[1]).context(ERRORS[0]);
-        let result = flatten_anyhow_error(&my_error);
+        let result = flatten_error(&my_error);
 
         assert_eq!(result, expected);
     }

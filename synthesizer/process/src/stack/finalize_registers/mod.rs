@@ -19,7 +19,7 @@ use crate::FinalizeTypes;
 use console::{
     network::prelude::*,
     program::{Identifier, Literal, Plaintext, Register, Value},
-    types::{U16, U32},
+    types::{I64, U16, U32},
 };
 use snarkvm_synthesizer_program::{FinalizeGlobalState, FinalizeRegistersState, Operand, RegistersTrait, StackTrait};
 

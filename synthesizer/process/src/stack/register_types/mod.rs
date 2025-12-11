@@ -97,6 +97,9 @@ impl<N: Network> RegisterTypes<N> {
                 RegisterType::Plaintext(PlaintextType::Literal(LiteralType::Address))
             }
             Operand::BlockHeight => bail!("'block.height' is not a valid operand in a non-finalize context."),
+            Operand::BlockTimestamp => {
+                bail!("'block.timestamp' is not a valid operand in a non-finalize context.")
+            }
             Operand::NetworkID => bail!("'network.id' is not a valid operand in a non-finalize context."),
             Operand::Checksum(_) => bail!("'checksum' is not a valid operand in a non-finalize context."),
             Operand::Edition(_) => bail!("'edition' is not a valid operand in a non-finalize context."),

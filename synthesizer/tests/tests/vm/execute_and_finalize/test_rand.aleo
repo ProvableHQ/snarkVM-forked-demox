@@ -12,7 +12,7 @@ cases:
     inputs: [1field, false]
   - program: test_rand.aleo
     function: rand_chacha_check
-    inputs: [2field, true]
+    inputs: [4field, true]
 */
 
 program test_rand.aleo;

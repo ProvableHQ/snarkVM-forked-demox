@@ -102,6 +102,8 @@ impl<N: Network, A: circuit::Aleo<Network = N>> RegistersCircuit<N, A> for Regis
             }
             // If the operand is the block height, throw an error.
             Operand::BlockHeight => bail!("Cannot load the block height in a non-finalize context"),
+            // If the operand is the block timestamp, throw an error.
+            Operand::BlockTimestamp => bail!("Cannot load the block timestamp in a non-finalize context"),
             // If the operand is the network ID, throw an error.
             Operand::NetworkID => bail!("Cannot load the network ID in a non-finalize context"),
             // If the operand is the checksum, throw an error.

@@ -3235,6 +3235,95 @@ mod valid_solutions {
         let block_aborted_solution_id = block.aborted_solution_ids().first().unwrap();
         assert_eq!(*block_aborted_solution_id, invalid_solution.id(), "Aborted solutions do not match");
     }
+
+    #[test]
+    fn test_no_rewards_after_limit_height() {
+        let rng = &mut TestRng::default();
+
+        // Initialize the test environment.
+        let crate::test_helpers::TestEnv { ledger, private_key, address, .. } =
+            crate::test_helpers::sample_test_env(rng);
+
+        // Advance the ledger to the reward limit height.
+        let supply_limit_height = CurrentNetwork::MAX_SUPPLY_LIMIT_HEIGHT;
+
+        // Advance until before the supply limit height.
+        while ledger.latest_height() + 1 < supply_limit_height {
+            let block = ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![], rng).unwrap();
+            ledger.advance_to_next_block(&block).unwrap();
+
+            // Check that there exists rewards in the block.
+            assert!(!block.ratifications().is_empty());
+            let ratifications: Vec<_> = block.ratifications().iter().collect();
+            match ratifications[0] {
+                Ratify::BlockReward(block_reward) => {
+                    assert!(*block_reward > 0);
+                }
+                _ => panic!("Expected a block reward ratification"),
+            }
+        }
+
+        // Create one additional block at the supply limit height.
+        let next_block =
+            ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![], rng).unwrap();
+        ledger.advance_to_next_block(&next_block).unwrap();
+
+        // Check that the block and puzzle rewards are 0.
+        assert!(!next_block.ratifications().is_empty());
+        let ratifications: Vec<_> = next_block.ratifications().iter().collect();
+        match ratifications[0] {
+            Ratify::BlockReward(block_reward) => {
+                assert_eq!(*block_reward, 0);
+            }
+            _ => panic!("Expected a block reward ratification"),
+        }
+        match ratifications[1] {
+            Ratify::PuzzleReward(puzzle_reward) => {
+                assert_eq!(*puzzle_reward, 0);
+            }
+            _ => panic!("Expected a puzzle reward ratification"),
+        }
+
+        // Create another block with a valid solution that does not give any rewards.
+
+        // Retrieve the puzzle parameters.
+        let puzzle = ledger.puzzle();
+        let latest_epoch_hash = ledger.latest_epoch_hash().unwrap();
+        let minimum_proof_target = ledger.latest_proof_target();
+
+        // Create solutions that are greater than the minimum proof target.
+        let valid_solution = loop {
+            let solution = puzzle.prove(latest_epoch_hash, address, rng.r#gen(), None).unwrap();
+            if puzzle.get_proof_target(&solution).unwrap() >= minimum_proof_target {
+                break solution;
+            }
+        };
+
+        // Create a block with the valid solution.
+        let next_block_with_solution = ledger
+            .prepare_advance_to_next_beacon_block(&private_key, vec![], vec![valid_solution], vec![], rng)
+            .unwrap();
+        ledger.advance_to_next_block(&next_block_with_solution).unwrap();
+
+        // Check that the block and puzzle rewards are 0.
+        assert!(!next_block.ratifications().is_empty());
+        let ratifications: Vec<_> = next_block.ratifications().iter().collect();
+        match ratifications[0] {
+            Ratify::BlockReward(block_reward) => {
+                assert_eq!(*block_reward, 0);
+            }
+            _ => panic!("Expected a block reward ratification"),
+        }
+        match ratifications[1] {
+            Ratify::PuzzleReward(puzzle_reward) => {
+                assert_eq!(*puzzle_reward, 0);
+            }
+            _ => panic!("Expected a puzzle reward ratification"),
+        }
+
+        // Check that the solution was accepted.
+        assert_eq!(next_block_with_solution.solutions().len(), 1);
+    }
 }
 
 /// Tests multiple attacks where the subDAG of a block is invalid
@@ -3390,7 +3479,7 @@ fn test_subdag_with_long_branch() -> Result<()> {
 #[test]
 fn test_subdag_with_gc_length() -> Result<()> {
     let rng = &mut TestRng::default();
-    let mut chain_builder = TestChainBuilder::new(rng)?;
+    let mut chain_builder = TestChainBuilder::new(rng).unwrap();
 
     let blocks = chain_builder.generate_blocks_with_opts(
         BatchHeader::<CurrentNetwork>::MAX_GC_ROUNDS / 2,

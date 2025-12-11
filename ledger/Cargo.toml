@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-ledger"
-version = "4.2.1"
+version = "4.4.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A node ledger for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -16,6 +16,11 @@ categories = [ "cryptography", "web-programming" ]
 license = "Apache-2.0"
 edition = "2024"
 
+[[test]]
+name = "block-cache"
+path = "tests/block_cache.rs"
+required-features = [ "rocks" ]
+
 [[bench]]
 name = "block"
 path = "benches/block.rs"
@@ -30,6 +35,12 @@ harness = false
 [[bench]]
 name = "store"
 path = "benches/store.rs"
+harness = false
+required-features = [ "test-helpers", "rocks" ]
+
+[[bench]]
+name = "advance"
+path = "benches/advance.rs"
 harness = false
 required-features = [ "test-helpers", "rocks" ]
 
@@ -163,6 +174,10 @@ workspace = true
 [dependencies.tracing]
 workspace = true
 
+[dependencies.thiserror]
+workspace = true
+features = [ "std" ]
+
 [dev-dependencies.bincode]
 workspace = true
 
@@ -174,7 +189,7 @@ workspace = true
 features = [ "filesystem" ]
 
 [dev-dependencies.snarkvm-ledger]
-workspace = true
+path = "."
 features = [ "test-helpers" ]
 
 [dev-dependencies.snarkvm-ledger-block]
@@ -197,3 +212,7 @@ workspace = true
 [dev-dependencies.snarkvm-synthesizer]
 workspace = true
 features = [ "test" ]
+
+[dev-dependencies.tracing-subscriber]
+version = "0.3"
+features = [ "env-filter", "std" ]

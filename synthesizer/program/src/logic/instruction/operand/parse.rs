@@ -27,6 +27,7 @@ impl<N: Network> Parser for Operand<N> {
             map(tag("self.signer"), |_| Self::Signer),
             map(tag("self.caller"), |_| Self::Caller),
             map(tag("block.height"), |_| Self::BlockHeight),
+            map(tag("block.timestamp"), |_| Self::BlockTimestamp),
             map(tag("network.id"), |_| Self::NetworkID),
             // Note that `Operand::Checksum` and `Operand::Edition` must be parsed before `Operand::ProgramID`s, since an edition or checksum may be prefixed with a program ID.
             map(pair(opt(terminated(ProgramID::parse, tag("/"))), tag("checksum")), |(program_id, _)| {
@@ -89,6 +90,8 @@ impl<N: Network> Display for Operand<N> {
             Self::Caller => write!(f, "self.caller"),
             // Prints the identifier for the block height, i.e. block.height
             Self::BlockHeight => write!(f, "block.height"),
+            // Prints the identifier for the block timestamp, i.e. block.timestamp
+            Self::BlockTimestamp => write!(f, "block.timestamp"),
             // Prints the identifier for the network ID, i.e. network.id
             Self::NetworkID => write!(f, "network.id"),
             // Prints the optional program ID with the checksum keyword, i.e. `checksum` or `token.aleo/checksum`
@@ -139,6 +142,9 @@ mod tests {
 
         let operand = Operand::<CurrentNetwork>::parse("block.height").unwrap().1;
         assert_eq!(Operand::BlockHeight, operand);
+
+        let operand = Operand::<CurrentNetwork>::parse("block.timestamp").unwrap().1;
+        assert_eq!(Operand::BlockTimestamp, operand);
 
         let operand = Operand::<CurrentNetwork>::parse("network.id").unwrap().1;
         assert_eq!(Operand::NetworkID, operand);

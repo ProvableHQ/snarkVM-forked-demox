@@ -966,6 +966,35 @@ impl<N: Network> ProgramCore<N> {
 
         function_contains || closure_contains || command_contains || array_size_exceeds
     }
+
+    /// Returns `true` if a program contains any V12 syntax.
+    /// This includes `Operand::BlockTimestamp`.
+    /// This is enforced to be `false` for programs before `ConsensusVersion::V12`.
+    #[inline]
+    pub fn contains_v12_syntax(&self) -> bool {
+        // Check each instruction and output in each function's finalize scope for the use of
+        // `Operand::BlockTimestamp`.
+        cfg_iter!(self.functions()).any(|(_, function)| {
+            function.finalize_logic().is_some_and(|finalize_logic| {
+                cfg_iter!(finalize_logic.commands()).any(|command| {
+                    cfg_iter!(command.operands()).any(|operand| matches!(operand, Operand::BlockTimestamp))
+                })
+            })
+        })
+    }
+
+    /// Returns `true` if a program contains any string type.
+    /// Before ConsensusVersion::V12, variable-length string sampling when using them as inputs caused deployment synthesis to be inconsistent and abort with probability 63/64.
+    /// After ConsensusVersion::V12, string types are disallowed.
+    #[inline]
+    pub fn contains_string_type(&self) -> bool {
+        self.mappings.values().any(|mapping| mapping.contains_string_type())
+            || self.structs.values().any(|struct_type| struct_type.contains_string_type())
+            || self.records.values().any(|record_type| record_type.contains_string_type())
+            || self.closures.values().any(|closure| closure.contains_string_type())
+            || self.functions.values().any(|function| function.contains_string_type())
+            || self.constructor.iter().any(|constructor| constructor.contains_string_type())
+    }
 }
 
 impl<N: Network> TypeName for ProgramCore<N> {

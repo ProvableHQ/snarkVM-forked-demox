@@ -74,6 +74,14 @@ impl<N: Network> From<FinalizeType<N>> for RegisterType<N> {
 }
 
 impl<N: Network> RegisterType<N> {
+    /// Returns `true` if the register type contains a string type.
+    pub fn contains_string_type(&self) -> bool {
+        match self {
+            Self::Plaintext(plaintext_type) => plaintext_type.contains_string_type(),
+            _ => false, // Record, external record, and future types are checked elsewhere.
+        }
+    }
+
     /// Returns `true` if the register type is an array and the size exceeds the given maximum.
     pub fn exceeds_max_array_size(&self, max_array_size: u32) -> bool {
         match self {

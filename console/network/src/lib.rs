@@ -129,6 +129,16 @@ pub trait Network:
 
     /// The starting supply of Aleo credits.
     const STARTING_SUPPLY: u64 = 1_500_000_000_000_000; // 1.5B credits
+    /// The maximum supply of Aleo credits.
+    /// This value represents the absolute upper bound on all ALEO created over the lifetime of the network.
+    const MAX_SUPPLY: u64 = 5_000_000_000_000_000; // 5B credits
+    /// The block height that upper bounds the total supply of Aleo credits to 5 billion.
+    #[cfg(not(feature = "test"))]
+    const MAX_SUPPLY_LIMIT_HEIGHT: u32 = 263_527_685;
+    /// The block height that upper bounds the total supply of Aleo credits to 5 billion.
+    /// This is deliberately set to a low value for testing purposes only.
+    #[cfg(feature = "test")]
+    const MAX_SUPPLY_LIMIT_HEIGHT: u32 = 5;
     /// The cost in microcredits per byte for the deployment transaction.
     const DEPLOYMENT_FEE_MULTIPLIER: u64 = 1_000; // 1 millicredit per byte
     /// The multiplier in microcredits for each command in the constructor.
