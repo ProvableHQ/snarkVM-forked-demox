@@ -532,7 +532,7 @@ pub fn sample_large_execution_transaction(rng: &mut TestRng) -> Transaction<Curr
             .unwrap();
 
             // Prepare the assignments.
-            trace.prepare(&process,&snarkvm_ledger_query::Query::from(block_store)).unwrap();
+            trace.prepare(&process, &snarkvm_ledger_query::Query::from(block_store)).unwrap();
             // Compute the proof and construct the execution.
             let execution = trace.prove_execution::<CurrentAleo, _>("testing.aleo", VarunaVersion::V1, rng).unwrap();
             // Reconstruct the execution from bytes.

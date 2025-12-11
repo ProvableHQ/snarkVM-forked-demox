@@ -655,17 +655,15 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         // key for a given program-record combination (if it has
                         // not been synthesized yet) and stores it in the
                         // program's stack.
-                        let ensure_translation_proving_key = |program_id: &ProgramID<N>,
-                                                                  record_name: &Identifier<N>,
-                                                                  rng: &mut R|
-                         -> Result<()> {
-                            let record_stack = match program_id == stack.program_id() {
-                                true => stack,
-                                false => &stack.get_stack_unchecked(program_id)?,
-                            };
+                        let ensure_translation_proving_key =
+                            |program_id: &ProgramID<N>, record_name: &Identifier<N>, rng: &mut R| -> Result<()> {
+                                let record_stack = match program_id == stack.program_id() {
+                                    true => stack,
+                                    false => &stack.get_stack_unchecked(program_id)?,
+                                };
 
-                            record_stack.synthesize_translation_key::<A, R>(record_name, rng)
-                        };
+                                record_stack.synthesize_translation_key::<A, R>(record_name, rng)
+                            };
 
                         let caller_console_input_ids = callee_request.caller_input_ids().clone().unwrap_or_default();
                         let callee_console_input_ids = callee_request.input_ids();
@@ -1190,10 +1188,7 @@ fn resolve_dynamic_target<'a, N: Network>(
     function_name_as_field: &Field<N>,
 ) -> Result<Option<ResolvedTarget<'a, N>>> {
     // Determine whether we are in "dummy" (`Synthesize` or `CheckDeployment`) mode.
-    let in_dummy_mode = match call_stack {
-        CallStack::Synthesize(..) | CallStack::CheckDeployment(..) => true,
-        _ => false,
-    };
+    let in_dummy_mode = matches!(call_stack, CallStack::Synthesize(..) | CallStack::CheckDeployment(..));
 
     // Decode the program name, exiting gracefully in dummy mode if it fails.
     let program_name = match Identifier::from_field(program_name_as_field) {

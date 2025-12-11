@@ -236,10 +236,10 @@ const fn parent(index: usize) -> Option<usize> {
 mod tests {
     use super::*;
     use console::Rng;
+    use snarkvm_circuit_algorithms::{Poseidon2, Poseidon8};
     use snarkvm_circuit_network::AleoV0 as Circuit;
     use snarkvm_console_collections::merkle_tree::MerkleTree as ConsoleMerkleTree;
     use snarkvm_utilities::{TestRng, Uniform};
-    use snarkvm_circuit_algorithms::{Poseidon2, Poseidon8};
 
     use anyhow::Result;
 
@@ -314,7 +314,6 @@ mod tests {
     }
 
     fn test_compatibility<const DEPTH: u8>(mode: Mode, rng: &mut TestRng) {
-    
         for num_leaves in 1..=1 << DEPTH {
             Circuit::reset();
 
@@ -325,10 +324,12 @@ mod tests {
             let circuit_leaf_hasher = CircuitLH::constant(console_leaf_hasher.clone());
             let circuit_path_hasher = CircuitPH::constant(console_path_hasher.clone());
 
-            let console_leaves = (0..num_leaves).map(|_| {
-                let leaf_length = rng.gen_range(MIN_LEAF_LENGTH..=MAX_LEAF_LENGTH);
-                (0..leaf_length).map(|_| console::Field::<CurrentNetwork>::rand(rng)).collect_vec()
-            }).collect_vec();
+            let console_leaves = (0..num_leaves)
+                .map(|_| {
+                    let leaf_length = rng.gen_range(MIN_LEAF_LENGTH..=MAX_LEAF_LENGTH);
+                    (0..leaf_length).map(|_| console::Field::<CurrentNetwork>::rand(rng)).collect_vec()
+                })
+                .collect_vec();
 
             let console_tree = ConsoleMerkleTree::<CurrentNetwork, NativeLH, NativePH, DEPTH>::new(
                 &console_leaf_hasher,

@@ -37,19 +37,18 @@ impl<N: Network> Translation<N> {
         //  - The verifier iterates through the transitions (which are received in post-order exploration of the call graph)
         //    and explores the inputs and outputs of each of them
         //  - The prover's translation tasks (here, in `self`) are grouped under the *caller*'s transition ID
-        // 
+        //
         // In order to reconcile the two views, we make the prover iterate through the transitions as received (just like the
         // verifier does) and, upon detecting a translation, fetch the corresponding translation task using the ID of the transition's
-        // caller. Since accumulation of prover translation tasks happens in order of dynamic calls within the transition; and in 
+        // caller. Since accumulation of prover translation tasks happens in order of dynamic calls within the transition; and in
         // input/output order or arguments for each such call, this results in consistency with the verifier's (i. e. post-order)
         // traversal order.
         //
         // At the end of the process, we verify that all translation tasks have been consumed. In order to avoid consuming or
         // modifying `self`, we keep a separate dictionary to track the next unconsumed translation task for each (caller)
         // transition ID.
-        let mut caller_id_to_next_task: HashMap<N::TransitionID, usize> = self.translation_tasks.keys().map(
-            |transition_id| (*transition_id, 0)
-        ).collect();
+        let mut caller_id_to_next_task: HashMap<N::TransitionID, usize> =
+            self.translation_tasks.keys().map(|transition_id| (*transition_id, 0)).collect();
 
         // Construct the reverse call graph to easily access the caller when the need for translation is detected.
         let reverse_call_graph = Process::<N>::reverse_call_graph(call_graph);
@@ -57,13 +56,14 @@ impl<N: Network> Translation<N> {
         // Closure that fetches the next translation task for the given caller and updates the next_task and translation_count
         // trackers. It is called while iterating through the (callee's) inputs and outputs.
         let mut consume_translation_task = |caller_id: N::TransitionID| -> Result<()> {
-            let translation_tasks = self.translation_tasks.get(&caller_id).ok_or_else(
-                || anyhow!("Translation tasks not found for (caller) transition ID {}", caller_id)
-            )?;
+            let translation_tasks = self
+                .translation_tasks
+                .get(&caller_id)
+                .ok_or_else(|| anyhow!("Translation tasks not found for (caller) transition ID {caller_id}"))?;
 
             // This unwrap is safe as caller_id_to_next_task is constructed using the keys of self.translation_tasks.
             let next_task = caller_id_to_next_task.get_mut(&caller_id).unwrap();
-            
+
             let translation_task = translation_tasks.get(*next_task).ok_or_else(
                 || anyhow!(
                     "Translation task not found for (caller) transition ID {}: queried task with index {} but only {} are available",
@@ -93,23 +93,23 @@ impl<N: Network> Translation<N> {
             } = translation_task;
 
             // Checks associated to input-record translation
-            let batch = &mut batched_assignments.entry((*program_id, *record_name)).or_insert(vec![]);
+            let batch = &mut batched_assignments.entry((*program_id, *record_name)).or_default();
 
             batch.push(TranslationAssignment::new(
                 record_static.clone(),
                 record_dynamic.clone(),
-                program_id.clone(),
-                function_id.clone(),
-                record_name.clone(),
+                *program_id,
+                *function_id,
+                *record_name,
                 *is_input,
                 *static_is_external,
                 translation_count,
-                tvk.clone(),
+                *tvk,
                 *input_output_index,
                 *id_dynamic,
                 *id_static,
-                record_view_key.clone(),
-                gamma.clone(),
+                *record_view_key,
+                *gamma,
             ));
 
             translation_count += 1;
@@ -133,16 +133,16 @@ impl<N: Network> Translation<N> {
             if let Some(caller_inputs) = transition.caller_inputs() {
                 for (caller_input, callee_input) in caller_inputs.iter().zip(transition.inputs().iter()) {
                     match (caller_input, callee_input) {
-                        (Input::DynamicRecord(..), Input::Record(..)) |
-                        (Input::DynamicRecord(..), Input::ExternalRecord(..)) => {
-                            let caller_transition_id = reverse_call_graph.get(transition_id).ok_or_else(
-                                || anyhow!("Caller transition ID not found for transition ID {}", transition_id)
-                            )?;
+                        (Input::DynamicRecord(..), Input::Record(..))
+                        | (Input::DynamicRecord(..), Input::ExternalRecord(..)) => {
+                            let caller_transition_id = reverse_call_graph.get(transition_id).ok_or_else(|| {
+                                anyhow!("Caller transition ID not found for transition ID {transition_id}")
+                            })?;
                             consume_translation_task(*caller_transition_id)?;
-                        },
+                        }
                         (Input::Record(..), Input::DynamicRecord(..)) => {
                             bail!("Translation of (non-external) input records to dynamic records is not supported");
-                        },
+                        }
                         _ => {}
                     }
                 }
@@ -152,16 +152,16 @@ impl<N: Network> Translation<N> {
             if let Some(caller_outputs) = transition.caller_outputs() {
                 for (caller_output, callee_output) in caller_outputs.iter().zip(transition.outputs().iter()) {
                     match (caller_output, callee_output) {
-                        (Output::DynamicRecord(..), Output::Record(..)) |
-                        (Output::DynamicRecord(..), Output::ExternalRecord(..)) => {
-                            let caller_transition_id = reverse_call_graph.get(transition_id).ok_or_else(
-                                || anyhow!("Caller transition ID not found for transition ID {}", transition_id)
-                            )?;
+                        (Output::DynamicRecord(..), Output::Record(..))
+                        | (Output::DynamicRecord(..), Output::ExternalRecord(..)) => {
+                            let caller_transition_id = reverse_call_graph.get(transition_id).ok_or_else(|| {
+                                anyhow!("Caller transition ID not found for transition ID {transition_id}")
+                            })?;
                             consume_translation_task(*caller_transition_id)?;
-                        },
+                        }
                         (Output::Record(..), Output::DynamicRecord(..)) => {
                             bail!("Translation of output dynamic records to (non-external) records is not supported");
-                        },
+                        }
                         _ => {}
                     }
                 }

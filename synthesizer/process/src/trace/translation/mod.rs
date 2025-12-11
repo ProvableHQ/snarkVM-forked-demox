@@ -19,7 +19,7 @@ pub use assignment::*;
 mod prepare;
 
 #[cfg(test)]
-pub mod tests;
+mod tests;
 
 use crate::Stack;
 
@@ -27,16 +27,7 @@ use circuit::{Inject, traits::ToGroup};
 
 use console::{
     network::prelude::*,
-    program::{
-        DynamicRecord,
-        Identifier,
-        Plaintext,
-        ProgramID,
-        Record,
-        U16,
-        ValueType,
-        compute_function_id,
-    },
+    program::{DynamicRecord, Identifier, Plaintext, ProgramID, Record, U16, ValueType, compute_function_id},
     types::{Field, Group},
 };
 use snarkvm_ledger_block::{Input, Output, Transition};
@@ -78,7 +69,6 @@ impl<N: Network> Translation<N> {
         transition_map: &HashMap<N::TransitionID, (&Transition<N>, Function<N>)>,
         translation_verifying_keys: &HashMap<(ProgramID<N>, Identifier<N>), VerifyingKey<N>>,
     ) -> Result<Vec<(VerifyingKey<N>, Vec<Vec<N::Field>>)>> {
-        
         let mut batch_verifier_inputs: HashMap<(ProgramID<N>, Identifier<N>), Vec<Vec<N::Field>>> = HashMap::new();
 
         let mut translation_count: u16 = 0;
@@ -86,7 +76,6 @@ impl<N: Network> Translation<N> {
         // Traversal order affects the translation count as well as the internal order of each batch input to proving/verification.
         // Order is irrelevant as long as it is consistent between the prover and verifier. (cf. Translation::prepare)
         for transition in transitions {
-
             let (_, callee_function_core) = transition_map
                 .get(transition.id())
                 .ok_or_else(|| anyhow!("Transition {} from execution not found transition map", transition.id()))?;

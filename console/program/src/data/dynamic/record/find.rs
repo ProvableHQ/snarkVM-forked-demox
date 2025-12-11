@@ -13,8 +13,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod future;
-pub use future::{DynamicFuture, FutureArgumentTree};
+use super::*;
 
-mod record;
-pub use record::{DynamicRecord, RECORD_DATA_TREE_DEPTH, RecordData, RecordDataTree};
+impl<N: Network> DynamicRecord<N> {
+    /// Returns the entry from the given path.
+    pub fn find<A: Into<Access<N>> + Copy + Debug>(&self, path: &[A]) -> Result<Value<N>> {
+        // If the path is of length one, check if the path is requesting the `owner`.
+        if path.len() == 1 && path[0].into() == Access::Member(Identifier::from_str("owner")?) {
+            Ok(Value::Plaintext(Plaintext::from(Literal::Address(self.owner))))
+        } else {
+            bail!("Only the 'owner' of a dynamic record can be accessed directly, use 'get.dynamic.record' instead.")
+        }
+    }
+}

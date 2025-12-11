@@ -904,7 +904,7 @@ impl<N: Network> FinalizeTypes<N> {
             Opcode::Deserialize(opcode) => RegisterTypes::check_deserialize_opcode(opcode, instruction)?,
             Opcode::GetDynamicRecord(_) => {
                 bail!("Illegal operation: Cannot read from a dynamic record in a finalize scope.")
-            },
+            }
         }
         Ok(())
     }

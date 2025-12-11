@@ -31,7 +31,7 @@ impl<N: Network> Value<N> {
                 }
             }
             Self::Future(future) => Ok(future.find(path)?),
-            Self::DynamicRecord(_) => bail!("Cannot invoke `find` on a dynamic record value"),
+            Self::DynamicRecord(dynamic_record) => Ok(dynamic_record.find(path)?),
             Self::DynamicFuture(_) => bail!("Cannot invoke `find` on a dynamic future value"),
         }
     }

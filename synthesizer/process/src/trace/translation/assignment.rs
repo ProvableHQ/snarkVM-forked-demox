@@ -226,8 +226,7 @@ impl<N: Network> TranslationAssignment<N> {
             })
             .collect::<Vec<Vec<circuit::Field<A>>>>();
 
-        let circuit_tree =
-            RecordDataTree::<A>::new(circuit_leaf_hasher, circuit_path_hasher, &circuit_leaves).unwrap();
+        let circuit_tree = RecordDataTree::<A>::new(circuit_leaf_hasher, circuit_path_hasher, &circuit_leaves).unwrap();
         let circuit_data_root = circuit_tree.root();
 
         // ******** Assertions

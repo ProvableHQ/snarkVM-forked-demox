@@ -406,7 +406,7 @@ constructor:
 
     // Test function `seven` at the maximum valid depth which should pass.
     {
-        let test_index = Transaction::<CurrentNetwork>::MAX_TRANSITIONS as u8 - 3; // Account for the fee transition and zero indexing.
+        let test_index = Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 3; // Account for the fee transition and zero indexing.
         execute_and_check(
             seven_name,
             vec![
@@ -421,7 +421,7 @@ constructor:
 
     // Test function `seven` at the maximum call depth which should fail.
     {
-        let test_index = Transaction::<CurrentNetwork>::MAX_TRANSITIONS as u8 - 2; // Account for the fee transition and zero indexing.
+        let test_index = Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 2; // Account for the fee transition and zero indexing.
         execute_and_check(
             seven_name,
             vec![

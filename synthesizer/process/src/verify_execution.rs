@@ -278,7 +278,6 @@ impl<N: Network> Process<N> {
         program_checksum: Option<N::Field>,
         transition_map: &mut HashMap<N::TransitionID, (&Transition<N>, Function<N>)>,
     ) -> Result<Vec<N::Field>> {
-
         // Compute the x- and y-coordinate of `tpk`.
         let (tpk_x, tpk_y) = transition.tpk().to_xy_coordinates();
 
@@ -311,11 +310,13 @@ impl<N: Network> Process<N> {
         verifier_inputs.extend([*is_root, *parent_x, *parent_y]);
 
         // If there are function calls, append their inputs and outputs.
-        let child_transition_ids = call_graph.get(transition.id()).ok_or_else(|| anyhow!(
-            "Child transition IDs not found for transition {} (function: {})",
-            transition.id(),
-            transition.function_name())
-        )?;
+        let child_transition_ids = call_graph.get(transition.id()).ok_or_else(|| {
+            anyhow!(
+                "Child transition IDs not found for transition {} (function: {})",
+                transition.id(),
+                transition.function_name()
+            )
+        })?;
 
         let parent_function = transition_map.get(transition.id()).map(|(_, function)| function.clone());
 
@@ -343,7 +344,9 @@ impl<N: Network> Process<N> {
 
         // TODO(@vicsn): in case we stick to encoding and using *all* of the caller_{inputs, outputs} instead of just the dynamic ones,
         // we'll have to assert they equal the child's inputs/outputs.
-        for (child_transition_id, (is_dynamic, parent_function_call)) in child_transition_ids.iter().zip(parent_function_calls) {
+        for (child_transition_id, (is_dynamic, parent_function_call)) in
+            child_transition_ids.iter().zip(parent_function_calls)
+        {
             // Note: This unwrap is safe, as we are processing transitions in post-order,
             // which implies that all child transition IDs have been added to `transition_map`.
             let (child_transition, _) = transition_map.get(child_transition_id).unwrap();
@@ -383,14 +386,20 @@ impl<N: Network> Process<N> {
 
                 // Since is_dynamic has been checked to match child_transition.is_dynamic(),
                 // which guarantees caller_inputs.is_some() when true, this ? should always unwrap successfully.
-                let caller_inputs = child_transition.caller_inputs().ok_or_else(|| anyhow!(
-                    "Dynamic-call transition {} (function: {}) has no caller_inputs",
-                    child_transition.id(),
-                    child_transition.function_name(),
-                ))?;
+                let caller_inputs = child_transition.caller_inputs().ok_or_else(|| {
+                    anyhow!(
+                        "Dynamic-call transition {} (function: {}) has no caller_inputs",
+                        child_transition.id(),
+                        child_transition.function_name(),
+                    )
+                })?;
 
                 // Note call_dynamic_instruction.unwrap().operand_types() cannot panic by construction (is_dynamic is true)
-                for (i, (input, input_type)) in caller_inputs.iter().zip(call_dynamic_instruction_opt.clone().unwrap().operand_types().iter()).enumerate() {
+                for (i, (input, input_type)) in caller_inputs
+                    .iter()
+                    .zip(call_dynamic_instruction_opt.clone().unwrap().operand_types().iter())
+                    .enumerate()
+                {
                     ensure!(
                         input.is_type(input_type),
                         "Caller input {i} in dynamic call to {} should be of type {}, found: {}",
@@ -412,11 +421,13 @@ impl<N: Network> Process<N> {
             let output_ids = if is_dynamic {
                 // This ? should always unwrap successfully for the same reason as in the definition of
                 // child_inputs above.
-                let caller_outputs = child_transition.caller_outputs().ok_or_else(|| anyhow!(
-                    "Dynamic-call transition {} (function: {}) has no caller_outputs",
-                    child_transition.id(),
-                    child_transition.function_name(),
-                ))?;
+                let caller_outputs = child_transition.caller_outputs().ok_or_else(|| {
+                    anyhow!(
+                        "Dynamic-call transition {} (function: {}) has no caller_outputs",
+                        child_transition.id(),
+                        child_transition.function_name(),
+                    )
+                })?;
 
                 // As above, this unwrap cannot panic by construction (is_dynamic is true)
                 let call_dynamic_instruction = call_dynamic_instruction_opt.unwrap();

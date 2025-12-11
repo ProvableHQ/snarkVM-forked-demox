@@ -164,7 +164,8 @@ impl<N: Network> Trace<N> {
     pub fn prepare(&mut self, process: &Process<N>, query: &dyn QueryTrait<N>) -> Result<()> {
         // Compute the inclusion and translation assignments.
         let (inclusion_assignments, global_state_root) = self.inclusion_tasks.prepare(&self.transitions, query)?;
-        let translation_assignments_without_keys = self.translation_tasks.prepare(&self.transitions, &self.call_graph)?;
+        let translation_assignments_without_keys =
+            self.translation_tasks.prepare(&self.transitions, &self.call_graph)?;
 
         // Store the inclusion and translation assignments and global state root.
         self.inclusion_assignments
@@ -173,13 +174,14 @@ impl<N: Network> Trace<N> {
 
         // Fetch the translation proving keys, which have already been
         // synthesized in call/dynamic.rs::execute for all detected translations
-        let translation_assignments = translation_assignments_without_keys.into_iter().map(
-            |((program_id, record_name), assignments)| {
+        let translation_assignments = translation_assignments_without_keys
+            .into_iter()
+            .map(|((program_id, record_name), assignments)| {
                 let stack = process.get_stack(program_id)?;
                 let proving_key = stack.get_translation_proving_key(&record_name)?;
                 Ok((proving_key, assignments))
-            }
-        ).collect::<Result<Vec<(ProvingKey<N>, Vec<TranslationAssignment<N>>)>>>()?;
+            })
+            .collect::<Result<Vec<(ProvingKey<N>, Vec<TranslationAssignment<N>>)>>>()?;
 
         self.translation_assignments
             .set(translation_assignments)

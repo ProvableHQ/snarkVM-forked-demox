@@ -15,12 +15,9 @@
 
 use super::*;
 
-
 impl<A: Aleo> Entry<A, Plaintext<A>> {
-
     /// Returns this entry as a list of field elements.
     pub fn to_fields_with_visibility_mode(&self, visibility_mode: Mode) -> Vec<Field<A>> {
-
         // Encode the data as little-endian bits.
         let mut bits_le = vec![];
         self.write_bits_le_with_visibility_mode(&mut bits_le, visibility_mode);

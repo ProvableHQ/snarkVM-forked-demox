@@ -14,16 +14,17 @@
 // limitations under the License.
 
 mod equal;
+mod find;
 mod to_bits;
 mod to_fields;
 mod to_id;
 
-use crate::{Aleo, Equal, Record, Plaintext, ToBits, ToFields};
+use crate::{Access, Aleo, Equal, Identifier, Literal, Plaintext, Record, ToBits, ToFields, Value};
 
 use console::{RECORD_DATA_TREE_DEPTH, ToField as ConsoleToField, ToFields as ConsoleToFields};
-use snarkvm_circuit_types::{Address, Boolean, Field, Group, U8, U16, environment::prelude::*};
 use snarkvm_circuit_algorithms::{Poseidon2, Poseidon8};
 use snarkvm_circuit_collections::merkle_tree::MerkleTree;
+use snarkvm_circuit_types::{Address, Boolean, Field, Group, U8, U16, environment::prelude::*};
 use snarkvm_console_algorithms::{Poseidon2 as ConsolePoseidon2, Poseidon8 as ConsolePoseidon8};
 
 type CircuitLH<A> = Poseidon8<A>;
@@ -31,6 +32,7 @@ type CircuitPH<A> = Poseidon2<A>;
 type ConsoleLH<N> = ConsolePoseidon8<N>;
 type ConsolePH<N> = ConsolePoseidon2<N>;
 
+/// The record data tree.
 pub type RecordDataTree<A> = MerkleTree<A, CircuitLH<A>, CircuitPH<A>, RECORD_DATA_TREE_DEPTH>;
 
 // TODO (dynamic dispatch) correct this and other instances of the specification: that is not the correct structure of the tree (odd-size layers are not filled with a single zero)
@@ -86,7 +88,7 @@ pub struct DynamicRecord<A: Aleo> {
     tree: Option<console::RecordDataTree<A::Network>>,
     /// The optional console program data.
     /// Note: This is NOT part of the circuit representation.
-    data: Option<IndexMap<console::Identifier<A::Network>, console::Entry<A::Network, console::Plaintext<A::Network>>>>,
+    data: Option<console::RecordData<A::Network>>,
 }
 
 impl<A: Aleo> Inject for DynamicRecord<A> {
@@ -132,10 +134,7 @@ impl<A: Aleo> DynamicRecord<A> {
     }
 
     /// Returns console the record data.
-    pub const fn data(
-        &self,
-    ) -> Option<&IndexMap<console::Identifier<A::Network>, console::Entry<A::Network, console::Plaintext<A::Network>>>>
-    {
+    pub const fn data(&self) -> Option<&console::RecordData<A::Network>> {
         self.data.as_ref()
     }
 }
@@ -174,7 +173,7 @@ impl<A: Aleo> DynamicRecord<A> {
         // Note that, in most lines below, cloning (e. g. of record.owner())
         // does not introduce a new variable into the witness but rather creates
         // a new reference to the preexisting witness variable.
-        
+
         // Get the owner.
         let owner = (**record.owner()).clone();
         // Get the nonce.
@@ -205,11 +204,11 @@ impl<A: Aleo> DynamicRecord<A> {
             })
             .collect::<Vec<Vec<Field<A>>>>();
 
-        let tree =
-            RecordDataTree::<A>::new(circuit_leaf_hasher, circuit_path_hasher, &leaves).unwrap();
+        let tree = RecordDataTree::<A>::new(circuit_leaf_hasher, circuit_path_hasher, &leaves).unwrap();
         let root = tree.root().clone();
 
-        let console_data = data.iter().map(|(identifier, entry)| (identifier, entry).eject_value()).collect::<IndexMap<_, _>>();
+        let console_data =
+            data.iter().map(|(identifier, entry)| (identifier, entry).eject_value()).collect::<IndexMap<_, _>>();
 
         let console_tree = {
             // TODO (dynamic_dispatch): decide whether we want to compute and set the optional console tree. In principle, it isn't used anywhere.
@@ -224,7 +223,8 @@ impl<A: Aleo> DynamicRecord<A> {
                 })
                 .collect::<Result<Vec<_>>>()?;
 
-            let console_tree = console::RecordDataTree::new(&console_leaf_hasher, &console_path_hasher, &console_leaves)?;
+            let console_tree =
+                console::RecordDataTree::new(&console_leaf_hasher, &console_path_hasher, &console_leaves)?;
 
             ensure!(
                 root.eject_value() == *console_tree.root(),
@@ -234,13 +234,6 @@ impl<A: Aleo> DynamicRecord<A> {
             console_tree
         };
 
-        Ok(Self {
-            owner,
-            root,
-            nonce,
-            version,
-            tree: Some(console_tree),
-            data: Some(console_data),
-        })
+        Ok(Self { owner, root, nonce, version, tree: Some(console_tree), data: Some(console_data) })
     }
 }

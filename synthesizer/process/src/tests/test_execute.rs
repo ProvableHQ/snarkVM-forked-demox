@@ -87,7 +87,7 @@ pub fn sample_fee<N: Network, A: Aleo<Network = N>, B: BlockStorage<N>, P: Final
     // Execute the fee.
     let (_, mut trace) = process.execute::<A, _>(authorization, rng).unwrap();
     // Prepare the assignments.
-    trace.prepare(&process, &Query::from(block_store)).unwrap();
+    trace.prepare(process, &Query::from(block_store)).unwrap();
     // Compute the proof and construct the fee.
     trace.prove_fee::<A, _>(VarunaVersion::V2, rng).unwrap()
 }

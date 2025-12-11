@@ -92,11 +92,11 @@ pub fn translation<N: Network, A: Aleo<Network = N>>() -> Result<()> {
     });
 
     println!("{}", serde_json::to_string_pretty(&metadata)?);
-    write_metadata(&format!("translation_credits.metadata"), &metadata)?;
-    write_remote(&format!("translation_credits.prover"), &proving_key_checksum, &proving_key_bytes)?;
-    write_local(&format!("translation_credits.verifier"), &verifying_key_bytes)?;
+    write_metadata("translation_credits.metadata", &metadata)?;
+    write_remote("translation_credits.prover", &proving_key_checksum, &proving_key_bytes)?;
+    write_local("translation_credits.verifier", &verifying_key_bytes)?;
 
-    commands.push(format!("upload \"{}\"", versioned_filename(&format!("translation_credits.prover"), &proving_key_checksum)));
+    commands.push(format!("upload \"{}\"", versioned_filename("translation_credits.prover", &proving_key_checksum)));
 
     // Print the commands.
     println!("\nNow, perform the following operations:\n");

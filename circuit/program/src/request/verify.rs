@@ -403,6 +403,7 @@ mod tests {
     pub(crate) const ITERATIONS: usize = 10;
 
     /// Helper function to create a request given a program_id and function_name.
+    #[allow(clippy::type_complexity)]
     fn create_request(
         program_id: &str,
         function_name: &str,

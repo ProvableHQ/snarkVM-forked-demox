@@ -466,7 +466,15 @@ fn test_translation_triple() {
     // Expected output (10 liters have leaked)
     let expected_output = Plaintext::<CurrentNetwork>::from_str("323u64").unwrap();
 
-    test_translation(&caller_private_key, "flow.aleo", "dynamic_gas_leak", None, Some(r0_static), Some(vec![expected_output]), rng);
+    test_translation(
+        &caller_private_key,
+        "flow.aleo",
+        "dynamic_gas_leak",
+        None,
+        Some(r0_static),
+        Some(vec![expected_output]),
+        rng,
+    );
 }
 
 #[test]
@@ -517,7 +525,7 @@ fn test_translation_traversal_consistency() {
 
     fn process_quote(mut quote: Vec<u8>) -> String {
         quote.resize(50, 0);
-        format!("{}", quote.into_iter().map(|c| format!("{c}u8")).join(" "))
+        quote.into_iter().map(|c| format!("{c}u8")).join(" ").to_string()
     }
 
     let processed_quixote_quote = process_quote(quixote_quote);
@@ -707,7 +715,6 @@ fn test_translation_traversal_consistency() {
 
 #[test]
 fn test_malicious_caller_inputs_outputs() {
-    
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
@@ -716,7 +723,8 @@ fn test_malicious_caller_inputs_outputs() {
 
     let glass_pane_program_str = Identifier::<CurrentNetwork>::from_str("glass_panes").unwrap();
     let network_str = Identifier::<CurrentNetwork>::from_str("aleo").unwrap();
-    let decolor_glass_statically_function_str = Identifier::<CurrentNetwork>::from_str("decolor_glass_statically").unwrap();
+    let decolor_glass_statically_function_str =
+        Identifier::<CurrentNetwork>::from_str("decolor_glass_statically").unwrap();
 
     let glass_pane_program_field = glass_pane_program_str.to_field().unwrap();
     let network_field = network_str.to_field().unwrap();
@@ -836,7 +844,8 @@ fn test_malicious_caller_inputs_outputs() {
         *child_transition.scm(),
         None,
         None,
-    ).unwrap();
+    )
+    .unwrap();
 
     let mut tampered_transitions = transaction_consume.transitions().cloned().collect_vec();
 
@@ -849,16 +858,23 @@ fn test_malicious_caller_inputs_outputs() {
         tampered_transitions.into_iter(),
         transaction_consume.execution().unwrap().global_state_root(),
         transaction_consume.execution().unwrap().proof().cloned(),
-    ).unwrap();
+    )
+    .unwrap();
 
-    let tampered_transaction = Transaction::from_execution(tampered_execution, transaction_consume.fee_transition()).unwrap();
+    let tampered_transaction =
+        Transaction::from_execution(tampered_execution, transaction_consume.fee_transition()).unwrap();
 
     assert_eq!(tampered_transaction.id(), transaction_consume.id());
 
     // Make sure translation verification fails already at
     // verifier-input-construction time, and not later at proof-verification
     // time.
-    assert!(vm.check_transaction(&tampered_transaction, None, rng).unwrap_err().to_string().contains("does not contain dynamic-call data"));
+    assert!(
+        vm.check_transaction(&tampered_transaction, None, rng)
+            .unwrap_err()
+            .to_string()
+            .contains("does not contain dynamic-call data")
+    );
 
     // ********* Case 2: Tampering caller_inputs to avoid translation triggering *********
 
@@ -887,7 +903,8 @@ fn test_malicious_caller_inputs_outputs() {
         *child_transition.scm(),
         Some(dishonest_caller_inputs),
         Some(child_transition.caller_outputs().unwrap().to_vec()),
-    ).unwrap();
+    )
+    .unwrap();
 
     let mut input_tampered_transitions = transaction_consume.transitions().cloned().collect_vec();
 
@@ -900,29 +917,39 @@ fn test_malicious_caller_inputs_outputs() {
         input_tampered_transitions.into_iter(),
         transaction_consume.execution().unwrap().global_state_root(),
         transaction_consume.execution().unwrap().proof().cloned(),
-    ).unwrap();
+    )
+    .unwrap();
 
     // Extra funds need to be added to the fee to account for the
     // increased size of the modifiedexecution: using the previously constructed
     // transaction_consume.fee_transition() causes an earlier error than the one
     // we want to test due to the fee being insufficient.
-    let fee_authorization = vm.process().read().authorize_fee_public::<CurrentAleo, _>(
-        &caller_private_key,
-        10000,
-        0,
-        input_tampered_execution.to_execution_id().unwrap(),
-        rng,
-    ).unwrap();
+    let fee_authorization = vm
+        .process()
+        .read()
+        .authorize_fee_public::<CurrentAleo, _>(
+            &caller_private_key,
+            10000,
+            0,
+            input_tampered_execution.to_execution_id().unwrap(),
+            rng,
+        )
+        .unwrap();
 
     let fee = vm.execute_fee_authorization(fee_authorization, None, rng).unwrap();
-    
+
     // The full transaction can now be reconstructed using the modified child
     // and fee transitions.
     let transaction = Transaction::from_execution(input_tampered_execution, Some(fee)).unwrap();
 
     println!("Attempting to execute transaction with malicious caller_inputs...");
 
-    assert!(vm.check_transaction(&transaction, None, rng).unwrap_err().to_string().contains("Caller input 0 in dynamic call to decolor_glass_statically should be of type"));
+    assert!(
+        vm.check_transaction(&transaction, None, rng)
+            .unwrap_err()
+            .to_string()
+            .contains("Caller input 0 in dynamic call to decolor_glass_statically should be of type")
+    );
 
     // ********* Case 3: Tampering caller_outputs to avoid translation triggering ********
 
@@ -948,7 +975,8 @@ fn test_malicious_caller_inputs_outputs() {
         *child_transition.scm(),
         Some(child_transition.caller_inputs().unwrap().to_vec()),
         Some(dishonest_caller_outputs),
-    ).unwrap();
+    )
+    .unwrap();
 
     let mut output_tampered_transitions = transaction_consume.transitions().cloned().collect_vec();
 
@@ -961,27 +989,37 @@ fn test_malicious_caller_inputs_outputs() {
         output_tampered_transitions.into_iter(),
         transaction_consume.execution().unwrap().global_state_root(),
         transaction_consume.execution().unwrap().proof().cloned(),
-    ).unwrap();
+    )
+    .unwrap();
 
     // Extra funds need to be added to the fee to account for the
     // increased size of the modifiedexecution: using the previously constructed
     // transaction_consume.fee_transition() causes an earlier error than the one
     // we want to test due to the fee being insufficient.
-    let fee_authorization = vm.process().read().authorize_fee_public::<CurrentAleo, _>(
-        &caller_private_key,
-        10000,
-        0,
-        output_tampered_execution.to_execution_id().unwrap(),
-        rng,
-    ).unwrap();
+    let fee_authorization = vm
+        .process()
+        .read()
+        .authorize_fee_public::<CurrentAleo, _>(
+            &caller_private_key,
+            10000,
+            0,
+            output_tampered_execution.to_execution_id().unwrap(),
+            rng,
+        )
+        .unwrap();
 
     let fee = vm.execute_fee_authorization(fee_authorization, None, rng).unwrap();
-    
+
     // The full transaction can now be reconstructed using the modified child
     // and fee transitions.
     let transaction = Transaction::from_execution(output_tampered_execution, Some(fee)).unwrap();
 
     println!("Attempting to execute transaction with malicious caller_outputs...");
 
-    assert!(vm.check_transaction(&transaction, None, rng).unwrap_err().to_string().contains("Caller output 0 in dynamic call to decolor_glass_statically should be of type"));
+    assert!(
+        vm.check_transaction(&transaction, None, rng)
+            .unwrap_err()
+            .to_string()
+            .contains("Caller output 0 in dynamic call to decolor_glass_statically should be of type")
+    );
 }

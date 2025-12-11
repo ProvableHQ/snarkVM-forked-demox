@@ -77,7 +77,7 @@ fn translation_assignment_from_record_str(
 }
 
 fn print_rc1s_data(name: &str) {
-    println!("Translation R1CS for {}:", name);
+    println!("Translation R1CS for {name}:");
     println!("   nun_public: {}", <CurrentAleo as circuit::Environment>::num_public());
     println!("   num_private: {}", <CurrentAleo as circuit::Environment>::num_private());
     println!("   num_constraints: {}", <CurrentAleo as circuit::Environment>::num_constraints());
@@ -420,7 +420,7 @@ fn test_definition_invariance() {
         .collect_vec();
 
     for circuit_assignment in circuit_assignments.iter().skip(1) {
-        compare_constraints(&circuit_assignments[0], &circuit_assignment).unwrap();
+        compare_constraints(&circuit_assignments[0], circuit_assignment).unwrap();
     }
 }
 
@@ -518,7 +518,7 @@ fn test_definition_variance() {
         .collect_vec();
 
     for circuit_assignment in circuit_assignments.iter().skip(1) {
-        assert!(compare_constraints(&circuit_assignments[0], &circuit_assignment).is_err());
+        assert!(compare_constraints(&circuit_assignments[0], circuit_assignment).is_err());
     }
 }
 

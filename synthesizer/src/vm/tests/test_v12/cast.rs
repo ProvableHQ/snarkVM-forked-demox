@@ -27,7 +27,7 @@ fn test_circuit_dynamic_record_from_record() {
     let mut rng = TestRng::default();
 
     let n_iterations = 20;
-    
+
     for _ in 0..n_iterations {
         let owner = Address::<CurrentNetwork>::rand(&mut rng);
         let owner_privacy = if Uniform::rand(&mut rng) { "public" } else { "private" };
@@ -48,18 +48,23 @@ fn test_circuit_dynamic_record_from_record() {
         let reported_on_privacy = if Uniform::rand(&mut rng) { "public" } else { "private" };
         let jewels_len = rng.gen_range(1..CurrentNetwork::MAX_ARRAY_ELEMENTS);
         let jewel_privacy = if Uniform::rand(&mut rng) { "public" } else { "private" };
-        let jewel_iter = (0..jewels_len).map(|_|
-            format!("{{mineral_id: {}.{}, carets: {}.{}}}",
-                format!("{}", <Field<CurrentNetwork> as Uniform>::rand(&mut rng)),
-                jewel_privacy,
-                format!("{}u8", <u8 as Uniform>::rand(&mut rng)),
-                jewel_privacy,
-            )).collect::<Vec<_>>();
+        let jewel_iter = (0..jewels_len)
+            .map(|_| {
+                format!(
+                    "{{mineral_id: {}.{}, carets: {}u8.{}}}",
+                    <Field<CurrentNetwork> as Uniform>::rand(&mut rng),
+                    jewel_privacy,
+                    <u8 as Uniform>::rand(&mut rng),
+                    jewel_privacy,
+                )
+            })
+            .collect::<Vec<_>>();
         let jewels = jewel_iter.join(", ");
         let nonce = <Group<CurrentNetwork> as Uniform>::rand(&mut rng);
         let version = format!("{}u8", rng.gen_range(0..=1));
 
-        let record_str = format!(r"{{
+        let record_str = format!(
+            r"{{
             owner: {owner}.{owner_privacy},
             coordinates: {{ x: {coordinates_x}.{coordinates_privacy}, y: {coordinates_y}.{coordinates_privacy} }},
             treasure_amount: {treasure_amount}.{treasure_amount_privacy},
@@ -74,13 +79,17 @@ fn test_circuit_dynamic_record_from_record() {
             jewels: [{jewels}],
             _nonce: {nonce}.public,
             _version: {version}.public
-        }}");
+        }}"
+        );
 
-        let console_static_record = console::program::Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_str(&record_str).unwrap();
-        let console_dynamic_record = console::program::DynamicRecord::<CurrentNetwork>::from_record(&console_static_record).unwrap();
+        let console_static_record =
+            console::program::Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_str(&record_str).unwrap();
+        let console_dynamic_record =
+            console::program::DynamicRecord::<CurrentNetwork>::from_record(&console_static_record).unwrap();
 
         let circuit_static_record = circuit::program::Record::new(Mode::Private, console_static_record.clone());
-        let circuit_dynamic_record = circuit::program::DynamicRecord::<CurrentAleo>::from_record(&circuit_static_record).unwrap();
+        let circuit_dynamic_record =
+            circuit::program::DynamicRecord::<CurrentAleo>::from_record(&circuit_static_record).unwrap();
 
         assert_eq!(circuit_dynamic_record.owner().eject_value(), *console_dynamic_record.owner());
         // Crucial check: the circuit and console roots of the Merkleized data should coincide
@@ -94,7 +103,6 @@ fn test_circuit_dynamic_record_from_record() {
 // TODO (Antonio) add description
 #[test]
 fn test_cast_simple() {
-
     let mut rng = TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(&mut rng);
@@ -103,7 +111,8 @@ fn test_cast_simple() {
 
     let program_b_name = Identifier::<CurrentNetwork>::from_str("hatchery").unwrap();
     let network_name = Identifier::<CurrentNetwork>::from_str("aleo").unwrap();
-    let function_get_age_in_years_stat_callee_name = Identifier::<CurrentNetwork>::from_str("get_age_in_years_stat_callee").unwrap();
+    let function_get_age_in_years_stat_callee_name =
+        Identifier::<CurrentNetwork>::from_str("get_age_in_years_stat_callee").unwrap();
 
     let program_b_field = program_b_name.to_field().unwrap();
     let network_field = network_name.to_field().unwrap();
@@ -131,7 +140,8 @@ fn test_cast_simple() {
             assert.eq true true;
         ";
 
-    let program_b_string = format!(r"
+    let program_b_string = format!(
+        r"
         import garden_center.aleo;
 
         program hatchery.aleo;
@@ -184,10 +194,11 @@ fn test_cast_simple() {
 
         constructor:
             assert.eq true true;
-        ");
+        "
+    );
 
     // Initialize a new program.
-    let program_a = Program::<CurrentNetwork>::from_str(&program_a_string).unwrap();
+    let program_a = Program::<CurrentNetwork>::from_str(program_a_string).unwrap();
     let program_b = Program::<CurrentNetwork>::from_str(&program_b_string).unwrap();
 
     // Initialize the VM.
@@ -199,54 +210,61 @@ fn test_cast_simple() {
     add_and_test(&vm, &caller_private_key, &[transaction_a], &mut rng);
 
     println!("Deploying program hatchery.aleo...");
-    let transaction_b = vm.deploy(&caller_private_key, &program_b, None, 0, None, &mut rng).unwrap(); 
+    let transaction_b = vm.deploy(&caller_private_key, &program_b, None, 0, None, &mut rng).unwrap();
     add_and_test(&vm, &caller_private_key, &[transaction_b], &mut rng);
-    
-    let fish_record_data = [
-        ("9183u32", "3u16"),
-        ("221u32", "2u16"),
-    ];
 
-    let mut fish_records = fish_record_data.into_iter().rev().enumerate().map(|(i, (species_id, age_in_years))| {
-        println!("Calling hatchery.aleo/import_fish ({i})...");
+    let fish_record_data = [("9183u32", "3u16"), ("221u32", "2u16")];
 
-        let transaction_import = vm.execute(
+    let mut fish_records = fish_record_data
+        .into_iter()
+        .rev()
+        .enumerate()
+        .map(|(i, (species_id, age_in_years))| {
+            println!("Calling hatchery.aleo/import_fish ({i})...");
+
+            let transaction_import = vm
+                .execute(
+                    &caller_private_key,
+                    ("hatchery.aleo", "import_fish"),
+                    [
+                        Value::from_str(&caller_address.to_string()).unwrap(),
+                        Value::from_str(species_id).unwrap(),
+                        Value::from_str(age_in_years).unwrap(),
+                    ]
+                    .into_iter(),
+                    None,
+                    0,
+                    None,
+                    &mut rng,
+                )
+                .unwrap();
+
+            let record = match &transaction_import.transitions().next().unwrap().outputs()[0] {
+                Output::Record(_, _, record_ciphertext, _) => {
+                    record_ciphertext.as_ref().unwrap().decrypt(&caller_view_key).unwrap()
+                }
+                _ => panic!("Expected output record is not a record"),
+            };
+
+            add_and_test(&vm, &caller_private_key, &[transaction_import], &mut rng);
+
+            record
+        })
+        .collect_vec();
+
+    /*** Case 1: Correct cast of non-external record + dynamic.get.record ***/
+    println!("Calling hatchery.aleo/get_age_in_years_by_casting...");
+    let transaction_get_age = vm
+        .execute(
             &caller_private_key,
-            ("hatchery.aleo", "import_fish"),
-            [
-                Value::from_str(&caller_address.to_string()).unwrap(),
-                Value::from_str(species_id).unwrap(),
-                Value::from_str(age_in_years).unwrap(),
-            ].into_iter(),
+            ("hatchery.aleo", "get_age_in_years_by_casting"),
+            [Value::<CurrentNetwork>::Record(fish_records.pop().unwrap())].into_iter(),
             None,
             0,
             None,
             &mut rng,
-        ).unwrap();
-
-        let record = match &transaction_import.transitions().next().unwrap().outputs()[0] {
-            Output::Record(_, _, record_ciphertext, _) => {
-                record_ciphertext.as_ref().unwrap().decrypt(&caller_view_key).unwrap()
-            }
-            _ => panic!("Expected output record is not a record"),
-        };
-
-        add_and_test(&vm, &caller_private_key, &[transaction_import], &mut rng);
-
-        record
-    }).collect_vec();
-
-    /*** Case 1: Correct cast of non-external record + dynamic.get.record ***/
-    println!("Calling hatchery.aleo/get_age_in_years_by_casting...");
-    let transaction_get_age = vm.execute(
-        &caller_private_key,
-        ("hatchery.aleo", "get_age_in_years_by_casting"),
-        [Value::<CurrentNetwork>::Record(fish_records.pop().unwrap())].into_iter(),
-        None,
-        0,
-        None,
-        &mut rng,
-    ).unwrap();
+        )
+        .unwrap();
 
     let expected_output = Plaintext::from_str("3u16").unwrap();
     match &transaction_get_age.transitions().next().unwrap().outputs()[0] {
@@ -260,15 +278,17 @@ fn test_cast_simple() {
 
     /*********** Case 2: Incorrect cast usage (double consumption) ***********/
     println!("Calling hatchery.aleo/get_age_in_years_stat_caller...");
-    let transaction_get_age_stat_caller = vm.execute(
-        &caller_private_key,
-        ("hatchery.aleo", "get_age_in_years_stat_caller"),
-        [Value::<CurrentNetwork>::Record(fish_records.pop().unwrap())].into_iter(),
-        None,
-        0,
-        None,
-        &mut rng,
-    ).unwrap();
+    let transaction_get_age_stat_caller = vm
+        .execute(
+            &caller_private_key,
+            ("hatchery.aleo", "get_age_in_years_stat_caller"),
+            [Value::<CurrentNetwork>::Record(fish_records.pop().unwrap())].into_iter(),
+            None,
+            0,
+            None,
+            &mut rng,
+        )
+        .unwrap();
 
     let rejected_id = transaction_get_age_stat_caller.id();
     let block = sample_next_block(&vm, &caller_private_key, &[transaction_get_age_stat_caller], &mut rng).unwrap();
@@ -279,20 +299,23 @@ fn test_cast_simple() {
 
     /****** Case 3: Correct cast of external record + static.get.record ******/
     println!("Calling garden_center.aleo/sow...");
-    
-    let transaction_sow = vm.execute(
-        &caller_private_key,
-        ("garden_center.aleo", "sow"),
-        [
-            Value::from_str(&caller_address.to_string()).unwrap(),
-            Value::from_str("12u32").unwrap(),
-            Value::from_str("true").unwrap(),
-        ].into_iter(),
-        None,
-        0,
-        None,
-        &mut rng,
-    ).unwrap();
+
+    let transaction_sow = vm
+        .execute(
+            &caller_private_key,
+            ("garden_center.aleo", "sow"),
+            [
+                Value::from_str(&caller_address.to_string()).unwrap(),
+                Value::from_str("12u32").unwrap(),
+                Value::from_str("true").unwrap(),
+            ]
+            .into_iter(),
+            None,
+            0,
+            None,
+            &mut rng,
+        )
+        .unwrap();
 
     let plant_record = match &transaction_sow.transitions().next().unwrap().outputs()[0] {
         Output::Record(_, _, record_ciphertext, _) => {
@@ -304,15 +327,17 @@ fn test_cast_simple() {
     add_and_test(&vm, &caller_private_key, &[transaction_sow], &mut rng);
 
     println!("Calling hatchery.aleo/get_plant_age_by_casting...");
-    let transaction_get_plant_age = vm.execute(
-        &caller_private_key,
-        ("hatchery.aleo", "get_plant_age_by_casting"),
-        [Value::<CurrentNetwork>::Record(plant_record)].into_iter(),
-        None,
-        0,
-        None,
-        &mut rng,
-    ).unwrap();
+    let transaction_get_plant_age = vm
+        .execute(
+            &caller_private_key,
+            ("hatchery.aleo", "get_plant_age_by_casting"),
+            [Value::<CurrentNetwork>::Record(plant_record)].into_iter(),
+            None,
+            0,
+            None,
+            &mut rng,
+        )
+        .unwrap();
 
     let expected_output = Plaintext::from_str("0u16").unwrap();
     match &transaction_get_plant_age.transitions().next().unwrap().outputs()[0] {

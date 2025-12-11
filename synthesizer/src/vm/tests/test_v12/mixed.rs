@@ -25,7 +25,6 @@ use super::*;
 // which also assert the correctness of cost estimation.
 #[test]
 fn test_execution_cost_for_authorization() {
-
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
@@ -43,8 +42,9 @@ fn test_execution_cost_for_authorization() {
     let program_b_field = Identifier::<CurrentNetwork>::from_str(program_b_str).unwrap().to_field().unwrap();
     let network_field = Identifier::<CurrentNetwork>::from_str(network_str).unwrap().to_field().unwrap();
     let weld_function_field = Identifier::<CurrentNetwork>::from_str(weld_function_str).unwrap().to_field().unwrap();
-    let check_tossed_coin_field = Identifier::<CurrentNetwork>::from_str(check_tossed_coin_str).unwrap().to_field().unwrap();
-    
+    let check_tossed_coin_field =
+        Identifier::<CurrentNetwork>::from_str(check_tossed_coin_str).unwrap().to_field().unwrap();
+
     let program_a_string = format!(
         r"
         program {program_a_str}.aleo;
@@ -177,65 +177,53 @@ fn test_execution_cost_for_authorization() {
     add_and_test(&vm, &caller_private_key, &[transaction_deploy_b], rng);
 
     let record_data = [
-        ("base_metal",vec![
-            &caller_address_str,
-            "183u16",
-            "999u32",
-            "true",
-        ]),
-        ("base_metal",vec![
-            &caller_address_str,
-            "93u16",
-            "20u32",
-            "false",
-        ]),
-        ("accessory_metal",vec![
-            &caller_address_str,
-            "82u16",
-            "27u32",
-            "0group",
-        ]),
-        ("welding_metal",vec![
-            &caller_address_str,
-            "183u16",
-            "82u16",
-        ]),
+        ("base_metal", vec![&caller_address_str, "183u16", "999u32", "true"]),
+        ("base_metal", vec![&caller_address_str, "93u16", "20u32", "false"]),
+        ("accessory_metal", vec![&caller_address_str, "82u16", "27u32", "0group"]),
+        ("welding_metal", vec![&caller_address_str, "183u16", "82u16"]),
     ];
 
-    let transactions_and_records = record_data.into_iter().map(|(record_name, entry_values)| {
+    let transactions_and_records = record_data
+        .into_iter()
+        .map(|(record_name, entry_values)| {
+            let function_name = format!("mint_{record_name}");
 
-        let function_name = format!("mint_{record_name}");
+            println!("Calling {program_a_str}.aleo/{function_name}...");
 
-        println!("Calling {program_a_str}.aleo/{function_name}...");
+            let transaction_mint = vm
+                .execute(
+                    &caller_private_key,
+                    ("welder.aleo", function_name),
+                    entry_values.into_iter(),
+                    None,
+                    0,
+                    None,
+                    rng,
+                )
+                .unwrap();
 
-        let transaction_mint = vm.execute(
-            &caller_private_key,
-            ("welder.aleo", function_name),
-            entry_values.into_iter(),
-            None,
-            0,
-            None,
-            rng,
-        ).unwrap();
+            let record = match &transaction_mint.transitions().next().unwrap().outputs()[0] {
+                Output::Record(_, _, record_ciphertext, _) => {
+                    record_ciphertext.as_ref().unwrap().decrypt(&caller_view_key).unwrap()
+                }
+                _ => panic!("Expected output record is not a record"),
+            };
 
-        let record = match &transaction_mint.transitions().next().unwrap().outputs()[0] {
-            Output::Record(_, _, record_ciphertext, _) => {
-                record_ciphertext.as_ref().unwrap().decrypt(&caller_view_key).unwrap()
-            }
-            _ => panic!("Expected output record is not a record"),
-        };
-
-        (transaction_mint, record)
-    }).collect_vec();
+            (transaction_mint, record)
+        })
+        .collect_vec();
 
     let (transactions_mint, records): (Vec<_>, Vec<_>) = transactions_and_records.into_iter().unzip();
 
     add_and_test(&vm, &caller_private_key, &transactions_mint, rng);
 
-    let dynamic_records = records.into_iter().map(|record| Value::DynamicRecord(DynamicRecord::<CurrentNetwork>::from_record(&record).unwrap())).collect_vec();
+    let dynamic_records = records
+        .into_iter()
+        .map(|record| Value::DynamicRecord(DynamicRecord::<CurrentNetwork>::from_record(&record).unwrap()))
+        .collect_vec();
 
     println!("Executing {program_a_str}.aleo/weld_dynamically...");
-    
+
     let transaction = vm
         .execute(
             &caller_private_key,
@@ -252,7 +240,7 @@ fn test_execution_cost_for_authorization() {
 
     assert!(
         // The first two transition are weld and check_tossed_coin; the root transition we are interested in is at index 2.
-        matches!(transaction.transitions().skip(2).next().unwrap().outputs(), [Output::Public(_, Some(plaintext))] if *plaintext == expected_output),
+        matches!(transaction.transitions().nth(2).unwrap().outputs(), [Output::Public(_, Some(plaintext))] if *plaintext == expected_output),
         "Expected output: {:?}, got: {:?}",
         expected_output,
         transaction.transitions().next().unwrap().outputs()
@@ -263,8 +251,7 @@ fn test_execution_cost_for_authorization() {
 
     let actual_cost = execution_cost(&vm.process().read(), execution, ConsensusVersion::V12).unwrap();
 
-    let authorization =
-        Authorization::from_unchecked((vec![], execution.transitions().cloned().collect()));
+    let authorization = Authorization::from_unchecked((vec![], execution.transitions().cloned().collect()));
 
     // The batch sizes involved in the cost computation are [1, 1, 1, 3, 2, 1, 1], where:
     // - the first 3 ones come from the three distinct transitions
@@ -278,8 +265,7 @@ fn test_execution_cost_for_authorization() {
     // - the next one comes from the (output) translation for welded_chunk.record
 
     let expected_cost =
-        execution_cost_for_authorization(&vm.process().read(), &authorization, ConsensusVersion::V12)
-            .unwrap();
+        execution_cost_for_authorization(&vm.process().read(), &authorization, ConsensusVersion::V12).unwrap();
 
     assert_eq!(actual_cost, expected_cost);
 
@@ -289,11 +275,10 @@ fn test_execution_cost_for_authorization() {
 
 #[test]
 fn test_translation_get_dynamic_cast_to_dynamic() {
-
     let rng = &mut TestRng::default();
 
     let factory_private_key = sample_genesis_private_key(rng);
-    
+
     let client_1_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
     let client_1_address = Address::try_from(&client_1_private_key).unwrap();
     let client_1_view_key = ViewKey::<CurrentNetwork>::try_from(client_1_private_key).unwrap();
@@ -330,7 +315,8 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
     //    since owner_address = vk * G Disclaimer: this is not a secure signing
     //    scheme. Do not use.
 
-    let program_a_str = format!(r"
+    let program_a_str = format!(
+        r"
         program {program_a_name}.aleo;
 
         // Checks that the equation s * G == owner_address + (product_id * G) holds,
@@ -344,8 +330,7 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
             mul r1 {generator} into r2;
             
             // Right-hand side
-            // TODO (dynamic_dispatch) cast r0.owner into r3 as group;
-            cast {client_1_address} into r3 as group;
+            cast r0.owner into r3 as group;
             get.dynamic.record r0.product_id into r4 as scalar;
             mul r4 {generator} into r5;
             add r3 r5 into r6;
@@ -359,7 +344,8 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
         "
     );
 
-    let program_b_str = format!(r"
+    let program_b_str = format!(
+        r"
         import {program_a_name}.aleo;
     
         program {program_b_name}.aleo;
@@ -462,48 +448,54 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
     add_and_test(&vm, &factory_private_key, &[transaction_deploy_b], rng);
 
     // Fund the clients so they can call functions, e. g. to decomission toys
-    let transaction_funding_1 = vm.execute(
-        &factory_private_key,
-        ("credits.aleo", "transfer_public"),
-        [Value::from_str(&format!("{client_1_address}")).unwrap(), Value::from_str("10000u64").unwrap()].iter(),
-        None,
-        0,
-        None,
-        rng,
-    ).unwrap();
+    let transaction_funding_1 = vm
+        .execute(
+            &factory_private_key,
+            ("credits.aleo", "transfer_public"),
+            [Value::from_str(&format!("{client_1_address}")).unwrap(), Value::from_str("10000u64").unwrap()].iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
 
-    let transaction_funding_2 = vm.execute(
-        &factory_private_key,
-        ("credits.aleo", "transfer_public"),
-        [Value::from_str(&format!("{client_2_address}")).unwrap(), Value::from_str("10000u64").unwrap()].iter(),
-        None,
-        0,
-        None,
-        rng,
-    ).unwrap();
+    let transaction_funding_2 = vm
+        .execute(
+            &factory_private_key,
+            ("credits.aleo", "transfer_public"),
+            [Value::from_str(&format!("{client_2_address}")).unwrap(), Value::from_str("10000u64").unwrap()].iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
 
     add_and_test(&vm, &factory_private_key, &[transaction_funding_1, transaction_funding_2], rng);
 
     // ************************** Case 1: Toy decomissioning **************************
 
     // Manufacture a toy for client 1
-    let toy_1_id: Scalar::<CurrentNetwork> = Uniform::rand(rng);
+    let toy_1_id: Scalar<CurrentNetwork> = Uniform::rand(rng);
 
     let toy_1_inputs = [
         Value::from_str(&client_1_address.to_string()).unwrap(),
         Value::from_str("34u16").unwrap(),
         Value::from_str(&toy_1_id.to_string()).unwrap(),
     ];
-    
-    let transaction_mint_toy_1 = vm.execute(
-        &client_1_private_key,
-        ("factory.aleo", "manufacture_toy"),
-        toy_1_inputs.into_iter(),
-        None,
-        0,
-        None,
-        rng,
-    ).unwrap();
+
+    let transaction_mint_toy_1 = vm
+        .execute(
+            &client_1_private_key,
+            ("factory.aleo", "manufacture_toy"),
+            toy_1_inputs.into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
 
     let toy_1_record = match &transaction_mint_toy_1.transitions().next().unwrap().outputs()[0] {
         Output::Record(_, _, record_ciphertext, _) => {
@@ -517,20 +509,20 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
     // Computing the signature
     let toy_1_signature = toy_1_id + *client_1_view_key;
 
-    let decomission_toy_inputs = [
-        Value::from_str(&toy_1_record.to_string()).unwrap(),
-        Value::from_str(&toy_1_signature.to_string()).unwrap(),
-    ];
-    
-    let transaction_decomission_toy_1 = vm.execute(
-        &client_1_private_key,
-        ("factory.aleo", "decomission_toy"),
-        decomission_toy_inputs.into_iter(),
-        None,
-        0,
-        None,
-        rng,
-    ).unwrap();
+    let decomission_toy_inputs =
+        [Value::from_str(&toy_1_record.to_string()).unwrap(), Value::from_str(&toy_1_signature.to_string()).unwrap()];
+
+    let transaction_decomission_toy_1 = vm
+        .execute(
+            &client_1_private_key,
+            ("factory.aleo", "decomission_toy"),
+            decomission_toy_inputs.into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
 
     add_and_test(&vm, &client_1_private_key, &[transaction_decomission_toy_1], rng);
 

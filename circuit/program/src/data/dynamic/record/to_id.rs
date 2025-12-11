@@ -34,7 +34,7 @@ mod tests {
 
     use console::{TestRng, Uniform};
     use snarkvm_circuit_network::AleoV0 as CurrentAleo;
-    
+
     use super::*;
 
     type CurrentNetwork = <CurrentAleo as Environment>::Network;
@@ -45,7 +45,6 @@ mod tests {
         let mut rng = TestRng::default();
 
         for _ in 0..ITERATIONS {
-            
             // Dynamic record fields
             let owner_address = console::Address::<CurrentNetwork>::rand(&mut rng);
             let owner = console::Owner::<CurrentNetwork, console::Plaintext<CurrentNetwork>>::Public(owner_address);

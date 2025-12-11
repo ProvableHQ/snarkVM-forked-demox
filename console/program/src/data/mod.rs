@@ -20,7 +20,14 @@ mod ciphertext;
 pub use ciphertext::Ciphertext;
 
 mod dynamic;
-pub use dynamic::{DynamicFuture, DynamicRecord, FutureArgumentTree, RECORD_DATA_TREE_DEPTH, RecordDataTree};
+pub use dynamic::{
+    DynamicFuture,
+    DynamicRecord,
+    FutureArgumentTree,
+    RECORD_DATA_TREE_DEPTH,
+    RecordData,
+    RecordDataTree,
+};
 
 mod future;
 pub use future::{Argument, Future};

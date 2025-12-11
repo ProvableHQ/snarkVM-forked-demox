@@ -226,10 +226,11 @@ impl<N: Network> Parser for GetDynamic<N> {
         // Parse the ";" from the string.
         let (string, _) = tag(";")(string)?;
 
-        Ok((
-            string,
-            Self { operands: [program_name, program_network, mapping_name, key], destination, destination_type },
-        ))
+        Ok((string, Self {
+            operands: [program_name, program_network, mapping_name, key],
+            destination,
+            destination_type,
+        }))
     }
 }
 

@@ -18,7 +18,6 @@ use super::*;
 // This test verifiers that a dynamic call to the `credits` functions work as expected.
 #[test]
 fn test_dynamic_calls_to_credits_aleo() -> Result<()> {
-
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
@@ -183,7 +182,7 @@ fn test_dynamic_calls_to_credits_aleo() -> Result<()> {
         0,
         None,
         rng,
-    )?;  
+    )?;
     vm.check_transaction(&transaction, None, rng)?;
     let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);

@@ -185,8 +185,10 @@ pub trait StackTrait<N: Network> {
     fn get_external_stack(&self, program_id: &ProgramID<N>) -> Result<Arc<Self>>;
 
     /// Returns the external stack for the given program ID, without checking that:
-    /// - the program ID is different from the current program ID.
-    /// - the program ID is imported by the current program.
+    ///
+    /// - The program ID is different from the current program ID.
+    /// - The program ID is imported by the current program.
+    ///
     /// This function is only to be used for resolution during dynamic dispatch.
     fn get_stack_unchecked(&self, program_id: &ProgramID<N>) -> Result<Arc<Self>>;
 

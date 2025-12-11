@@ -122,7 +122,7 @@ pub fn execution_cost_for_authorization<N: Network>(
     }
 
     // Add the batches corresponding to translation tasks
-    let translation_batches = Authorization::translation_batches(process,authorization.transitions().values())?;
+    let translation_batches = Authorization::translation_batches(process, authorization.transitions().values())?;
     batch_sizes.extend(translation_batches);
 
     // Varuna is always run in hiding (i. e. ZK) mode when proving Executions.

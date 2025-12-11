@@ -152,7 +152,7 @@ impl<N: Network, A: circuit::Aleo<Network = N>> RegistersTrait<N> for Registers<
                     // Retrieve the argument from the future.
                     Value::Future(future) => future.find(path)?,
                     // A dynamic record cannot be accessed directly.
-                    Value::DynamicRecord(_) => bail!("Cannot invoke `find` on a dynamic record value"),
+                    Value::DynamicRecord(dynamic_record) => dynamic_record.find(path)?,
                     // A dynamic future cannot be accessed directly.
                     Value::DynamicFuture(_) => bail!("Cannot invoke `find` on a dynamic future value"),
                 }

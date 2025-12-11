@@ -181,7 +181,7 @@ fn test_get_dynamic_record() {
 
     assert!(
         // The first two transactions correspond to the two minting operations
-        matches!(transaction_2.transitions().skip(2).next().unwrap().outputs(), [Output::Public(_, Some(plaintext))] if *plaintext == expected_output),
+        matches!(transaction_2.transitions().nth(2).unwrap().outputs(), [Output::Public(_, Some(plaintext))] if *plaintext == expected_output),
         "Expected output: {:?}, got: {:?}",
         expected_output,
         transaction_2.transitions().next().unwrap().outputs()
@@ -196,10 +196,11 @@ fn test_get_dynamic_record() {
     // Case 3.1: We attempt to read the field "producer_country_code" from a
     // dynamic record derived from a static consumable.record, which does not
     // have one.
-    
+
     println!("Executing root function warehouse.aleo/read_producer_country (should fail)...");
 
-    assert!(vm.execute(
+    assert!(
+        vm.execute(
             &caller_private_key,
             ("warehouse.aleo", "read_producer_country"),
             vec![Value::<CurrentNetwork>::DynamicRecord(record_dynamic.clone())].into_iter(),
@@ -207,7 +208,10 @@ fn test_get_dynamic_record() {
             0,
             None,
             rng,
-        ).unwrap_err().to_string().contains("does not contain entry entry producer_country_code")
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("does not contain entry entry producer_country_code")
     );
 
     // Case 3.2: We manipulate the root of the already created dynamic record,
@@ -225,7 +229,8 @@ fn test_get_dynamic_record() {
 
     println!("Executing root function warehouse.aleo/production_month (should fail)...");
 
-    assert!(vm.execute(
+    assert!(
+        vm.execute(
             &caller_private_key,
             ("warehouse.aleo", "production_month"),
             vec![Value::<CurrentNetwork>::DynamicRecord(manipulated_record_dynamic)].into_iter(),
@@ -233,14 +238,18 @@ fn test_get_dynamic_record() {
             0,
             None,
             rng,
-        ).unwrap_err().to_string().contains("not satisfied")
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("not satisfied")
     );
 
     // Case 3.3: We attempt to read the field "production_date" as an array of
     // u16 instead of the actual u8.
     println!("Executing root function warehouse.aleo/production_month_as_u16 (should fail)...");
 
-    assert!(vm.execute(
+    assert!(
+        vm.execute(
             &caller_private_key,
             ("warehouse.aleo", "production_month_as_u16"),
             vec![Value::<CurrentNetwork>::DynamicRecord(record_dynamic.clone())].into_iter(),
@@ -248,14 +257,22 @@ fn test_get_dynamic_record() {
             0,
             None,
             rng,
-        ).unwrap_err().to_string().contains("Type mismatch")
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("Type mismatch")
     );
 
     // Case 3.4: We attempt to read the field "production_date" from a different
     // leaf index than it had when the Merkle root was computed.
 
     let mut manipulated_record_data = record_dynamic.data().clone().unwrap();
-    assert!(manipulated_record_data.get_index_of(&Identifier::<CurrentNetwork>::from_str("production_date").unwrap()).unwrap() == 2);
+    assert!(
+        manipulated_record_data
+            .get_index_of(&Identifier::<CurrentNetwork>::from_str("production_date").unwrap())
+            .unwrap()
+            == 2
+    );
     manipulated_record_data.swap_indices(1, 2);
 
     let manipulated_record_dynamic_2 = DynamicRecord::new_unchecked(
@@ -269,7 +286,8 @@ fn test_get_dynamic_record() {
 
     println!("Executing root function warehouse.aleo/production_month (should fail)...");
 
-    assert!(vm.execute(
+    assert!(
+        vm.execute(
             &caller_private_key,
             ("warehouse.aleo", "production_month"),
             vec![Value::<CurrentNetwork>::DynamicRecord(manipulated_record_dynamic_2)].into_iter(),
@@ -277,6 +295,9 @@ fn test_get_dynamic_record() {
             0,
             None,
             rng,
-        ).unwrap_err().to_string().contains("not satisfied")
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("not satisfied")
     );
 }

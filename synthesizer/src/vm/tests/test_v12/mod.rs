@@ -40,8 +40,8 @@ use console::{
     network::ConsensusVersion,
     program::{DynamicRecord, Entry, Identifier, Value},
 };
-use snarkvm_synthesizer_program::Program;
 use snarkvm_synthesizer_process::execution_cost_for_authorization;
+use snarkvm_synthesizer_program::Program;
 use snarkvm_utilities::TestRng;
 
 // TODO (dynamic_dispatch)

@@ -14,11 +14,25 @@
 // limitations under the License.
 
 use crate::{Opcode, Operand, RegistersCircuit, RegistersTrait, StackTrait};
-use circuit::{Inject, Mode, Eject, traits::ToField};
+use circuit::{Eject, Inject, Mode, traits::ToField};
 use console::{
-    network::prelude::*,
-    program::{Access, Address, Entry, Field, Identifier, PlaintextType, Register, RegisterType, U64, Value, ToFields as ConsoleToFields, ToField as ConsoleToField, RECORD_DATA_TREE_DEPTH},
     collections::merkle_tree::MerklePath,
+    network::prelude::*,
+    program::{
+        Access,
+        Address,
+        Entry,
+        Field,
+        Identifier,
+        PlaintextType,
+        RECORD_DATA_TREE_DEPTH,
+        Register,
+        RegisterType,
+        ToField as ConsoleToField,
+        ToFields as ConsoleToFields,
+        U64,
+        Value,
+    },
 };
 
 use rand::thread_rng;
@@ -47,29 +61,23 @@ impl<N: Network> GetDynamicRecord<N> {
     /// Initializes a new `get.dynamic.record` instruction.
     #[inline]
     pub fn new(operand: Operand<N>, destination: Register<N>, plaintext_type: PlaintextType<N>) -> Result<Self> {
-
         ensure!(
             matches!(destination, Register::Locator(_)),
-            "Expected destination of the form r<i>, found {}",
-            destination
+            "Expected destination of the form r<i>, found {destination}"
         );
-        
-        let (prepared_operands, entry_identifier) = if let Operand::Register(Register::Access(index, accesses)) = operand {
-            if let [Access::Member(identifier)] = accesses.as_slice() {
-                ([Operand::Register(Register::Locator(index))], identifier.clone())
+
+        let (prepared_operands, entry_identifier) =
+            if let Operand::Register(Register::Access(index, accesses)) = operand {
+                if let [Access::Member(identifier)] = accesses.as_slice() {
+                    ([Operand::Register(Register::Locator(index))], *identifier)
+                } else {
+                    bail!("Expected a single entry identifier, found {accesses:?}")
+                }
             } else {
-                bail!("Expected a single entry identifier, found {:?}", accesses)
-            }
-        } else {
-            bail!("Expected input to be of the form r<i>.<name>, found {:?}", operand)
-        };
-        
-        Ok(Self { 
-            operands: prepared_operands,
-            destination,
-            entry_identifier,
-            plaintext_type
-        })
+                bail!("Expected input to be of the form r<i>.<name>, found {operand:?}")
+            };
+
+        Ok(Self { operands: prepared_operands, destination, entry_identifier, plaintext_type })
     }
 
     /// Returns the opcode.
@@ -94,7 +102,6 @@ impl<N: Network> GetDynamicRecord<N> {
 impl<N: Network> GetDynamicRecord<N> {
     /// Evaluates the instruction.
     pub fn evaluate(&self, stack: &impl StackTrait<N>, registers: &mut impl RegistersTrait<N>) -> Result<()> {
-
         // Retrieve the dynamic record
         let dynamic_record = {
             let value = registers.load(stack, &self.operands[0])?;
@@ -122,7 +129,7 @@ impl<N: Network> GetDynamicRecord<N> {
         };
 
         ensure!(
-            stack.matches_plaintext(&plaintext, &self.plaintext_type).is_ok(),
+            stack.matches_plaintext(plaintext, &self.plaintext_type).is_ok(),
             "Type mismatch in dynamic record entry {:?}: expected {:?}, found {:?}",
             self.entry_identifier,
             self.plaintext_type,
@@ -139,7 +146,6 @@ impl<N: Network> GetDynamicRecord<N> {
         stack: &impl StackTrait<N>,
         registers: &mut impl RegistersCircuit<N, A>,
     ) -> Result<()> {
-
         // Retrieve the dynamic record
         let circuit_dynamic_record = {
             let value = registers.load_circuit(stack, &self.operands[0])?;
@@ -153,10 +159,12 @@ impl<N: Network> GetDynamicRecord<N> {
         let (console_entry, console_path) = match (circuit_dynamic_record.tree(), circuit_dynamic_record.data()) {
             (Some(tree), Some(data)) => {
                 // Retrieving the entry
-                let (index, _, entry) = data.get_full(&self.entry_identifier).ok_or_else(|| anyhow!(
-                    "The dynamic record's data is present but does not contain entry entry {}",
-                    self.entry_identifier
-                ))?;
+                let (index, _, entry) = data.get_full(&self.entry_identifier).ok_or_else(|| {
+                    anyhow!(
+                        "The dynamic record's data is present but does not contain entry entry {}",
+                        self.entry_identifier
+                    )
+                })?;
 
                 // Constructing the leaf of the merkleized-data tree
                 let mut leaf = vec![self.entry_identifier.to_field()?];
@@ -166,7 +174,7 @@ impl<N: Network> GetDynamicRecord<N> {
                 let path = tree.prove(index, &leaf)?;
 
                 ensure!(
-                    *path.leaf_index() as usize == index,
+                    *path.leaf_index() == index as u64,
                     "Entry {} has index {} in the dynamic record's data, but its leaf index in the dynamic record's Merkle tree is {}",
                     self.entry_identifier,
                     index,
@@ -185,11 +193,7 @@ impl<N: Network> GetDynamicRecord<N> {
                 let value = {
                     let rng = &mut thread_rng();
                     let address = Address::<N>::rand(rng);
-                    stack.sample_value(
-                        &address,
-                        &RegisterType::Plaintext(self.plaintext_type.clone()),
-                        rng
-                    )?
+                    stack.sample_value(&address, &RegisterType::Plaintext(self.plaintext_type.clone()), rng)?
                 };
 
                 let entry = match value {
@@ -198,17 +202,20 @@ impl<N: Network> GetDynamicRecord<N> {
                     // chosen arbitrarily here. The plaintext type of the entry, however, is injected
                     // as a constant and must be set correctly here.
                     Value::Plaintext(plaintext) => Entry::Public(plaintext),
-                    _ => bail!("Expected plaintext value while sampling an entry for a dynamic record, found {:?}", value)
+                    _ => {
+                        bail!("Expected plaintext value while sampling an entry for a dynamic record, found {value:?}")
+                    }
                 };
 
-                let path = MerklePath::try_from((U64::new(0), vec![Field::<N>::zero(); RECORD_DATA_TREE_DEPTH as usize]))?;
+                let path =
+                    MerklePath::try_from((U64::new(0), vec![Field::<N>::zero(); RECORD_DATA_TREE_DEPTH as usize]))?;
 
                 (entry, path)
 
                 // TODO (dynamic_dispatch) decide whether we want to handle the case in which the data is present but the tree is not (in which case one could reconstruct the tree) or treat it as an error, as we are here. In principle, the data and try always go hand in hand (either both present or both absent), so this shouldn't occur; but there are situations we have little control of, such as when the dynamic is an input to the root transition.
             }
         };
-        
+
         // This verification is only a sanity check and not performed in-circuit. The type of the
         // in-circuit entry is encoded into the circuit structure (and therefore the proving and
         // is encoded into the circuit structure (and therefore the proving and verifying keys)).
@@ -219,7 +226,7 @@ impl<N: Network> GetDynamicRecord<N> {
                 Entry::Private(plaintext) => plaintext,
             };
             ensure!(
-                stack.matches_plaintext(&plaintext, &self.plaintext_type).is_ok(),
+                stack.matches_plaintext(plaintext, &self.plaintext_type).is_ok(),
                 "Type mismatch in dynamic record entry {:?}: expected {:?}, found {:?}",
                 self.entry_identifier,
                 self.plaintext_type,
@@ -238,7 +245,7 @@ impl<N: Network> GetDynamicRecord<N> {
         //   two private Boolean
         // - its plaintext, whose variant and relevant identifiers (e. g. those
         //   inside structures) are injected as constants
-        let circuit_identifier = circuit::Identifier::constant(self.entry_identifier.clone());
+        let circuit_identifier = circuit::Identifier::constant(self.entry_identifier);
         let circuit_entry = circuit::Entry::new(Mode::Private, console_entry);
         let mut circuit_leaf = vec![circuit_identifier.to_field()];
         circuit_leaf.extend(circuit_entry.to_fields_with_visibility_mode(Mode::Private));
@@ -253,7 +260,7 @@ impl<N: Network> GetDynamicRecord<N> {
         let circuit_path = circuit::merkle_tree::MerklePath::new(Mode::Private, console_path);
 
         // Verifying the path inside the circuit
-        A::assert(circuit_path.verify(&circuit_leaf_hasher, &circuit_path_hasher, &circuit_root, &circuit_leaf));
+        A::assert(circuit_path.verify(&circuit_leaf_hasher, &circuit_path_hasher, circuit_root, &circuit_leaf));
 
         let circuit_entry_plaintext = match circuit_entry {
             circuit::Entry::Constant(plaintext) => plaintext,
@@ -279,7 +286,11 @@ impl<N: Network> GetDynamicRecord<N> {
         input_types: &[RegisterType<N>],
     ) -> Result<Vec<RegisterType<N>>> {
         ensure!(input_types.len() == 1, "Expected 1 input type, found {}", input_types.len());
-        ensure!(matches!(input_types[0], RegisterType::DynamicRecord), "Expected dynamic record, found {}", input_types[0]);
+        ensure!(
+            matches!(input_types[0], RegisterType::DynamicRecord),
+            "Expected dynamic record, found {}",
+            input_types[0]
+        );
 
         Ok(vec![RegisterType::Plaintext(self.plaintext_type.clone())])
     }
@@ -288,7 +299,6 @@ impl<N: Network> GetDynamicRecord<N> {
 impl<N: Network> Parser for GetDynamicRecord<N> {
     /// Parses a string into an operation.
     fn parse(string: &str) -> ParserResult<Self> {
-
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
         // Parse the opcode from the string.
@@ -353,7 +363,15 @@ impl<N: Network> Display for GetDynamicRecord<N> {
     /// Prints the operation to a string.
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         // Print the operation.
-        write!(f, "{} {}.{} into {} as {}", Self::opcode(), self.operands[0], self.entry_identifier, self.destination, self.plaintext_type)
+        write!(
+            f,
+            "{} {}.{} into {} as {}",
+            Self::opcode(),
+            self.operands[0],
+            self.entry_identifier,
+            self.destination,
+            self.plaintext_type
+        )
     }
 }
 
@@ -367,20 +385,15 @@ impl<N: Network> FromBytes for GetDynamicRecord<N> {
         let plaintext_type = PlaintextType::read_le(&mut reader)?;
 
         if !matches!(operand, Operand::Register(Register::Locator(_))) {
-            return Err(error(format!("Expected (prepared) operand of the form r<i>, found {}", operand)));
+            return Err(error(format!("Expected (prepared) operand of the form r<i>, found {operand}")));
         }
 
         if !matches!(destination, Register::Locator(_)) {
-            return Err(error(format!("Expected destination  the form r<i>, found {}", destination)));
+            return Err(error(format!("Expected destination  the form r<i>, found {destination}")));
         }
 
         // Return the operation.
-        Ok(Self {
-            operands: [operand],
-            destination,
-            entry_identifier,
-            plaintext_type
-        })
+        Ok(Self { operands: [operand], destination, entry_identifier, plaintext_type })
     }
 }
 
@@ -406,66 +419,46 @@ mod tests {
 
     #[test]
     fn test_parse() {
-
         // ************ Literal types ************
 
-        let (remainder, instruction) = GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r0.outdated into r1 as bool").unwrap();
+        let (remainder, instruction) =
+            GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r0.outdated into r1 as bool").unwrap();
         assert!(remainder.is_empty());
         assert_eq!(instruction.operands().len(), 1);
         assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
         assert_eq!(instruction.destination, Register::Locator(1));
         assert_eq!(instruction.entry_identifier, Identifier::from_str("outdated").unwrap());
         assert_eq!(instruction.plaintext_type, PlaintextType::from_str("bool").unwrap());
-        
-        let (remainder, instruction) = GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r0.middleman into r1 as address").unwrap();
+
+        let (remainder, instruction) =
+            GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r0.middleman into r1 as address").unwrap();
         assert!(remainder.is_empty());
         assert_eq!(instruction.operands().len(), 1);
         assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
         assert_eq!(instruction.destination, Register::Locator(1));
         assert_eq!(instruction.entry_identifier, Identifier::from_str("middleman").unwrap());
         assert_eq!(instruction.plaintext_type, PlaintextType::from_str("address").unwrap());
-        
-        let (remainder, instruction) = GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r0.sk into r1 as field").unwrap();
+
+        let (remainder, instruction) =
+            GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r0.sk into r1 as field").unwrap();
         assert!(remainder.is_empty());
         assert_eq!(instruction.operands().len(), 1);
         assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
         assert_eq!(instruction.destination, Register::Locator(1));
         assert_eq!(instruction.entry_identifier, Identifier::from_str("sk").unwrap());
         assert_eq!(instruction.plaintext_type, PlaintextType::from_str("field").unwrap());
-        
-        let (remainder, instruction) = GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r0.pk into r1 as group").unwrap();
+
+        let (remainder, instruction) =
+            GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r0.pk into r1 as group").unwrap();
         assert!(remainder.is_empty());
         assert_eq!(instruction.operands().len(), 1);
         assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
         assert_eq!(instruction.destination, Register::Locator(1));
         assert_eq!(instruction.entry_identifier, Identifier::from_str("pk").unwrap());
         assert_eq!(instruction.plaintext_type, PlaintextType::from_str("group").unwrap());
-        
-        let (remainder, instruction) = GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r0.crs_byte into r1 as u8").unwrap();
-        assert!(remainder.is_empty());
-        assert_eq!(instruction.operands().len(), 1);
-        assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
-        assert_eq!(instruction.destination, Register::Locator(1));
-        assert_eq!(instruction.entry_identifier, Identifier::from_str("crs_byte").unwrap());
-        assert_eq!(instruction.plaintext_type, PlaintextType::from_str("u8").unwrap());
-        
-        let (remainder, instruction) = GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r0.size into r1 as u16").unwrap();
-        assert!(remainder.is_empty());
-        assert_eq!(instruction.operands().len(), 1);
-        assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
-        assert_eq!(instruction.destination, Register::Locator(1));
-        assert_eq!(instruction.entry_identifier, Identifier::from_str("size").unwrap());
-        assert_eq!(instruction.plaintext_type, PlaintextType::from_str("u16").unwrap());
-        
-        let (remainder, instruction) = GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r0.register into r1 as u32").unwrap();
-        assert!(remainder.is_empty());
-        assert_eq!(instruction.operands().len(), 1);
-        assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
-        assert_eq!(instruction.destination, Register::Locator(1));
-        assert_eq!(instruction.entry_identifier, Identifier::from_str("register").unwrap());
-        assert_eq!(instruction.plaintext_type, PlaintextType::from_str("u32").unwrap());
 
-        let (remainder, instruction) = GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r0.crs_byte into r1 as u8").unwrap();
+        let (remainder, instruction) =
+            GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r0.crs_byte into r1 as u8").unwrap();
         assert!(remainder.is_empty());
         assert_eq!(instruction.operands().len(), 1);
         assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
@@ -473,15 +466,17 @@ mod tests {
         assert_eq!(instruction.entry_identifier, Identifier::from_str("crs_byte").unwrap());
         assert_eq!(instruction.plaintext_type, PlaintextType::from_str("u8").unwrap());
 
-        let (remainder, instruction) = GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r0.size into r1 as u16").unwrap();
+        let (remainder, instruction) =
+            GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r0.size into r1 as u16").unwrap();
         assert!(remainder.is_empty());
         assert_eq!(instruction.operands().len(), 1);
         assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
         assert_eq!(instruction.destination, Register::Locator(1));
         assert_eq!(instruction.entry_identifier, Identifier::from_str("size").unwrap());
         assert_eq!(instruction.plaintext_type, PlaintextType::from_str("u16").unwrap());
-        
-        let (remainder, instruction) = GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r0.register into r1 as u32").unwrap();
+
+        let (remainder, instruction) =
+            GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r0.register into r1 as u32").unwrap();
         assert!(remainder.is_empty());
         assert_eq!(instruction.operands().len(), 1);
         assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
@@ -489,15 +484,44 @@ mod tests {
         assert_eq!(instruction.entry_identifier, Identifier::from_str("register").unwrap());
         assert_eq!(instruction.plaintext_type, PlaintextType::from_str("u32").unwrap());
 
-        let (remainder, instruction) = GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r0.usize into r1 as u64").unwrap();
+        let (remainder, instruction) =
+            GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r0.crs_byte into r1 as u8").unwrap();
+        assert!(remainder.is_empty());
+        assert_eq!(instruction.operands().len(), 1);
+        assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
+        assert_eq!(instruction.destination, Register::Locator(1));
+        assert_eq!(instruction.entry_identifier, Identifier::from_str("crs_byte").unwrap());
+        assert_eq!(instruction.plaintext_type, PlaintextType::from_str("u8").unwrap());
+
+        let (remainder, instruction) =
+            GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r0.size into r1 as u16").unwrap();
+        assert!(remainder.is_empty());
+        assert_eq!(instruction.operands().len(), 1);
+        assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
+        assert_eq!(instruction.destination, Register::Locator(1));
+        assert_eq!(instruction.entry_identifier, Identifier::from_str("size").unwrap());
+        assert_eq!(instruction.plaintext_type, PlaintextType::from_str("u16").unwrap());
+
+        let (remainder, instruction) =
+            GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r0.register into r1 as u32").unwrap();
+        assert!(remainder.is_empty());
+        assert_eq!(instruction.operands().len(), 1);
+        assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
+        assert_eq!(instruction.destination, Register::Locator(1));
+        assert_eq!(instruction.entry_identifier, Identifier::from_str("register").unwrap());
+        assert_eq!(instruction.plaintext_type, PlaintextType::from_str("u32").unwrap());
+
+        let (remainder, instruction) =
+            GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r0.usize into r1 as u64").unwrap();
         assert!(remainder.is_empty());
         assert_eq!(instruction.operands().len(), 1);
         assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
         assert_eq!(instruction.entry_identifier, Identifier::from_str("usize").unwrap());
         assert_eq!(instruction.destination, Register::Locator(1));
         assert_eq!(instruction.plaintext_type, PlaintextType::from_str("u64").unwrap());
-        
-        let (remainder, instruction) = GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r0.long into r1 as u128").unwrap();
+
+        let (remainder, instruction) =
+            GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r0.long into r1 as u128").unwrap();
         assert!(remainder.is_empty());
         assert_eq!(instruction.operands().len(), 1);
         assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
@@ -506,7 +530,8 @@ mod tests {
         assert_eq!(instruction.plaintext_type, PlaintextType::from_str("u128").unwrap());
 
         // ************ Other correct cases ************
-        let (remainder, instruction) = GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r3.banana into r3 as fruit_struct").unwrap();
+        let (remainder, instruction) =
+            GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r3.banana into r3 as fruit_struct").unwrap();
         assert!(remainder.is_empty());
         assert_eq!(instruction.operands().len(), 1);
         assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(3)));
@@ -514,21 +539,32 @@ mod tests {
         assert_eq!(instruction.destination, Register::Locator(3));
         assert_eq!(instruction.plaintext_type, PlaintextType::Struct(Identifier::from_str("fruit_struct").unwrap()));
 
-        let (remainder, instruction) = GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r1.apples into r1 as [fruit_struct; 20u32]").unwrap();
+        let (remainder, instruction) =
+            GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r1.apples into r1 as [fruit_struct; 20u32]")
+                .unwrap();
         assert!(remainder.is_empty());
         assert_eq!(instruction.operands().len(), 1);
         assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(1)));
         assert_eq!(instruction.entry_identifier, Identifier::from_str("apples").unwrap());
         assert_eq!(instruction.destination, Register::Locator(1));
-        assert_eq!(instruction.plaintext_type, PlaintextType::Array(ArrayType::from_str("[fruit_struct; 20u32]").unwrap()));
+        assert_eq!(
+            instruction.plaintext_type,
+            PlaintextType::Array(ArrayType::from_str("[fruit_struct; 20u32]").unwrap())
+        );
 
-        let (remainder, instruction) = GetDynamicRecord::<CurrentNetwork>::parse("get.dynamic.record r45.dragonfruit_matrix into r49 as [[fruit_struct; 20u32]; 10u32]").unwrap();
+        let (remainder, instruction) = GetDynamicRecord::<CurrentNetwork>::parse(
+            "get.dynamic.record r45.dragonfruit_matrix into r49 as [[fruit_struct; 20u32]; 10u32]",
+        )
+        .unwrap();
         assert!(remainder.is_empty());
         assert_eq!(instruction.operands().len(), 1);
         assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(45)));
         assert_eq!(instruction.entry_identifier, Identifier::from_str("dragonfruit_matrix").unwrap());
         assert_eq!(instruction.destination, Register::Locator(49));
-        assert_eq!(instruction.plaintext_type, PlaintextType::Array(ArrayType::from_str("[[fruit_struct; 20u32]; 10u32]").unwrap()));
+        assert_eq!(
+            instruction.plaintext_type,
+            PlaintextType::Array(ArrayType::from_str("[[fruit_struct; 20u32]; 10u32]").unwrap())
+        );
 
         // ************ Incorrect cases ************
         let incorrect_cases = [
@@ -549,7 +585,7 @@ mod tests {
             // Incorrect: finer access than the allowed entry name
             "get.dynamic.record r1.grape_vine[70u32] into r0 as fruit_struct",
         ];
-        
+
         for case in incorrect_cases {
             assert!(GetDynamicRecord::<CurrentNetwork>::parse(case).is_err());
         }

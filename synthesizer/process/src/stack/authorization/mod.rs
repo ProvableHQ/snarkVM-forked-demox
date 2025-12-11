@@ -19,7 +19,11 @@ mod string;
 
 use crate::{Output, Process};
 
-use console::{network::prelude::*, program::{Request, ValueType}, types::Field};
+use console::{
+    network::prelude::*,
+    program::{Request, ValueType},
+    types::Field,
+};
 use snarkvm_ledger_block::{Input, Transaction, Transition};
 use snarkvm_synthesizer_program::StackTrait;
 
@@ -304,7 +308,7 @@ impl<N: Network> Authorization<N> {
     /// circuit.
     pub fn translation_batches<'a>(
         process: &Process<N>,
-        transitions: impl ExactSizeIterator<Item = &'a Transition<N>>
+        transitions: impl ExactSizeIterator<Item = &'a Transition<N>>,
     ) -> Result<Vec<usize>> {
         let mut batches = HashMap::new();
 

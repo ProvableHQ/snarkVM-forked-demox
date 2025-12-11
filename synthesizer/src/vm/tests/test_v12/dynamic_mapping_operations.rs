@@ -124,17 +124,17 @@ constructor:
     // Deploy the programs individually.
     for program in [&program_0, &program_1, &main_program] {
         println!("Deploying program: {}", program.id());
-        let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
+        let deployment = vm.deploy(&caller_private_key, program, None, 0, None, rng).unwrap();
         add_and_test(&vm, &caller_private_key, &[deployment], rng);
     }
 
     // Create a helper to execute the `test_dynamic_contains` function.
     let test_dynamic_contains = |program_name: &str,
-                                     program_network: &str,
-                                     mapping_name: &str,
-                                     key: Value<CurrentNetwork>,
-                                     expected: Option<bool>, // If None, expect an error.
-                                     rng: &mut TestRng| {
+                                 program_network: &str,
+                                 mapping_name: &str,
+                                 key: Value<CurrentNetwork>,
+                                 expected: Option<bool>, // If None, expect an error.
+                                 rng: &mut TestRng| {
         println!(
             "Testing dynamic contains for program: {program_name}, network: {program_network}, mapping: {mapping_name}, key: {key}, expected: {expected:?}"
         );
@@ -156,7 +156,7 @@ constructor:
         // Create the transaction to call `test_dynamic_contains`.
         let transaction = match vm.execute(
             &caller_private_key,
-            (format!("main_program.aleo"), "test_dynamic_contains"),
+            ("main_program.aleo".to_string(), "test_dynamic_contains"),
             vec![
                 program_name_as_field,
                 program_network_as_field,
@@ -486,7 +486,7 @@ constructor:
     // Deploy the programs individually.
     for program in [&program_0, &program_1, &struct_program_0, &main_program] {
         println!("Deploying program: {}", program.id());
-        let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
+        let deployment = vm.deploy(&caller_private_key, program, None, 0, None, rng).unwrap();
         add_and_test(&vm, &caller_private_key, &[deployment], rng);
     }
 
@@ -998,7 +998,7 @@ constructor:
     // Deploy the programs individually.
     for program in [&program_0, &program_1, &struct_program_0, &main_program] {
         println!("Deploying program: {}", program.id());
-        let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
+        let deployment = vm.deploy(&caller_private_key, program, None, 0, None, rng).unwrap();
         add_and_test(&vm, &caller_private_key, &[deployment], rng);
     }
 
@@ -1064,71 +1064,68 @@ constructor:
     };
 
     // Create a helper to execute the `test_dynamic_get_or_use_struct` function.
-    let test_dynamic_get_or_use_struct =
-        |vm: &VM<CurrentNetwork, _>,
-         program_name: &str,
-         program_network: &str,
-         mapping_name: &str,
-         key: u32,
-         default_value: (u32, u64),
-         expected: Option<(u32, u64)>, // If None, expect an error.
-         rng: &mut TestRng| {
-            println!(
+    let test_dynamic_get_or_use_struct = |vm: &VM<CurrentNetwork, _>,
+                                          program_name: &str,
+                                          program_network: &str,
+                                          mapping_name: &str,
+                                          key: u32,
+                                          default_value: (u32, u64),
+                                          expected: Option<(u32, u64)>, // If None, expect an error.
+                                          rng: &mut TestRng| {
+        println!(
             "Testing dynamic get_or_use (struct) for program: {program_name}, network: {program_network}, mapping: {mapping_name}, key: {key}, default: {default_value:?}, expected: {expected:?}"
         );
-            // Create the program name as a field element.
-            let program_name_as_field = Value::from_str(
-                &Identifier::<CurrentNetwork>::from_str(program_name).unwrap().to_field().unwrap().to_string(),
-            )
-            .unwrap();
-            // Create the program network as a field element.
-            let program_network_as_field = Value::from_str(
-                &Identifier::<CurrentNetwork>::from_str(program_network).unwrap().to_field().unwrap().to_string(),
-            )
-            .unwrap();
-            // Create the mapping name as a field element.
-            let mapping_name_as_field = Value::from_str(
-                &Identifier::<CurrentNetwork>::from_str(mapping_name).unwrap().to_field().unwrap().to_string(),
-            )
-            .unwrap();
-            let (expected_a, expected_b) = expected.unwrap_or((0, 0));
-            // Create the transaction to call `test_dynamic_get_or_use_struct`.
-            let transaction = match vm.execute(
-                &caller_private_key,
-                ("main_program.aleo", "test_dynamic_get_or_use_struct"),
-                vec![
-                    program_name_as_field,
-                    program_network_as_field,
-                    mapping_name_as_field,
-                    Value::from_str(&format!("{key}u32")).unwrap(),
-                    Value::from_str(&format!("{}u32", default_value.0)).unwrap(),
-                    Value::from_str(&format!("{}u64", default_value.1)).unwrap(),
-                    Value::from_str(&format!("{expected_a}u32")).unwrap(),
-                    Value::from_str(&format!("{expected_b}u64")).unwrap(),
-                ]
-                .into_iter(),
-                None,
-                0,
-                None,
-                rng,
-            ) {
-                Ok(tx) => tx,
-                Err(e) if expected.is_none() => {
-                    println!("Expected error occurred: {e}");
-                    return;
-                }
-                Err(e) => panic!("Unexpected error occurred: {e}"),
-            };
-            // Check and add the transaction to the VM.
-            vm.check_transaction(&transaction, None, rng)
-                .map_err(|e| anyhow!("Transaction check failed: {e}"))
-                .unwrap();
-            let block = sample_next_block(vm, &caller_private_key, &[transaction], rng).unwrap();
-            assert_eq!(block.transactions().num_accepted(), expected.is_some() as usize);
-            assert_eq!(block.transactions().num_rejected(), expected.is_none() as usize);
-            assert_eq!(block.aborted_transaction_ids().len(), 0);
-            vm.add_next_block(&block).unwrap();
+        // Create the program name as a field element.
+        let program_name_as_field = Value::from_str(
+            &Identifier::<CurrentNetwork>::from_str(program_name).unwrap().to_field().unwrap().to_string(),
+        )
+        .unwrap();
+        // Create the program network as a field element.
+        let program_network_as_field = Value::from_str(
+            &Identifier::<CurrentNetwork>::from_str(program_network).unwrap().to_field().unwrap().to_string(),
+        )
+        .unwrap();
+        // Create the mapping name as a field element.
+        let mapping_name_as_field = Value::from_str(
+            &Identifier::<CurrentNetwork>::from_str(mapping_name).unwrap().to_field().unwrap().to_string(),
+        )
+        .unwrap();
+        let (expected_a, expected_b) = expected.unwrap_or((0, 0));
+        // Create the transaction to call `test_dynamic_get_or_use_struct`.
+        let transaction = match vm.execute(
+            &caller_private_key,
+            ("main_program.aleo", "test_dynamic_get_or_use_struct"),
+            vec![
+                program_name_as_field,
+                program_network_as_field,
+                mapping_name_as_field,
+                Value::from_str(&format!("{key}u32")).unwrap(),
+                Value::from_str(&format!("{}u32", default_value.0)).unwrap(),
+                Value::from_str(&format!("{}u64", default_value.1)).unwrap(),
+                Value::from_str(&format!("{expected_a}u32")).unwrap(),
+                Value::from_str(&format!("{expected_b}u64")).unwrap(),
+            ]
+            .into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        ) {
+            Ok(tx) => tx,
+            Err(e) if expected.is_none() => {
+                println!("Expected error occurred: {e}");
+                return;
+            }
+            Err(e) => panic!("Unexpected error occurred: {e}"),
         };
+        // Check and add the transaction to the VM.
+        vm.check_transaction(&transaction, None, rng).map_err(|e| anyhow!("Transaction check failed: {e}")).unwrap();
+        let block = sample_next_block(vm, &caller_private_key, &[transaction], rng).unwrap();
+        assert_eq!(block.transactions().num_accepted(), expected.is_some() as usize);
+        assert_eq!(block.transactions().num_rejected(), expected.is_none() as usize);
+        assert_eq!(block.aborted_transaction_ids().len(), 0);
+        vm.add_next_block(&block).unwrap();
+    };
 
     // Check that get.or_use.dynamic returns the default value when key doesn't exist.
     test_dynamic_get_or_use_u32(&vm, "main_program", "aleo", "data_main", 42, 999, Some(999), rng);
@@ -1305,16 +1302,7 @@ constructor:
     add_and_test(&vm, &caller_private_key, &[set_tx], rng);
 
     // Check that get.or_use.dynamic returns the stored struct value from external mapping.
-    test_dynamic_get_or_use_struct(
-        &vm,
-        "struct_program0",
-        "aleo",
-        "struct_data0",
-        20,
-        (70, 80),
-        Some((333, 444)),
-        rng,
-    );
+    test_dynamic_get_or_use_struct(&vm, "struct_program0", "aleo", "struct_data0", 20, (70, 80), Some((333, 444)), rng);
 
     // Check default for non-existent struct keys.
     test_dynamic_get_or_use_struct(&vm, "main_program", "aleo", "struct_data_main", 99, (1, 2), Some((1, 2)), rng);

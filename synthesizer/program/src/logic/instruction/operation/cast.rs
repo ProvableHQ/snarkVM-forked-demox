@@ -17,7 +17,22 @@ use crate::{Opcode, Operand, RegistersCircuit, RegistersSigner, RegistersTrait, 
 use console::{
     network::prelude::*,
     program::{
-        ArrayType, DynamicRecord, Entry, EntryType, Identifier, Literal, LiteralType, Locator, Owner, Plaintext, PlaintextType, Record, Register, RegisterType, Value, ValueType
+        ArrayType,
+        DynamicRecord,
+        Entry,
+        EntryType,
+        Identifier,
+        Literal,
+        LiteralType,
+        Locator,
+        Owner,
+        Plaintext,
+        PlaintextType,
+        Record,
+        Register,
+        RegisterType,
+        Value,
+        ValueType,
     },
     types::Field,
 };
@@ -323,7 +338,7 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
             CastType::DynamicRecord => {
                 ensure!(inputs.len() == 1, "Casting to a dynamic record requires exactly 1 operand");
 
-                // TODO (dynamic dispatch) do we have access to the type of the register self.operands[0]? I would like to add the sanity check 
+                // TODO (dynamic dispatch) do we have access to the type of the register self.operands[0]? I would like to add the sanity check
                 //     matches!(register_type, RegisterType::Record(..) | RegisterType::ExternalRecord(..))
                 // but cannot find the type in the stack or registers objects
 
@@ -618,8 +633,8 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
             }
             CastType::DynamicRecord => {
                 ensure!(inputs.len() == 1, "Casting to a dynamic record requires exactly 1 operand");
-                
-                // TODO (dynamic dispatch) do we have access to the type of the register self.operands[0]? I would like to add the sanity check 
+
+                // TODO (dynamic dispatch) do we have access to the type of the register self.operands[0]? I would like to add the sanity check
                 //     matches!(register_type, RegisterType::Record(..) | RegisterType::ExternalRecord(..))
                 // but cannot find the type in the stack or registers objects
 
@@ -628,7 +643,11 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                     _ => bail!("Casting to a dynamic record requires the operand value to be a record"),
                 };
 
-                registers.store_circuit(stack, &self.destination, circuit::Value::DynamicRecord(circuit::DynamicRecord::from_record(record)?))
+                registers.store_circuit(
+                    stack,
+                    &self.destination,
+                    circuit::Value::DynamicRecord(circuit::DynamicRecord::from_record(record)?),
+                )
             }
         }
     }
@@ -920,10 +939,7 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                 bail!("Illegal operation: Cannot cast to an external record.")
             }
             CastType::DynamicRecord => {
-                ensure!(
-                    input_types.len() == 1,
-                    "Casting to a dynamic record requires exactly 1 operand"
-                );
+                ensure!(input_types.len() == 1, "Casting to a dynamic record requires exactly 1 operand");
                 ensure!(
                     matches!(input_types[0], RegisterType::Record(..) | RegisterType::ExternalRecord(..)),
                     "Casting to a dynamic record requires a static record (whether external or not) as the operand"
@@ -1098,14 +1114,14 @@ impl<N: Network, const VARIANT: u8> Parser for CastOperation<N, VARIANT> {
         // TODO (dynamic_dispatch) improve modularity; perhaps add a constructor that unifies checks across parse(), from_byts(), etc.
         if cast_type == CastType::DynamicRecord {
             if operands.len() != 1 || !matches!(operands[0], Operand::Register(Register::Locator(_))) {
-                return map_res(fail, |_: ParserResult<Self>| Err(error("Casting to a dynamic record requires a single operand of the form r<i>")))(
-                    string,
-                )
+                return map_res(fail, |_: ParserResult<Self>| {
+                    Err(error("Casting to a dynamic record requires a single operand of the form r<i>"))
+                })(string);
             }
             if !matches!(destination, Register::Locator(_)) {
-                return map_res(fail, |_: ParserResult<Self>| Err(error("Casting to a dynamic record requires a destination of the form r<i>")))(
-                    string,
-                )
+                return map_res(fail, |_: ParserResult<Self>| {
+                    Err(error("Casting to a dynamic record requires a destination of the form r<i>"))
+                })(string);
             }
         }
 
@@ -1358,11 +1374,7 @@ mod tests {
 
     #[test]
     fn test_parse_cast_into_dynamic_record() {
-
-        let correct_cases = [
-            "cast r0 into r1 as dynamic.record",
-            "cast r1 into r5 as dynamic.record",
-        ];
+        let correct_cases = ["cast r0 into r1 as dynamic.record", "cast r1 into r5 as dynamic.record"];
 
         let incorrect_cases = [
             // Too few operands
@@ -1382,11 +1394,11 @@ mod tests {
         ];
 
         for case in correct_cases {
-            assert!(Cast::<CurrentNetwork>::parse(&case).is_ok(), "Parser failed for: {case}");
+            assert!(Cast::<CurrentNetwork>::parse(case).is_ok(), "Parser failed for: {case}");
         }
 
         for case in incorrect_cases {
-            assert!(Cast::<CurrentNetwork>::parse(&case).is_err(), "Parser did not fail for: {case}");
+            assert!(Cast::<CurrentNetwork>::parse(case).is_err(), "Parser did not fail for: {case}");
         }
     }
 }
