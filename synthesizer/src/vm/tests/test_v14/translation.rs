@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use snarkvm_ledger_block::{Input, Transition};
+use snarkvm_ledger_block::{Input, Transition, TransitionCallerMetadata};
 
 use super::*;
 
@@ -834,7 +834,7 @@ fn test_malicious_caller_inputs_outputs() {
     // Here a malicious prover removes caller_inputs from a dynamic-call transition
     // and the verifier detects it.
 
-    // We tamper with the transition by removing the caller inputs and outputs:
+    // We tamper with the transition by removing the caller metadata:
     let tampered_child_transition = Transition::new(
         *child_transition.program_id(),
         *child_transition.function_name(),
@@ -843,7 +843,6 @@ fn test_malicious_caller_inputs_outputs() {
         *child_transition.tpk(),
         *child_transition.tcm(),
         *child_transition.scm(),
-        None,
         None,
     )
     .unwrap();
@@ -902,8 +901,10 @@ fn test_malicious_caller_inputs_outputs() {
         *child_transition.tpk(),
         *child_transition.tcm(),
         *child_transition.scm(),
-        Some(dishonest_caller_inputs),
-        Some(child_transition.caller_outputs().unwrap().to_vec()),
+        Some(
+            TransitionCallerMetadata::new(dishonest_caller_inputs, child_transition.caller_outputs().unwrap().to_vec())
+                .unwrap(),
+        ),
     )
     .unwrap();
 
@@ -974,8 +975,10 @@ fn test_malicious_caller_inputs_outputs() {
         *child_transition.tpk(),
         *child_transition.tcm(),
         *child_transition.scm(),
-        Some(child_transition.caller_inputs().unwrap().to_vec()),
-        Some(dishonest_caller_outputs),
+        Some(
+            TransitionCallerMetadata::new(child_transition.caller_inputs().unwrap().to_vec(), dishonest_caller_outputs)
+                .unwrap(),
+        ),
     )
     .unwrap();
 

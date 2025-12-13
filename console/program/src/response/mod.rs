@@ -285,33 +285,6 @@ impl<N: Network> Response<N> {
         Ok(Self { output_ids, outputs, is_dynamic: false })
     }
 
-    /// Converts a response outputs into the expected output types for a dynamic call by:
-    /// - converting all record outputs to dynamic record outputs
-    /// - converting all future outputs to dynamic future outputs.
-    /// - leaving all other outputs unchanged.
-    pub fn dynamic_call_outputs(&self, caller_output_types: &[ValueType<N>]) -> Result<Vec<Value<N>>> {
-        ensure!(
-            self.outputs.len() == caller_output_types.len(),
-            "Expected {} outputs, but {} were provided.",
-            caller_output_types.len(),
-            self.outputs.len()
-        );
-        self.outputs
-            .iter()
-            .zip(caller_output_types)
-            .map(|(output, output_type)| match (output, output_type) {
-                (Value::Record(record), ValueType::DynamicRecord) => {
-                    // This covers both the non-External and External record cases.
-                    Ok(Value::DynamicRecord(DynamicRecord::from_record(record)?))
-                }
-                (Value::Future(future), ValueType::DynamicFuture) => {
-                    Ok(Value::DynamicFuture(DynamicFuture::from_future(future)?))
-                }
-                _ => Ok(output.clone()),
-            })
-            .collect::<Result<Vec<_>>>()
-    }
-
     /// Returns the output ID for the transition.
     pub fn output_ids(&self) -> &[OutputID<N>] {
         &self.output_ids
@@ -320,6 +293,25 @@ impl<N: Network> Response<N> {
     /// Returns the function outputs.
     pub fn outputs(&self) -> &[Value<N>] {
         &self.outputs
+    }
+
+    /// Converts a response outputs into the expected caller outputs for a dynamic call by:
+    /// - converting all record outputs to dynamic record outputs
+    /// - converting all future outputs to dynamic future outputs.
+    /// - leaving all other outputs unchanged.
+    pub fn caller_outputs(&self) -> Result<Vec<Value<N>>> {
+        self.outputs
+            .iter()
+            .map(|output| match output {
+                Value::Record(record) => {
+                    // This covers both the non-external and external record cases.
+                    Ok(Value::DynamicRecord(DynamicRecord::from_record(record)?))
+                }
+                Value::Future(future) => Ok(Value::DynamicFuture(DynamicFuture::from_future(future)?)),
+                Value::DynamicFuture(_) => bail!("A dynamic future cannot be a response output"),
+                _ => Ok(output.clone()),
+            })
+            .collect::<Result<Vec<_>>>()
     }
 
     /// Returns whether or not the response is dynamic.

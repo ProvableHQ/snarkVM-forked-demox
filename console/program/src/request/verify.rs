@@ -283,19 +283,6 @@ mod tests {
                 )
                 .unwrap()
             } else {
-                // Sample the caller request.
-                let caller_request = Request::sign(
-                    &private_key,
-                    program_id,
-                    function_name,
-                    inputs.clone().into_iter(),
-                    &input_types,
-                    root_tvk,
-                    is_root,
-                    program_checksum,
-                    rng,
-                )
-                .unwrap();
                 // Compute the request.
                 Request::sign_dynamic(
                     &private_key,
@@ -306,7 +293,6 @@ mod tests {
                     inputs.into_iter(),
                     &input_types,
                     &input_types,
-                    &caller_request,
                     root_tvk,
                     is_root,
                     program_checksum,

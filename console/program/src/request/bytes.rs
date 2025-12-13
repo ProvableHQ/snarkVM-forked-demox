@@ -34,14 +34,6 @@ impl<N: Network> FromBytes for Request<N> {
 
         // Read the number of inputs.
         let inputs_len = u16::read_le(&mut reader)?;
-        // Ensure the number of inputs is within bounds.
-        if inputs_len as usize > N::MAX_INPUTS {
-            return Err(error(format!(
-                "Request (from 'read_le') has too many inputs ({} > {})",
-                inputs_len,
-                N::MAX_INPUTS
-            )));
-        }
         // Read the input IDs.
         let input_ids = (0..inputs_len).map(|_| FromBytes::read_le(&mut reader)).collect::<Result<Vec<_>, _>>()?;
         // Read the inputs.
@@ -57,44 +49,10 @@ impl<N: Network> FromBytes for Request<N> {
         let tcm = FromBytes::read_le(&mut reader)?;
         // Read the signer commitment.
         let scm = FromBytes::read_le(&mut reader)?;
-
-        // Read the optional caller input IDs and caller inputs.
-        let (caller_input_ids, caller_inputs) = match version {
-            1 => (None, None),
-            2 => (
-                Some((0..inputs_len).map(|_| FromBytes::read_le(&mut reader)).collect::<Result<Vec<_>, _>>()?),
-                Some((0..inputs_len).map(|_| FromBytes::read_le(&mut reader)).collect::<Result<Vec<_>, _>>()?),
-            ),
-            _ => return Err(error("Invalid request version")),
-        };
-        // Read the optional caller Request.
-        let caller_request = match version {
+        // Read the dynamic flag.
+        let dynamic = match version {
             1 => None,
-            2 => {
-                // Read the number of bytes of the request.
-                let num_bytes = u32::read_le(&mut reader)?;
-                // TODO (@d0cd). If we go with this design, we need to limit the maximum size of the requests.
-                // Read the plaintext bytes.
-                let mut bytes = Vec::new();
-                (&mut reader).take(num_bytes as u64).read_to_end(&mut bytes)?;
-                // Recover the request.
-                let request = Self::read_le(&mut bytes.as_slice())?;
-
-                Some(Box::new(request))
-            }
-            _ => return Err(error("Invalid request version")),
-        };
-        // Read the optional caller output types.
-        let caller_output_types = match version {
-            1 => None,
-            2 => {
-                let num_caller_output_types = u16::read_le(&mut reader)?;
-                Some(
-                    (0..num_caller_output_types)
-                        .map(|_| FromBytes::read_le(&mut reader))
-                        .collect::<Result<Vec<_>, _>>()?,
-                )
-            }
+            2 => Some(bool::read_le(&mut reader)?),
             _ => return Err(error("Invalid request version")),
         };
 
@@ -110,10 +68,7 @@ impl<N: Network> FromBytes for Request<N> {
             tvk,
             tcm,
             scm,
-            caller_input_ids,
-            caller_inputs,
-            caller_output_types,
-            caller_request,
+            dynamic,
         )))
     }
 }
@@ -122,7 +77,7 @@ impl<N: Network> ToBytes for Request<N> {
     /// Writes the request to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         // Write the version.
-        match self.caller_input_ids.is_some() {
+        match self.is_dynamic() {
             false => 1u8.write_le(&mut writer)?,
             true => 2u8.write_le(&mut writer)?,
         }
@@ -163,51 +118,9 @@ impl<N: Network> ToBytes for Request<N> {
         self.tcm.write_le(&mut writer)?;
         // Write the signer commitment.
         self.scm.write_le(&mut writer)?;
-
-        // Ensure the number of caller input IDs and caller inputs are consistent.
-        match (&self.caller_input_ids, &self.caller_inputs) {
-            (Some(caller_input_ids), Some(caller_inputs)) => {
-                // Ensure that the lengths match.
-                if caller_input_ids.len() != caller_inputs.len() {
-                    return Err(error("Invalid request: mismatching number of caller input IDs and caller inputs"));
-                }
-                // Ensre that the number of caller inputs match the number of inputs.
-                if caller_inputs.len() != self.inputs.len() {
-                    return Err(error("Invalid request: mismatching number of caller inputs and inputs"));
-                }
-                // Write the caller input IDs.
-                for caller_input_id in caller_input_ids {
-                    caller_input_id.write_le(&mut writer)?;
-                }
-                // Write the caller inputs.
-                for caller_input in caller_inputs {
-                    caller_input.write_le(&mut writer)?;
-                }
-            }
-            (None, Some(_)) | (Some(_), None) => {
-                return Err(error(
-                    "Invalid request: caller input IDs and caller inputs must both be present or both be absent",
-                ));
-            }
-            _ => {}
-        }
-        // Write the optional caller output types.
-        if let Some(caller_output_types) = &self.caller_output_types {
-            u16::try_from(caller_output_types.len())
-                .or_halt_with::<N>("Caller output types length exceeds u16")
-                .write_le(&mut writer)?;
-            for caller_output_type in caller_output_types {
-                caller_output_type.write_le(&mut writer)?;
-            }
-        }
-        // Write the optional caller Request.
-        if let Some(caller_request) = &self.caller_request {
-            // Write the element (performed in 2 steps to prevent infinite recursion).
-            let bytes = caller_request.to_bytes_le().map_err(error)?;
-            // Write the number of bytes.
-            u16::try_from(bytes.len()).map_err(error)?.write_le(&mut writer)?;
-            // Write the bytes.
-            bytes.write_le(&mut writer)?;
+        // If the request is dynamic, write the dynamic flag.
+        if let Some(is_dynamic) = self.dynamic {
+            is_dynamic.write_le(&mut writer)?;
         }
 
         Ok(())

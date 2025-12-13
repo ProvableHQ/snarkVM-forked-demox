@@ -159,6 +159,7 @@ impl<N: Network> TranslationAssignment<N> {
         // Inject the transition view key as `Mode::Private`.
         let circuit_tvk = circuit::Field::<A>::new(circuit::Mode::Private, self.tvk);
 
+        // TODO (Compute the circuit RVK using the TVK)
         // Inject the record view key of the static record as `Mode::Private`.
         let circuit_record_view_key = circuit::Field::<A>::new(circuit::Mode::Private, self.record_view_key);
 

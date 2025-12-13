@@ -72,40 +72,45 @@ impl<N: Network> FromBytes for Transition<N> {
         // Read the signer commitment.
         let scm = FromBytes::read_le(&mut reader)?;
 
-        // Read the optional dynamic inputs.
-        let (dynamic_caller_inputs, dynamic_caller_outputs) = match version {
-            1 => (None, None),
+        // Read the optional caller metadata.
+        let caller_metadata = match version {
+            1 => None,
             2 => {
-                let mut dynamic_caller_inputs = Vec::with_capacity(num_inputs as usize);
-                for _ in 0..num_inputs {
-                    // Read the dynamic input.
-                    dynamic_caller_inputs.push(FromBytes::read_le(&mut reader)?);
+                // Read the number of caller inputs.
+                let num_caller_inputs = u8::read_le(&mut reader)?;
+                // Ensure the number of caller inputs is within bounds.
+                if num_caller_inputs as usize > N::MAX_INPUTS {
+                    return Err(error(format!(
+                        "Transition (from 'read_le') has too many caller inputs ({} > {})",
+                        num_caller_inputs,
+                        N::MAX_INPUTS
+                    )));
                 }
-
-                let mut dynamic_caller_outputs = Vec::with_capacity(num_outputs as usize);
-                for _ in 0..num_outputs {
-                    // Read the dynamic output.
-                    dynamic_caller_outputs.push(FromBytes::read_le(&mut reader)?);
+                // Read the caller inputs.
+                let caller_inputs =
+                    (0..num_caller_inputs).map(|_| FromBytes::read_le(&mut reader)).collect::<Result<Vec<_>, _>>()?;
+                // Read the number of caller outputs.
+                let num_caller_outputs = u8::read_le(&mut reader)?;
+                // Ensure the number of caller outputs is within bounds.
+                if num_caller_outputs as usize > N::MAX_OUTPUTS {
+                    return Err(error(format!(
+                        "Transition (from 'read_le') has too many caller outputs ({} > {})",
+                        num_caller_outputs,
+                        N::MAX_OUTPUTS
+                    )));
                 }
-
-                (Some(dynamic_caller_inputs), Some(dynamic_caller_outputs))
+                // Read the caller outputs.
+                let caller_outputs =
+                    (0..num_caller_outputs).map(|_| FromBytes::read_le(&mut reader)).collect::<Result<Vec<_>, _>>()?;
+                // Construct the caller metadata.
+                Some(TransitionCallerMetadata::new(caller_inputs, caller_outputs).map_err(|e| error(e.to_string()))?)
             }
             _ => return Err(error("Invalid transition version")),
         };
 
         // Construct the candidate transition.
-        let transition = Self::new(
-            program_id,
-            function_name,
-            inputs,
-            outputs,
-            tpk,
-            tcm,
-            scm,
-            dynamic_caller_inputs,
-            dynamic_caller_outputs,
-        )
-        .map_err(|e| error(e.to_string()))?;
+        let transition = Self::new(program_id, function_name, inputs, outputs, tpk, tcm, scm, caller_metadata)
+            .map_err(|e| error(e.to_string()))?;
         // Ensure the transition ID matches the expected ID.
         match transition_id == *transition.id() {
             true => Ok(transition),
@@ -118,7 +123,7 @@ impl<N: Network> ToBytes for Transition<N> {
     /// Writes the literal to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         // Write the version.
-        match self.caller_inputs.is_some() {
+        match self.caller_metadata.is_some() {
             false => 1u8.write_le(&mut writer)?,
             true => 2u8.write_le(&mut writer)?,
         }
@@ -146,15 +151,21 @@ impl<N: Network> ToBytes for Transition<N> {
         self.tcm.write_le(&mut writer)?;
         // Write the signer commitment.
         self.scm.write_le(&mut writer)?;
-        // Write the optional caller inputs.
-        if let Some(caller_inputs) = &self.caller_inputs {
-            (u8::try_from(caller_inputs.len()).map_err(|e| error(e.to_string()))?).write_le(&mut writer)?;
-            caller_inputs.write_le(&mut writer)?;
-        }
-        // Write the optional caller outputs.
-        if let Some(caller_outputs) = &self.caller_outputs {
-            (u8::try_from(caller_outputs.len()).map_err(|e| error(e.to_string()))?).write_le(&mut writer)?;
-            caller_outputs.write_le(&mut writer)?;
+
+        // Write the optional caller metadata.
+        if let Some(caller_metadata) = &self.caller_metadata {
+            // Write the number of caller inputs.
+            (u8::try_from(caller_metadata.inputs().len()).map_err(|e| error(e.to_string()))?).write_le(&mut writer)?;
+            // Write the caller inputs.
+            for caller_input in caller_metadata.inputs() {
+                caller_input.write_le(&mut writer)?;
+            }
+            // Write the number of caller outputs.
+            (u8::try_from(caller_metadata.outputs().len()).map_err(|e| error(e.to_string()))?).write_le(&mut writer)?;
+            // Write the caller outputs.
+            for caller_output in caller_metadata.outputs() {
+                caller_output.write_le(&mut writer)?;
+            }
         }
 
         Ok(())

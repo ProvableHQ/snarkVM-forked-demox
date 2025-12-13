@@ -20,7 +20,8 @@ impl<N: Network> Serialize for Transition<N> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match serializer.is_human_readable() {
             true => {
-                let mut transition = serializer.serialize_struct("Transition", 8)?;
+                let num_fields = if self.caller_metadata.is_some() { 10 } else { 8 };
+                let mut transition = serializer.serialize_struct("Transition", num_fields)?;
                 transition.serialize_field("id", &self.id)?;
                 transition.serialize_field("program", &self.program_id)?;
                 transition.serialize_field("function", &self.function_name)?;
@@ -29,11 +30,9 @@ impl<N: Network> Serialize for Transition<N> {
                 transition.serialize_field("tpk", &self.tpk)?;
                 transition.serialize_field("tcm", &self.tcm)?;
                 transition.serialize_field("scm", &self.scm)?;
-                if let Some(caller_inputs) = &self.caller_inputs {
-                    transition.serialize_field("caller_inputs", caller_inputs)?;
-                }
-                if let Some(caller_outputs) = &self.caller_outputs {
-                    transition.serialize_field("caller_outputs", caller_outputs)?;
+                if let Some(caller_metadata) = &self.caller_metadata {
+                    transition.serialize_field("caller_inputs", caller_metadata.inputs())?;
+                    transition.serialize_field("caller_outputs", caller_metadata.outputs())?;
                 }
                 transition.end()
             }
@@ -52,6 +51,29 @@ impl<'de, N: Network> Deserialize<'de> for Transition<N> {
                 // Retrieve the ID.
                 let id: N::TransitionID = DeserializeExt::take_from_value::<D>(&mut transition, "id")?;
 
+                // Retrieve the optional caller metadata fields.
+                let caller_inputs: Option<Vec<Input<N>>> = serde_json::from_value(
+                    transition.get_mut("caller_inputs").unwrap_or(&mut serde_json::Value::Null).take(),
+                )
+                .map_err(de::Error::custom)?;
+                let caller_outputs: Option<Vec<Output<N>>> = serde_json::from_value(
+                    transition.get_mut("caller_outputs").unwrap_or(&mut serde_json::Value::Null).take(),
+                )
+                .map_err(de::Error::custom)?;
+
+                // Construct the optional caller metadata.
+                let caller_metadata = match (caller_inputs, caller_outputs) {
+                    (Some(inputs), Some(outputs)) => {
+                        Some(TransitionCallerMetadata::new(inputs, outputs).map_err(de::Error::custom)?)
+                    }
+                    (None, None) => None,
+                    _ => {
+                        return Err(de::Error::custom(
+                            "caller_inputs and caller_outputs must both be present or both absent",
+                        ));
+                    }
+                };
+
                 // Recover the transition.
                 let transition = Self::new(
                     // Retrieve the program ID.
@@ -68,16 +90,8 @@ impl<'de, N: Network> Deserialize<'de> for Transition<N> {
                     DeserializeExt::take_from_value::<D>(&mut transition, "tcm")?,
                     // Retrieve the `scm`.
                     DeserializeExt::take_from_value::<D>(&mut transition, "scm")?,
-                    // Retrieve the optional caller inputs.
-                    serde_json::from_value(
-                        transition.get_mut("caller_inputs").unwrap_or(&mut serde_json::Value::Null).take(),
-                    )
-                    .map_err(de::Error::custom)?,
-                    // Retrieve the optional caller outputs.
-                    serde_json::from_value(
-                        transition.get_mut("caller_outputs").unwrap_or(&mut serde_json::Value::Null).take(),
-                    )
-                    .map_err(de::Error::custom)?,
+                    // Use the constructed caller metadata.
+                    caller_metadata,
                 )
                 .map_err(de::Error::custom)?;
 

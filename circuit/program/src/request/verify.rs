@@ -486,18 +486,6 @@ mod tests {
                 rng,
             )?,
             true => {
-                // Sample a caller request.
-                let caller_request = console::Request::sign(
-                    &private_key,
-                    program_id,
-                    function_name,
-                    inputs.iter(),
-                    &input_types,
-                    root_tvk,
-                    is_root,
-                    program_checksum,
-                    rng,
-                )?;
                 // Construct the request.
                 console::Request::sign_dynamic(
                     &private_key,
@@ -505,10 +493,6 @@ mod tests {
                     function_name,
                     inputs.clone().into_iter(),
                     &input_types,
-                    inputs.into_iter(),
-                    &input_types,
-                    &input_types,
-                    &caller_request,
                     root_tvk,
                     is_root,
                     program_checksum,

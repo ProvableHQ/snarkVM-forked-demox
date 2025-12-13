@@ -102,50 +102,13 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                 // Get the input types of the callee.
                 let input_types = substack.program().get_function_ref(function_name)?.input_types();
                 // Ensure that the number of inputs match.
+                // Ensure the number of inputs matches the number of input types.
                 if input_types.len() != inputs.len() {
                     bail!("Expected {} inputs, found {}", input_types.len(), inputs.len())
                 }
 
-                // Convert the inputs to the callee's context.
-                // TODO (@d0cd): Do we need to check that they match? I think no because `CallDynamic::output_types should have`
-                ensure!(
-                    inputs.len() == input_types.len(),
-                    "[evaluate Authorize] Expected {} inputs, but {} were provided.",
-                    input_types.len(),
-                    inputs.len()
-                );
-                let callee_inputs = inputs
-                    .iter()
-                    .zip(input_types.iter())
-                    .map(|(input, input_type)| {
-                        let value = match (input, input_type) {
-                            (Value::DynamicRecord(dynamic_record), ValueType::Record(record_name)) => {
-                                // Look up the owner visibility.
-                                let owner_is_private = substack.program().get_record(record_name)?.owner().is_private();
-                                Value::Record(dynamic_record.to_record(owner_is_private)?)
-                            }
-                            (Value::DynamicRecord(dynamic_record), ValueType::ExternalRecord(locator)) => {
-                                let record_program_id = locator.program_id();
-                                let record_name = locator.resource();
-
-                                // Obtain the program where the external record is defined (which must be imported inside the callee)
-                                // TODO (dynamic_dispatch) make sure this handles substack-fetching correctly
-                                // TODO (@d0cd)
-                                let external_record_stack = substack.get_external_stack(record_program_id)?;
-
-                                // Look up the owner visibility.
-                                let owner_is_private =
-                                    external_record_stack.program().get_record(record_name)?.owner().is_private();
-
-                                Value::Record(dynamic_record.to_record(owner_is_private)?)
-                            }
-                            // For other types, we assume they are directly compatible.
-                            _ => input.clone(),
-                        };
-                        // TODO(@d0cd) Check that the converted input matches the input type.
-                        Ok(value)
-                    })
-                    .collect::<Result<Vec<_>>>()?;
+                // Convert the caller's inputs to the callee's context.
+                let callee_inputs = convert_caller_inputs_to_callee_inputs(inputs, input_types, substack)?;
 
                 // Compute the request.
                 let request = Request::sign_dynamic(
@@ -156,8 +119,6 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                     &function.input_types(),
                     inputs.iter(),
                     self.operand_types(),
-                    self.destination_types(),
-                    registers.request()?,
                     root_tvk,
                     is_root,
                     program_checksum,
@@ -174,7 +135,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             // Evaluate the function.
             let response = substack.evaluate_function::<A, R>(call_stack, console_caller, root_tvk, rng)?;
             // Convert the callee's outputs to the caller's context.
-            response.dynamic_call_outputs(self.destination_types())?
+            response.caller_outputs()?
         }
         // Else, throw an error.
         else {
@@ -185,7 +146,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         // Assign the outputs to the destination registers.
         ensure!(
             outputs.len() == self.destinations().len(),
-            "[evaluate Dynamic] Expected {} outputs, but {} were provided.",
+            "Expected {} outputs, but {} were provided.",
             self.destinations().len(),
             outputs.len()
         );
@@ -299,66 +260,14 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         // Get the input types of the callee.
                         let input_types =
                             &target.substack().program().get_function_ref(target.function_name())?.input_types();
-                        // Ensure that the number of inputs match.
+                        // Ensure the number of inputs matches the number of input types.
                         if input_types.len() != inputs.len() {
                             bail!("Expected {} inputs, found {}", input_types.len(), inputs.len())
                         }
-                        // Convert the inputs to the callee's context.
-                        // TODO (@d0cd): Do we need to check that they match? I think no because `CallDynamic::output_types should have`
-                        ensure!(
-                            inputs.len() == input_types.len(),
-                            "[execute Authorize] Expected {} inputs, but {} were provided.",
-                            input_types.len(),
-                            inputs.len()
-                        );
-                        let callee_inputs = inputs
-                            .iter()
-                            .zip(input_types.iter())
-                            .map(|(input, input_type)| match (input, input_type) {
-                                (Value::Future(future), ValueType::DynamicFuture) => {
-                                    Ok(Value::DynamicFuture(DynamicFuture::from_future(future)?))
-                                }
-                                (Value::DynamicRecord(dynamic_record), ValueType::Record(record_name)) => {
-                                    // Look up the owner visibility.
-                                    let owner_is_private =
-                                        target.substack().program().get_record(record_name)?.owner().is_private();
-                                    Ok(Value::Record(dynamic_record.to_record(owner_is_private)?))
-                                }
-                                (Value::DynamicRecord(dynamic_record), ValueType::ExternalRecord(locator)) => {
-                                    let record_program_id = locator.program_id();
-                                    let record_name = locator.resource();
 
-                                    // Obtain the program where the external record is defined (which must be imported inside the callee)
-                                    // TODO (dynamic_dispatch, @d0cd) make sure this handles substack-fetching correctly
-                                    // TODO (dynamic_dispatch) verify that we want to be using `get_exteranl_stack`, ditto for others.
-                                    let external_record_stack =
-                                        target.substack().get_external_stack(record_program_id)?;
-
-                                    // Look up the owner visibility.
-                                    let owner_is_private =
-                                        external_record_stack.program().get_record(record_name)?.owner().is_private();
-
-                                    Ok(Value::Record(dynamic_record.to_record(owner_is_private)?))
-                                }
-                                (Value::DynamicFuture(dynamic_future), ValueType::Future(locator)) => {
-                                    // Construct the dynamic future.
-                                    let future = dynamic_future.to_future()?;
-                                    // Ensure that the locator matches.
-                                    ensure!(
-                                        future.program_id() == locator.program_id(),
-                                        "Locator program ID does not match for dynamic future."
-                                    );
-                                    ensure!(
-                                        future.function_name() == locator.resource(),
-                                        "Locator resource does not match for dynamic future."
-                                    );
-
-                                    Ok(Value::Future(dynamic_future.to_future()?))
-                                }
-                                // For other types, we assume they are directly compatible.
-                                _ => Ok(input.clone()),
-                            })
-                            .collect::<Result<Vec<_>>>()?;
+                        // Convert the caller's inputs to the callee's context.
+                        let callee_inputs =
+                            convert_caller_inputs_to_callee_inputs(inputs, input_types, target.substack())?;
 
                         // Construct the callee's version of the request.
                         let callee_request = Request::sign_dynamic(
@@ -369,8 +278,6 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             input_types,
                             inputs.iter(),
                             self.operand_types(),
-                            self.destination_types(),
-                            registers.request()?,
                             root_tvk,
                             is_root,
                             program_checksum,
@@ -392,8 +299,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             target.substack().execute_function::<A, R>(call_stack, console_caller, root_tvk, rng)?;
 
                         // Convert the callee's outputs to the caller's context.
-                        let caller_response_outputs = callee_response
-                            .dynamic_call_outputs(callee_request.caller_output_types().as_ref().unwrap())?;
+                        let caller_response_outputs = callee_response.caller_outputs()?;
 
                         // Return the request verification inputs and response.
                         (request_verification_inputs, caller_response_outputs, None)
@@ -420,7 +326,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             sk_tag: Field::rand(rng),
                             tvk: Field::rand(rng),
                             tcm: Field::rand(rng),
-                            caller_input_ids: self
+                            is_dynamic: self
                                 .operand_types()
                                 .iter()
                                 .map(|type_| match type_ {
@@ -551,8 +457,6 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             input_types,
                             inputs.iter(),
                             self.operand_types(),
-                            self.destination_types(),
-                            registers.request()?,
                             root_tvk,
                             is_root,
                             program_checksum,
@@ -572,8 +476,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             target.substack().execute_function::<A, _>(call_stack, console_caller, root_tvk, rng)?;
 
                         // Convert the callee's outputs to the caller's context.
-                        let caller_response_outputs = callee_response
-                            .dynamic_call_outputs(callee_request.caller_output_types().as_ref().unwrap())?;
+                        let caller_response_outputs = callee_response.caller_outputs()?;
 
                         // Return the request verification inputs and response.
                         (request_verification_inputs, caller_response_outputs, None)
@@ -638,7 +541,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             callee_request.inputs().len(),
                             callee_request.tvk(),
                             callee_request.tcm(),
-                            callee_response.dynamic_call_outputs(self.destination_types())?,
+                            callee_response.caller_outputs()?,
                             self.destination_types(),
                             &target
                                 .substack()
@@ -770,7 +673,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                         record_view_key: Some(*record_view_key),
                                         gamma: Some(*gamma),
                                         id_static: *serial_number,
-                                        id_dynamic,
+                                        id_dynamic: *id_dynamic,
                                         input_output_index: operand_index as u16,
                                     });
                                 }
@@ -799,7 +702,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                         record_view_key: None,
                                         gamma: None,
                                         id_static: *id_static,
-                                        id_dynamic,
+                                        id_dynamic: *id_dynamic,
                                         input_output_index: operand_index as u16,
                                     });
                                 }
@@ -1113,10 +1016,6 @@ impl<N: Network> RequestVerificationInputs<N> {
     /// Constructs the request verification inputs from a request and caller input IDs.
     #[inline]
     pub fn from(request: &Request<N>) -> Result<Self> {
-        // Ensure the the caller input IDs are present.
-        let Some(caller_input_ids) = &request.caller_input_ids() else {
-            bail!("Missing caller input IDs for request verification inputs.")
-        };
         Ok(Self {
             network_id: *request.network_id(),
             program_id: *request.program_id(),
@@ -1125,9 +1024,82 @@ impl<N: Network> RequestVerificationInputs<N> {
             sk_tag: *request.sk_tag(),
             tvk: *request.tvk(),
             tcm: *request.tcm(),
-            caller_input_ids: caller_input_ids.clone(),
+            caller_input_ids: request.caller_input_ids()?,
         })
     }
+}
+
+/// Converts caller inputs to callee inputs for a dynamic call.
+///
+/// In a dynamic call, the caller provides inputs in its own context (e.g., `DynamicRecord`),
+/// but the callee expects inputs in its context (e.g., `Record` with a specific type).
+/// This function performs the necessary conversions:
+///
+/// - `DynamicRecord` → `Record`: When the callee expects a `Record` or `ExternalRecord`,
+///   the dynamic record is converted to a concrete record by looking up the owner visibility
+///   from the callee's program.
+///
+/// - `Future` / `DynamicFuture`: These are not allowed as inputs to dynamic calls and will
+///   cause this function to return an error.
+///
+/// - All other types: Passed through unchanged, assuming direct compatibility.
+///
+/// # Arguments
+/// * `inputs` - The caller's input values
+/// * `input_types` - The callee's expected input types
+/// * `stack` - The callee's stack, used to look up record type information
+///
+/// # Returns
+/// A vector of converted values suitable for the callee's context.
+///
+/// # Errors
+/// Returns an error if:
+/// - A `Future` or `DynamicFuture` is provided as input
+/// - Record type lookup fails
+/// - Dynamic record conversion fails
+fn convert_caller_inputs_to_callee_inputs<N: Network>(
+    inputs: &[Value<N>],
+    input_types: &[ValueType<N>],
+    stack: &Stack<N>,
+) -> Result<Vec<Value<N>>> {
+    inputs
+        .iter()
+        .zip(input_types.iter())
+        .map(|(input, input_type)| {
+            match (input, input_type) {
+                // Convert DynamicRecord to Record when callee expects a Record.
+                (Value::DynamicRecord(dynamic_record), ValueType::Record(record_name)) => {
+                    // Look up the owner visibility from the callee's program.
+                    let owner_is_private = stack.program().get_record(record_name)?.owner().is_private();
+                    Ok(Value::Record(dynamic_record.to_record(owner_is_private)?))
+                }
+                // Convert DynamicRecord to Record when callee expects an ExternalRecord.
+                (Value::DynamicRecord(dynamic_record), ValueType::ExternalRecord(locator)) => {
+                    let record_program_id = locator.program_id();
+                    let record_name = locator.resource();
+
+                    // Obtain the program where the external record is defined.
+                    let external_record_stack = stack.get_external_stack(record_program_id)?;
+
+                    // Look up the owner visibility from the external program.
+                    let owner_is_private =
+                        external_record_stack.program().get_record(record_name)?.owner().is_private();
+
+                    Ok(Value::Record(dynamic_record.to_record(owner_is_private)?))
+                }
+                // Futures are not allowed as inputs to dynamic calls.
+                (Value::Future(_), _) => {
+                    bail!("A future cannot be an input to a dynamic call.")
+                }
+                // Dynamic futures are not allowed as inputs to dynamic calls.
+                (Value::DynamicFuture(_), _) => {
+                    bail!("A dynamic future cannot be an input to a dynamic call.")
+                }
+                // For all other types, pass through unchanged.
+                _ => Ok(input.clone()),
+            }
+        })
+        .collect()
 }
 
 // A reference to a stack, either local or external.

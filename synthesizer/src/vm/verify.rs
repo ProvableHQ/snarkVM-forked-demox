@@ -1065,8 +1065,7 @@ function compute:
             *transition.tpk(),
             *transition.tcm(),
             *transition.scm(),
-            transition.caller_inputs().map(|d| d.to_vec()),
-            transition.caller_outputs().map(|d| d.to_vec()),
+            transition.caller_metadata().cloned(),
         )
         .unwrap();
 

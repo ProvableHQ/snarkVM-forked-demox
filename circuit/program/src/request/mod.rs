@@ -75,14 +75,10 @@ impl<A: Aleo> Eject for InputID<A> {
             Self::Constant(field) => field.eject_mode(),
             Self::Public(field) => field.eject_mode(),
             Self::Private(field) => field.eject_mode(),
-            Self::Record(commitment, gamma, record_view_key, serial_number, tag) => {
-                Mode::combine(commitment.eject_mode(), [
-                    gamma.eject_mode(),
-                    record_view_key.eject_mode(),
-                    serial_number.eject_mode(),
-                    tag.eject_mode(),
-                ])
-            }
+            Self::Record(commitment, gamma, record_view_key, serial_number, tag) => Mode::combine(
+                commitment.eject_mode(),
+                [gamma.eject_mode(), record_view_key.eject_mode(), serial_number.eject_mode(), tag.eject_mode()],
+            ),
             Self::ExternalRecord(field) => field.eject_mode(),
             Self::DynamicRecord(field) => field.eject_mode(),
         }
@@ -154,19 +150,9 @@ pub struct Request<A: Aleo> {
     tcm: Field<A>,
     /// The signer commitment.
     scm: Field<A>,
-    // TODO (@d0cd): Consider unifying these two under one option.
-    /// The optional caller input IDs.
-    //  Note. This field is intentionally excluded for the circuit representation and is only used to eject back to the console representation.
-    caller_input_ids: Option<Vec<console::InputID<A::Network>>>,
-    /// The optional caller input values.
-    /// Note. These are only present if and only if the request is dynamic.
-    caller_inputs: Option<Vec<console::Value<A::Network>>>,
-    /// The optional caller output types.
-    /// Note. This field is intentionally excluded for the circuit representation and is only used to eject back to the console representation.
-    caller_output_types: Option<Vec<console::ValueType<A::Network>>>,
-    /// The optional caller Request.
-    /// Note. This field is intentionally excluded for the circuit representation and is only used to eject back to the console representation.
-    caller_request: Option<console::Request<A::Network>>,
+    /// An optional flag indicating whether or not the request is dynamic.
+    //  Note. This field is intentionally excluded from the circuit representation and is only used to eject back to the console representation.
+    dynamic: Option<bool>,
 }
 
 impl<A: Aleo> Inject for Request<A> {
@@ -261,10 +247,7 @@ impl<A: Aleo> Inject for Request<A> {
             tvk: Field::new(mode, *request.tvk()),
             tcm,
             scm,
-            caller_input_ids: request.caller_input_ids().clone(),
-            caller_inputs: request.caller_inputs().clone(),
-            caller_output_types: request.caller_output_types().clone(),
-            caller_request: request.caller_request().as_ref().map(|request| *request.clone()),
+            dynamic: request.dynamic(),
         }
     }
 }
@@ -325,29 +308,14 @@ impl<A: Aleo> Request<A> {
         &self.scm
     }
 
-    /// Returns the caller input IDs.
-    pub const fn caller_input_ids(&self) -> &Option<Vec<console::InputID<A::Network>>> {
-        &self.caller_input_ids
-    }
-
-    /// Returns the optional caller input values.
-    pub const fn caller_inputs(&self) -> &Option<Vec<console::Value<A::Network>>> {
-        &self.caller_inputs
-    }
-
-    /// Returns the caller output types.
-    pub const fn caller_output_types(&self) -> &Option<Vec<console::ValueType<A::Network>>> {
-        &self.caller_output_types
-    }
-
-    /// Returns the caller Request.
-    pub const fn caller_request(&self) -> &Option<console::Request<A::Network>> {
-        &self.caller_request
+    /// Returns the dynamic flag.
+    pub const fn dynamic(&self) -> Option<bool> {
+        self.dynamic
     }
 
     /// Returns whether or not the request is dynamic.
     pub fn is_dynamic(&self) -> bool {
-        self.caller_input_ids.is_some()
+        self.dynamic.unwrap_or(false)
     }
 }
 
@@ -356,18 +324,21 @@ impl<A: Aleo> Eject for Request<A> {
 
     /// Ejects the mode of the request.
     fn eject_mode(&self) -> Mode {
-        Mode::combine(self.signer.eject_mode(), [
-            self.network_id.eject_mode(),
-            self.program_id.eject_mode(),
-            self.function_name.eject_mode(),
-            self.input_ids.eject_mode(),
-            self.inputs.eject_mode(),
-            self.signature.eject_mode(),
-            self.sk_tag.eject_mode(),
-            self.tvk.eject_mode(),
-            self.tcm.eject_mode(),
-            self.scm.eject_mode(),
-        ])
+        Mode::combine(
+            self.signer.eject_mode(),
+            [
+                self.network_id.eject_mode(),
+                self.program_id.eject_mode(),
+                self.function_name.eject_mode(),
+                self.input_ids.eject_mode(),
+                self.inputs.eject_mode(),
+                self.signature.eject_mode(),
+                self.sk_tag.eject_mode(),
+                self.tvk.eject_mode(),
+                self.tcm.eject_mode(),
+                self.scm.eject_mode(),
+            ],
+        )
     }
 
     /// Ejects the request as a primitive.
@@ -384,10 +355,7 @@ impl<A: Aleo> Eject for Request<A> {
             self.tvk.eject_value(),
             self.tcm.eject_value(),
             self.scm.eject_value(),
-            self.caller_input_ids().clone(),
-            self.caller_inputs().clone(),
-            self.caller_output_types().clone(),
-            self.caller_request().as_ref().map(|request| Box::new(request.clone())),
+            self.dynamic.clone(),
         ))
     }
 }
