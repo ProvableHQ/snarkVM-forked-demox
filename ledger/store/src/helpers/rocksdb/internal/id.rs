@@ -316,8 +316,6 @@ enum DataID {
     TransitionCallerInputMap,
     // Track caller outputs.
     TransitionCallerOutputMap,
-    // Track caller metadata. (DEPRECATED - kept for backwards compatibility)
-    TransitionCallerMetadataMap,
 
     // Testing
     #[cfg(test)]

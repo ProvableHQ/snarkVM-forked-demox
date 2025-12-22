@@ -204,7 +204,7 @@ impl<N: Network> Stack<N> {
             let is_root = true;
 
             // Compute the request, with a burner private key.
-            let request = Request::sign(
+            let request = Request::sign_static(
                 &burner_private_key,
                 *program_id,
                 *function.name(),

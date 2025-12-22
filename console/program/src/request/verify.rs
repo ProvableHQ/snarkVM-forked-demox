@@ -270,7 +270,7 @@ mod tests {
 
             // Compute the signed request.
             let request = if bool::rand(rng) {
-                Request::sign(
+                Request::sign_static(
                     &private_key,
                     program_id,
                     function_name,
@@ -288,10 +288,7 @@ mod tests {
                     &private_key,
                     program_id,
                     function_name,
-                    inputs.clone().into_iter(),
-                    &input_types,
                     inputs.into_iter(),
-                    &input_types,
                     &input_types,
                     root_tvk,
                     is_root,

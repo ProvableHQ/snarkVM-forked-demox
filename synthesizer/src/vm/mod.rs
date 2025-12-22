@@ -2706,7 +2706,6 @@ finalize transfer_public_to_private:
             tcm,
             scm,
             None,
-            None,
         )
         .unwrap();
 
@@ -2836,7 +2835,6 @@ finalize transfer_public_to_private:
             tpk,
             tcm,
             scm,
-            None,
             None,
         )
         .unwrap();
@@ -2973,7 +2971,6 @@ function add_thrice:
             tpk,
             tcm,
             scm,
-            None,
             None,
         )
         .unwrap();

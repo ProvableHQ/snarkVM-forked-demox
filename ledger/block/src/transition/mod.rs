@@ -27,8 +27,22 @@ mod string;
 use console::{
     network::prelude::*,
     program::{
-        Ciphertext, DynamicRecord, Identifier, InputID, OutputID, ProgramID, Record, Register, Request, Response,
-        TRANSITION_DEPTH, TransitionLeaf, TransitionPath, TransitionTree, Value, ValueType, compute_function_id,
+        Ciphertext,
+        Identifier,
+        InputID,
+        OutputID,
+        ProgramID,
+        Record,
+        Register,
+        Request,
+        Response,
+        TRANSITION_DEPTH,
+        TransitionLeaf,
+        TransitionPath,
+        TransitionTree,
+        Value,
+        ValueType,
+        compute_function_id,
     },
     types::{Field, Group},
 };
@@ -363,12 +377,12 @@ impl<N: Network> Transition<N> {
             .collect::<Result<Vec<_>>>()?;
 
         // Compute and verify the caller metadata.
-        let caller_metadata = if let Some(caller_input_ids) = request.caller_input_ids() {
+        let caller_metadata = if request.is_dynamic() {
             // Construct and verify the caller inputs.
-            let caller_inputs = construct_inputs(caller_input_ids, &request.caller_inputs()?)?;
+            let caller_inputs = construct_inputs(&request.caller_input_ids()?, &request.caller_inputs()?)?;
             // Construct and verify the caller outputs.
             let caller_outputs = response
-                .caller_outputs()
+                .caller_outputs()?
                 .iter()
                 .zip(output_types.iter())
                 .zip(outputs.iter())
@@ -377,8 +391,7 @@ impl<N: Network> Transition<N> {
                     match (&caller_output_value, callee_output_type) {
                         // Convert the record output to a dynamic record output.
                         (Value::DynamicRecord(_), ValueType::Record(..)) => {
-                            let caller_output_value = Value::DynamicRecord(DynamicRecord::from_record(record)?);
-                            construct_output(output_index, &None, &caller_output_value, callee_output_type, &None)
+                            construct_output(output_index, &None, caller_output_value, callee_output_type, &None)
                         }
                         // TODO (dynamic_dispatch) Do we need to handle futures here?
                         // Otherwise, just return the output as is.

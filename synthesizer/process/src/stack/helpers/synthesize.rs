@@ -68,7 +68,7 @@ impl<N: Network> Stack<N> {
 
         // Compute the request, with a burner private key.
         // TODO(dynamic_dispatch): turning this into sign_dynamic causes certificate verification to fail.
-        let request = Request::sign(
+        let request = Request::sign_static(
             &burner_private_key,
             *program_id,
             *function_name,

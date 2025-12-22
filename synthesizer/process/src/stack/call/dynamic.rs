@@ -108,7 +108,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                 }
 
                 // Convert the caller's inputs to the callee's context.
-                let callee_inputs = convert_caller_inputs_to_callee_inputs(inputs, input_types, substack)?;
+                let callee_inputs = convert_caller_inputs_to_callee_inputs(inputs, &input_types, substack)?;
 
                 // Compute the request.
                 let request = Request::sign_dynamic(
@@ -117,8 +117,6 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                     *function.name(),
                     callee_inputs.iter(),
                     &function.input_types(),
-                    inputs.iter(),
-                    self.operand_types(),
                     root_tvk,
                     is_root,
                     program_checksum,
@@ -267,7 +265,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
 
                         // Convert the caller's inputs to the callee's context.
                         let callee_inputs =
-                            convert_caller_inputs_to_callee_inputs(inputs, input_types, target.substack())?;
+                            convert_caller_inputs_to_callee_inputs(&inputs, input_types, target.substack())?;
 
                         // Construct the callee's version of the request.
                         let callee_request = Request::sign_dynamic(
@@ -276,8 +274,6 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             *function.name(),
                             callee_inputs.iter(),
                             input_types,
-                            inputs.iter(),
-                            self.operand_types(),
                             root_tvk,
                             is_root,
                             program_checksum,
@@ -326,7 +322,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             sk_tag: Field::rand(rng),
                             tvk: Field::rand(rng),
                             tcm: Field::rand(rng),
-                            is_dynamic: self
+                            caller_input_ids: self
                                 .operand_types()
                                 .iter()
                                 .map(|type_| match type_ {
@@ -455,8 +451,6 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             *function.name(),
                             callee_inputs.iter(),
                             input_types,
-                            inputs.iter(),
-                            self.operand_types(),
                             root_tvk,
                             is_root,
                             program_checksum,
@@ -569,7 +563,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                 record_stack.synthesize_translation_key::<A, R>(record_name, rng)
                             };
 
-                        let caller_console_input_ids = callee_request.caller_input_ids().clone().unwrap_or_default();
+                        let caller_console_input_ids = callee_request.caller_input_ids()?;
                         let callee_console_input_ids = callee_request.input_ids();
                         let callee_console_function_id = compute_function_id(
                             &U16::<N>::new(N::ID),
@@ -673,7 +667,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                         record_view_key: Some(*record_view_key),
                                         gamma: Some(*gamma),
                                         id_static: *serial_number,
-                                        id_dynamic: *id_dynamic,
+                                        id_dynamic,
                                         input_output_index: operand_index as u16,
                                     });
                                 }
@@ -702,7 +696,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                         record_view_key: None,
                                         gamma: None,
                                         id_static: *id_static,
-                                        id_dynamic: *id_dynamic,
+                                        id_dynamic,
                                         input_output_index: operand_index as u16,
                                     });
                                 }

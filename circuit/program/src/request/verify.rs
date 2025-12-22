@@ -474,7 +474,7 @@ mod tests {
 
         // Compute the signed request.
         let request = match dynamic {
-            false => console::Request::sign(
+            false => console::Request::sign_static(
                 &private_key,
                 program_id,
                 function_name,

@@ -95,7 +95,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                     false => None,
                 };
                 // Compute the request.
-                let request = Request::sign(
+                let request = Request::sign_static(
                     private_key,
                     *substack.program_id(),
                     *function.name(),
@@ -247,7 +247,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                             bail!("Cannot authorize a new function call without a private key.")
                         };
                         // Compute the request.
-                        let request = Request::sign(
+                        let request = Request::sign_static(
                             private_key,
                             *substack.program_id(),
                             *function.name(),
@@ -276,7 +276,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                     // If the proving key is missing, build real sub-circuit.
                     CallStack::Synthesize(_, private_key, ..) if pk_missing => {
                         // Compute the request.
-                        let request = Request::sign(
+                        let request = Request::sign_static(
                             private_key,
                             *substack.program_id(),
                             *function.name(),
@@ -303,7 +303,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                     // In Synthesize mode (with an existing proving key) or CheckDeployment mode, we generate dummy outputs to avoid building a full sub-circuit.
                     CallStack::Synthesize(_, private_key, ..) | CallStack::CheckDeployment(_, private_key, ..) => {
                         // Compute the request.
-                        let request = Request::sign(
+                        let request = Request::sign_static(
                             private_key,
                             *substack.program_id(),
                             *function.name(),
@@ -372,7 +372,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                     // In PackageRun mode, we sign and execute the request once.
                     CallStack::PackageRun(_, private_key, ..) => {
                         // Compute the request.
-                        let request = Request::sign(
+                        let request = Request::sign_static(
                             private_key,
                             *substack.program_id(),
                             *function.name(),

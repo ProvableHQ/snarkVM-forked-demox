@@ -73,20 +73,7 @@ impl<N: Network>
 {
     /// Note: See `Request::sign` to create the request. This method is used to eject from a circuit.
     fn from(
-        (
-            signer,
-            network_id,
-            program_id,
-            function_name,
-            input_ids,
-            inputs,
-            signature,
-            sk_tag,
-            tvk,
-            tcm,
-            scm,
-            dynamic,
-        ): (
+        (signer, network_id, program_id, function_name, input_ids, inputs, signature, sk_tag, tvk, tcm, scm, dynamic): (
             Address<N>,
             U16<N>,
             ProgramID<N>,
@@ -238,7 +225,7 @@ impl<N: Network> Request<N> {
                     // Compute the input ID for the dynamic record.
                     InputID::dynamic_record(function_id, &caller_input, self.tvk, index)
                 }
-                _ => bail!("Mismatching input ID and input value at index {}", index),
+                _ => bail!("Mismatching input ID and input value at index {index}"),
             })
             .collect()
     }
@@ -315,7 +302,7 @@ mod test_helpers {
 
                 // Compute the signed request.
                 let request = if bool::rand(rng) {
-                    Request::sign(&private_key, program_id, function_name, inputs.into_iter(), &input_types, root_tvk, is_root, program_checksum, rng).unwrap()
+                    Request::sign_static(&private_key, program_id, function_name, inputs.into_iter(), &input_types, root_tvk, is_root, program_checksum, rng).unwrap()
                 } else {
                     // Compute the dynamic signed request.
                     Request::sign_dynamic(

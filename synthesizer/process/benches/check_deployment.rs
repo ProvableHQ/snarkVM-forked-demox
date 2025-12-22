@@ -56,7 +56,7 @@ fn prepare_check_deployment<N: Network, A: snarkvm_circuit::Aleo<Network = N>>(
     // Sample 'is_root'.
     let is_root = true;
     // Compute the request.
-    let request = Request::sign(
+    let request = Request::sign_static(
         private_key,
         program_id,
         function_name,
