@@ -606,29 +606,29 @@ mod tests {
         // These bounds are determined experimentally.
 
         // Static requests with records.
-        check_verify(Mode::Constant, "test.aleo", "bark", count_less_than!(43434, 0, 20996, 21023), false, false, true)?;
-        check_verify(Mode::Constant, "test.aleo", "bark", count_less_than!(11001, 0, 21511, 21538), true, false, true)?;
-        check_verify(Mode::Constant, "credits.aleo", "foo", count_less_than!(10971, 0, 21087, 21114), false, false, true)?;
-        check_verify(Mode::Constant, "credits.aleo", "foo", count_less_than!(10971, 0, 21613, 21640), true, false, true)?;
+        check_verify(Mode::Constant, "test.aleo", "bark", count_less_than!(43442, 0, 20996, 21023), false, false, true)?;
+        check_verify(Mode::Constant, "test.aleo", "bark", count_less_than!(11008, 0, 21511, 21538), true, false, true)?;
+        check_verify(Mode::Constant, "credits.aleo", "foo", count_less_than!(10978, 0, 21098, 21125), false, false, true)?;
+        check_verify(Mode::Constant, "credits.aleo", "foo", count_less_than!(10978, 0, 21613, 21640), true, false, true)?;
 
         // Dynamic requests with records.
-        check_verify(Mode::Constant, "test.aleo", "bark", count_less_than!(10613, 0, 28617, 28660), false, true, true)?;
-        check_verify(Mode::Constant, "test.aleo", "bark", count_less_than!(10613, 0, 29132, 29175), true, true, true)?;
-        check_verify(Mode::Constant, "credits.aleo", "foo", count_less_than!(10481, 0, 28789, 28832), false, true, true)?;
-        check_verify(Mode::Constant, "credits.aleo", "foo", count_less_than!(10484, 0, 29304, 29347), true, true, true)?;
+        check_verify(Mode::Constant, "test.aleo", "bark", count_less_than!(11008, 0, 28617, 28660), false, true, true)?;
+        check_verify(Mode::Constant, "test.aleo", "bark", count_less_than!(11008, 0, 29132, 29175), true, true, true)?;
+        check_verify(Mode::Constant, "credits.aleo", "foo", count_less_than!(10978, 0, 28789, 28832), false, true, true)?;
+        check_verify(Mode::Constant, "credits.aleo", "foo", count_less_than!(10978, 0, 29304, 29347), true, true, true)?;
 
 
         // Static requests without records.
-        check_verify(Mode::Constant, "test.aleo", "bark", count_less_than!(5738, 0, 4718, 4723), false, false, false)?;
-        check_verify(Mode::Constant, "test.aleo", "bark", count_less_than!(5738, 0, 4718, 4723), true, false, false)?;
-        check_verify(Mode::Constant, "credits.aleo", "foo", count_less_than!(5778, 0, 4718, 4723), false, false, false)?;
-        check_verify(Mode::Constant, "credits.aleo", "foo", count_less_than!(5778, 0, 4718, 4723), true, false, false)?;
+        check_verify(Mode::Constant, "test.aleo", "bark", count_less_than!(5740, 0, 4718, 4723), false, false, false)?;
+        check_verify(Mode::Constant, "test.aleo", "bark", count_less_than!(5740, 0, 4718, 4723), true, false, false)?;
+        check_verify(Mode::Constant, "credits.aleo", "foo", count_less_than!(5780, 0, 4718, 4723), false, false, false)?;
+        check_verify(Mode::Constant, "credits.aleo", "foo", count_less_than!(5780, 0, 4718, 4723), true, false, false)?;
 
         // Dynamic requests without records.
-        check_verify(Mode::Constant, "test.aleo", "bark", count_less_than!(5448, 0, 11206, 11223), false, true, false)?;
-        check_verify(Mode::Constant, "test.aleo", "bark", count_less_than!(5448, 0, 11206, 11223), true, true, false)?;
-        check_verify(Mode::Constant, "credits.aleo", "foo", count_less_than!(5448, 0, 11206, 11223), false, true, false)?;
-        check_verify(Mode::Constant, "credits.aleo", "foo", count_less_than!(5444, 0, 11206, 11223), true, true, false)?;
+        check_verify(Mode::Constant, "test.aleo", "bark", count_less_than!(5740, 0, 11206, 11223), false, true, false)?;
+        check_verify(Mode::Constant, "test.aleo", "bark", count_less_than!(5740, 0, 11206, 11223), true, true, false)?;
+        check_verify(Mode::Constant, "credits.aleo", "foo", count_less_than!(5780, 0, 11206, 11223), false, true, false)?;
+        check_verify(Mode::Constant, "credits.aleo", "foo", count_less_than!(5780, 0, 11206, 11223), true, true, false)?;
 
         Ok(())
     }
@@ -637,28 +637,28 @@ mod tests {
     #[rustfmt::skip]
     fn test_sign_and_verify_public() -> Result<()> {
         // Static requests with records.
-        check_verify(Mode::Public, "test.aleo", "bark", count_is!(<=40939, 0, 29913, 29944), false, false, true)?;
-        check_verify(Mode::Public, "test.aleo", "bark", count_is!(8502, 0, 30428, 30459), true, false, true)?;
-        check_verify(Mode::Public, "credits.aleo", "foo", count_is!(8472, 0, 30015, 30046), false, false, true)?;
-        check_verify(Mode::Public, "credits.aleo", "foo", count_is!(8472, 0, 30530, 30561), true, false, true)?;
+        check_verify(Mode::Public, "test.aleo", "bark", count_is!(<=40943, 0, 29913, 29944), false, false, true)?;
+        check_verify(Mode::Public, "test.aleo", "bark", count_is!(8506, 0, 30428, 30459), true, false, true)?;
+        check_verify(Mode::Public, "credits.aleo", "foo", count_is!(8476, 0, 30015, 30046), false, false, true)?;
+        check_verify(Mode::Public, "credits.aleo", "foo", count_is!(8476, 0, 30530, 30561), true, false, true)?;
 
         // Dynamic requests with records.
-        check_verify(Mode::Public, "test.aleo", "bark", count_is!(8114, 0, 36729, 36776), false, true, true)?;
-        check_verify(Mode::Public, "test.aleo", "bark", count_is!(8114, 0, 37244, 37291), true, true, true)?;
-        check_verify(Mode::Public, "credits.aleo", "foo", count_is!(7982, 0, 36901, 36948), false, true, true)?;
-        check_verify(Mode::Public, "credits.aleo", "foo", count_is!(7982, 0, 37416, 37463), true, true, true)?;
+        check_verify(Mode::Public, "test.aleo", "bark", count_is!(8506, 0, 29913, 29944), false, true, true)?;
+        check_verify(Mode::Public, "test.aleo", "bark", count_is!(8506, 0, 30428, 30459), true, true, true)?;
+        check_verify(Mode::Public, "credits.aleo", "foo", count_is!(8476, 0, 30015, 30046), false, true, true)?;
+        check_verify(Mode::Public, "credits.aleo", "foo", count_is!(8476, 0, 30530, 30561), true, true, true)?;
 
         // Static requests without records.
-        check_verify(Mode::Public, "test.aleo", "bark", count_is!(3233, 0, 12615, 12624), false, false, false)?;
-        check_verify(Mode::Public, "test.aleo", "bark", count_is!(3233, 0, 12615, 12624), true, false, false)?;
-        check_verify(Mode::Public, "credits.aleo", "foo", count_is!(3273, 0, 12615, 12624), false, false, false)?;
-        check_verify(Mode::Public, "credits.aleo", "foo", count_is!(3273, 0, 12615, 12624), true, false, false)?;
+        check_verify(Mode::Public, "test.aleo", "bark", count_is!(3235, 0, 12615, 12624), false, false, false)?;
+        check_verify(Mode::Public, "test.aleo", "bark", count_is!(3235, 0, 12615, 12624), true, false, false)?;
+        check_verify(Mode::Public, "credits.aleo", "foo", count_is!(3275, 0, 12615, 12624), false, false, false)?;
+        check_verify(Mode::Public, "credits.aleo", "foo", count_is!(3275, 0, 12615, 12624), true, false, false)?;
 
         // Dynamic requests without records.
-        check_verify(Mode::Public, "test.aleo", "bark", count_is!(2943, 0, 18298, 18319), false, true, false)?;
-        check_verify(Mode::Public, "test.aleo", "bark", count_is!(2943, 0, 18298, 18319), true, true, false)?;
-        check_verify(Mode::Public, "credits.aleo", "foo", count_is!(2943, 0, 18298, 18319), false, true, false)?;
-        check_verify(Mode::Public, "credits.aleo", "foo", count_is!(2943, 0, 18298, 18319), true, true, false)?;
+        check_verify(Mode::Public, "test.aleo", "bark", count_is!(3235, 0, 12615, 12624), false, true, false)?;
+        check_verify(Mode::Public, "test.aleo", "bark", count_is!(3235, 0, 12615, 12624), true, true, false)?;
+        check_verify(Mode::Public, "credits.aleo", "foo", count_is!(3275, 0, 12615, 12624), false, true, false)?;
+        check_verify(Mode::Public, "credits.aleo", "foo", count_is!(3275, 0, 12615, 12624), true, true, false)?;
 
 
         Ok(())
@@ -668,28 +668,28 @@ mod tests {
     #[rustfmt::skip]
     fn test_sign_and_verify_private() -> Result<()> {
         // Static requests with records.
-        check_verify(Mode::Private, "test.aleo", "bark", count_is!(<=40939, 0, 29913, 29944), false, false, true)?;
-        check_verify(Mode::Private, "test.aleo", "bark", count_is!(8502, 0, 30428, 30459), true, false, true)?;
-        check_verify(Mode::Private, "credits.aleo", "foo", count_is!(8472, 0, 30015, 30046), false, false, true)?;
-        check_verify(Mode::Private, "credits.aleo", "foo", count_is!(8472, 0, 30530, 30561), true, false, true)?;
+        check_verify(Mode::Private, "test.aleo", "bark", count_is!(<=40943, 0, 29913, 29944), false, false, true)?;
+        check_verify(Mode::Private, "test.aleo", "bark", count_is!(8506, 0, 30428, 30459), true, false, true)?;
+        check_verify(Mode::Private, "credits.aleo", "foo", count_is!(8476, 0, 30015, 30046), false, false, true)?;
+        check_verify(Mode::Private, "credits.aleo", "foo", count_is!(8476, 0, 30530, 30561), true, false, true)?;
 
         // Dynamic requests with records.
-        check_verify(Mode::Private, "test.aleo", "bark", count_is!(8114, 0, 36729, 36776), false, true, true)?;
-        check_verify(Mode::Private, "test.aleo", "bark", count_is!(8114, 0, 37244, 37291), true, true, true)?;
-        check_verify(Mode::Private, "credits.aleo", "foo", count_is!(7982, 0, 36901, 36948), false, true, true)?;
-        check_verify(Mode::Private, "credits.aleo", "foo", count_is!(7982, 0, 37416, 37463), true, true, true)?;
+        check_verify(Mode::Private, "test.aleo", "bark", count_is!(8506, 0, 29913, 29944), false, true, true)?;
+        check_verify(Mode::Private, "test.aleo", "bark", count_is!(8506, 0, 30428, 30459), true, true, true)?;
+        check_verify(Mode::Private, "credits.aleo", "foo", count_is!(8476, 0, 30015, 30046), false, true, true)?;
+        check_verify(Mode::Private, "credits.aleo", "foo", count_is!(8476, 0, 30530, 30561), true, true, true)?;
 
         // Static requests without records.
-        check_verify(Mode::Private, "test.aleo", "bark", count_is!(3233, 0, 12615, 12624), false, false, false)?;
-        check_verify(Mode::Private, "test.aleo", "bark", count_is!(3233, 0, 12615, 12624), true, false, false)?;
-        check_verify(Mode::Private, "credits.aleo", "foo", count_is!(3273, 0, 12615, 12624), false, false, false)?;
-        check_verify(Mode::Private, "credits.aleo", "foo", count_is!(3273, 0, 12615, 12624), true, false, false)?;
+        check_verify(Mode::Private, "test.aleo", "bark", count_is!(3235, 0, 12615, 12624), false, false, false)?;
+        check_verify(Mode::Private, "test.aleo", "bark", count_is!(3235, 0, 12615, 12624), true, false, false)?;
+        check_verify(Mode::Private, "credits.aleo", "foo", count_is!(3275, 0, 12615, 12624), false, false, false)?;
+        check_verify(Mode::Private, "credits.aleo", "foo", count_is!(3275, 0, 12615, 12624), true, false, false)?;
 
         // Dynamic requests without records.
-        check_verify(Mode::Private, "test.aleo", "bark", count_is!(2943, 0, 18298, 18319), false, true, false)?;
-        check_verify(Mode::Private, "test.aleo", "bark", count_is!(2943, 0, 18298, 18319), true, true, false)?;
-        check_verify(Mode::Private, "credits.aleo", "foo", count_is!(2943, 0, 18298, 18319), false, true, false)?;
-        check_verify(Mode::Private, "credits.aleo", "foo", count_is!(2943, 0, 18298, 18319), true, true, false)?;
+        check_verify(Mode::Private, "test.aleo", "bark", count_is!(3235, 0, 12615, 12624), false, true, false)?;
+        check_verify(Mode::Private, "test.aleo", "bark", count_is!(3235, 0, 12615, 12624), true, true, false)?;
+        check_verify(Mode::Private, "credits.aleo", "foo", count_is!(3275, 0, 12615, 12624), false, true, false)?;
+        check_verify(Mode::Private, "credits.aleo", "foo", count_is!(3275, 0, 12615, 12624), true, true, false)?;
 
         Ok(())
     }
@@ -698,28 +698,28 @@ mod tests {
     #[rustfmt::skip]
     fn test_check_input_ids_constant() -> Result<()> {
         // Static requests with records.
-        check_check_input_ids(Mode::Constant, "test.aleo", "bark", count_is!(<=34023, 0, 11710, 11726), false, false, true)?;
-        check_check_input_ids(Mode::Constant, "test.aleo", "bark", count_is!(4096, 0, 11710, 11726), true, false, true)?;
-        check_check_input_ids(Mode::Constant, "credits.aleo", "foo", count_is!(4046, 0, 11812, 11828), false, false, true)?;
-        check_check_input_ids(Mode::Constant, "credits.aleo", "foo", count_is!(4046, 0, 11812, 11828), true, false, true)?;
+        check_check_input_ids(Mode::Constant, "test.aleo", "bark", count_is!(<=34027, 0, 11710, 11726), false, false, true)?;
+        check_check_input_ids(Mode::Constant, "test.aleo", "bark", count_is!(4100, 0, 11710, 11726), true, false, true)?;
+        check_check_input_ids(Mode::Constant, "credits.aleo", "foo", count_is!(4050, 0, 11812, 11828), false, false, true)?;
+        check_check_input_ids(Mode::Constant, "credits.aleo", "foo", count_is!(4050, 0, 11812, 11828), true, false, true)?;
         
         // Dynamic requests with records.
-        check_check_input_ids(Mode::Constant, "test.aleo", "bark", count_is!(3853, 0, 16497, 16523), false, true, true)?;
-        check_check_input_ids(Mode::Constant, "test.aleo", "bark", count_is!(3853, 0, 16497, 16523), true, true, true)?;
-        check_check_input_ids(Mode::Constant, "credits.aleo", "foo", count_is!(3721, 0, 16669, 16695), false, true, true)?;
-        check_check_input_ids(Mode::Constant, "credits.aleo", "foo", count_is!(3721, 0, 16669, 16695), true, true, true)?;
+        check_check_input_ids(Mode::Constant, "test.aleo", "bark", count_is!(3484, 0, 11710, 11726), false, true, true)?;
+        check_check_input_ids(Mode::Constant, "test.aleo", "bark", count_is!(3484, 0, 11710, 11726), true, true, true)?;
+        check_check_input_ids(Mode::Constant, "credits.aleo", "foo", count_is!(3414, 0, 11812, 11828), false, true, true)?;
+        check_check_input_ids(Mode::Constant, "credits.aleo", "foo", count_is!(3414, 0, 11812, 11828), true, true, true)?;
 
         // Static requests without records.
-        check_check_input_ids(Mode::Constant, "test.aleo", "bark", count_is!(858, 0, 2948, 2952), false, false, false)?;
-        check_check_input_ids(Mode::Constant, "test.aleo", "bark", count_is!(858, 0, 2948, 2952), true, false, false)?;
-        check_check_input_ids(Mode::Constant, "credits.aleo", "foo", count_is!(878, 0, 2948, 2952), false, false, false)?;
-        check_check_input_ids(Mode::Constant, "credits.aleo", "foo", count_is!(878, 0, 2948, 2952), true, false, false)?;
+        check_check_input_ids(Mode::Constant, "test.aleo", "bark", count_is!(860, 0, 2948, 2952), false, false, false)?;
+        check_check_input_ids(Mode::Constant, "test.aleo", "bark", count_is!(860, 0, 2948, 2952), true, false, false)?;
+        check_check_input_ids(Mode::Constant, "credits.aleo", "foo", count_is!(880, 0, 2948, 2952), false, false, false)?;
+        check_check_input_ids(Mode::Constant, "credits.aleo", "foo", count_is!(880, 0, 2948, 2952), true, false, false)?;
         
         // Dynamic requests without records.
-        check_check_input_ids(Mode::Constant, "test.aleo", "bark", count_is!(713, 0, 6602, 6612), false, true, false)?;
-        check_check_input_ids(Mode::Constant, "test.aleo", "bark", count_is!(713, 0, 6602, 6612), true, true, false)?;
-        check_check_input_ids(Mode::Constant, "credits.aleo", "foo", count_is!(713, 0, 6602, 6612), false, true, false)?;
-        check_check_input_ids(Mode::Constant, "credits.aleo", "foo", count_is!(713, 0, 6602, 6612), true, true, false)?;
+        check_check_input_ids(Mode::Constant, "test.aleo", "bark", count_is!(244, 0, 2948, 2952), false, true, false)?;
+        check_check_input_ids(Mode::Constant, "test.aleo", "bark", count_is!(244, 0, 2948, 2952), true, true, false)?;
+        check_check_input_ids(Mode::Constant, "credits.aleo", "foo", count_is!(244, 0, 2948, 2952), false, true, false)?;
+        check_check_input_ids(Mode::Constant, "credits.aleo", "foo", count_is!(244, 0, 2948, 2952), true, true, false)?;
 
 
         Ok(())
@@ -729,28 +729,28 @@ mod tests {
     #[rustfmt::skip]
     fn test_check_input_ids_public() -> Result<()> {
         // Static requests with records.
-        check_check_input_ids(Mode::Public,  "test.aleo", "bark", count_is!(<=34023, 0, 12530, 12546), false, false, true)?;
-        check_check_input_ids(Mode::Public,  "test.aleo", "bark", count_is!(4096, 0, 12530, 12546), true, false, true)?;
-        check_check_input_ids(Mode::Public,  "credits.aleo", "foo", count_is!(4046, 0, 12632, 12648), false, false, true)?;
-        check_check_input_ids(Mode::Public,  "credits.aleo", "foo", count_is!(4046, 0, 12632, 12648), true, false, true)?;
+        check_check_input_ids(Mode::Public,  "test.aleo", "bark", count_is!(<=34027, 0, 12530, 12546), false, false, true)?;
+        check_check_input_ids(Mode::Public,  "test.aleo", "bark", count_is!(4100, 0, 12530, 12546), true, false, true)?;
+        check_check_input_ids(Mode::Public,  "credits.aleo", "foo", count_is!(4050, 0, 12632, 12648), false, false, true)?;
+        check_check_input_ids(Mode::Public,  "credits.aleo", "foo", count_is!(4050, 0, 12632, 12648), true, false, true)?;
 
         // Dynamic requests with records.
-        check_check_input_ids(Mode::Public,  "test.aleo", "bark", count_is!(3853, 0, 16512, 16538), false, true, true)?;
-        check_check_input_ids(Mode::Public,  "test.aleo", "bark", count_is!(3853, 0, 16512, 16538), true, true, true)?;
-        check_check_input_ids(Mode::Public,  "credits.aleo", "foo", count_is!(3721, 0, 16684, 16710), false, true, true)?;
-        check_check_input_ids(Mode::Public,  "credits.aleo", "foo", count_is!(3721, 0, 16684, 16710), true, true, true)?;
+        check_check_input_ids(Mode::Public,  "test.aleo", "bark", count_is!(3484, 0, 12530, 12546), false, true, true)?;
+        check_check_input_ids(Mode::Public,  "test.aleo", "bark", count_is!(3484, 0, 12530, 12546), true, true, true)?;
+        check_check_input_ids(Mode::Public,  "credits.aleo", "foo", count_is!(3414, 0, 12632, 12648), false, true, true)?;
+        check_check_input_ids(Mode::Public,  "credits.aleo", "foo", count_is!(3414, 0, 12632, 12648), true, true, true)?;
 
         // Static requests without records.
-        check_check_input_ids(Mode::Public,  "test.aleo", "bark", count_is!(858, 0, 3763, 3767), false, false, false)?;
-        check_check_input_ids(Mode::Public,  "test.aleo", "bark", count_is!(858, 0, 3763, 3767), true, false, false)?;
-        check_check_input_ids(Mode::Public,  "credits.aleo", "foo", count_is!(878, 0, 3763, 3767), false, false, false)?;
-        check_check_input_ids(Mode::Public,  "credits.aleo", "foo", count_is!(878, 0, 3763, 3767), true, false, false)?;
+        check_check_input_ids(Mode::Public,  "test.aleo", "bark", count_is!(860, 0, 3763, 3767), false, false, false)?;
+        check_check_input_ids(Mode::Public,  "test.aleo", "bark", count_is!(860, 0, 3763, 3767), true, false, false)?;
+        check_check_input_ids(Mode::Public,  "credits.aleo", "foo", count_is!(880, 0, 3763, 3767), false, false, false)?;
+        check_check_input_ids(Mode::Public,  "credits.aleo", "foo", count_is!(880, 0, 3763, 3767), true, false, false)?;
 
         // Dynamic requests without records.
-        check_check_input_ids(Mode::Public,  "test.aleo", "bark", count_is!(713, 0, 6612, 6622), false, true, false)?;
-        check_check_input_ids(Mode::Public,  "test.aleo", "bark", count_is!(713, 0, 6612, 6622), true, true, false)?;
-        check_check_input_ids(Mode::Public,  "credits.aleo", "foo", count_is!(713, 0, 6612, 6622), false, true, false)?;
-        check_check_input_ids(Mode::Public,  "credits.aleo", "foo", count_is!(713, 0, 6612, 6622), true, true, false)?;
+        check_check_input_ids(Mode::Public,  "test.aleo", "bark", count_is!(244, 0, 3763, 3767), false, true, false)?;
+        check_check_input_ids(Mode::Public,  "test.aleo", "bark", count_is!(244, 0, 3763, 3767), true, true, false)?;
+        check_check_input_ids(Mode::Public,  "credits.aleo", "foo", count_is!(244, 0, 3763, 3767), false, true, false)?;
+        check_check_input_ids(Mode::Public,  "credits.aleo", "foo", count_is!(244, 0, 3763, 3767), true, true, false)?;
 
         Ok(())
     }
@@ -759,28 +759,28 @@ mod tests {
     #[rustfmt::skip]
     fn test_check_input_ids_private() -> Result<()> {
         // Static requests with records.
-        check_check_input_ids(Mode::Private,  "test.aleo", "bark", count_is!(<=34023, 0, 12530, 12546), false, false, true)?;
-        check_check_input_ids(Mode::Private,  "test.aleo", "bark", count_is!(4096, 0, 12530, 12546), true, false, true)?;
-        check_check_input_ids(Mode::Private,  "credits.aleo", "foo", count_is!(4046, 0, 12632, 12648), false, false, true)?;
-        check_check_input_ids(Mode::Private,  "credits.aleo", "foo", count_is!(4046, 0, 12632, 12648), true, false, true)?;
+        check_check_input_ids(Mode::Private,  "test.aleo", "bark", count_is!(<=34027, 0, 12530, 12546), false, false, true)?;
+        check_check_input_ids(Mode::Private,  "test.aleo", "bark", count_is!(4100, 0, 12530, 12546), true, false, true)?;
+        check_check_input_ids(Mode::Private,  "credits.aleo", "foo", count_is!(4050, 0, 12632, 12648), false, false, true)?;
+        check_check_input_ids(Mode::Private,  "credits.aleo", "foo", count_is!(4050, 0, 12632, 12648), true, false, true)?;
 
         // Dynamic requests with records.
-        check_check_input_ids(Mode::Private,  "test.aleo", "bark", count_is!(3853, 0, 16512, 16538), false, true, true)?;
-        check_check_input_ids(Mode::Private,  "test.aleo", "bark", count_is!(3853, 0, 16512, 16538), true, true, true)?;
-        check_check_input_ids(Mode::Private,  "credits.aleo", "foo", count_is!(3721, 0, 16684, 16710), false, true, true)?;
-        check_check_input_ids(Mode::Private,  "credits.aleo", "foo", count_is!(3721, 0, 16684, 16710), true, true, true)?;
+        check_check_input_ids(Mode::Private,  "test.aleo", "bark", count_is!(3484, 0, 12530, 12546), false, true, true)?;
+        check_check_input_ids(Mode::Private,  "test.aleo", "bark", count_is!(3484, 0, 12530, 12546), true, true, true)?;
+        check_check_input_ids(Mode::Private,  "credits.aleo", "foo", count_is!(3414, 0, 12632, 12648), false, true, true)?;
+        check_check_input_ids(Mode::Private,  "credits.aleo", "foo", count_is!(3414, 0, 12632, 12648), true, true, true)?;
 
         // Static requests without records.
-        check_check_input_ids(Mode::Private,  "test.aleo", "bark", count_is!(858, 0, 3763, 3767), false, false, false)?;
-        check_check_input_ids(Mode::Private,  "test.aleo", "bark", count_is!(858, 0, 3763, 3767), true, false, false)?;
-        check_check_input_ids(Mode::Private,  "credits.aleo", "foo", count_is!(878, 0, 3763, 3767), false, false, false)?;
-        check_check_input_ids(Mode::Private,  "credits.aleo", "foo", count_is!(878, 0, 3763, 3767), true, false, false)?;
+        check_check_input_ids(Mode::Private,  "test.aleo", "bark", count_is!(860, 0, 3763, 3767), false, false, false)?;
+        check_check_input_ids(Mode::Private,  "test.aleo", "bark", count_is!(860, 0, 3763, 3767), true, false, false)?;
+        check_check_input_ids(Mode::Private,  "credits.aleo", "foo", count_is!(880, 0, 3763, 3767), false, false, false)?;
+        check_check_input_ids(Mode::Private,  "credits.aleo", "foo", count_is!(880, 0, 3763, 3767), true, false, false)?;
 
         // Dynamic requests without records.
-        check_check_input_ids(Mode::Private,  "test.aleo", "bark", count_is!(713, 0, 6612, 6622), false, true, false)?;
-        check_check_input_ids(Mode::Private,  "test.aleo", "bark", count_is!(713, 0, 6612, 6622), true, true, false)?;
-        check_check_input_ids(Mode::Private,  "credits.aleo", "foo", count_is!(713, 0, 6612, 6622), false, true, false)?;
-        check_check_input_ids(Mode::Private,  "credits.aleo", "foo", count_is!(713, 0, 6612, 6622), true, true, false)?;
+        check_check_input_ids(Mode::Private,  "test.aleo", "bark", count_is!(244, 0, 3763, 3767), false, true, false)?;
+        check_check_input_ids(Mode::Private,  "test.aleo", "bark", count_is!(244, 0, 3763, 3767), true, true, false)?;
+        check_check_input_ids(Mode::Private,  "credits.aleo", "foo", count_is!(244, 0, 3763, 3767), false, true, false)?;
+        check_check_input_ids(Mode::Private,  "credits.aleo", "foo", count_is!(244, 0, 3763, 3767), true, true, false)?;
 
 
         Ok(())

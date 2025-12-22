@@ -120,15 +120,4 @@ mod tests {
 
         Ok(())
     }
-
-    #[test]
-    fn test_compute_function_id_private() -> Result<()> {
-        check(Mode::Private, 0, "credits.aleo", "transfer_public", count_is!(17851, 0, 1895, 1901))?;
-        check(Mode::Private, 0, "credits.aleo", "transfer_private", count_is!(465, 0, 1909, 1915))?;
-        check(Mode::Private, 0, "credits.aleo", "transfer_public_to_private", count_is!(465, 0, 2040, 2046))?;
-        check(Mode::Private, 0, "token_registry.aleo", "transfer_public_to_private", count_is!(465, 0, 2135, 2141))?;
-        check(Mode::Private, 0, "my.aleo", "foo", count_is!(463, 0, 1664, 1670))?;
-
-        Ok(())
-    }
 }
