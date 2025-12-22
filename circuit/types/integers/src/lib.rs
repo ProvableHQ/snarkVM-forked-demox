@@ -63,12 +63,7 @@ pub type U128<E> = Integer<E, u128>;
 
 #[cfg(test)]
 use snarkvm_circuit_environment::{
-    assert_count,
-    assert_count_fails,
-    assert_output_mode,
-    assert_scope,
-    count,
-    output_mode,
+    assert_count, assert_count_fails, assert_output_mode, assert_scope, count, output_mode,
 };
 #[cfg(test)]
 use snarkvm_utilities::{TestRng, Uniform};
@@ -90,7 +85,7 @@ impl<E: Environment, I: IntegerType> IntegerTrait<I, U8<E>, U16<E>, U32<E>> for 
 
 impl<E: Environment, I: IntegerType> IntegerCore<I> for Integer<E, I> {}
 
-// TODO (@pranav) Document
+// TODO (@d0cd) Document
 impl<E: Environment, I: IntegerType> Integer<E, I> {
     pub fn size_in_bits() -> u16 {
         I::BITS as u16

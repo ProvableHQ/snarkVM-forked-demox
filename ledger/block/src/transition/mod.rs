@@ -27,22 +27,8 @@ mod string;
 use console::{
     network::prelude::*,
     program::{
-        Ciphertext,
-        Identifier,
-        InputID,
-        OutputID,
-        ProgramID,
-        Record,
-        Register,
-        Request,
-        Response,
-        TRANSITION_DEPTH,
-        TransitionLeaf,
-        TransitionPath,
-        TransitionTree,
-        Value,
-        ValueType,
-        compute_function_id,
+        Ciphertext, Identifier, InputID, OutputID, ProgramID, Record, Register, Request, Response, TRANSITION_DEPTH,
+        TransitionLeaf, TransitionPath, TransitionTree, Value, ValueType, compute_function_id,
     },
     types::{Field, Group},
 };
@@ -210,7 +196,7 @@ impl<N: Network> Transition<N> {
                             Ok(Input::ExternalRecord(*input_hash))
                         }
                         (InputID::DynamicRecord(input_hash), Value::DynamicRecord(..)) => {
-                            // TODO (@d0cd) check that this is correct
+                            // Return the input dynamic record.
                             Ok(Input::DynamicRecord(*input_hash))
                         }
                         _ => bail!("Malformed request input: {input_id:?}, {input}"),

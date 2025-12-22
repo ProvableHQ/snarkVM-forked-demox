@@ -36,7 +36,7 @@ impl<N: Network> Serialize for Request<N> {
                 request.serialize_field("tcm", &self.tcm)?;
                 request.serialize_field("scm", &self.scm)?;
                 if let Some(is_dynamic) = self.dynamic {
-                    request.serialize_field("is_dynamic", &is_dynamic)?;
+                    request.serialize_field("dynamic", &is_dynamic)?;
                 }
                 request.end()
             }

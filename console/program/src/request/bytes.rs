@@ -77,7 +77,7 @@ impl<N: Network> ToBytes for Request<N> {
     /// Writes the request to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         // Write the version.
-        match self.is_dynamic() {
+        match self.dynamic.is_some() {
             false => 1u8.write_le(&mut writer)?,
             true => 2u8.write_le(&mut writer)?,
         }
