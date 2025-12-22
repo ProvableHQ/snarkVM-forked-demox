@@ -197,7 +197,7 @@ impl<A: Aleo> DynamicRecord<A> {
                 // By using ehtry.to_fields (as in the translation circuit), we
                 // inject the visibility marker of each entry as a constant,
                 // rather than as a witness variable (as in the
-                // get.dynamic.record instruction). as
+                // get.record.dynamic instruction). as
                 // entry.to_fields_with_visibility_mode(Mode::Private) would
                 leaf.extend(entry.to_fields());
                 leaf

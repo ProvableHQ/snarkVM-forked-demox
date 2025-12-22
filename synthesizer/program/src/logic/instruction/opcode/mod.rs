@@ -32,7 +32,7 @@ pub enum Opcode {
     Commit(&'static str),
     /// The opcdode is a for a deserialize operation (i.e. `deserialize.bytes.raw`).
     Deserialize(&'static str),
-    /// The opcode is for a get dynamic record operation (i.e. `get.dynamic.record`).
+    /// The opcode is for a get.record.dynamic operation (i.e. `get.record.dynamic`).
     GetDynamicRecord(&'static str),
     /// The opcode is for a hash operation (i.e. `hash.psd4`).
     Hash(&'static str),

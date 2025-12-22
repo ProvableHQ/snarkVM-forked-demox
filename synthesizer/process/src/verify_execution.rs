@@ -326,7 +326,10 @@ impl<N: Network> Process<N> {
                 .iter()
                 .filter_map(|instruction| match instruction {
                     Instruction::CallDynamic(..) => Some((true, instruction.clone())),
-                    Instruction::Call(..) => Some((false, instruction.clone())),
+                    Instruction::Call(call) => match call.is_function_call(stack.as_ref()) {
+                        Ok(true) => Some((false, instruction.clone())),
+                        Ok(false) | Err(_) => None,
+                    },
                     _ => None,
                 })
                 .collect_vec(),
@@ -339,7 +342,9 @@ impl<N: Network> Process<N> {
 
         ensure!(
             parent_function_calls.len() == child_transition_ids.len(),
-            "The number of parent function calls and child transition IDs do not match"
+            "The number of parent function calls ({}) and child transition IDs ({}) do not match",
+            parent_function_calls.len(),
+            child_transition_ids.len()
         );
 
         // TODO(@vicsn): in case we stick to encoding and using *all* of the caller_{inputs, outputs} instead of just the dynamic ones,

@@ -17,7 +17,7 @@ use console::types::Scalar;
 
 use super::*;
 
-// These tests mix translation, casting to dynamic.record and get.dynamic.record.
+// These tests mix translation, casting to dynamic.record and get.record.dynamic.
 
 // This test checks that execution_cost_for_authorization() computes the correct
 // cost in transactions involving inclusion and translation proofs. This is in
@@ -136,7 +136,7 @@ fn test_execution_cost_for_authorization() {
             call.dynamic {program_b_field} {network_field} {check_tossed_coin_field}
                 with r1 (as dynamic.record);
 
-            get.dynamic.record r4.grams into r5 as u32;
+            get.record.dynamic r4.grams into r5 as u32;
 
             output r5 as u32.public;
         
@@ -331,7 +331,7 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
             
             // Right-hand side
             cast r0.owner into r3 as group;
-            get.dynamic.record r0.product_id into r4 as scalar;
+            get.record.dynamic r0.product_id into r4 as scalar;
             mul r4 {generator} into r5;
             add r3 r5 into r6;
 

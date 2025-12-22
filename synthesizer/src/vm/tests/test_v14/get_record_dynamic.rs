@@ -16,7 +16,7 @@
 use super::*;
 
 #[test]
-fn test_get_dynamic_record() {
+fn test_get_record_dynamic() {
     // Parameters for dynamic function calls
     let program_name_str = "warehouse";
     let network_str = "aleo";
@@ -63,20 +63,20 @@ fn test_get_dynamic_record() {
 
         function production_month:
             input r0 as dynamic.record;
-            get.dynamic.record r0.production_date into r1 as [u8; 3u32];
+            get.record.dynamic r0.production_date into r1 as [u8; 3u32];
             output r1[1u32] as u8.public;
 
         function production_month_as_u16:
             input r0 as dynamic.record;
-            get.dynamic.record r0.production_date into r1 as [u16; 3u32];
+            get.record.dynamic r0.production_date into r1 as [u16; 3u32];
             output r1[1u32] as u16.public;
         
         function production_year_difference:
             call.dynamic {program_name_field} {network_field} {mint_nineties_bleach_function_field} into r0 (as dynamic.record);
             call.dynamic {program_name_field} {network_field} {mint_fake_compliance_cert_function_field} into r1 (as dynamic.record);
             
-            get.dynamic.record r0.production_date into r2 as [u8; 3u32];
-            get.dynamic.record r1.production_date into r3 as [u8; 3u32];
+            get.record.dynamic r0.production_date into r2 as [u8; 3u32];
+            get.record.dynamic r1.production_date into r3 as [u8; 3u32];
 
             sub r2[2u32] r3[2u32] into r4;
 
@@ -100,7 +100,7 @@ fn test_get_dynamic_record() {
 
         function read_producer_country:
             input r0 as dynamic.record;
-            get.dynamic.record r0.producer_country_code into r1 as u16;
+            get.record.dynamic r0.producer_country_code into r1 as u16;
             output r1 as u16.public;
 
         constructor:
@@ -191,7 +191,7 @@ fn test_get_dynamic_record() {
 
     /************** Case 3: Various incorrect readings **************/
 
-    // We trigger get.dynamic.record failures in various ways
+    // We trigger get.record.dynamic failures in various ways
 
     // Case 3.1: We attempt to read the field "producer_country_code" from a
     // dynamic record derived from a static consumable.record, which does not

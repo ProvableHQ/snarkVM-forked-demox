@@ -15,7 +15,7 @@
 
 mod cast;
 
-mod get_dynamic_record;
+mod get_record_dynamic;
 
 mod dynamic_mapping_operations;
 

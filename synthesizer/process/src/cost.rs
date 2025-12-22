@@ -636,7 +636,7 @@ pub fn cost_per_command<N: Network>(
         Command::Instruction(Instruction::ECDSAVerifySha3_512Eth(ecdsa)) => {
             cost_in_size(stack, finalize_types, ecdsa.operands(), HASH_PER_BYTE_COST, ECDSA_VERIFY_ETH_BASE_COST)
         }
-        Command::Instruction(Instruction::GetDynamicRecord(_get_dynamic_record)) => {
+        Command::Instruction(Instruction::GetDynamicRecord(_)) => {
             bail!("'{}' is not supported in finalize", GetDynamicRecord::<N>::opcode())
         }
         Command::Instruction(Instruction::GreaterThan(_)) => Ok(500),

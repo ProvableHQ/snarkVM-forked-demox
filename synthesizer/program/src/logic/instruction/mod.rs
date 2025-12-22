@@ -29,27 +29,8 @@ use crate::{RegistersCircuit, RegistersSigner, RegistersTrait, StackTrait, instr
 use console::{
     network::Network,
     prelude::{
-        Debug,
-        Display,
-        Error,
-        Formatter,
-        FromBytes,
-        FromStr,
-        IoResult,
-        Parser,
-        ParserResult,
-        Read,
-        Result,
-        Sanitizer,
-        ToBytes,
-        Write,
-        alt,
-        bail,
-        ensure,
-        error,
-        fmt,
-        map,
-        tag,
+        Debug, Display, Error, Formatter, FromBytes, FromStr, IoResult, Parser, ParserResult, Read, Result, Sanitizer,
+        ToBytes, Write, alt, bail, ensure, error, fmt, map, tag,
     },
     program::{Register, RegisterType},
 };
@@ -645,7 +626,7 @@ mod tests {
         // Sanity check the number of instructions is unchanged.
         // Note that the number of opcodes **MUST NOT** exceed u16::MAX.
         assert_eq!(
-            119,
+            121,
             Instruction::<CurrentNetwork>::OPCODES.len(),
             "Update me if the number of instructions changes."
         );

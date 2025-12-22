@@ -234,11 +234,14 @@ impl<N: Network> Parser for GetOrUseDynamic<N> {
         // Parse the ";" from the string.
         let (string, _) = tag(";")(string)?;
 
-        Ok((string, Self {
-            operands: [program_name, program_network, mapping_name, key, default],
-            destination,
-            destination_type,
-        }))
+        Ok((
+            string,
+            Self {
+                operands: [program_name, program_network, mapping_name, key, default],
+                destination,
+                destination_type,
+            },
+        ))
     }
 }
 
@@ -362,7 +365,7 @@ mod tests {
     #[test]
     fn test_from_bytes() {
         let (string, get) =
-            GetOrUseDynamic::<CurrentNetwork>::parse("get.or_use.dynamic r0.r1/r2[r3] r4 into r5 as Foo;").unwrap();
+            GetOrUseDynamic::<CurrentNetwork>::parse("get.or_use.dynamic r0 r1 r2[r3] r4 into r5 as Foo;").unwrap();
         assert!(string.is_empty());
         let bytes_le = get.to_bytes_le().unwrap();
         let result = GetOrUseDynamic::<CurrentNetwork>::from_bytes_le(&bytes_le[..]);
