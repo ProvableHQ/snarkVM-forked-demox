@@ -34,23 +34,50 @@ use console::{
 };
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use snarkvm_ledger_block::{
-    Block, ConfirmedTransaction, Deployment, Execution, Fee, Header, Output, Ratifications, Ratify, Rejected,
-    Solutions, Transaction, Transactions,
+    Block,
+    ConfirmedTransaction,
+    Deployment,
+    Execution,
+    Fee,
+    Header,
+    Output,
+    Ratifications,
+    Ratify,
+    Rejected,
+    Solutions,
+    Transaction,
+    Transactions,
 };
 use snarkvm_ledger_committee::Committee;
 use snarkvm_ledger_narwhal_data::Data;
 use snarkvm_ledger_puzzle::Puzzle;
 use snarkvm_ledger_query::{Query, QueryTrait};
 use snarkvm_ledger_store::{
-    BlockStore, ConsensusStorage, ConsensusStore, FinalizeMode, FinalizeStore, TransactionStore, TransitionStore,
+    BlockStore,
+    ConsensusStorage,
+    ConsensusStore,
+    FinalizeMode,
+    FinalizeStore,
+    TransactionStore,
+    TransitionStore,
     atomic_finalize,
 };
 use snarkvm_synthesizer_process::{
-    Authorization, InclusionVersion, Process, Trace, deploy_compute_cost_in_microcredits, deployment_cost,
-    execute_compute_cost_in_microcredits, execution_cost,
+    Authorization,
+    InclusionVersion,
+    Process,
+    Trace,
+    deploy_compute_cost_in_microcredits,
+    deployment_cost,
+    execute_compute_cost_in_microcredits,
+    execution_cost,
 };
 use snarkvm_synthesizer_program::{
-    FinalizeGlobalState, FinalizeOperation, FinalizeStoreTrait, Program, StackTrait as _,
+    FinalizeGlobalState,
+    FinalizeOperation,
+    FinalizeStoreTrait,
+    Program,
+    StackTrait as _,
 };
 use snarkvm_synthesizer_snark::VerifyingKey;
 use snarkvm_utilities::try_vm_runtime;
@@ -1606,9 +1633,9 @@ function do:
             deployment.edition(),
             deployment.program().clone(),
             vks_with_overreport,
-            Vec::new(),
             deployment.program_checksum(),
             deployment.program_owner(),
+            deployment.translation_verifying_keys().clone(),
         )
         .unwrap();
         let adjusted_transaction = Transaction::from_deployment(program_owner, adjusted_deployment, fee).unwrap();
@@ -1668,9 +1695,9 @@ function do:
             deployment.edition(),
             deployment.program().clone(),
             vks_with_underreport,
-            Vec::new(),
             deployment.program_checksum(),
             deployment.program_owner(),
+            deployment.translation_verifying_keys().clone(),
         )
         .unwrap();
         let deployment_id = adjusted_deployment.to_deployment_id().unwrap();
@@ -1750,9 +1777,9 @@ function do:
             deployment.edition(),
             deployment.program().clone(),
             vks_with_underreport,
-            Vec::new(),
             deployment.program_checksum(),
             deployment.program_owner(),
+            deployment.translation_verifying_keys().clone(),
         )
         .unwrap();
         let deployment_id = adjusted_deployment.to_deployment_id().unwrap();
@@ -2153,34 +2180,6 @@ finalize transfer_public:
 
         // Verify the transaction.
         vm.check_transaction(&transaction, None, rng).unwrap();
-
-        println!("Transaction: {transaction:?}");
-        println!("Transaction size: {}", transaction.to_bytes_le().unwrap().len());
-        println!("Transaction execution size : {}", transaction.execution().unwrap().to_bytes_le().unwrap().len());
-        println!(
-            "Transaction proof size: {}",
-            transaction.execution().unwrap().proof().unwrap().to_bytes_le().unwrap().len()
-        );
-        println!(
-            "Transaction execution cost v1: {:?}",
-            execution_cost(&vm.process().read(), &transaction.execution().unwrap(), ConsensusVersion::V1).unwrap()
-        );
-        println!(
-            "Transaction execution cost v2: {:?}",
-            execution_cost(&vm.process().read(), &transaction.execution().unwrap(), ConsensusVersion::V2).unwrap()
-        );
-
-        println!(
-            "Transaction execution cost v3: {:?}",
-            execution_cost(&vm.process().read(), &transaction.execution().unwrap(), ConsensusVersion::V10).unwrap()
-        );
-
-        for (i, transition) in transaction.transitions().enumerate() {
-            println!("Printing transition: {i}");
-            println!("Transition: {transition:?}");
-            println!("Transition is dynamic: {}", transition.is_dynamic());
-            println!("Transition size: {}", transition.to_bytes_le().unwrap().len());
-        }
 
         // Add the transaction to a block and update the VM.
         let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();

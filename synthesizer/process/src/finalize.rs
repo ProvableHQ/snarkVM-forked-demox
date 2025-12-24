@@ -47,12 +47,15 @@ impl<N: Network> Process<N> {
         for (function_name, (verifying_key, _)) in deployment.verifying_keys() {
             stack.insert_verifying_key(function_name, verifying_key.clone())?;
         }
+        lap!(timer, "Insert the verifying keys");
 
         // Insert the translation verifying keys.
-        for (record_name, (verifying_key, _)) in deployment.translation_verifying_keys() {
-            stack.insert_translation_verifying_key(record_name, verifying_key.clone())?;
+        if let Some(translation_verifying_keys) = deployment.translation_verifying_keys() {
+            for (record_name, (verifying_key, _)) in translation_verifying_keys {
+                stack.insert_translation_verifying_key(record_name, verifying_key.clone())?;
+            }
         }
-        lap!(timer, "Insert the verifying keys");
+        lap!(timer, "Insert the translation verifying keys");
 
         // Determine which mappings must be initialized.
         let mappings = match deployment.edition().is_zero() {

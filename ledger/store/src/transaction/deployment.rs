@@ -59,9 +59,9 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     /// The mapping of `(program ID, edition)` to `checksum`.
     /// This was introduced in `ConsensusVersion::V9`.
     type ChecksumMap: for<'a> Map<'a, (ProgramID<N>, u16), [U8<N>; 32]>;
-    /// The mapping of `(program ID, function name, edition)` to `verifying key`.
+    /// The mapping of `(program ID, name, edition)` to `verifying key`.
     type VerifyingKeyMap: for<'a> Map<'a, (ProgramID<N>, Identifier<N>, u16), VerifyingKey<N>>;
-    /// The mapping of `(program ID, function name, edition)` to `certificate`.
+    /// The mapping of `(program ID, name, edition)` to `certificate`.
     type CertificateMap: for<'a> Map<'a, (ProgramID<N>, Identifier<N>, u16), Certificate<N>>;
     /// The fee storage.
     type FeeStorage: FeeStorage<N>;
@@ -87,10 +87,6 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     fn verifying_key_map(&self) -> &Self::VerifyingKeyMap;
     /// Returns the certificate map.
     fn certificate_map(&self) -> &Self::CertificateMap;
-    /// Returns the translation verifying key map.
-    fn translation_verifying_key_map(&self) -> &Self::VerifyingKeyMap;
-    /// Returns the translation certificate map.
-    fn translation_certificate_map(&self) -> &Self::CertificateMap;
     /// Returns the fee storage.
     fn fee_store(&self) -> &FeeStore<N, Self::FeeStorage>;
 
@@ -110,8 +106,6 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.checksum_map().start_atomic();
         self.verifying_key_map().start_atomic();
         self.certificate_map().start_atomic();
-        self.translation_verifying_key_map().start_atomic();
-        self.translation_certificate_map().start_atomic();
         self.fee_store().start_atomic();
     }
 
@@ -126,8 +120,6 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             || self.checksum_map().is_atomic_in_progress()
             || self.verifying_key_map().is_atomic_in_progress()
             || self.certificate_map().is_atomic_in_progress()
-            || self.translation_verifying_key_map().is_atomic_in_progress()
-            || self.translation_certificate_map().is_atomic_in_progress()
             || self.fee_store().is_atomic_in_progress()
     }
 
@@ -142,8 +134,6 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.checksum_map().atomic_checkpoint();
         self.verifying_key_map().atomic_checkpoint();
         self.certificate_map().atomic_checkpoint();
-        self.translation_verifying_key_map().atomic_checkpoint();
-        self.translation_certificate_map().atomic_checkpoint();
         self.fee_store().atomic_checkpoint();
     }
 
@@ -158,8 +148,6 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.checksum_map().clear_latest_checkpoint();
         self.verifying_key_map().clear_latest_checkpoint();
         self.certificate_map().clear_latest_checkpoint();
-        self.translation_verifying_key_map().clear_latest_checkpoint();
-        self.translation_certificate_map().clear_latest_checkpoint();
         self.fee_store().clear_latest_checkpoint();
     }
 
@@ -174,8 +162,6 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.checksum_map().atomic_rewind();
         self.verifying_key_map().atomic_rewind();
         self.certificate_map().atomic_rewind();
-        self.translation_verifying_key_map().atomic_rewind();
-        self.translation_certificate_map().atomic_rewind();
         self.fee_store().atomic_rewind();
     }
 
@@ -190,8 +176,6 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.checksum_map().abort_atomic();
         self.verifying_key_map().abort_atomic();
         self.certificate_map().abort_atomic();
-        self.translation_verifying_key_map().abort_atomic();
-        self.translation_certificate_map().abort_atomic();
         self.fee_store().abort_atomic();
     }
 
@@ -206,8 +190,6 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.checksum_map().finish_atomic()?;
         self.verifying_key_map().finish_atomic()?;
         self.certificate_map().finish_atomic()?;
-        self.translation_verifying_key_map().finish_atomic()?;
-        self.translation_certificate_map().finish_atomic()?;
         self.fee_store().finish_atomic()
     }
 
@@ -277,13 +259,14 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
                 self.certificate_map().insert((program_id, *function_name, edition), certificate.clone())?;
             }
 
-            // Store the translation verifying keys and certificates.
-            for (record_name, (verifying_key, certificate)) in deployment.translation_verifying_keys() {
-                // Store the verifying key.
-                self.translation_verifying_key_map()
-                    .insert((program_id, *record_name, edition), verifying_key.clone())?;
-                // Store the certificate.
-                self.translation_certificate_map().insert((program_id, *record_name, edition), certificate.clone())?;
+            // Store the translation verifying keys and certificates, if they exist.
+            if let Some(translation_verifying_keys) = deployment.translation_verifying_keys() {
+                for (record_name, (verifying_key, certificate)) in translation_verifying_keys {
+                    // Store the verifying key.
+                    self.verifying_key_map().insert((program_id, *record_name, edition), verifying_key.clone())?;
+                    // Store the certificate.
+                    self.certificate_map().insert((program_id, *record_name, edition), certificate.clone())?;
+                }
             }
 
             // Store the fee transition.
@@ -357,9 +340,9 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             // Remove the translation verifying keys and certificates.
             for record_name in program.records().keys() {
                 // Remove the verifying key.
-                self.translation_verifying_key_map().remove(&(program_id, *record_name, edition))?;
+                self.verifying_key_map().remove(&(program_id, *record_name, edition))?;
                 // Remove the certificate.
-                self.translation_certificate_map().remove(&(program_id, *record_name, edition))?;
+                self.certificate_map().remove(&(program_id, *record_name, edition))?;
             }
 
             // Remove the fee transition.
@@ -466,18 +449,18 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.program_map().get_confirmed(&(*program_id, edition)).map(|p| p.map(|p| p.into_owned()))
     }
 
-    /// Returns the latest verifying key for the given `program ID` and `function name`.
+    /// Returns the latest verifying key for the given `program ID` and `resource name`.
     fn get_latest_verifying_key(
         &self,
         program_id: &ProgramID<N>,
-        function_name: &Identifier<N>,
+        resource_name: &Identifier<N>,
     ) -> Result<Option<VerifyingKey<N>>> {
         // Check if the program ID is for 'credits.aleo'.
         // This case is handled separately, as it is a default program of the VM.
         // TODO (howardwu): After we update 'fee' rules and 'Ratify' in genesis, we can remove this.
         if program_id == &ProgramID::from_str("credits.aleo")? {
             // Load the verifying key.
-            let verifying_key = N::get_credits_verifying_key(function_name.to_string())?;
+            let verifying_key = N::get_credits_verifying_key(resource_name.to_string())?;
             // Retrieve the number of public and private variables.
             // Note: This number does *NOT* include the number of constants. This is safe because
             // this program is never deployed, as it is a first-class citizen of the protocol.
@@ -491,18 +474,18 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             return Ok(None);
         };
         // Retrieve the verifying key.
-        let Some(verifying_key) = self.verifying_key_map().get_confirmed(&(*program_id, *function_name, edition))?
+        let Some(verifying_key) = self.verifying_key_map().get_confirmed(&(*program_id, *resource_name, edition))?
         else {
-            bail!("Failed to get the verifying key for '{program_id}/{function_name}' (edition {edition})");
+            bail!("Failed to get the verifying key for '{program_id}/{resource_name}' (edition {edition})");
         };
         Ok(Some(verifying_key.into_owned()))
     }
 
-    /// Returns the verifying key for the given `program ID`, `function name` and `edition`.
+    /// Returns the verifying key for the given `program ID`, `resource name` and `edition`.
     fn get_verifying_key_with_edition(
         &self,
         program_id: &ProgramID<N>,
-        function_name: &Identifier<N>,
+        resource_name: &Identifier<N>,
         edition: u16,
     ) -> Result<Option<VerifyingKey<N>>> {
         // Check if the program ID is for 'credits.aleo'.
@@ -510,7 +493,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         // TODO (howardwu): After we update 'fee' rules and 'Ratify' in genesis, we can remove this.
         if program_id == &ProgramID::from_str("credits.aleo")? {
             // Load the verifying key.
-            let verifying_key = N::get_credits_verifying_key(function_name.to_string())?;
+            let verifying_key = N::get_credits_verifying_key(resource_name.to_string())?;
             // Retrieve the number of public and private variables.
             // Note: This number does *NOT* include the number of constants. This is safe because
             // this program is never deployed, as it is a first-class citizen of the protocol.
@@ -520,17 +503,17 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         }
 
         // Retrieve the verifying key.
-        match self.verifying_key_map().get_confirmed(&(*program_id, *function_name, edition))? {
+        match self.verifying_key_map().get_confirmed(&(*program_id, *resource_name, edition))? {
             Some(verifying_key) => Ok(Some(verifying_key.into_owned())),
-            None => bail!("Failed to get the verifying key for '{program_id}/{function_name}' (edition {edition})"),
+            None => bail!("Failed to get the verifying key for '{program_id}/{resource_name}' (edition {edition})"),
         }
     }
 
-    /// Returns the latest certificate for the given `program ID` and `function name`.
+    /// Returns the latest certificate for the given `program ID` and `resource name`.
     fn get_latest_certificate(
         &self,
         program_id: &ProgramID<N>,
-        function_name: &Identifier<N>,
+        resource_name: &Identifier<N>,
     ) -> Result<Option<Certificate<N>>> {
         // Check if the program ID is for 'credits.aleo'.
         // This case is handled separately, as it is a default program of the VM.
@@ -544,17 +527,17 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             return Ok(None);
         };
         // Retrieve the certificate.
-        let Some(certificate) = self.certificate_map().get_confirmed(&(*program_id, *function_name, edition))? else {
-            bail!("Failed to get the certificate for '{program_id}/{function_name}' (edition {edition})");
+        let Some(certificate) = self.certificate_map().get_confirmed(&(*program_id, *resource_name, edition))? else {
+            bail!("Failed to get the certificate for '{program_id}/{resource_name}' (edition {edition})");
         };
         Ok(Some(certificate.into_owned()))
     }
 
-    /// Returns the certificate for the given `program ID`, `function name`, and `edition`.
+    /// Returns the certificate for the given `program ID`, `resource name`, and `edition`.
     fn get_certificate_with_edition(
         &self,
         program_id: &ProgramID<N>,
-        function_name: &Identifier<N>,
+        resource_name: &Identifier<N>,
         edition: u16,
     ) -> Result<Option<Certificate<N>>> {
         // Check if the program ID is for 'credits.aleo'.
@@ -565,9 +548,9 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         }
 
         // Retrieve the certificate.
-        match self.certificate_map().get_confirmed(&(*program_id, *function_name, edition))? {
+        match self.certificate_map().get_confirmed(&(*program_id, *resource_name, edition))? {
             Some(certificate) => Ok(Some(certificate.into_owned())),
-            None => bail!("Failed to get the certificate for '{program_id}/{function_name}' (edition {edition})"),
+            None => bail!("Failed to get the certificate for '{program_id}/{resource_name}' (edition {edition})"),
         }
     }
 
@@ -626,20 +609,14 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         // Retrieve the verifying keys and certificates.
         for record_name in program.records().keys() {
             // Retrieve the verifying key.
-            let Some(translation_verifying_key) = self
-                .translation_verifying_key_map()
-                .get_confirmed(&(program_id, *record_name, edition))?
-                .map(|x| x.into_owned())
+            let Some(translation_verifying_key) =
+                self.verifying_key_map().get_confirmed(&(program_id, *record_name, edition))?.map(|x| x.into_owned())
             else {
-                bail!(
-                    "Failed to get the translation verifying key for '{program_id}/{record_name}' (edition {edition})"
-                );
+                continue;
             };
             // Retrieve the translation certificate.
-            let Some(certificate) = self
-                .translation_certificate_map()
-                .get_confirmed(&(program_id, *record_name, edition))?
-                .map(|x| x.into_owned())
+            let Some(certificate) =
+                self.certificate_map().get_confirmed(&(program_id, *record_name, edition))?.map(|x| x.into_owned())
             else {
                 bail!("Failed to get the translation certificate for '{program_id}/{record_name}' (edition {edition})");
             };
@@ -647,14 +624,27 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             translation_verifying_keys.push((*record_name, (translation_verifying_key, certificate)));
         }
 
+        // Check that the number of translation verifying keys is consistent.
+        let translation_verifying_keys = match translation_verifying_keys.is_empty() {
+            true => None,
+            false => {
+                // Check that the number of translation verifying keys matches the number of records.
+                ensure!(
+                    translation_verifying_keys.len() == program.records().len(),
+                    "The number of translation verifying keys does not match the number of records for program '{program_id}' (edition {edition})"
+                );
+                Some(translation_verifying_keys)
+            }
+        };
+
         // Return the deployment.
         Ok(Some(Deployment::new(
             edition,
             program,
             verifying_keys,
-            translation_verifying_keys,
             program_checksum,
             program_owner,
+            translation_verifying_keys,
         )?))
     }
 

@@ -166,11 +166,7 @@ function compute:
             // Construct the process.
             let process = Process::load().unwrap();
             // Compute the deployment.
-            let mut deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
-            // Unset the checksum.
-            deployment.set_program_checksum_raw(None);
-            // Unset the owner.
-            deployment.set_program_owner_raw(None);
+            let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
             // Return the deployment.
             // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
             Deployment::from_str(&deployment.to_string()).unwrap()
@@ -181,10 +177,9 @@ function compute:
         edition % 2,
         deployment.program().clone(),
         deployment.verifying_keys().clone(),
-        // TODO (dynamic_dispatch): should this be sampled here, be empty or should a new sample_deployment_version_v<n> be created?
-        deployment.translation_verifying_keys().clone(),
-        deployment.program_checksum(),
-        deployment.program_owner(),
+        None,
+        None,
+        None,
     )
     .unwrap()
 }
@@ -212,11 +207,7 @@ function compute:
             // Construct the process.
             let process = Process::load().unwrap();
             // Compute the deployment.
-            let mut deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
-            // Set the program checksum.
-            deployment.set_program_checksum_raw(Some(deployment.program().to_checksum()));
-            // Set the program owner.
-            deployment.set_program_owner_raw(Some(Address::rand(rng)));
+            let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
             // Return the deployment.
             // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
             Deployment::from_str(&deployment.to_string()).unwrap()
@@ -227,10 +218,55 @@ function compute:
         edition,
         deployment.program().clone(),
         deployment.verifying_keys().clone(),
-        // TODO (dynamic_dispatch): should this be sampled here, be empty or should a new sample_deployment_version_v<n> be created?
-        deployment.translation_verifying_keys().clone(),
         deployment.program_checksum(),
-        deployment.program_owner(),
+        Some(Address::rand(rng)),
+        None,
+    )
+    .unwrap()
+}
+
+pub fn sample_deployment_v3(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
+    static INSTANCE: OnceLock<Deployment<CurrentNetwork>> = OnceLock::new();
+    let deployment = INSTANCE
+        .get_or_init(|| {
+            // Initialize a new program.
+            let (string, program) = Program::<CurrentNetwork>::parse(
+                r"
+program testing_two.aleo;
+
+record data:
+    owner as address.private;
+    one as field.private;
+    two as group.public;
+
+mapping store:
+    key as u32.public;
+    value as u32.public;
+
+function compute:
+    input r0 as u32.private;
+    add r0 r0 into r1;
+    output r1 as u32.public;",
+            )
+            .unwrap();
+            assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
+            // Construct the process.
+            let process = Process::load().unwrap();
+            // Compute the deployment.
+            let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
+            // Return the deployment.
+            // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
+            Deployment::from_str(&deployment.to_string()).unwrap()
+        })
+        .clone();
+    // Create a new deployment with the desired edition.
+    Deployment::<CurrentNetwork>::new(
+        edition,
+        deployment.program().clone(),
+        deployment.verifying_keys().clone(),
+        deployment.program_checksum(),
+        Some(Address::rand(rng)),
+        deployment.translation_verifying_keys().clone(),
     )
     .unwrap()
 }
@@ -448,8 +484,13 @@ pub fn sample_deployment_transaction(
         1 => sample_deployment_v1(edition, rng),
         2 => {
             let mut deployment = sample_deployment_v2(edition, rng);
-            // Set the program checksum.
-            deployment.set_program_checksum_raw(Some(deployment.program().to_checksum()));
+            // Set the program owner to the address of the private key.
+            deployment.set_program_owner_raw(Some(Address::try_from(&private_key).unwrap()));
+            // Return the deployment.
+            deployment
+        }
+        3 => {
+            let mut deployment = sample_deployment_v3(edition, rng);
             // Set the program owner to the address of the private key.
             deployment.set_program_owner_raw(Some(Address::try_from(&private_key).unwrap()));
             // Return the deployment.
