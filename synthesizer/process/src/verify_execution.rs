@@ -143,6 +143,7 @@ impl<N: Network> Process<N> {
                 false => None,
             };
             // Retrieve the translation verifying keys for the transition's program.
+            // TODO (dynamic_dispatch). Try to defer loading until later.
             for record_name in stack.program().records().keys() {
                 let key = (*transition.program_id(), *record_name);
 
@@ -163,10 +164,11 @@ impl<N: Network> Process<N> {
                         // Insert the translation verifying key.
                         e.insert(VerifyingKey::<N>::new(verifying_key, num_variables));
                     } else {
-                        let translation_verifying_key = stack
-                            .get_translation_verifying_key(record_name)
-                            .map_err(|_| anyhow!("Translation verifying key not found for {}/{}", key.0, key.1))?;
-                        e.insert(translation_verifying_key);
+                        // Note. We do not check that the translation verifying key exists. That is done in `Translation::prepare_verifier_inputs`.
+
+                        if let Ok(translation_verifying_key) = stack.get_translation_verifying_key(record_name) {
+                            e.insert(translation_verifying_key);
+                        }
                     }
                 }
             }
