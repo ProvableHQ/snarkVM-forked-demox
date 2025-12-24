@@ -30,8 +30,6 @@ use console::{
 /// The remaining operands are the arguments to the call.
 /// The destination registers along with their expected types are specified after the `into` keyword.
 /// i.e. `call.dynamic r0 r1 with r2 r3 (as address.private u64.private) into r4 r5 (as u64 dynamic.future);`
-// TODO (@d0cd) Consider "with" to delineate program and function names, e.g. dcall credits r0 with r0 r1 into r2 (as u64 dynamic.future);
-// TODO (@d0cd) Should we allow operands to be identifiers so that we can allow function names to be specified directly.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct CallDynamic<N: Network> {
     /// The operands.

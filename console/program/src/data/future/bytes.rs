@@ -30,7 +30,6 @@ impl<N: Network> Future<N> {
         // Note: `N::MAX_DATA_DEPTH` is an upper bound on the number of nested futures.
         //  The true maximum is defined by `Transaction::<N>::MAX_TRANSITIONS`, however, that object is not accessible in this crate.
         //  In practice, `MAX_DATA_DEPTH` is 32, while `MAX_TRANSITIONS` is 31.
-        //  TODO: @d0cd, should we use a more precise bound?
         if depth > N::MAX_DATA_DEPTH {
             return Err(error(format!(
                 "Failed to deserialize plaintext: Depth exceeds maximum limit: {}",
@@ -155,7 +154,7 @@ mod tests {
             .map(|arg| match arg {
                 Argument::Plaintext(_) => 0,
                 Argument::Future(future) => 1 + get_depth(future),
-                Argument::DynamicFuture(_) => 0, // DynamicFuture is not used in this test. TODO (@d0cd): Update test.
+                Argument::DynamicFuture(_) => panic!("Dynamic futures are not used in this test"),
             })
             .sum()
     }

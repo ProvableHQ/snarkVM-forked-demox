@@ -998,7 +998,20 @@ mod tests {
         let transaction_2 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, rng);
         let transaction_3 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, false, rng);
         let transaction_4 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, true, rng);
-        let transactions = vec![transaction_0, transaction_1, transaction_2, transaction_3, transaction_4];
+        let transaction_5 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 0, true, rng);
+        let transaction_6 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 1, false, rng);
+        let transaction_7 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 2, true, rng);
+
+        let transactions = vec![
+            transaction_0,
+            transaction_1,
+            transaction_2,
+            transaction_3,
+            transaction_4,
+            transaction_5,
+            transaction_6,
+            transaction_7,
+        ];
 
         for transaction in transactions {
             let transaction_id = transaction.id();
@@ -1088,7 +1101,20 @@ mod tests {
         let transaction_2 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, rng);
         let transaction_3 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, false, rng);
         let transaction_4 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, true, rng);
-        let transactions = vec![transaction_0, transaction_1, transaction_2, transaction_3, transaction_4];
+        let transaction_5 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 0, true, rng);
+        let transaction_6 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 1, false, rng);
+        let transaction_7 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 2, true, rng);
+
+        let transactions = vec![
+            transaction_0,
+            transaction_1,
+            transaction_2,
+            transaction_3,
+            transaction_4,
+            transaction_5,
+            transaction_6,
+            transaction_7,
+        ];
 
         for transaction in transactions {
             let transaction_id = transaction.id();

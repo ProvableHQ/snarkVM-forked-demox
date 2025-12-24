@@ -30,8 +30,9 @@ impl<N: Network> StackTrait<N> for Stack<N> {
                 self.matches_external_record(record, locator)
             }
             (Value::Future(future), ValueType::Future(locator)) => self.matches_future(future, locator),
-            // TODO (@d0cd): Verify these semantics.
+            // Note. There is nothing to further check for a dynamic record, since its definition is fixed.
             (Value::DynamicRecord(_), ValueType::DynamicRecord) => Ok(()),
+            // Note. There is nothing to further check for a dynamic future, since its definition is fixed.
             (Value::DynamicFuture(_), ValueType::DynamicFuture) => Ok(()),
             (value, _) => bail!("A value '{value}' does not match its declared value type '{value_type}'"),
         }
@@ -48,8 +49,9 @@ impl<N: Network> StackTrait<N> for Stack<N> {
                 self.matches_external_record(record, locator)
             }
             (Value::Future(future), RegisterType::Future(locator)) => self.matches_future(future, locator),
-            // TODO (@d0cd): Verify these semantics.
+            // Note. There is nothing to further check for a dynamic record, since its definition is fixed.
             (Value::DynamicRecord(_), RegisterType::DynamicRecord) => Ok(()),
+            // Note. There is nothing to further check for a dynamic future, since its definition is fixed.
             (Value::DynamicFuture(_), RegisterType::DynamicFuture) => Ok(()),
             (value, _) => bail!("A value '{value}' does not match its declared register type '{register_type}'"),
         }
@@ -679,7 +681,7 @@ impl<N: Network> Stack<N> {
                 (Argument::Future(future), FinalizeType::Future(locator)) => {
                     self.matches_future_internal(future, locator, depth + 1)?
                 }
-                // TODO (@d0cd): Verify these semantics.
+                // Note. There is nothing to futher check for a dynamic future, since its definition is fixed.
                 (Argument::DynamicFuture(_), FinalizeType::DynamicFuture) => {}
                 (_, input_type) => {
                     bail!("Argument type does not match input type: expected '{input_type}'")

@@ -266,7 +266,7 @@ impl<A: Aleo> Response<A> {
             .collect();
 
         // Return the response.
-        Self { output_ids, outputs, is_dynamic: false }
+        Self { output_ids, outputs }
     }
 }
 

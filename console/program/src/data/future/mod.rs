@@ -28,8 +28,6 @@ use crate::{Access, DynamicFuture, Identifier, Plaintext, ProgramID, Value};
 use snarkvm_console_network::Network;
 use snarkvm_console_types::prelude::*;
 
-// TODO (@d0cd). Implement `FromBytes` and `FromBits` for `Future`.
-
 /// A future.
 #[derive(Clone)]
 pub struct Future<N: Network> {

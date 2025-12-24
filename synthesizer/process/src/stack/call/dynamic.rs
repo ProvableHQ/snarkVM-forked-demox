@@ -231,7 +231,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                 let console_caller = Some(*stack.program_id());
 
                 match registers.call_stack_ref() {
-                    // If the circuit is in authorize mode, then add any external calls to the stack.
+                    // In `Authorize` mode, add any external calls to the stack.
                     CallStack::Authorize(_, private_key, authorization) => {
                         // Get the target.
                         let Some(target) = target else {
@@ -300,8 +300,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         // Return the request verification inputs and response.
                         (request_verification_inputs, caller_response_outputs, None)
                     }
-                    // TODO (@d0cd): Synthesize based on the declared outputs of the instruction.
-                    // In Synthesize mode (with an existing proving key) or CheckDeployment mode, we generate dummy outputs to avoid building a full sub-circuit.
+                    // In `Synthesize` or `CheckDeployment` mode, we use dummy inputs and outputs to avoid building a full sub-circuit.
                     CallStack::Synthesize(_, private_key, ..) | CallStack::CheckDeployment(_, private_key, ..) => {
                         // Sample a random program ID.
                         // Note. It does not matter what program ID we use here, since we are only synthesizing dummy outputs.
@@ -390,60 +389,8 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             bail!("Expected {} inputs, found {}", input_types.len(), inputs.len())
                         }
                         // Convert the inputs to the callee's context.
-                        // TODO (@d0cd): Do we need to check that they match? I think no because `CallDynamic::output_types should have`
-                        ensure!(
-                            inputs.len() == input_types.len(),
-                            "[execute PackageRun] Expected {} inputs, but {} were provided.",
-                            input_types.len(),
-                            inputs.len()
-                        );
-                        let callee_inputs = inputs
-                            .iter()
-                            .zip(input_types.iter())
-                            .map(|(input, input_type)| match (input, input_type) {
-                                (Value::Future(future), ValueType::DynamicFuture) => {
-                                    Ok(Value::DynamicFuture(DynamicFuture::from_future(future)?))
-                                }
-                                (Value::DynamicRecord(dynamic_record), ValueType::Record(record_name)) => {
-                                    // Look up the owner visibility.
-                                    let owner_is_private =
-                                        target.substack().program().get_record(record_name)?.owner().is_private();
-                                    Ok(Value::Record(dynamic_record.to_record(owner_is_private)?))
-                                }
-                                (Value::DynamicRecord(dynamic_record), ValueType::ExternalRecord(locator)) => {
-                                    let record_program_id = locator.program_id();
-                                    let record_name = locator.resource();
-
-                                    // Obtain the program where the external record is defined (which must be imported inside the callee)
-                                    // TODO (dynamic_dispatch) make sure this handles substack-fetching correctly
-                                    let external_record_stack =
-                                        target.substack().get_external_stack(record_program_id)?;
-
-                                    // Look up the owner visibility.
-                                    let owner_is_private =
-                                        external_record_stack.program().get_record(record_name)?.owner().is_private();
-
-                                    Ok(Value::Record(dynamic_record.to_record(owner_is_private)?))
-                                }
-                                (Value::DynamicFuture(dynamic_future), ValueType::Future(locator)) => {
-                                    // Construct the dynamic future.
-                                    let future = dynamic_future.to_future()?;
-                                    // Ensure that the locator matches.
-                                    ensure!(
-                                        future.program_id() == locator.program_id(),
-                                        "Locator program ID does not match for dynamic future."
-                                    );
-                                    ensure!(
-                                        future.function_name() == locator.resource(),
-                                        "Locator resource does not match for dynamic future."
-                                    );
-
-                                    Ok(Value::Future(dynamic_future.to_future()?))
-                                }
-                                // For other types, we assume they are directly compatible.
-                                _ => Ok(input.clone()),
-                            })
-                            .collect::<Result<Vec<_>>>()?;
+                        let callee_inputs =
+                            convert_caller_inputs_to_callee_inputs(&inputs, input_types, target.substack())?;
                         // Construct the callee's version of the request.
                         let callee_request = Request::sign_dynamic(
                             private_key,
@@ -475,11 +422,11 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         // Return the request verification inputs and response.
                         (request_verification_inputs, caller_response_outputs, None)
                     }
-                    // If the circuit is in evaluate mode, then throw an error.
+                    // In `Evaluate` mode, throw an error.
                     CallStack::Evaluate(..) => {
                         bail!("Cannot 'execute' a function in 'evaluate' mode.")
                     }
-                    // If the circuit is in execute mode, then evaluate and execute the instructions.
+                    // In `Execute` mode, evaluate and execute the instructions.
                     CallStack::Execute(authorization, ..) => {
                         // Get the target.
                         let Some(target) = target else {

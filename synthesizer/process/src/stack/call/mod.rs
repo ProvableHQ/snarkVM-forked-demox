@@ -19,7 +19,6 @@ use console::{
     account::Field,
     network::prelude::*,
     program::{
-        DynamicFuture,
         Identifier,
         InputID,
         Literal,

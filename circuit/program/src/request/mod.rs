@@ -32,7 +32,6 @@ pub enum InputID<A: Aleo> {
     Record(Field<A>, Box<Group<A>>, Field<A>, Field<A>, Field<A>),
     /// The hash of the external record's (function_id, record, tvk, input index).
     ExternalRecord(Field<A>),
-    // TODO (@d0cd). Is function id correct?
     /// The hash of a dynamic record's (function_id, record, tvk, input index).
     DynamicRecord(Field<A>),
 }
