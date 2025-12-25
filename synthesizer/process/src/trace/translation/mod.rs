@@ -74,7 +74,7 @@ impl<N: Network> Translation<N> {
     {
         let mut batch_verifier_inputs: HashMap<(ProgramID<N>, Identifier<N>), Vec<Vec<N::Field>>> = HashMap::new();
 
-        let mut translation_count: u16 = 0;
+        let mut translation_count = 0;
 
         // Traversal order affects the translation count as well as the internal order of each batch input to proving/verification.
         // Order is irrelevant as long as it is consistent between the prover and verifier. (cf. Translation::prepare)
@@ -121,6 +121,11 @@ impl<N: Network> Translation<N> {
                 for (input_output_index, (caller_input, callee_input, callee_input_type)) in
                     izip!(caller_inputs.iter(), transition.inputs().iter(), callee_input_types.iter()).enumerate()
                 {
+                    // Construct the translation count as a field element.
+                    let field_translation_count = *Field::<N>::from_u128(translation_count as u128);
+                    // Construct the input output index as a field element.
+                    let field_input_output_index = *Field::<N>::from_u128(input_output_index as u128);
+
                     match (caller_input, callee_input, callee_input_type) {
                         (
                             Input::DynamicRecord(id_dynamic),
@@ -134,38 +139,19 @@ impl<N: Network> Translation<N> {
 
                             let field_function_id = *callee_function_id;
 
-                            // TODO (dynamic_dispatch) is there a better way to do this? .to_fields() yields one field element
-                            // TODO (dynamic_dispatch) separately: should this be to_bits_le or to_bits_be?
-                            // TODO (dynamic_dispatch) both TODOs are superseeded by the discussed optimization of making the translation count a field element
-                            let fields_translation_count = translation_count
-                                .to_bits_le()
-                                .into_iter()
-                                .map(|bit: bool| if bit { N::Field::one() } else { N::Field::zero() })
-                                .collect_vec();
-                            let fields_input_output_index = (input_output_index as u16)
-                                .to_bits_le()
-                                .into_iter()
-                                .map(|bit: bool| if bit { N::Field::one() } else { N::Field::zero() })
-                                .collect_vec();
-
                             let field_id_static = **serial_number;
                             let field_id_dynamic = **id_dynamic;
 
-                            let verifier_inputs = [
-                                vec![
-                                    // Initial constant 1
-                                    N::Field::one(),
-                                    field_is_input,
-                                    field_static_is_external,
-                                    field_function_id,
-                                ],
-                                fields_translation_count,
-                                fields_input_output_index,
-                                vec![field_id_static, field_id_dynamic],
-                            ]
-                            .into_iter()
-                            .flatten()
-                            .collect_vec();
+                            let verifier_inputs = vec![
+                                N::Field::one(),
+                                field_is_input,
+                                field_static_is_external,
+                                field_function_id,
+                                field_translation_count,
+                                field_input_output_index,
+                                field_id_static,
+                                field_id_dynamic,
+                            ];
 
                             batch_verifier_inputs
                                 .entry((*transition.program_id(), *record_name))
@@ -186,38 +172,19 @@ impl<N: Network> Translation<N> {
 
                             let field_function_id = *callee_function_id;
 
-                            // TODO (dynamic_dispatch) is there a better way to do this? .to_fields() yields one field element
-                            // TODO (dynamic_dispatch) separately: should this be to_bits_le or to_bits_be?
-                            // TODO (dynamic_dispatch) both TODOs are superseeded by the discussed optimization of making the translation count a field element
-                            let fields_translation_count = translation_count
-                                .to_bits_le()
-                                .into_iter()
-                                .map(|bit: bool| if bit { N::Field::one() } else { N::Field::zero() })
-                                .collect_vec();
-                            let fields_input_output_index = (input_output_index as u16)
-                                .to_bits_le()
-                                .into_iter()
-                                .map(|bit: bool| if bit { N::Field::one() } else { N::Field::zero() })
-                                .collect_vec();
-
                             let field_id_static = **id_static;
                             let field_id_dynamic = **id_dynamic;
 
-                            let verifier_inputs = [
-                                vec![
-                                    // Initial constant 1
-                                    N::Field::one(),
-                                    field_is_input,
-                                    field_static_is_external,
-                                    field_function_id,
-                                ],
-                                fields_translation_count,
-                                fields_input_output_index,
-                                vec![field_id_static, field_id_dynamic],
-                            ]
-                            .into_iter()
-                            .flatten()
-                            .collect_vec();
+                            let verifier_inputs = vec![
+                                N::Field::one(),
+                                field_is_input,
+                                field_static_is_external,
+                                field_function_id,
+                                field_translation_count,
+                                field_input_output_index,
+                                field_id_static,
+                                field_id_dynamic,
+                            ];
 
                             let program_id = record_locator.program_id();
                             let record_name = record_locator.resource();
@@ -281,6 +248,11 @@ impl<N: Network> Translation<N> {
                 for (input_output_index, (caller_output, callee_output, callee_output_type)) in
                     izip!(caller_outputs.iter(), transition.outputs().iter(), callee_output_types.iter()).enumerate()
                 {
+                    // Construct the translation count as a field element.
+                    let field_translation_count = *Field::<N>::from_u128(translation_count as u128);
+                    // Construct the input output index as a field element.
+                    let field_input_output_index = *Field::<N>::from_u128((num_inputs + input_output_index) as u128);
+
                     match (caller_output, callee_output, callee_output_type) {
                         (
                             Output::DynamicRecord(id_dynamic),
@@ -294,38 +266,20 @@ impl<N: Network> Translation<N> {
 
                             let field_function_id = *callee_function_id;
 
-                            // TODO (dynamic_dispatch) is there a better way to do this? .to_fields() yields one field element
-                            // TODO (dynamic_dispatch) separately: should this be to_bits_le or to_bits_be?
-                            // TODO (dynamic_dispatch) both TODOs are superseeded by the discussed optimization of making the translation count a field element
-                            let fields_translation_count = translation_count
-                                .to_bits_le()
-                                .into_iter()
-                                .map(|bit: bool| if bit { N::Field::one() } else { N::Field::zero() })
-                                .collect_vec();
-                            let fields_input_output_index = ((input_output_index + num_inputs) as u16)
-                                .to_bits_le()
-                                .into_iter()
-                                .map(|bit: bool| if bit { N::Field::one() } else { N::Field::zero() })
-                                .collect_vec();
-
                             let field_id_static = **commitment;
                             let field_id_dynamic = **id_dynamic;
 
-                            let verifier_inputs = [
-                                vec![
-                                    // Initial constant 1
-                                    N::Field::one(),
-                                    field_is_input,
-                                    field_static_is_external,
-                                    field_function_id,
-                                ],
-                                fields_translation_count,
-                                fields_input_output_index,
-                                vec![field_id_static, field_id_dynamic],
-                            ]
-                            .into_iter()
-                            .flatten()
-                            .collect_vec();
+                            let verifier_inputs = vec![
+                                // Initial constant 1
+                                N::Field::one(),
+                                field_is_input,
+                                field_static_is_external,
+                                field_function_id,
+                                field_translation_count,
+                                field_input_output_index,
+                                field_id_static,
+                                field_id_dynamic,
+                            ];
 
                             batch_verifier_inputs
                                 .entry((*transition.program_id(), *record_name))
@@ -346,38 +300,20 @@ impl<N: Network> Translation<N> {
 
                             let field_function_id = *callee_function_id;
 
-                            // TODO (dynamic_dispatch) is there a better way to do this? .to_fields() yields one field element
-                            // TODO (dynamic_dispatch) separately: should this be to_bits_le or to_bits_be?
-                            // TODO (dynamic_dispatch) both TODOs are superseeded by the discussed optimization of making the translation count a field element
-                            let fields_translation_count = translation_count
-                                .to_bits_le()
-                                .into_iter()
-                                .map(|bit: bool| if bit { N::Field::one() } else { N::Field::zero() })
-                                .collect_vec();
-                            let fields_input_output_index = ((input_output_index + num_inputs) as u16)
-                                .to_bits_le()
-                                .into_iter()
-                                .map(|bit: bool| if bit { N::Field::one() } else { N::Field::zero() })
-                                .collect_vec();
-
                             let field_id_static = **id_static;
                             let field_id_dynamic = **id_dynamic;
 
-                            let verifier_inputs = [
-                                vec![
-                                    // Initial constant 1
-                                    N::Field::one(),
-                                    field_is_input,
-                                    field_static_is_external,
-                                    field_function_id,
-                                ],
-                                fields_translation_count,
-                                fields_input_output_index,
-                                vec![field_id_static, field_id_dynamic],
-                            ]
-                            .into_iter()
-                            .flatten()
-                            .collect_vec();
+                            let verifier_inputs = vec![
+                                // Initial constant 1
+                                N::Field::one(),
+                                field_is_input,
+                                field_static_is_external,
+                                field_function_id,
+                                field_translation_count,
+                                field_input_output_index,
+                                field_id_static,
+                                field_id_dynamic,
+                            ];
 
                             let program_id = record_locator.program_id();
                             let record_name = record_locator.resource();

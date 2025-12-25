@@ -28,12 +28,15 @@ use snarkvm_circuit_types::{Boolean, Field, environment::prelude::*};
 ///
 /// Suppose we have the following `finalize` scope:
 ///
+/// ```ignore
 /// finalize foo:
 ///     input r0 as address.public;
 ///     input r1 as u64.public;
+/// ```
 ///
 /// It's merkle-ization is as follows:
 ///
+/// ```ignore
 ///        R
 ///        |
 ///       P_0
@@ -53,6 +56,7 @@ use snarkvm_circuit_types::{Boolean, Field, environment::prelude::*};
 /// P_2 := HashPSD2(P_1, ZERO)
 /// P_3 := HashPSD2(P_2, ZERO)
 ///   R := HashPSD2(P_3, ZERO)
+/// ```
 ///
 /// Note that:
 ///  - `ZERO` is defined by the `PathHash` implementation for `HashPSD2`.

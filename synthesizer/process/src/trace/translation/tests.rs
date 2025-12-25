@@ -109,7 +109,7 @@ fn test_translation_simple() {
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
     print_rc1s_data("simple");
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
-    let counts = count_is!(36117, 38, 24131, 24188);
+    let counts = count_is!(36081, 8, 24131, 24156);
     counts.assert_matches(
         <CurrentAleo as circuit::Environment>::num_constants(),
         <CurrentAleo as circuit::Environment>::num_public(),
@@ -122,7 +122,7 @@ fn test_translation_simple() {
     let translation_assignment = translation_assignment_from_record_str(record_static_str, true, false, None, &mut rng);
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
-    let counts = count_is!(6191, 38, 24131, 24188);
+    let counts = count_is!(6155, 8, 24131, 24156);
     counts.assert_matches(
         <CurrentAleo as circuit::Environment>::num_constants(),
         <CurrentAleo as circuit::Environment>::num_public(),
@@ -180,7 +180,7 @@ fn test_translation_recursive() {
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
     print_rc1s_data("recursive");
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
-    let counts = count_is!(38833, 38, 32721, 32782);
+    let counts = count_is!(38779, 8, 32721, 32750);
     counts.assert_matches(
         <CurrentAleo as circuit::Environment>::num_constants(),
         <CurrentAleo as circuit::Environment>::num_public(),
@@ -194,7 +194,7 @@ fn test_translation_recursive() {
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
 
-    let counts = count_is!(8907, 38, 32721, 32782);
+    let counts = count_is!(8853, 8, 32721, 32750);
     counts.assert_matches(
         <CurrentAleo as circuit::Environment>::num_constants(),
         <CurrentAleo as circuit::Environment>::num_public(),
@@ -268,7 +268,7 @@ fn test_translation_complex() {
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
     print_rc1s_data("complex");
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
-    let counts = count_is!(41515, 38, 68798, 68876);
+    let counts = count_is!(41323, 8, 68798, 68844);
     counts.assert_matches(
         <CurrentAleo as circuit::Environment>::num_constants(),
         <CurrentAleo as circuit::Environment>::num_public(),
@@ -281,7 +281,7 @@ fn test_translation_complex() {
     let translation_assignment = translation_assignment_from_record_str(record_static_str, true, false, None, &mut rng);
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
-    let counts = count_is!(11589, 38, 68798, 68876);
+    let counts = count_is!(11397, 8, 68798, 68844);
     counts.assert_matches(
         <CurrentAleo as circuit::Environment>::num_constants(),
         <CurrentAleo as circuit::Environment>::num_public(),
@@ -404,7 +404,7 @@ fn test_definition_invariance() {
 
     // Checking parameters of the first translation separately
     translation_assignments[0].to_circuit_assignment_internal::<CurrentAleo>().unwrap();
-    let counts = count_is!(37848, 38, 31043, 31102);
+    let counts = count_is!(37794, 8, 31043, 31070);
     counts.assert_matches(
         <CurrentAleo as circuit::Environment>::num_constants(),
         <CurrentAleo as circuit::Environment>::num_public(),
@@ -648,7 +648,7 @@ fn test_external_translation() {
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
 
-    let counts = count_is!(38847, 38, 32562, 32623);
+    let counts = count_is!(38793, 8, 32562, 32591);
     counts.assert_matches(
         <CurrentAleo as circuit::Environment>::num_constants(),
         <CurrentAleo as circuit::Environment>::num_public(),

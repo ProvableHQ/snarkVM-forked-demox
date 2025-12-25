@@ -43,13 +43,16 @@ pub type RecordDataTree<A> = MerkleTree<A, CircuitLH<A>, CircuitPH<A>, RECORD_DA
 ///
 /// Suppose we have the following record:
 ///
+/// ```ignore
 /// record foo:
 ///     owner as address.private;
 ///     microcredits as u64.private;
 ///     memo as [u8; 32u32].public;
+/// ```
 ///
 /// It's merkle-ization is as follows:
 ///
+/// ```ignore
 ///        R
 ///        |
 ///       P_0
@@ -69,6 +72,7 @@ pub type RecordDataTree<A> = MerkleTree<A, CircuitLH<A>, CircuitPH<A>, RECORD_DA
 /// P_2 := HashPSD2(P_1, ZERO)
 /// P_3 := HashPSD2(P_2, ZERO)
 ///   R := HashPSD2(P_3, ZERO)
+/// ```
 ///
 /// Note that:
 ///  - `ZERO` is defined by the `PathHash` implementation for `HashPSD2`.

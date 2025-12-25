@@ -533,19 +533,19 @@ mod tests {
     fn test_from_callback_public() -> Result<()> {
         // Static response without records.
         check_from_callback(Mode::Public, "test.aleo", "foo", false, false, count_is!(<=19917, 4, 4108, 4114))?;
-        check_from_callback(Mode::Public, "credits.aleo", "transfer_public", false, false, count_is!(1531, 4, 4108, 4114))?;
+        check_from_callback(Mode::Public, "credits.aleo", "transfer_public", false, false, count_is!(1529, 4, 4108, 4114))?;
 
         // Static response with records.
         check_from_callback(Mode::Public, "test.aleo", "foo", false, true, count_is!(<=15809, 5, 13475, 13490))?;
-        check_from_callback(Mode::Public, "credits.aleo", "transfer_public", false, true, count_is!(4050, 5, 13577, 13592))?;
+        check_from_callback(Mode::Public, "credits.aleo", "transfer_public", false, true, count_is!(4046, 5, 13577, 13592))?;
 
         // Dynamic response without records.
-        check_from_callback(Mode::Public, "test.aleo", "foo", true, false, count_is!(764, 4, 4128, 4134))?;
-        check_from_callback(Mode::Public, "credits.aleo", "transfer_public", true, false, count_is!(764, 4, 4128, 4134))?;
+        check_from_callback(Mode::Public, "test.aleo", "foo", true, false, count_is!(762, 4, 4128, 4134))?;
+        check_from_callback(Mode::Public, "credits.aleo", "transfer_public", true, false, count_is!(762, 4, 4128, 4134))?;
 
         // Dynamic response with records.
-        check_from_callback(Mode::Public, "test.aleo", "foo", true, true, count_is!(3255, 5, 13618, 13633))?;
-        check_from_callback(Mode::Public, "credits.aleo", "transfer_public", true, true, count_is!(3123, 5, 13790, 13805))?;
+        check_from_callback(Mode::Public, "test.aleo", "foo", true, true, count_is!(3251, 5, 13618, 13633))?;
+        check_from_callback(Mode::Public, "credits.aleo", "transfer_public", true, true, count_is!(3119, 5, 13790, 13805))?;
 
         Ok(())
     }
@@ -555,19 +555,19 @@ mod tests {
     fn test_from_callback_private() -> Result<()> {
         // Static response without records.
         check_from_callback(Mode::Private, "test.aleo", "foo", false, false, count_is!(<=19917, 4, 4108, 4114))?;
-        check_from_callback(Mode::Private, "credits.aleo", "transfer_public", false, false, count_is!(1531, 4, 4108, 4114))?;
+        check_from_callback(Mode::Private, "credits.aleo", "transfer_public", false, false, count_is!(1529, 4, 4108, 4114))?;
 
         // Static response with records.
         check_from_callback(Mode::Private, "test.aleo", "foo", false, true, count_is!(<=15809, 5, 13475, 13490))?;
-        check_from_callback(Mode::Private, "credits.aleo", "transfer_public", false, true, count_is!(4050, 5, 13577, 13592))?;
+        check_from_callback(Mode::Private, "credits.aleo", "transfer_public", false, true, count_is!(4046, 5, 13577, 13592))?;
 
         // Dynamic response without records.
-        check_from_callback(Mode::Private, "test.aleo", "foo", true, false, count_is!(764, 4, 4128, 4134))?;
-        check_from_callback(Mode::Private, "credits.aleo", "transfer_public", true, false, count_is!(764, 4, 4128, 4134))?;
+        check_from_callback(Mode::Private, "test.aleo", "foo", true, false, count_is!(762, 4, 4128, 4134))?;
+        check_from_callback(Mode::Private, "credits.aleo", "transfer_public", true, false, count_is!(762, 4, 4128, 4134))?;
 
         // Dynamic response with records.
-        check_from_callback(Mode::Private, "test.aleo", "foo", true, true, count_is!(3255, 5, 13618, 13633))?;
-        check_from_callback(Mode::Private, "credits.aleo", "transfer_public", true, true, count_is!(3123, 5, 13790, 13805))?;
+        check_from_callback(Mode::Private, "test.aleo", "foo", true, true, count_is!(3251, 5, 13618, 13633))?;
+        check_from_callback(Mode::Private, "credits.aleo", "transfer_public", true, true, count_is!(3119, 5, 13790, 13805))?;
 
         Ok(())
     }

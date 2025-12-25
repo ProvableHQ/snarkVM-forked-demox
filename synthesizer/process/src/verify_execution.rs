@@ -297,10 +297,12 @@ impl<N: Network> Process<N> {
                 .iter()
                 .filter_map(|instruction| match instruction {
                     Instruction::CallDynamic(..) => Some((true, instruction.clone())),
-                    Instruction::Call(call) => match call.is_function_call(stack.as_ref()) {
-                        Ok(true) => Some((false, instruction.clone())),
-                        Ok(false) | Err(_) => None,
-                    },
+                    Instruction::Call(call) => {
+                        match self.get_stack(transition.program_id()).and_then(|s| call.is_function_call(s.as_ref())) {
+                            Ok(true) => Some((false, instruction.clone())),
+                            Ok(false) | Err(_) => None,
+                        }
+                    }
                     _ => None,
                 })
                 .collect_vec(),
