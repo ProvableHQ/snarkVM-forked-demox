@@ -194,11 +194,12 @@ impl<A: Aleo> DynamicRecord<A> {
             .iter()
             .map(|(identifier, entry)| {
                 let mut leaf = vec![identifier.to_field()];
-                // By using ehtry.to_fields (as in the translation circuit), we
+                // TODO (dynamic_dispatch). Improve clarify of comment.
+                // By using entry.to_fields (as in the translation circuit), we
                 // inject the visibility marker of each entry as a constant,
                 // rather than as a witness variable (as in the
                 // get.record.dynamic instruction). as
-                // entry.to_fields_with_visibility_mode(Mode::Private) would
+                // entry.to_fields_with_mode(Mode::Private) would
                 leaf.extend(entry.to_fields());
                 leaf
             })

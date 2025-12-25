@@ -70,9 +70,6 @@ impl<N: Network> Process<N> {
         // Initialize a map of transition IDs to references of the transition.
         let mut transition_map = HashMap::new();
 
-        // Initialize a map of (program ID, record identifier) to translation verifying keys.
-        let mut translation_verifying_keys: HashMap<(ProgramID<N>, Identifier<N>), VerifyingKey<N>> = HashMap::new();
-
         // Verify each transition.
         for transition in execution.transitions() {
             dev_println!("Verifying transition for {}/{}...", transition.program_id(), transition.function_name());
@@ -142,36 +139,6 @@ impl<N: Network> Process<N> {
                 true => Some(stack.program_checksum_as_field()?),
                 false => None,
             };
-            // Retrieve the translation verifying keys for the transition's program.
-            // TODO (dynamic_dispatch). Try to defer loading until later.
-            for record_name in stack.program().records().keys() {
-                let key = (*transition.program_id(), *record_name);
-
-                // TODO (dynamic_dispatch) do better (e.g with .entry)
-                if let std::collections::hash_map::Entry::Vacant(e) = translation_verifying_keys.entry(key) {
-                    if key
-                        == (
-                            ProgramID::<N>::from_str("credits.aleo").unwrap(),
-                            Identifier::<N>::from_str("credits").unwrap(),
-                        )
-                    {
-                        let verifying_key = N::translation_credits_verifying_key().clone();
-
-                        // Retrieve the number of public and private variables.
-                        // Note: This number does *NOT* include the number of constants. This is safe because
-                        // this program is never deployed, as it is a first-class citizen of the protocol.
-                        let num_variables = verifying_key.circuit_info.num_public_and_private_variables as u64;
-                        // Insert the translation verifying key.
-                        e.insert(VerifyingKey::<N>::new(verifying_key, num_variables));
-                    } else {
-                        // Note. We do not check that the translation verifying key exists. That is done in `Translation::prepare_verifier_inputs`.
-
-                        if let Ok(translation_verifying_key) = stack.get_translation_verifying_key(record_name) {
-                            e.insert(translation_verifying_key);
-                        }
-                    }
-                }
-            }
 
             // Ensure the number of inputs and outputs match the expected number in the function.
             ensure!(function.inputs().len() == num_inputs, "The number of transition inputs is incorrect");
@@ -245,7 +212,9 @@ impl<N: Network> Process<N> {
         let batch_translation_inputs = Translation::prepare_verifier_inputs(
             execution.transitions(),
             &transition_map,
-            &translation_verifying_keys,
+            &|(program_id, record_name)| {
+                self.get_stack(program_id).and_then(|stack| stack.get_translation_verifying_key(record_name))
+            },
         )?;
 
         // TODO(dynamic_dispatch): bring appropriate new measurement functions from execution_cost_for_authorization to here.

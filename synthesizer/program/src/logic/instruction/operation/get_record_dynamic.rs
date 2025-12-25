@@ -248,7 +248,7 @@ impl<N: Network> GetDynamicRecord<N> {
         let circuit_identifier = circuit::Identifier::constant(self.entry_identifier);
         let circuit_entry = circuit::Entry::new(Mode::Private, console_entry);
         let mut circuit_leaf = vec![circuit_identifier.to_field()];
-        circuit_leaf.extend(circuit_entry.to_fields_with_visibility_mode(Mode::Private));
+        circuit_leaf.extend(circuit_entry.to_fields_with_mode(Mode::Private));
 
         // Loading the in-circuit hashers
         let console_leaf_hasher = ConsoleLH::<A::Network>::setup("DynamicRecordLeafHasher").unwrap();

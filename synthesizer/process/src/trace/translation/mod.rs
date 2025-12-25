@@ -63,12 +63,15 @@ impl<N: Network> Translation<N> {
     }
 
     /// Returns the verifier public inputs for the given call graph and transitions.
-    pub fn prepare_verifier_inputs<'a>(
+    pub fn prepare_verifier_inputs<'a, F>(
         transitions: impl ExactSizeIterator<Item = &'a Transition<N>>,
         // Used to retrieve record names
         transition_map: &HashMap<N::TransitionID, (&Transition<N>, Function<N>)>,
-        translation_verifying_keys: &HashMap<(ProgramID<N>, Identifier<N>), VerifyingKey<N>>,
-    ) -> Result<Vec<(VerifyingKey<N>, Vec<Vec<N::Field>>)>> {
+        get_translation_verifying_key: &F,
+    ) -> Result<Vec<(VerifyingKey<N>, Vec<Vec<N::Field>>)>>
+    where
+        F: Fn(&(ProgramID<N>, Identifier<N>)) -> Result<VerifyingKey<N>>,
+    {
         let mut batch_verifier_inputs: HashMap<(ProgramID<N>, Identifier<N>), Vec<Vec<N::Field>>> = HashMap::new();
 
         let mut translation_count: u16 = 0;
@@ -415,12 +418,7 @@ impl<N: Network> Translation<N> {
 
         let batch_with_verifying_keys = batch_verifier_inputs
             .into_iter()
-            .map(|(key, inputs)| {
-                let verifying_key = translation_verifying_keys
-                    .get(&key)
-                    .ok_or_else(|| anyhow!("Translation verifying key not found for {}/{}", key.0, key.1))?;
-                Ok((verifying_key.clone(), inputs))
-            })
+            .map(|(key, inputs)| Ok((get_translation_verifying_key(&key)?, inputs)))
             .collect::<Result<Vec<(VerifyingKey<N>, Vec<Vec<N::Field>>)>>>()?;
 
         Ok(batch_with_verifying_keys)

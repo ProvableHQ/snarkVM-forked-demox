@@ -29,6 +29,7 @@ impl<A: Aleo> Response<A> {
         output_registers: &[Option<console::Register<A::Network>>], // Note: Console type
         function_id: Option<Field<A>>,
     ) -> Vec<Value<A>> {
+
         // Compute the function ID.
         let function_id = match function_id {
             Some(function_id) => function_id,
@@ -136,6 +137,12 @@ impl<A: Aleo> Response<A> {
                         // Inject the output as `Mode::Private`.
                         let output = Value::new(Mode::Private, output.clone());
 
+                        println!(
+                            "[3.m] - Num variables: {}, Num constraints: {}",
+                            A::count().0 + A::count().1,
+                            A::count().2
+                        );
+
                         // Retrieve the record.
                         let record = match &output {
                             Value::Record(record) => record,
@@ -158,14 +165,38 @@ impl<A: Aleo> Response<A> {
 
                         // Prepare the index as a constant field element.
                         let output_index = Field::constant(console::Field::from_u64(output_register.locator()));
+                        println!(
+                            "[3.m] - Num variables: {}, Num constraints: {}",
+                            A::count().0 + A::count().1,
+                            A::count().2
+                        );
+
                         // Compute the encryption randomizer as `HashToScalar(tvk || index)`.
                         let randomizer = A::hash_to_scalar_psd2(&[tvk.clone(), output_index]);
 
+                        println!(
+                            "[3.m] - Num variables: {}, Num constraints: {}",
+                            A::count().0 + A::count().1,
+                            A::count().2
+                        );
+
                         // Compute the record view key.
                         let record_view_key = ((*record.owner()).to_group() * randomizer).to_x_coordinate();
+
+                        println!(
+                            "[3.m] - Num variables: {}, Num constraints: {}",
+                            A::count().0 + A::count().1,
+                            A::count().2
+                        );
                         // Compute the record commitment.
                         let commitment =
                             record.to_commitment(program_id, &Identifier::constant(*record_name), &record_view_key);
+
+                        println!(
+                            "[3.m] - Num variables: {}, Num constraints: {}",
+                            A::count().0 + A::count().1,
+                            A::count().2
+                        );
 
                         // Return the output ID.
                         // Note: Because this is a callback, the output ID is an **external record** ID.

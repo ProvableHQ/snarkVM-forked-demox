@@ -16,11 +16,11 @@
 use super::*;
 
 impl<A: Aleo> Entry<A, Plaintext<A>> {
-    /// Returns this entry as a list of field elements.
-    pub fn to_fields_with_visibility_mode(&self, visibility_mode: Mode) -> Vec<Field<A>> {
+    /// Returns this entry as a list of field elements, with the specified mode.
+    pub fn to_fields_with_mode(&self, mode: Mode) -> Vec<Field<A>> {
         // Encode the data as little-endian bits.
         let mut bits_le = vec![];
-        self.write_bits_le_with_visibility_mode(&mut bits_le, visibility_mode);
+        self.write_bits_le_with_mode(&mut bits_le, mode);
 
         // Adds one final bit to the data, to serve as a terminus indicator.
         // During decryption, this final bit ensures we've reached the end.
@@ -40,6 +40,6 @@ impl<A: Aleo> ToFields for Entry<A, Plaintext<A>> {
 
     /// Returns this entry as a list of field elements.
     fn to_fields(&self) -> Vec<Self::Field> {
-        self.to_fields_with_visibility_mode(Mode::Constant)
+        self.to_fields_with_mode(Mode::Constant)
     }
 }
