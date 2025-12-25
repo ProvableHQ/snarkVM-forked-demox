@@ -232,7 +232,7 @@ pub fn sample_deployment_v3(edition: u16, rng: &mut TestRng) -> Deployment<Curre
             // Initialize a new program.
             let (string, program) = Program::<CurrentNetwork>::parse(
                 r"
-program testing_two.aleo;
+program testing_three.aleo;
 
 record data:
     owner as address.private;

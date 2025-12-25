@@ -191,6 +191,8 @@ impl<N: Network> Parser for GetDynamic<N> {
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
         // Parse the mapping name operand from the string.
         let (string, mapping_name) = Operand::parse(string)?;
+        // Parse the whitespace from the string.
+        let (string, _) = Sanitizer::parse_whitespaces(string)?;
 
         // Parse the "[" from the string.
         let (string, _) = tag("[")(string)?;

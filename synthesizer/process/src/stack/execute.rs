@@ -360,12 +360,6 @@ impl<N: Network> Stack<N> {
                 }
                 _ => {}
             }
-
-            println!(
-                "[1] Instruction: {instruction} - Num variables: {}, Num constraints: {}",
-                A::count().0 + A::count().1,
-                A::count().2
-            );
         }
         lap!(timer, "Execute the instructions");
 

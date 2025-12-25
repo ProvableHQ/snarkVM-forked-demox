@@ -29,7 +29,6 @@ impl<A: Aleo> Response<A> {
         output_registers: &[Option<console::Register<A::Network>>], // Note: Console type
         function_id: Option<Field<A>>,
     ) -> Vec<Value<A>> {
-
         // Compute the function ID.
         let function_id = match function_id {
             Some(function_id) => function_id,
