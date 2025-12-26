@@ -390,7 +390,7 @@ impl<N: Network> Transition<N> {
                 .map(|(output_index, ((caller_output_value, callee_output_type), callee_output))| {
                     match (&caller_output_value, callee_output_type) {
                         // Convert the record output to a dynamic record output.
-                        (Value::DynamicRecord(_), ValueType::Record(..)) => {
+                        (Value::DynamicRecord(_), ValueType::Record(..) | ValueType::ExternalRecord(..)) => {
                             construct_output(output_index, &None, caller_output_value, callee_output_type, &None)
                         }
                         // TODO (dynamic_dispatch) Do we need to handle futures here?

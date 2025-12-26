@@ -45,7 +45,7 @@ impl<N: Network> Translation<N> {
         // traversal order.
         //
         // At the end of the process, we verify that all translation tasks have been consumed. In order to avoid consuming or
-        // modifying `self`, we keep a separate dictionary to track the next unconsumed translation task for each (caller)
+        // modifying `self`, we keep a separate map to track the next unconsumed translation task for each (caller)
         // transition ID.
         let mut caller_id_to_next_task: HashMap<N::TransitionID, usize> =
             self.translation_tasks.keys().map(|transition_id| (*transition_id, 0)).collect();
