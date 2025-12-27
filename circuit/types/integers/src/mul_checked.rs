@@ -308,8 +308,6 @@ mod tests {
         let mut rng = TestRng::default();
 
         for i in 0..ITERATIONS {
-            // TODO (@d0cd) Uniform random sampling almost always produces arguments that result in an overflow.
-            //  Is there a better method for sampling arguments?
             let first = Uniform::rand(&mut rng);
             let second = Uniform::rand(&mut rng);
 

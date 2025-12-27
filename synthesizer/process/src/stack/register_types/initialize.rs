@@ -344,17 +344,15 @@ impl<N: Network> RegisterTypes<N> {
                     }
                 };
             }
-            // TODO (@d0cd) Verify that this is correct.
-            RegisterType::DynamicRecord => (),
+            RegisterType::DynamicRecord => {} // Dynamic records are valid outputs.
             RegisterType::DynamicFuture => bail!("Output '{operand}' cannot be a dynamic future."),
         };
 
         // Ensure the operand type and the output type match.
-        if *register_type != self.get_type_from_operand(stack, operand)? {
+        let type_ = self.get_type_from_operand(stack, operand)?;
+        if register_type != &type_ {
             bail!(
-                "Output '{operand}' does not match the expected output operand type: expected '{}', found '{}'",
-                self.get_type_from_operand(stack, operand)?,
-                register_type
+                "Output '{operand}' does not match the expected output operand type: expected '{type_}', found '{register_type}'",
             )
         }
         Ok(())

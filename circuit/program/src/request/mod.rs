@@ -59,7 +59,6 @@ impl<A: Aleo> Inject for InputID<A> {
             // Inject the commitment of the external record as `Mode::Public`.
             console::InputID::ExternalRecord(field) => Self::ExternalRecord(Field::new(Mode::Public, field)),
             // Inject the commitment of the dynamic record as `Mode::Public`.
-            // TODO (@d0cd). Check that this is safe.
             console::InputID::DynamicRecord(field) => Self::DynamicRecord(Field::new(Mode::Public, field)),
         }
     }

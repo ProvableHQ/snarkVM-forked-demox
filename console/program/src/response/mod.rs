@@ -234,7 +234,6 @@ impl<N: Network> Response<N> {
                         Ok(OutputID::Future(output_hash))
                     }
                     // For a dynamic record, compute the hash (using `tvk`) of the output.
-                    // TODO (@d0cd) verify correctness
                     ValueType::DynamicRecord => {
                         // Ensure the output is a record.
                         ensure!(matches!(output, Value::DynamicRecord(..)), "Expected a dynamic record output");

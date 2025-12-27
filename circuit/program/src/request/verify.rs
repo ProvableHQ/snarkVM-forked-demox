@@ -344,7 +344,6 @@ impl<A: Aleo> Request<A> {
                         // Ensure the expected hash matches the computed hash.
                         input_hash.is_equal(&A::hash_psd8(&preimage))
                     }
-                    // TODO (@d0cd)
                     // A dynamic record input is hashed (using `tvk`) to a field element.
                     InputID::DynamicRecord(input_hash) => {
                         // Add the input hash to the message.
