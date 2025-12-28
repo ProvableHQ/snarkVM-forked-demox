@@ -88,7 +88,6 @@ impl<N: Network>
             Option<bool>,
         ),
     ) -> Self {
-        // TODO (@d0cd) Verify that adding checks here does not create failure cases.
         // Ensure that the number of inputs matches the number of input IDs.
         if inputs.len() != input_ids.len() {
             N::halt(format!(

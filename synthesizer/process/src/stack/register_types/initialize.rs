@@ -504,7 +504,6 @@ impl<N: Network> RegisterTypes<N> {
                             }
                         }
                     }
-                    // TODO (@d0cd) Verify.
                     Instruction::CallDynamic(_) => {} // We do not validate the targets of dynamic calls before hand.
                     _ => bail!("Instruction '{instruction}' is not a call operation."),
                 }

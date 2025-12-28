@@ -335,7 +335,7 @@ impl<N: Network> Stack<N> {
                 Instruction::CallDynamic(call_dynamic) => {
                     // Increment the number of public variables.
                     // TODO (@d0cd): Explain this count.
-                    num_public += 7;
+                    //num_public += 7;
                     // Execute the dynamic call.
                     CallTrait::execute(call_dynamic, self, &mut registers, rng)
                 }

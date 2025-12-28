@@ -17,7 +17,6 @@ use super::*;
 
 impl<N: Network> FromBytes for DynamicFuture<N> {
     /// Reads in a dynamic future from a buffer.
-    // TODO (@d0cd) check this that encoding is differentiated from static futures.
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
         // Read the program name.
         let program_name = Field::read_le(&mut reader)?;

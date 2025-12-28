@@ -20,7 +20,7 @@ impl<N: Network> FromBytes for DynamicRecord<N> {
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
         // Read and validate the variant.
         match u8::read_le(&mut reader) {
-            Ok(1) => {} // Valid variant for a dynamic record.
+            Ok(0) => {} // The only valid variant for a dynamic record.
             _ => {
                 return Err(error("Failed to deserialize dynamic record - invalid variant"));
             }
@@ -30,7 +30,6 @@ impl<N: Network> FromBytes for DynamicRecord<N> {
         let owner = Address::read_le(&mut reader)?;
 
         // Read the root.
-        // TODO (@d0cd) check that this encoding is differentiated from static records.
         let root = Field::read_le(&mut reader)?;
 
         // Read the nonce.
