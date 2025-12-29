@@ -100,7 +100,11 @@ fn test_circuit_dynamic_record_from_record() {
     }
 }
 
-// TODO (Antonio) add description
+// Tests that casting external and non-external records to dynamic ones works
+// correctly, using get.dynamic.record to access dynamic-record entries. Also
+// checks that casting to dynamic records still causes an error if the static
+// record is consumed both by the caller and the callee (the latter of which
+// involves a translation).
 #[test]
 fn test_cast_simple() {
     let mut rng = TestRng::default();

@@ -288,7 +288,7 @@ impl<N: Network> Stack<N> {
         let num_request_constraints = A::num_constraints();
 
         // Retrieve the number of public variables in the circuit.
-        let mut num_public = A::num_public();
+        let num_public = A::num_public();
 
         // Store the inputs.
         function.inputs().iter().map(|i| i.register()).zip_eq(request.inputs()).try_for_each(|(register, input)| {
