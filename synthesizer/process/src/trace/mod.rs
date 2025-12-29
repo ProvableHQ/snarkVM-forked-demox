@@ -160,20 +160,19 @@ impl<N: Network> Trace<N> {
 }
 
 impl<N: Network> Trace<N> {
-    /// Returns the inclusion assignments and global state root for the current transition(s).
+    /// Returns the inclusion assignments, translation assignments, and global state root for the current transition(s).
     pub fn prepare(&mut self, process: &Process<N>, query: &dyn QueryTrait<N>) -> Result<()> {
         // Compute the inclusion and translation assignments.
         let (inclusion_assignments, global_state_root) = self.inclusion_tasks.prepare(&self.transitions, query)?;
         let translation_assignments_without_keys =
             self.translation_tasks.prepare(&self.transitions, &self.call_graph)?;
 
-        // Store the inclusion and translation assignments and global state root.
+        // Store the inclusion assignments.
         self.inclusion_assignments
             .set(inclusion_assignments)
             .map_err(|_| anyhow!("Failed to set inclusion assignments"))?;
 
-        // Fetch the translation proving keys, which have already been
-        // synthesized in call/dynamic.rs::execute for all detected translations
+        // Fetch the translation proving key for each translation assignment.
         let translation_assignments = translation_assignments_without_keys
             .into_iter()
             .map(|((program_id, record_name), assignments)| {
@@ -183,27 +182,49 @@ impl<N: Network> Trace<N> {
             })
             .collect::<Result<Vec<(ProvingKey<N>, Vec<TranslationAssignment<N>>)>>>()?;
 
+        // Store the translation assignments.
         self.translation_assignments
             .set(translation_assignments)
             .map_err(|_| anyhow!("Failed to set translation assignments"))?;
 
+        // Store the global state root.
         self.global_state_root.set(global_state_root).map_err(|_| anyhow!("Failed to set global state root"))?;
 
         Ok(())
     }
 
-    // TODO (dynamic_dispatch) should translation keys also be added to this async path?
-    /// Returns the inclusion assignments and global state root for the current transition(s).
+    /// Returns the inclusion assignments, translation assignments, and global state root for the current transition(s).
     #[cfg(feature = "async")]
-    pub async fn prepare_async(&mut self, query: &dyn QueryTrait<N>) -> Result<()> {
-        // Compute the inclusion assignments.
+    pub async fn prepare_async(&mut self, process: &Process<N>, query: &dyn QueryTrait<N>) -> Result<()> {
+        // Compute the inclusion and translation assignments.
         let (inclusion_assignments, global_state_root) =
             self.inclusion_tasks.prepare_async(&self.transitions, query).await?;
-        // Store the inclusion assignments and global state root.
+        let translation_assignments_without_keys =
+            self.translation_tasks.prepare_async(&self.transitions, &self.call_graph).await?;
+
+        // Store the inclusion assignments.
         self.inclusion_assignments
             .set(inclusion_assignments)
             .map_err(|_| anyhow!("Failed to set inclusion assignments"))?;
+
+        // Fetch the translation proving key for each translation assignment.
+        let translation_assignments = translation_assignments_without_keys
+            .into_iter()
+            .map(|((program_id, record_name), assignments)| {
+                let stack = process.get_stack(program_id)?;
+                let proving_key = stack.get_translation_proving_key(&record_name)?;
+                Ok((proving_key, assignments))
+            })
+            .collect::<Result<Vec<(ProvingKey<N>, Vec<TranslationAssignment<N>>)>>>()?;
+
+        // Store the translation assignments.
+        self.translation_assignments
+            .set(translation_assignments)
+            .map_err(|_| anyhow!("Failed to set translation assignments"))?;
+
+        // Store the global state root.
         self.global_state_root.set(global_state_root).map_err(|_| anyhow!("Failed to set global state root"))?;
+
         Ok(())
     }
 
@@ -434,7 +455,7 @@ impl<N: Network> Trace<N> {
                 .iter()
                 .map(|assignment| assignment.to_circuit_assignment::<A>())
                 .collect::<Result<Vec<Assignment<N::Field>>>>()?;
-            // TODO (dynamic_dispatch): is the clone cheap?
+            // Note that the `ProvingKey` contains an `Arc` to the underlying proving key, so cloning is cheap.
             proving_tasks.push((proving_key.clone(), circuit_assignments));
         }
 

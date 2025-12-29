@@ -41,13 +41,13 @@ pub fn deployment_cost<N: Network>(
     deployment: &Deployment<N>,
     consensus_version: ConsensusVersion,
 ) -> Result<(MinimumCost, DeployCostDetails)> {
-    if consensus_version >= ConsensusVersion::V10 {
+    if consensus_version >= ConsensusVersion::V14 {
+        deployment_cost_v3(process, deployment)
+    } else if consensus_version >= ConsensusVersion::V10 {
         deployment_cost_v2(process, deployment)
     } else {
         deployment_cost_v1(process, deployment)
     }
-
-    // TODO (dynamic_dispatch): call deployment_cost_v3 from the relevant consensus version onwards.
 }
 
 /// Returns the execution cost in microcredits for a given execution.

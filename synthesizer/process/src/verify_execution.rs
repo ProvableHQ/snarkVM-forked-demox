@@ -217,13 +217,13 @@ impl<N: Network> Process<N> {
             },
         )?;
 
-        // TODO(dynamic_dispatch): bring appropriate new measurement functions from execution_cost_for_authorization to here.
+        // TODO (@vicsn): bring appropriate new measurement functions from execution_cost_for_authorization to here.
 
         for (verifying_key, batch_translation_inputs_for_record) in batch_translation_inputs.into_iter() {
             // Retrieve the number of public and private variables.
             // Note: This number does *NOT* include the number of constants. This is safe because
             // this program is never deployed, as it is a first-class citizen of the protocol.
-            // TODO (dynamic_dispatch) should this be used?
+            // TODO (@vicsn) should this be used?
             let _num_variables = verifying_key.circuit_info.num_public_and_private_variables as u64;
             // Insert the inclusion verifier inputs.
             verifier_inputs.push((verifying_key.clone(), batch_translation_inputs_for_record));
@@ -422,7 +422,7 @@ impl<N: Network> Process<N> {
                     caller_outputs.iter().zip(call_dynamic_instruction.destination_types().iter()).enumerate()
                 {
                     match (caller_output, caller_destination_type) {
-                        // In the case of a DynamicFuture, the verifier computes the hash of the dynamic future directly.
+                        // In the case of a `DynamicFuture`, the verifier computes the hash of the dynamic future directly.
                         (Output::Future(_id, future), ValueType::DynamicFuture) => {
                             let Some(future) = future else {
                                 bail!("Future is not present for child transition {}", child_transition.id());

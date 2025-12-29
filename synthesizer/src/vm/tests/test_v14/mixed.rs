@@ -298,10 +298,6 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
 
     let generator = CurrentNetwork::g_scalar_multiply(&Scalar::one());
 
-    // TODO (dynamic_dispatch) discuss; It seems generator != generator2 is expected behaviour
-    // let generator2 = Group::<CurrentNetwork>::new(<CurrentNetwork as Environment>::Affine::prime_subgroup_generator());
-    // assert_eq!(generator, generator2);
-
     // Signatures for products operate as follows:
     // 1. The factory receives a request for a toy/ladder from a client and
     //    generates a random product ID (it can e. g. keep an off-chain registry
@@ -425,10 +421,6 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
             cast r0.owner r0.product_id true into r1 as ladder.record;
 
             output r1 as ladder.record;
-
-        // TODO (dynamic_dispatch) remove
-        // function test_generator:
-        //    assert.eq group::GEN {generator};
 
         constructor:
             assert.eq true true;

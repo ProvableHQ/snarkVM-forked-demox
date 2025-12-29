@@ -262,20 +262,11 @@ impl<N: Network> Stack<N> {
                 .records()
                 .iter()
                 .map(|(record_name, _record_type)| {
-                    // Initialize a private key.
-                    let private_key = PrivateKey::new(rng)?;
-                    // Compute the address.
-                    let address = Address::try_from(&private_key)?;
-
-                    // TODO (dynamic_dispatch) should stack::sample be used here instead
-                    // of rand? Also, some small improvements can be made here, eg in
-                    // principle private_key itself is not necessary
-
-                    // Construct a TranslationAssignment:
+                    // Construct a random `TranslationAssignment`.
                     let program_id = *self.program_id();
                     let function_id = Field::<N>::from_u64(Uniform::rand(rng));
                     let record_name = *record_name;
-                    let record_static = self.sample_record(&address, &record_name, Group::rand(rng), rng)?;
+                    let record_static = self.sample_record(&Address::rand(rng), &record_name, Group::rand(rng), rng)?;
                     let record_dynamic = DynamicRecord::<N>::from_record(&record_static)?;
                     let translation_count = Uniform::rand(rng);
                     let tvk = Uniform::rand(rng);
@@ -318,7 +309,6 @@ impl<N: Network> Stack<N> {
                 match translation_assignment.to_circuit_assignment::<A>() {
                     Err(err) => Err(anyhow!("Failed to synthesize the circuit for '{record_name}': {err}")),
                     Ok(circuit_assignment) => {
-                        // TODO (dynamic_dispatch): unlike in the transition-verifying-key case, we only need one assignment per record name, here, correct?
                         // Ensure the certificate is valid.
                         ensure!(
                             certificate.verify(&record_name.to_string(), &circuit_assignment, verifying_key),

@@ -606,8 +606,6 @@ fn test_conditional_execution() {
         .unwrap();
 
     add_and_test(&vm, &caller_private_key, &[execute_1, execute_2, execute_3], rng);
-
-    // TODO (dynamic_dispatch): do we have a way to check the output without finalize blocks?
 }
 
 // This test checks that the execution graph computed from an execution

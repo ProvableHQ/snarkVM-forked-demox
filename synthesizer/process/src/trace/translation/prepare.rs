@@ -183,8 +183,8 @@ impl<N: Network> Translation<N> {
         Ok(batched_assignments.into_iter().collect())
     }
 
-    // TODO (dynamic_dispatch) should this really be the same as prepare?
     /// Returns the inclusion assignments for the given transitions.
+    // Note that the `Translation::prepare` is already async-compatibile because it does not do any blocking operations.
     #[cfg(feature = "async")]
     pub async fn prepare_async(
         &self,

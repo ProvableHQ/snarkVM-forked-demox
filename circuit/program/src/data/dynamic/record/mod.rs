@@ -201,10 +201,6 @@ impl<A: Aleo> DynamicRecord<A> {
             .iter()
             .map(|(identifier, entry)| {
                 let mut leaf = vec![identifier.to_field()];
-                // TODO (dynamic_dispatch). Improve clarify of comment.
-                // entry.to_fields injects the visibility marker of the entry as
-                // a constant. It is also used when injecting entries into the
-                // translation circuit.
                 leaf.extend(entry.to_fields());
                 leaf
             })
@@ -217,7 +213,7 @@ impl<A: Aleo> DynamicRecord<A> {
             data.iter().map(|(identifier, entry)| (identifier, entry).eject_value()).collect::<IndexMap<_, _>>();
 
         let console_tree = {
-            // TODO (dynamic_dispatch): decide whether we want to compute and set the optional console tree. In principle, it isn't used anywhere.
+            // TODO (dynamic_dispatch): Compute tree on the fly, with sufficient checks on root consistency.
             let console_leaves = console_data
                 .iter()
                 .map(|(name, entry)| {

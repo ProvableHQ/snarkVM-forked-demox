@@ -15,6 +15,7 @@
 
 use super::*;
 
+// TODO (@d0cd) True versioning for transitions.
 impl<N: Network> FromBytes for Transition<N> {
     /// Reads the output from a buffer.
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {

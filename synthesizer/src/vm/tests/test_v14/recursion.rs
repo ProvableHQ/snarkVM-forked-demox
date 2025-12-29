@@ -143,7 +143,7 @@ fn test_fibonacci() {
 // - a function `six` that takes in a dynamic record and calls `four` twice. This should pass because the record is dynamic.
 // - a function `seven` that takes in a dynamic record and index. If the index is zero it calls `two`, else it calls itself recursively with index - 1. This should pass until the index exceeds the maximum call depth.
 // - a function `eight` that takes in a dynamic record and index. The function first calls `two`, then either calls `four` if index is zero, or calls itself recursively with index - 1. This should pass if the index is zero and fail otherwise due to double-spend.
-// TODO (@revievers): Verify that consumption of local records is expected behavior in recursive calls.
+// TODO (@reviewers): Verify that consumption of local records is expected behavior in recursive calls.
 // - a function `nine` that takes in a dynamic record and index. The function first calls `one`, then either calls `three` if the index is zero, or calls itself recursively with index - 1 and the new record. This should pass as long as the number of transitions does not exceed the maximum allowed.
 #[test]
 fn test_recursive_dynamic_record_calls() {

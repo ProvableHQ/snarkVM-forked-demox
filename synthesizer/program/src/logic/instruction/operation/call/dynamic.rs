@@ -271,7 +271,7 @@ impl<N: Network> Parser for CallDynamic<N> {
                 // Parse the whitespace from the string.
                 let (string, _) = Sanitizer::parse_whitespaces(string)?;
                 // Parse the operands from the string.
-                let (string, operands) = many_m_n(0, N::MAX_OPERANDS, complete(parse_operand))(string)?;
+                let (string, operands) = many_m_n(1, N::MAX_OPERANDS, complete(parse_operand))(string)?;
                 // Parse the operand types from the string.
                 let (string, operand_types) = parse_value_types(string)?;
                 // Return the string, the operands, and the operand types.
