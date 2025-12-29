@@ -44,6 +44,9 @@ workspace = true
 [dependencies.indexmap]
 workspace = true
 
+[dependencies.itertools]
+workspace = true
+
 [dependencies.num-derive]
 version = "0.4"
 
