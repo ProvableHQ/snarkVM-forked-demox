@@ -1357,7 +1357,7 @@ fn test_interface_mismatch_wrong_input_type() {
                 if let Ok(tx) = exec_result {
                     let block = sample_next_block(&vm, &caller_private_key, &[tx], rng).unwrap();
                     assert!(
-                        block.transactions().num_rejected() > 0 || block.aborted_transaction_ids().len() > 0,
+                        !block.transactions().num_rejected() > 0 || !block.aborted_transaction_ids().is_empty(),
                         "Transaction with type mismatch should be rejected"
                     );
                 }
@@ -1459,7 +1459,7 @@ fn test_double_await_fails() {
                     let block = sample_next_block(&vm, &caller_private_key, &[tx], rng).unwrap();
                     // Double await should cause rejection
                     assert!(
-                        block.transactions().num_rejected() > 0 || block.aborted_transaction_ids().len() > 0,
+                        block.transactions().num_rejected() > 0 || !block.aborted_transaction_ids().is_empty(),
                         "Transaction with double await should be rejected"
                     );
                 }
