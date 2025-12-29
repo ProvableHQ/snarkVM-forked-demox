@@ -180,13 +180,16 @@ impl<A: Aleo> DynamicRecord<A> {
 
         // Get the owner.
         let owner = (**record.owner()).clone();
+        // Get the record's data (not part of the circuit representation)
+        let data = record.data().clone();
+        ensure!(
+            !data.is_empty(),
+            "A record must have at least one entry in order to be merkleized into a dynamic record"
+        );
         // Get the nonce.
         let nonce = record.nonce().clone();
         // Get the version.
         let version = record.version().clone();
-
-        // Get the record's data (not part of the circuit representation)
-        let data = record.data().clone();
 
         // Initalize the hashers.
         let console_leaf_hasher = ConsoleLH::<A::Network>::setup("DynamicRecordLeafHasher").unwrap();
@@ -199,11 +202,9 @@ impl<A: Aleo> DynamicRecord<A> {
             .map(|(identifier, entry)| {
                 let mut leaf = vec![identifier.to_field()];
                 // TODO (dynamic_dispatch). Improve clarify of comment.
-                // By using entry.to_fields (as in the translation circuit), we
-                // inject the visibility marker of each entry as a constant,
-                // rather than as a witness variable (as in the
-                // get.record.dynamic instruction). as
-                // entry.to_fields_with_mode(Mode::Private) would
+                // entry.to_fields injects the visibility marker of the entry as
+                // a constant. It is also used when injecting entries into the
+                // translation circuit.
                 leaf.extend(entry.to_fields());
                 leaf
             })

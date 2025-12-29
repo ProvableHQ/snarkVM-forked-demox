@@ -167,6 +167,10 @@ impl<N: Network> DynamicRecord<N> {
         let owner = *record.owner().clone();
         // Get the program data.
         let data = record.data().clone();
+        ensure!(
+            !data.is_empty(),
+            "A record must have at least one entry in order to be merkleized into a dynamic record"
+        );
         // Get the nonce.
         let nonce = *record.nonce();
         // Get the version.
