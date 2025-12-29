@@ -189,4 +189,38 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_bytes_dynamic() -> Result<()> {
+        let rng = &mut TestRng::default();
+
+        for _ in 0..3 {
+            // Sample the transition.
+            let static_transition = crate::transition::test_helpers::sample_transition(rng);
+
+            let caller_metadata = TransitionCallerMetadata::new(
+                static_transition.inputs().to_vec(),
+                static_transition.outputs().to_vec(),
+            )
+            .unwrap();
+
+            let dynamic_transition = Transition {
+                id: *static_transition.id(),
+                program_id: *static_transition.program_id(),
+                function_name: *static_transition.function_name(),
+                inputs: static_transition.inputs().to_vec(),
+                outputs: static_transition.outputs().to_vec(),
+                tpk: *static_transition.tpk(),
+                tcm: *static_transition.tcm(),
+                scm: *static_transition.scm(),
+                caller_metadata: Some(caller_metadata),
+            };
+
+            //  Check the byte representation.
+            let expected_bytes = dynamic_transition.to_bytes_le()?;
+            assert_eq!(dynamic_transition, Transition::read_le(&expected_bytes[..])?);
+        }
+
+        Ok(())
+    }
 }

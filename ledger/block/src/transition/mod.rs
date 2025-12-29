@@ -49,7 +49,7 @@ use console::{
 
 /// The caller metadata for a dynamic transition.
 /// Note: This struct is used for internal memory organization only.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TransitionCallerMetadata<N: Network> {
     /// The caller inputs.
     inputs: Vec<Input<N>>,
