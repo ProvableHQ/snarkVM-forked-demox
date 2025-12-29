@@ -413,14 +413,26 @@ impl<N: Network> ToBytes for GetDynamicRecord<N> {
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
     use console::{network::MainnetV0, program::ArrayType};
     type CurrentNetwork = MainnetV0;
 
-    #[test]
-    fn test_parse() {
-        // ************ Literal types ************
+    fn test_serialization(instruction: GetDynamicRecord<CurrentNetwork>) {
+        let bytes = instruction.to_bytes_le().unwrap();
+        let bytes_result = GetDynamicRecord::from_bytes_le(&bytes[..]);
+        assert!(bytes_result.is_ok());
+        assert_eq!(instruction, bytes_result.unwrap());
 
+        let str = instruction.to_string();
+        let str_result = GetDynamicRecord::from_str(&str);
+        assert!(str_result.is_ok());
+        assert_eq!(instruction, str_result.unwrap());
+    }
+
+    #[test]
+    fn test_parse_and_serialization() {
+        // ************ Literal types ************
         let (remainder, instruction) =
             GetDynamicRecord::<CurrentNetwork>::parse("get.record.dynamic r0.outdated into r1 as bool").unwrap();
         assert!(remainder.is_empty());
@@ -429,6 +441,7 @@ mod tests {
         assert_eq!(instruction.destination, Register::Locator(1));
         assert_eq!(instruction.entry_identifier, Identifier::from_str("outdated").unwrap());
         assert_eq!(instruction.plaintext_type, PlaintextType::from_str("bool").unwrap());
+        test_serialization(instruction);
 
         let (remainder, instruction) =
             GetDynamicRecord::<CurrentNetwork>::parse("get.record.dynamic r0.middleman into r1 as address").unwrap();
@@ -447,6 +460,7 @@ mod tests {
         assert_eq!(instruction.destination, Register::Locator(1));
         assert_eq!(instruction.entry_identifier, Identifier::from_str("sk").unwrap());
         assert_eq!(instruction.plaintext_type, PlaintextType::from_str("field").unwrap());
+        test_serialization(instruction);
 
         let (remainder, instruction) =
             GetDynamicRecord::<CurrentNetwork>::parse("get.record.dynamic r0.pk into r1 as group").unwrap();
@@ -456,6 +470,7 @@ mod tests {
         assert_eq!(instruction.destination, Register::Locator(1));
         assert_eq!(instruction.entry_identifier, Identifier::from_str("pk").unwrap());
         assert_eq!(instruction.plaintext_type, PlaintextType::from_str("group").unwrap());
+        test_serialization(instruction);
 
         let (remainder, instruction) =
             GetDynamicRecord::<CurrentNetwork>::parse("get.record.dynamic r0.crs_byte into r1 as u8").unwrap();
@@ -465,6 +480,7 @@ mod tests {
         assert_eq!(instruction.destination, Register::Locator(1));
         assert_eq!(instruction.entry_identifier, Identifier::from_str("crs_byte").unwrap());
         assert_eq!(instruction.plaintext_type, PlaintextType::from_str("u8").unwrap());
+        test_serialization(instruction);
 
         let (remainder, instruction) =
             GetDynamicRecord::<CurrentNetwork>::parse("get.record.dynamic r0.size into r1 as u16").unwrap();
@@ -474,6 +490,7 @@ mod tests {
         assert_eq!(instruction.destination, Register::Locator(1));
         assert_eq!(instruction.entry_identifier, Identifier::from_str("size").unwrap());
         assert_eq!(instruction.plaintext_type, PlaintextType::from_str("u16").unwrap());
+        test_serialization(instruction);
 
         let (remainder, instruction) =
             GetDynamicRecord::<CurrentNetwork>::parse("get.record.dynamic r0.register into r1 as u32").unwrap();
@@ -483,6 +500,7 @@ mod tests {
         assert_eq!(instruction.destination, Register::Locator(1));
         assert_eq!(instruction.entry_identifier, Identifier::from_str("register").unwrap());
         assert_eq!(instruction.plaintext_type, PlaintextType::from_str("u32").unwrap());
+        test_serialization(instruction);
 
         let (remainder, instruction) =
             GetDynamicRecord::<CurrentNetwork>::parse("get.record.dynamic r0.crs_byte into r1 as u8").unwrap();
@@ -492,6 +510,7 @@ mod tests {
         assert_eq!(instruction.destination, Register::Locator(1));
         assert_eq!(instruction.entry_identifier, Identifier::from_str("crs_byte").unwrap());
         assert_eq!(instruction.plaintext_type, PlaintextType::from_str("u8").unwrap());
+        test_serialization(instruction);
 
         let (remainder, instruction) =
             GetDynamicRecord::<CurrentNetwork>::parse("get.record.dynamic r0.size into r1 as u16").unwrap();
@@ -501,6 +520,7 @@ mod tests {
         assert_eq!(instruction.destination, Register::Locator(1));
         assert_eq!(instruction.entry_identifier, Identifier::from_str("size").unwrap());
         assert_eq!(instruction.plaintext_type, PlaintextType::from_str("u16").unwrap());
+        test_serialization(instruction);
 
         let (remainder, instruction) =
             GetDynamicRecord::<CurrentNetwork>::parse("get.record.dynamic r0.register into r1 as u32").unwrap();
@@ -510,6 +530,7 @@ mod tests {
         assert_eq!(instruction.destination, Register::Locator(1));
         assert_eq!(instruction.entry_identifier, Identifier::from_str("register").unwrap());
         assert_eq!(instruction.plaintext_type, PlaintextType::from_str("u32").unwrap());
+        test_serialization(instruction);
 
         let (remainder, instruction) =
             GetDynamicRecord::<CurrentNetwork>::parse("get.record.dynamic r0.usize into r1 as u64").unwrap();
@@ -519,6 +540,7 @@ mod tests {
         assert_eq!(instruction.entry_identifier, Identifier::from_str("usize").unwrap());
         assert_eq!(instruction.destination, Register::Locator(1));
         assert_eq!(instruction.plaintext_type, PlaintextType::from_str("u64").unwrap());
+        test_serialization(instruction);
 
         let (remainder, instruction) =
             GetDynamicRecord::<CurrentNetwork>::parse("get.record.dynamic r0.long into r1 as u128").unwrap();
@@ -528,6 +550,7 @@ mod tests {
         assert_eq!(instruction.entry_identifier, Identifier::from_str("long").unwrap());
         assert_eq!(instruction.destination, Register::Locator(1));
         assert_eq!(instruction.plaintext_type, PlaintextType::from_str("u128").unwrap());
+        test_serialization(instruction);
 
         // ************ Other correct cases ************
         let (remainder, instruction) =
@@ -538,6 +561,7 @@ mod tests {
         assert_eq!(instruction.entry_identifier, Identifier::from_str("banana").unwrap());
         assert_eq!(instruction.destination, Register::Locator(3));
         assert_eq!(instruction.plaintext_type, PlaintextType::Struct(Identifier::from_str("fruit_struct").unwrap()));
+        test_serialization(instruction);
 
         let (remainder, instruction) =
             GetDynamicRecord::<CurrentNetwork>::parse("get.record.dynamic r1.apples into r1 as [fruit_struct; 20u32]")
@@ -551,6 +575,7 @@ mod tests {
             instruction.plaintext_type,
             PlaintextType::Array(ArrayType::from_str("[fruit_struct; 20u32]").unwrap())
         );
+        test_serialization(instruction);
 
         let (remainder, instruction) = GetDynamicRecord::<CurrentNetwork>::parse(
             "get.record.dynamic r45.dragonfruit_matrix into r49 as [[fruit_struct; 20u32]; 10u32]",
@@ -565,6 +590,7 @@ mod tests {
             instruction.plaintext_type,
             PlaintextType::Array(ArrayType::from_str("[[fruit_struct; 20u32]; 10u32]").unwrap())
         );
+        test_serialization(instruction);
 
         // ************ Incorrect cases ************
         let incorrect_cases = [
