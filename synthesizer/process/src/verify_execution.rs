@@ -298,7 +298,10 @@ impl<N: Network> Process<N> {
                 .filter_map(|instruction| match instruction {
                     Instruction::CallDynamic(..) => Some((true, instruction.clone())),
                     Instruction::Call(call) => {
-                        match self.get_stack(transition.program_id()).and_then(|s| call.is_function_call(s.as_ref())) {
+                        match self
+                            .get_stack(transition.program_id())
+                            .and_then(|stack| call.is_function_call(stack.as_ref()))
+                        {
                             Ok(true) => Some((false, instruction.clone())),
                             Ok(false) | Err(_) => None,
                         }
@@ -361,7 +364,8 @@ impl<N: Network> Process<N> {
             // [Inputs] Extend the verifier inputs with the input IDs of the external call.
             let child_inputs = if is_dynamic {
                 // Since is_dynamic has been checked to match child_transition.is_dynamic(),
-                // which guarantees caller_inputs.is_some() when true, this ? should always unwrap successfully.
+                // which guarantees caller_inputs.is_some() when true, this ? always
+                // unwraps successfully.
                 let caller_inputs = child_transition.caller_inputs().ok_or_else(|| {
                     anyhow!(
                         "Dynamic-call transition {} (function: {}) has no caller_inputs",
@@ -370,7 +374,8 @@ impl<N: Network> Process<N> {
                     )
                 })?;
 
-                // Note call_dynamic_instruction.unwrap().operand_types() cannot panic by construction (is_dynamic is true)
+                // Note call_dynamic_instruction_opt.unwrap().operand_types() cannot
+                // panic by construction as is_dynamic is true
                 for (i, (input, input_type)) in caller_inputs
                     .iter()
                     .zip(call_dynamic_instruction_opt.clone().unwrap().operand_types().iter())

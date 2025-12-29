@@ -85,24 +85,11 @@ impl<N: Network> Translation<N> {
             let callee_function_id =
                 compute_function_id(&U16::<N>::new(N::ID), transition.program_id(), transition.function_name())?;
 
-            ensure!(
-                transition.caller_inputs().is_some() == transition.caller_outputs().is_some(),
-                "The caller inputs and caller outputs should either both be Some or both be None, but found a discrepancy in transition {}: caller inputs = {}, caller outputs = {}",
-                transition.id(),
-                if transition.caller_inputs().is_some() { "Some" } else { "None" },
-                if transition.caller_outputs().is_some() { "Some" } else { "None" }
-            );
-
             // Prepare the input translation tasks
             let num_inputs = if let Some(caller_inputs) = transition.caller_inputs() {
-                // TODO (dynamic_dispatch): confirm the input types don't have to be matched against the function definition, as we were doing before (e. g. because that's already checked elsewhere)
-                // TODO (Antonio): cf above
-                // TODO (vicsn): cf above
-                // TODO (d0cd): cf above
-
                 ensure!(
                     caller_inputs.len() == transition.inputs().len(),
-                    "The number of caller inputs does not match the number of inputs in transition {}: ({} vs. {})",
+                    "The number of caller inputs does not match the number of inputs in transition {}: {} vs. {}",
                     transition.id(),
                     caller_inputs.len(),
                     transition.inputs().len(),
@@ -112,7 +99,7 @@ impl<N: Network> Translation<N> {
 
                 ensure!(
                     callee_input_types.len() == transition.inputs().len(),
-                    "The number of input types does not match the number of inputs in transition {}: ({} vs. {})",
+                    "The number of input types does not match the number of inputs in transition {}: {} vs. {}",
                     transition.id(),
                     callee_input_types.len(),
                     transition.inputs().len(),
@@ -229,7 +216,7 @@ impl<N: Network> Translation<N> {
             if let Some(caller_outputs) = transition.caller_outputs() {
                 ensure!(
                     caller_outputs.len() == transition.outputs().len(),
-                    "The number of caller outputs does not match the number of outputs in transition {}: ({} vs. {})",
+                    "The number of caller outputs does not match the number of outputs in transition {}: {} vs. {}",
                     transition.id(),
                     caller_outputs.len(),
                     transition.outputs().len(),
@@ -239,7 +226,7 @@ impl<N: Network> Translation<N> {
 
                 ensure!(
                     callee_output_types.len() == transition.outputs().len(),
-                    "The number of outputs types does not match the number of outputs in transition {}: ({} vs. {})",
+                    "The number of outputs types does not match the number of outputs in transition {}: {} vs. {}",
                     transition.id(),
                     callee_output_types.len(),
                     transition.outputs().len(),

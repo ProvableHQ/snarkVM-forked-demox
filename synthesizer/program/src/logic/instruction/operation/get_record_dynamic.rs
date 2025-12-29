@@ -375,7 +375,6 @@ impl<N: Network> Display for GetDynamicRecord<N> {
     }
 }
 
-// TODO (Antonio) add serialization and deserialization tests.
 impl<N: Network> FromBytes for GetDynamicRecord<N> {
     /// Reads the operation from a buffer.
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
