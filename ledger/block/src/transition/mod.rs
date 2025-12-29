@@ -163,6 +163,13 @@ impl<N: Network> Transition<N> {
 
         // A helper function to construct and verify the inputs.
         let construct_inputs = |input_ids: &[InputID<N>], inputs: &[Value<N>]| -> Result<Vec<Input<N>>> {
+            ensure!(
+                input_ids.len() == inputs.len(),
+                "Mismatched number of input IDs and inputs: {} vs. {}",
+                input_ids.len(),
+                inputs.len(),
+            );
+
             input_ids
                 .iter()
                 .zip_eq(inputs)
@@ -369,6 +376,21 @@ impl<N: Network> Transition<N> {
         let inputs = construct_inputs(request.input_ids(), request.inputs())?;
 
         // Construct and verify the outputs.
+        {
+            let num_outputs = response.outputs().len();
+
+            ensure!(
+                response.output_ids().len() == num_outputs
+                    && num_outputs == output_types.len()
+                    && num_outputs == output_registers.len(),
+                "Mismatched number of output IDs, outputs, output types, and output registers: {} vs. {} vs. {} vs. {}",
+                response.output_ids().len(),
+                num_outputs,
+                output_types.len(),
+                output_registers.len(),
+            );
+        }
+
         let outputs = itertools::izip!(response.output_ids(), response.outputs(), output_types, output_registers)
             .enumerate()
             .map(|(output_index, (output_id, output, output_type, output_register))| {

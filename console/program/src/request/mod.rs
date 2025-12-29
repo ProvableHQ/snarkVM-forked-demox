@@ -206,10 +206,18 @@ impl<N: Network> Request<N> {
     pub fn caller_input_ids(&self) -> Result<Vec<InputID<N>>> {
         // Compute the function ID.
         let function_id = compute_function_id(&self.network_id, &self.program_id, &self.function_name)?;
+
+        ensure!(
+            self.input_ids().len() == self.inputs.len(),
+            "Mismatched number of input IDs and inputs: {} vs. {}",
+            self.input_ids().len(),
+            self.inputs.len(),
+        );
+
         // Compute and return the caller input IDs.
         self.input_ids()
             .iter()
-            .zip_eq(self.inputs.iter())
+            .zip(self.inputs.iter())
             .enumerate()
             .map(|(index, (input_id, input))| match (input_id, input) {
                 (InputID::Constant(..), Value::Plaintext(..))
