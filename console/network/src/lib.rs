@@ -207,7 +207,7 @@ pub trait Network:
     /// The maximum number of structs in a program.
     const MAX_STRUCTS: usize = 10 * Self::MAX_FUNCTIONS;
     /// The maximum number of records in a program.
-    // TODO (@reviewers): Do we want to reduce the maximum number of records allowed? 
+    // TODO (@reviewers): Do we want to reduce the maximum number of records allowed?
     // We have other constraints in place the limit the size of deployments.
     const MAX_RECORDS: usize = 10 * Self::MAX_FUNCTIONS;
     /// The maximum number of closures in a program.

@@ -19,8 +19,19 @@ use console::{
     collections::merkle_tree::MerklePath,
     network::prelude::*,
     program::{
-        Access, Address, Entry, Field, Identifier, PlaintextType, RECORD_DATA_TREE_DEPTH, Register, RegisterType,
-        ToField as ConsoleToField, ToFields as ConsoleToFields, U64, Value,
+        Access,
+        Address,
+        Entry,
+        Field,
+        Identifier,
+        PlaintextType,
+        RECORD_DATA_TREE_DEPTH,
+        Register,
+        RegisterType,
+        ToField as ConsoleToField,
+        ToFields as ConsoleToFields,
+        U64,
+        Value,
     },
 };
 
@@ -32,7 +43,7 @@ type ConsoleLH<N> = console::algorithms::Poseidon8<N>;
 type ConsolePH<N> = console::algorithms::Poseidon2<N>;
 
 /// Retrieves the value of an entry in a dynamic record.
-// TODO (dynamic_dispatch). Rename to `dynamic.record.entry`.
+// TODO (@reviewers). Do we want to consider alternate names? `dynamic.record.entry`, `access.record.dynamic`, etc.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct GetDynamicRecord<N: Network> {
     /// The register containing the dynamic record being read.
@@ -73,7 +84,7 @@ impl<N: Network> GetDynamicRecord<N> {
     /// Returns the opcode.
     #[inline]
     pub const fn opcode() -> Opcode {
-        Opcode::GetDynamicRecord("get.entry.dynamic")
+        Opcode::GetDynamicRecord("get.record.dynamic")
     }
 
     /// Returns the operands in the operation.

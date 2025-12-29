@@ -41,9 +41,7 @@ pub fn deployment_cost<N: Network>(
     deployment: &Deployment<N>,
     consensus_version: ConsensusVersion,
 ) -> Result<(MinimumCost, DeployCostDetails)> {
-    if consensus_version >= ConsensusVersion::V14 {
-        deployment_cost_v3(process, deployment)
-    } else if consensus_version >= ConsensusVersion::V10 {
+    if consensus_version >= ConsensusVersion::V10 {
         deployment_cost_v2(process, deployment)
     } else {
         deployment_cost_v1(process, deployment)
@@ -186,14 +184,6 @@ pub fn execute_compute_cost_in_microcredits(
             .ok_or(anyhow!("The storage and finalize cost computation overflowed for an execution"))?
     };
     Ok(cost_to_check)
-}
-
-pub fn deployment_cost_v3<N: Network>(
-    _process: &Process<N>,
-    _deployment: &Deployment<N>,
-) -> Result<(MinimumCost, DeployCostDetails)> {
-    // TODO (dynamic_dispatch): implement this. Add translation-circuit-related costs (e. g. synthesis)
-    bail!("deployment_cost_v3 is not implemented");
 }
 
 /// Returns the *minimum* cost in microcredits to publish the given deployment using the ARC_0005_COMPUTE_DISCOUNT.
