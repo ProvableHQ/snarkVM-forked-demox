@@ -65,7 +65,7 @@ impl<N: Network> Stack<N> {
         // Sample a random version.
         let version = U8::<N>::rand(rng);
 
-        Ok(DynamicRecord::new_unchecked(owner, root, nonce, version, None, None))
+        Ok(DynamicRecord::new_unchecked(owner, root, nonce, version, None))
     }
 
     /// Returns a record for the given record name.

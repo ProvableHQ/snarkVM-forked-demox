@@ -21,9 +21,11 @@ use console::{
     program::{
         Access,
         Address,
+        DynamicRecord,
         Entry,
         Field,
         Identifier,
+        Plaintext,
         PlaintextType,
         RECORD_DATA_TREE_DEPTH,
         Register,
@@ -35,12 +37,11 @@ use console::{
     },
 };
 
+use indexmap::IndexMap;
 use rand::thread_rng;
 
 type CircuitLH<A> = circuit::Poseidon8<A>;
 type CircuitPH<A> = circuit::Poseidon2<A>;
-type ConsoleLH<N> = console::algorithms::Poseidon8<N>;
-type ConsolePH<N> = console::algorithms::Poseidon2<N>;
 
 /// Retrieves the value of an entry in a dynamic record.
 // TODO (@reviewers). Do we want to consider alternate names? `dynamic.record.entry`, `access.record.dynamic`, etc.
@@ -157,65 +158,16 @@ impl<N: Network> GetDynamicRecord<N> {
             }
         };
 
-        let (console_entry, console_path) = match (circuit_dynamic_record.tree(), circuit_dynamic_record.data()) {
-            (Some(tree), Some(data)) => {
-                // Retrieving the entry
-                let (index, _, entry) = data.get_full(&self.entry_identifier).ok_or_else(|| {
-                    anyhow!(
-                        "The dynamic record's data is present but does not contain entry entry {}",
-                        self.entry_identifier
-                    )
-                })?;
-
-                // Constructing the leaf of the merkleized-data tree
-                let mut leaf = vec![self.entry_identifier.to_field()?];
-                leaf.extend(entry.to_fields()?);
-
-                // Computing the path (i. e. Merkle proof)
-                let path = tree.prove(index, &leaf)?;
-
-                ensure!(
-                    *path.leaf_index() == index as u64,
-                    "Entry {} has index {} in the dynamic record's data, but its leaf index in the dynamic record's Merkle tree is {}",
-                    self.entry_identifier,
-                    index,
-                    *path.leaf_index()
-                );
-
-                (entry.clone(), path.clone())
-            }
-            _ => {
-                // The data or tree can be missing
-                //   - during synthesis, where it is normal
-                //   - during execution, where it is an error (those fields should have been populated)
-                // Since we cannot tell the two cases apart, upon encountering missing fields we sample
-                // arbitary data as necessitated by synthesis and simply log the event.
-
-                let value = {
-                    let rng = &mut thread_rng();
-                    let address = Address::<N>::rand(rng);
-                    stack.sample_value(&address, &RegisterType::Plaintext(self.plaintext_type.clone()), rng)?
-                };
-
-                let entry = match value {
-                    // The visibility (Constant/Private/Public) of the entry is injected into
-                    // the circuit as a private variable (rather than a constant) and can therefore be
-                    // chosen arbitrarily here. The plaintext type of the entry, however, is injected
-                    // as a constant and must be set correctly here.
-                    Value::Plaintext(plaintext) => Entry::Public(plaintext),
-                    _ => {
-                        bail!("Expected plaintext value while sampling an entry for a dynamic record, found {value:?}")
-                    }
-                };
-
-                let path =
-                    MerklePath::try_from((U64::new(0), vec![Field::<N>::zero(); RECORD_DATA_TREE_DEPTH as usize]))?;
-
-                (entry, path)
-
-                // TODO (dynamic_dispatch) decide whether we want to handle the case in which the data is present but the tree is not (in which case one could reconstruct the tree) or treat it as an error, as we are here. In principle, the data and try always go hand in hand (either both present or both absent), so this shouldn't occur; but there are situations we have little control of, such as when the dynamic is an input to the root transition.
-            }
-        };
+        // Compute the Merkle path for the entry. If the data is not present
+        // (for instance, during key synthesis), populate with arbitrary data
+        // first.
+        let (console_entry, console_path) = Self::compute_or_patch_path(
+            circuit_dynamic_record.data(),
+            &self.entry_identifier,
+            stack,
+            &self.plaintext_type,
+            &circuit_dynamic_record.root().eject_value(),
+        )?;
 
         // This verification is only a sanity check and not performed in-circuit. The type of the
         // in-circuit entry is encoded into the circuit structure (and therefore the proving and
@@ -251,9 +203,8 @@ impl<N: Network> GetDynamicRecord<N> {
         let mut circuit_leaf = vec![circuit_identifier.to_field()];
         circuit_leaf.extend(circuit_entry.to_fields_with_mode(Mode::Private));
 
-        // Loading the in-circuit hashers
-        let console_leaf_hasher = ConsoleLH::<A::Network>::setup("DynamicRecordLeafHasher").unwrap();
-        let console_path_hasher = ConsolePH::<A::Network>::setup("DynamicRecordPathHasher").unwrap();
+        // Initialize the in-circuit hashers
+        let (console_leaf_hasher, console_path_hasher) = DynamicRecord::initialize_hashers()?;
         let circuit_leaf_hasher = CircuitLH::<A>::constant(console_leaf_hasher.clone());
         let circuit_path_hasher = CircuitPH::<A>::constant(console_path_hasher.clone());
 
@@ -294,6 +245,88 @@ impl<N: Network> GetDynamicRecord<N> {
         );
 
         Ok(vec![RegisterType::Plaintext(self.plaintext_type.clone())])
+    }
+}
+
+impl<N: Network> GetDynamicRecord<N> {
+    // Internal auxiliary function which computes the (native) Merkle path to
+    // the given entry. If the record data is not present, it is populated with
+    // arbitrary values first and the event is logged. This can happen
+    //  - during synthesis, where it is normal
+    //  - during execution, where it is an error (the data should have been
+    //    populated)
+    // Note the two cases cannot be told apart at the point this function is
+    // used above.
+    //
+    // In the case where the data is present, the root of the resulting tree is
+    // matched against the provided one, returning an error if they do not
+    // match.
+    //
+    // An error is also returned if the data is present but does not contain the
+    // requested  entry.
+    #[allow(clippy::type_complexity)]
+    fn compute_or_patch_path(
+        opt_data: Option<&IndexMap<Identifier<N>, Entry<N, Plaintext<N>>>>,
+        entry_identifier: &Identifier<N>,
+        stack: &impl StackTrait<N>,
+        plaintext_type: &PlaintextType<N>,
+        root: &Field<N>,
+    ) -> Result<(Entry<N, Plaintext<N>>, MerklePath<N, RECORD_DATA_TREE_DEPTH>)> {
+        match opt_data {
+            Some(data) => {
+                // Retrieving the entry
+                let (index, _, entry) = data.get_full(entry_identifier).ok_or_else(|| {
+                    anyhow!("The dynamic record's data is present but does not contain entry entry {entry_identifier}",)
+                })?;
+
+                // Constructing the leaf of the merkleized-data tree
+                let mut leaf = vec![entry_identifier.to_field()?];
+                leaf.extend(entry.to_fields()?);
+
+                let tree = DynamicRecord::merkleize_data(data)?;
+
+                // Computing the path (i. e. Merkle proof)
+                let path = tree.prove(index, &leaf)?;
+
+                ensure!(
+                    *path.leaf_index() == index as u64,
+                    "Entry {} has index {} in the dynamic record's data, but its leaf index in the dynamic record's Merkle tree is {}",
+                    entry_identifier,
+                    index,
+                    *path.leaf_index()
+                );
+
+                ensure!(
+                    tree.root() == root,
+                    "The root in the dynamic record does not match the one computed from its data"
+                );
+
+                Ok((entry.clone(), path.clone()))
+            }
+            None => {
+                let value = {
+                    let rng = &mut thread_rng();
+                    let address = Address::<N>::rand(rng);
+                    stack.sample_value(&address, &RegisterType::Plaintext(plaintext_type.clone()), rng)?
+                };
+
+                let entry = match value {
+                    // The visibility (Constant/Private/Public) of the entry is injected into
+                    // the circuit as a private variable (rather than a constant) and can therefore be
+                    // chosen arbitrarily here. The plaintext type of the entry, however, is injected
+                    // as a constant and must be set correctly at this point.
+                    Value::Plaintext(plaintext) => Entry::Public(plaintext),
+                    _ => {
+                        bail!("Expected plaintext value while sampling an entry for a dynamic record, found {value:?}")
+                    }
+                };
+
+                let path =
+                    MerklePath::try_from((U64::new(0), vec![Field::<N>::zero(); RECORD_DATA_TREE_DEPTH as usize]))?;
+
+                Ok((entry, path))
+            }
+        }
     }
 }
 

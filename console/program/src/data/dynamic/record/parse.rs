@@ -99,7 +99,7 @@ impl<N: Network> Parser for DynamicRecord<N> {
         // Parse the '}' from the string.
         let (string, _) = tag("}")(string)?;
         // Output the dynamic record.
-        Ok((string, DynamicRecord::new_unchecked(owner, root, nonce, version, None, None)))
+        Ok((string, DynamicRecord::new_unchecked(owner, root, nonce, version, None)))
     }
 }
 

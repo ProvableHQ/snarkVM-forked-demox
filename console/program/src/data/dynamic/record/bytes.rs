@@ -38,7 +38,7 @@ impl<N: Network> FromBytes for DynamicRecord<N> {
         // Read the version.
         let version = U8::read_le(&mut reader)?;
 
-        Ok(Self::new_unchecked(owner, root, nonce, version, None, None))
+        Ok(Self::new_unchecked(owner, root, nonce, version, None))
     }
 }
 

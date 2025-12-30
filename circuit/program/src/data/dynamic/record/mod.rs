@@ -25,12 +25,9 @@ use console::RECORD_DATA_TREE_DEPTH;
 use snarkvm_circuit_algorithms::{Poseidon2, Poseidon8};
 use snarkvm_circuit_collections::merkle_tree::MerkleTree;
 use snarkvm_circuit_types::{Address, Boolean, Field, Group, U8, U16, environment::prelude::*};
-use snarkvm_console_algorithms::{Poseidon2 as ConsolePoseidon2, Poseidon8 as ConsolePoseidon8};
 
 type CircuitLH<A> = Poseidon8<A>;
 type CircuitPH<A> = Poseidon2<A>;
-type ConsoleLH<N> = ConsolePoseidon8<N>;
-type ConsolePH<N> = ConsolePoseidon2<N>;
 
 /// The record data tree.
 pub type RecordDataTree<A> = MerkleTree<A, CircuitLH<A>, CircuitPH<A>, RECORD_DATA_TREE_DEPTH>;
@@ -87,9 +84,6 @@ pub struct DynamicRecord<A: Aleo> {
     nonce: Group<A>,
     /// The version of the record.
     version: U8<A>,
-    /// The optional console Merkle tree of the record data.
-    /// Note: This is NOT part of the circuit representation.
-    tree: Option<console::RecordDataTree<A::Network>>,
     /// The optional console program data.
     /// Note: This is NOT part of the circuit representation.
     data: Option<console::RecordData<A::Network>>,
@@ -105,7 +99,6 @@ impl<A: Aleo> Inject for DynamicRecord<A> {
             root: Inject::new(Mode::Private, *record.root()),
             nonce: Inject::new(Mode::Private, *record.nonce()),
             version: Inject::new(Mode::Private, *record.version()),
-            tree: record.tree().clone(),
             data: record.data().clone(),
         }
     }
@@ -130,11 +123,6 @@ impl<A: Aleo> DynamicRecord<A> {
     /// Returns the version of the record.
     pub const fn version(&self) -> &U8<A> {
         &self.version
-    }
-
-    /// Returns the console Merkle tree of the record data.
-    pub const fn tree(&self) -> &Option<console::RecordDataTree<A::Network>> {
-        &self.tree
     }
 
     /// Returns console the record data.
@@ -163,14 +151,13 @@ impl<A: Aleo> Eject for DynamicRecord<A> {
             self.root.eject_value(),
             self.nonce.eject_value(),
             self.version.eject_value(),
-            self.tree.clone(),
             self.data.clone(),
         )
     }
 }
 
 impl<A: Aleo> DynamicRecord<A> {
-    /// Creates a dynamic record from a static record.
+    /// Creates a dynamic record from a static one.
     pub fn from_record(record: &Record<A, Plaintext<A>>) -> Result<Self> {
         // This mimics the console::DynamicRecord::from_record function.
 
@@ -181,54 +168,28 @@ impl<A: Aleo> DynamicRecord<A> {
         // Get the owner.
         let owner = (**record.owner()).clone();
         // Get the record's data (not part of the circuit representation)
-        let data = record.data().clone();
+        let data = record.data();
         // Get the nonce.
         let nonce = record.nonce().clone();
         // Get the version.
         let version = record.version().clone();
 
-        let tree = Self::merkleize_console_data(&data)?;
+        let tree = Self::merkleize_data(data)?;
         let root = tree.root().clone();
 
         let console_data =
             data.iter().map(|(identifier, entry)| (identifier, entry).eject_value()).collect::<IndexMap<_, _>>();
 
-        // TODO(Antonio) reintroduce
-        // let console_tree = {
-        //     // TODO (dynamic_dispatch): Compute tree on the fly, with sufficient checks on root consistency.
-        //     let console_leaves = console_data
-        //         .iter()
-        //         .map(|(name, entry)| {
-        //             let mut leaf = vec![];
-        //             leaf.push(name.to_field()?);
-        //             leaf.extend(entry.to_fields()?);
-
-        //             Ok(leaf)
-        //         })
-        //         .collect::<Result<Vec<_>>>()?;
-
-        //     let console_tree =
-        //         console::RecordDataTree::new(&console_leaf_hasher, &console_path_hasher, &console_leaves)?;
-
-        //     ensure!(
-        //         root.eject_value() == *console_tree.root(),
-        //         "The root of the Merkle tree computed inside the circuit differs from that computed on the console objects."
-        //     );
-
-        //     console_tree
-        // };
-
-        Ok(Self { owner, root, nonce, version, tree: None, data: Some(console_data) })
+        Ok(Self { owner, root, nonce, version, data: Some(console_data) })
     }
 
     /// Injects the ordered entries in `data` into the circuit and computes the
     /// Merkle tree containing those entires as leaves.
-    pub fn merkleize_console_data(data: &IndexMap<Identifier<A>, Entry<A, Plaintext<A>>>) -> Result<RecordDataTree<A>> {
-        // Initalize the hashers.
-        let console_leaf_hasher = ConsoleLH::<A::Network>::setup("DynamicRecordLeafHasher").unwrap();
-        let console_path_hasher = ConsolePH::<A::Network>::setup("DynamicRecordPathHasher").unwrap();
-        let circuit_leaf_hasher = CircuitLH::<A>::constant(console_leaf_hasher.clone());
-        let circuit_path_hasher = CircuitPH::<A>::constant(console_path_hasher.clone());
+    pub fn merkleize_data(data: &IndexMap<Identifier<A>, Entry<A, Plaintext<A>>>) -> Result<RecordDataTree<A>> {
+        // Initalize the circuit hashers.
+        let (console_leaf_hasher, console_path_hasher) = console::DynamicRecord::initialize_hashers()?;
+        let circuit_leaf_hasher = CircuitLH::<A>::constant(console_leaf_hasher);
+        let circuit_path_hasher = CircuitPH::<A>::constant(console_path_hasher);
 
         // Inject the leaves
         let leaves = data

@@ -206,7 +206,7 @@ impl<N: Network> TranslationAssignment<N> {
 
         // ******** Merkelizing the static-record data
 
-        let circuit_tree = circuit::DynamicRecord::<A>::merkleize_console_data(circuit_record_static.data())?;
+        let circuit_tree = circuit::DynamicRecord::<A>::merkleize_data(circuit_record_static.data())?;
         let circuit_data_root = circuit_tree.root();
 
         // ******** Assertions

@@ -216,14 +216,12 @@ fn test_get_record_dynamic() {
 
     // Case 3.2: We manipulate the root of the already created dynamic record,
     // which will cause the Merkle root to fail in a read which would otherwise
-    // succeed. Note that failure already occurs at the (honest) prover side,
-    // since it also checks circuit satisfaction.
+    // succeed. Note that failure already occurs at the (honest) prover side.
     let manipulated_record_dynamic = DynamicRecord::new_unchecked(
         *record_dynamic.owner(),
         Uniform::rand(rng),
         *record_dynamic.nonce(),
         *record_dynamic.version(),
-        None,
         record_dynamic.data().clone(),
     );
 
@@ -241,7 +239,7 @@ fn test_get_record_dynamic() {
         )
         .unwrap_err()
         .to_string()
-        .contains("not satisfied")
+        .contains("root in the dynamic record does not match")
     );
 
     // Case 3.3: We attempt to read the field "production_date" as an array of
@@ -280,7 +278,6 @@ fn test_get_record_dynamic() {
         Uniform::rand(rng),
         *record_dynamic.nonce(),
         *record_dynamic.version(),
-        None,
         Some(manipulated_record_data),
     );
 
@@ -298,6 +295,6 @@ fn test_get_record_dynamic() {
         )
         .unwrap_err()
         .to_string()
-        .contains("not satisfied")
+        .contains("root in the dynamic record does not match")
     );
 }

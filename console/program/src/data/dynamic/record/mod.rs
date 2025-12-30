@@ -103,8 +103,6 @@ pub struct DynamicRecord<N: Network> {
     nonce: Group<N>,
     /// The version of the record.
     version: U8<N>,
-    /// The optional Merkle tree of the record data.
-    tree: Option<RecordDataTree<N>>,
     /// The optional record data.
     data: Option<RecordData<N>>,
 }
@@ -116,10 +114,9 @@ impl<N: Network> DynamicRecord<N> {
         root: Field<N>,
         nonce: Group<N>,
         version: U8<N>,
-        tree: Option<RecordDataTree<N>>,
         data: Option<RecordData<N>>,
     ) -> Self {
-        Self { owner, root, nonce, version, tree, data }
+        Self { owner, root, nonce, version, data }
     }
 }
 
@@ -142,11 +139,6 @@ impl<N: Network> DynamicRecord<N> {
     /// Returns the version of the record.
     pub const fn version(&self) -> &U8<N> {
         &self.version
-    }
-
-    /// Returns the optional Merkle tree of the record data.
-    pub const fn tree(&self) -> &Option<RecordDataTree<N>> {
-        &self.tree
     }
 
     /// Returns the optional record data.
@@ -172,32 +164,13 @@ impl<N: Network> DynamicRecord<N> {
         // Get the version.
         let version = *record.version();
 
-        // Prepare the leaves.
-        let leaves = data
-            .iter()
-            .map(|(name, entry)| {
-                // Initialize the leaf.
-                let mut leaf = vec![];
-                // Add the entry name.
-                leaf.push(name.to_field()?);
-                // Add the entry data.
-                leaf.extend(entry.to_fields()?);
-
-                Ok(leaf)
-            })
-            .collect::<Result<Vec<_>>>()?;
-
-        // Initalize the hashers.
-        let leaf_hasher = Poseidon8::setup("DynamicRecordLeafHasher")?;
-        let path_hasher = Poseidon2::setup("DynamicRecordPathHasher")?;
-
         // Construct the merkle tree.
-        let tree = RecordDataTree::new(&leaf_hasher, &path_hasher, &leaves)?;
+        let tree = Self::merkleize_data(&data)?;
 
         // Get the root.
         let root = *tree.root();
 
-        Ok(Self::new_unchecked(owner, root, nonce, version, Some(tree), Some(data)))
+        Ok(Self::new_unchecked(owner, root, nonce, version, Some(data)))
     }
 
     /// Creates a static record from this dynamic record.
@@ -214,6 +187,38 @@ impl<N: Network> DynamicRecord<N> {
         // Return the record.
         Record::<N, Plaintext<N>>::from_plaintext(owner, data.clone(), self.nonce, self.version)
     }
+
+    /// Injects the ordered entries in `data` into the circuit and computes the
+    /// Merkle tree containing those entires as leaves.
+    pub fn merkleize_data(data: &IndexMap<Identifier<N>, Entry<N, Plaintext<N>>>) -> Result<RecordDataTree<N>> {
+        // Construct the leaves.
+        let leaves = data
+            .iter()
+            .map(|(name, entry)| {
+                // Initialize the leaf.
+                let mut leaf = vec![];
+                // Add the entry name.
+                leaf.push(name.to_field()?);
+                // Add the entry data.
+                leaf.extend(entry.to_fields()?);
+
+                Ok(leaf)
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        // Initalize the hashers.
+        let (leaf_hasher, path_hasher) = Self::initialize_hashers()?;
+
+        // Construct the merkle tree
+        RecordDataTree::new(&leaf_hasher, &path_hasher, &leaves)
+    }
+
+    /// Returns the leaf and path hashers used to merkleize record entries.
+    pub fn initialize_hashers() -> Result<(Poseidon8<N>, Poseidon2<N>)> {
+        let leaf_hasher = Poseidon8::setup("DynamicRecordLeafHasher")?;
+        let path_hasher = Poseidon2::setup("DynamicRecordPathHasher")?;
+        Ok((leaf_hasher, path_hasher))
+    }
 }
 
 #[cfg(test)]
@@ -228,7 +233,7 @@ mod tests {
         assert_eq!(CurrentNetwork::MAX_DATA_ENTRIES.ilog2(), RECORD_DATA_TREE_DEPTH as u32);
     }
 
-    // TODO: Test different record formats.
-    // TODO: Test that you can correctly prove membership of an entry.
-    // TODO: Benchmark merkleization performance for records of various sizes.
+    // TODO (dynamic_dispatch): Test different record formats.
+    // TODO (dynamic_dispatch): Test that you can correctly prove membership of an entry.
+    // TODO (dynamic_dispatch): Benchmark merkleization performance for records of various sizes.
 }
