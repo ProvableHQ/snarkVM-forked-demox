@@ -42,6 +42,7 @@ use rand::{CryptoRng, Rng};
 use snarkvm_synthesizer_snark::{ProvingKey, VerifyingKey};
 
 // TODO (dynamic_dispatch) document
+// TODO (Antonio) cf. above
 // TODO (dynamic_dispatch) move to a better place (cannot be in process:Translation because of circular dependencies)
 // TODO (dynamic_dispatch) change visibility of internals, add constructors
 /// Data collected during execution to prove record translation in dynamic
@@ -269,7 +270,7 @@ pub trait RegistersSigner<N: Network>: RegistersTrait<N> {
     fn set_tvk(&mut self, tvk: Field<N>);
 
     /// Returns the record translation data.
-    fn record_translation_data(&self) -> Result<&Vec<RecordTranslationData<N>>>;
+    fn record_translation_data(&self) -> &Option<Vec<RecordTranslationData<N>>>;
 
     /// Sets the record translation data.
     fn insert_record_translation_data(&mut self, new_record_translation_data: RecordTranslationData<N>);

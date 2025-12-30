@@ -526,7 +526,7 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
     // ********** Case 2: Ladder painting, failed and successful decomissioning **********
 
     // TODO (dynamic_dispatch) change to client 2 once we have can access .owner in dynamic records and the function is updated
-    // Manufacture a ladder for client 1
+    // Manufacture a ladder for client 2
     let ladder_1_id: Scalar<CurrentNetwork> = Uniform::rand(rng);
 
     let ladder_1_inputs =

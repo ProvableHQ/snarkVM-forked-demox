@@ -40,7 +40,8 @@ use itertools::izip;
 
 #[derive(Clone, Debug, Default)]
 pub struct Translation<N: Network> {
-    /// A map of `transition IDs` to a list of `input tasks`.
+    /// A map of `transition IDs` to a list of `input tasks`. Only contains
+    /// entries for transitions that involve translation.
     translation_tasks: HashMap<N::TransitionID, Vec<RecordTranslationData<N>>>,
 }
 
@@ -54,10 +55,9 @@ impl<N: Network> Translation<N> {
     pub fn insert_transition(
         &mut self,
         transition_id: N::TransitionID,
-        record_translation_data: Result<&Vec<RecordTranslationData<N>>>,
+        record_translation_data: Vec<RecordTranslationData<N>>,
     ) -> Result<()> {
-        // TODO (dynamic_dispatch): Result isn't a good interface; also, decide whether always having a value for a valid key = TransitionID (even if empty) is a good choice
-        self.translation_tasks.insert(transition_id, record_translation_data.cloned().unwrap_or_default());
+        self.translation_tasks.insert(transition_id, record_translation_data);
 
         Ok(())
     }
