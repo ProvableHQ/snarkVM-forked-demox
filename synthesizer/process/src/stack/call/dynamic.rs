@@ -812,7 +812,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             };
             lap!(timer, "Computed the request and response");
 
-            // TODO(dynamic_dispatch): If we let Registers keep e.g. an Arc<Stack>, we can just access Registers above.
+            // TODO (dynamic_dispatch): If we let Registers keep e.g. an Arc<Stack>, we can just access Registers above.
             // TODO (@d0cd)
             if let Some(translation_data) = translation_data {
                 for translation_datum in translation_data {
