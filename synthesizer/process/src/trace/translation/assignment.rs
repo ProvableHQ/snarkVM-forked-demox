@@ -13,20 +13,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use circuit::{
-    Aleo,
-    Poseidon2,
-    Poseidon8,
-    RecordDataTree,
-    traits::{ToField, ToFields},
-};
+use circuit::{Aleo, traits::ToFields};
 
 use super::*;
-
-type CircuitLH<A> = Poseidon8<A>;
-type CircuitPH<A> = Poseidon2<A>;
-type ConsoleLH<N> = console::algorithms::Poseidon8<N>;
-type ConsolePH<N> = console::algorithms::Poseidon2<N>;
 
 /// An assignment for the record translation circuit.
 #[derive(Clone, Debug)]
@@ -217,22 +206,7 @@ impl<N: Network> TranslationAssignment<N> {
 
         // ******** Merkelizing the static-record data
 
-        let console_leaf_hasher = ConsoleLH::<A::Network>::setup("DynamicRecordLeafHasher").unwrap();
-        let console_path_hasher = ConsolePH::<A::Network>::setup("DynamicRecordPathHasher").unwrap();
-        let circuit_leaf_hasher = CircuitLH::<A>::constant(console_leaf_hasher.clone());
-        let circuit_path_hasher = CircuitPH::<A>::constant(console_path_hasher.clone());
-
-        let circuit_leaves = circuit_record_static
-            .data()
-            .iter()
-            .map(|(identifier, entry)| {
-                let mut leaf = vec![identifier.to_field()];
-                leaf.extend(entry.to_fields());
-                leaf
-            })
-            .collect::<Vec<Vec<circuit::Field<A>>>>();
-
-        let circuit_tree = RecordDataTree::<A>::new(circuit_leaf_hasher, circuit_path_hasher, &circuit_leaves).unwrap();
+        let circuit_tree = circuit::DynamicRecord::<A>::merkleize_console_data(circuit_record_static.data())?;
         let circuit_data_root = circuit_tree.root();
 
         // ******** Assertions

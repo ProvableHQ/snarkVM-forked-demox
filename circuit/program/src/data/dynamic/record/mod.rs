@@ -19,9 +19,9 @@ mod to_bits;
 mod to_fields;
 mod to_id;
 
-use crate::{Access, Aleo, Equal, Identifier, Literal, Plaintext, Record, ToBits, ToFields, Value};
+use crate::{Access, Aleo, Entry, Equal, Identifier, Literal, Plaintext, Record, ToBits, ToFields, Value};
 
-use console::{RECORD_DATA_TREE_DEPTH, ToField as ConsoleToField, ToFields as ConsoleToFields};
+use console::RECORD_DATA_TREE_DEPTH;
 use snarkvm_circuit_algorithms::{Poseidon2, Poseidon8};
 use snarkvm_circuit_collections::merkle_tree::MerkleTree;
 use snarkvm_circuit_types::{Address, Boolean, Field, Group, U8, U16, environment::prelude::*};
@@ -187,12 +187,50 @@ impl<A: Aleo> DynamicRecord<A> {
         // Get the version.
         let version = record.version().clone();
 
+        let tree = Self::merkleize_console_data(&data)?;
+        let root = tree.root().clone();
+
+        let console_data =
+            data.iter().map(|(identifier, entry)| (identifier, entry).eject_value()).collect::<IndexMap<_, _>>();
+
+        // TODO(Antonio) reintroduce
+        // let console_tree = {
+        //     // TODO (dynamic_dispatch): Compute tree on the fly, with sufficient checks on root consistency.
+        //     let console_leaves = console_data
+        //         .iter()
+        //         .map(|(name, entry)| {
+        //             let mut leaf = vec![];
+        //             leaf.push(name.to_field()?);
+        //             leaf.extend(entry.to_fields()?);
+
+        //             Ok(leaf)
+        //         })
+        //         .collect::<Result<Vec<_>>>()?;
+
+        //     let console_tree =
+        //         console::RecordDataTree::new(&console_leaf_hasher, &console_path_hasher, &console_leaves)?;
+
+        //     ensure!(
+        //         root.eject_value() == *console_tree.root(),
+        //         "The root of the Merkle tree computed inside the circuit differs from that computed on the console objects."
+        //     );
+
+        //     console_tree
+        // };
+
+        Ok(Self { owner, root, nonce, version, tree: None, data: Some(console_data) })
+    }
+
+    /// Injects the ordered entries in `data` into the circuit and computes the
+    /// Merkle tree containing those entires as leaves.
+    pub fn merkleize_console_data(data: &IndexMap<Identifier<A>, Entry<A, Plaintext<A>>>) -> Result<RecordDataTree<A>> {
         // Initalize the hashers.
         let console_leaf_hasher = ConsoleLH::<A::Network>::setup("DynamicRecordLeafHasher").unwrap();
         let console_path_hasher = ConsolePH::<A::Network>::setup("DynamicRecordPathHasher").unwrap();
         let circuit_leaf_hasher = CircuitLH::<A>::constant(console_leaf_hasher.clone());
         let circuit_path_hasher = CircuitPH::<A>::constant(console_path_hasher.clone());
 
+        // Inject the leaves
         let leaves = data
             .iter()
             .map(|(identifier, entry)| {
@@ -202,36 +240,7 @@ impl<A: Aleo> DynamicRecord<A> {
             })
             .collect::<Vec<Vec<Field<A>>>>();
 
-        let tree = RecordDataTree::<A>::new(circuit_leaf_hasher, circuit_path_hasher, &leaves).unwrap();
-        let root = tree.root().clone();
-
-        let console_data =
-            data.iter().map(|(identifier, entry)| (identifier, entry).eject_value()).collect::<IndexMap<_, _>>();
-
-        let console_tree = {
-            // TODO (dynamic_dispatch): Compute tree on the fly, with sufficient checks on root consistency.
-            let console_leaves = console_data
-                .iter()
-                .map(|(name, entry)| {
-                    let mut leaf = vec![];
-                    leaf.push(name.to_field()?);
-                    leaf.extend(entry.to_fields()?);
-
-                    Ok(leaf)
-                })
-                .collect::<Result<Vec<_>>>()?;
-
-            let console_tree =
-                console::RecordDataTree::new(&console_leaf_hasher, &console_path_hasher, &console_leaves)?;
-
-            ensure!(
-                root.eject_value() == *console_tree.root(),
-                "The root of the Merkle tree computed inside the circuit differs from that computed on the console objects."
-            );
-
-            console_tree
-        };
-
-        Ok(Self { owner, root, nonce, version, tree: Some(console_tree), data: Some(console_data) })
+        // Construct the merkle tree
+        RecordDataTree::<A>::new(circuit_leaf_hasher, circuit_path_hasher, &leaves)
     }
 }
