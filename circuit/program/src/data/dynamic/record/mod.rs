@@ -182,10 +182,6 @@ impl<A: Aleo> DynamicRecord<A> {
         let owner = (**record.owner()).clone();
         // Get the record's data (not part of the circuit representation)
         let data = record.data().clone();
-        ensure!(
-            !data.is_empty(),
-            "A record must have at least one entry in order to be merkleized into a dynamic record"
-        );
         // Get the nonce.
         let nonce = record.nonce().clone();
         // Get the version.

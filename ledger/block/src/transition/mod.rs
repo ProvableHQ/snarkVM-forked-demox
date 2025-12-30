@@ -49,6 +49,11 @@ use console::{
 
 /// The caller metadata for a dynamic transition.
 /// Note: This struct is used for internal memory organization only.
+// TODO (@reviewers) This structure informs the Transition of the *caller's* view of the Transition inputs and outputs. It gives the child easy access to inputs/outputs which are viewed differently by the caller parent and the child, which is limited to the following at the moment:
+// - input static/external records received as dynamic ones by the callee
+// - output static/external records received as dynamic ones by the caller
+// However, at the moment, the `inputs` and `outputs` mirror the Transition's inputs and outputs, duplicating values viewed equally by the caller and callee; and only differing at some positions due to the situations above. Equall viewed values are checked to have the expected type only for defense in depth: the verifier does not meaningfully use them.
+// An alternative design was considered, where TransitionCallerMetadata would contain a more compact representation including only differing inputs/outputs. This would be slightly more cumbersom to work with, but more memory efficient and elegant. Decide whether switching to the latter desing is desired (at least at this stage).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TransitionCallerMetadata<N: Network> {
     /// The caller inputs.

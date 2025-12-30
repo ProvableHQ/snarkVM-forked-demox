@@ -222,11 +222,6 @@ impl<N: Network> TranslationAssignment<N> {
         let circuit_leaf_hasher = CircuitLH::<A>::constant(console_leaf_hasher.clone());
         let circuit_path_hasher = CircuitPH::<A>::constant(console_path_hasher.clone());
 
-        ensure!(
-            !circuit_record_static.data().is_empty(),
-            "A record must have at least one entry in order to be merkleized into a dynamic record"
-        );
-
         let circuit_leaves = circuit_record_static
             .data()
             .iter()
