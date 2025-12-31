@@ -715,7 +715,7 @@ fn test_complex_dynamic_graph_construction_internal(
         "call one.aleo/d r1 r2 into r3;".to_string()
     };
 
-    let program2_string = format!(
+    let program2_str = format!(
         r"
         import zero.aleo;
         import one.aleo;
@@ -732,7 +732,7 @@ fn test_complex_dynamic_graph_construction_internal(
         constructor:
             assert.eq true true;",
     );
-    let (string, program2) = Program::<CurrentNetwork>::parse(program2_string.as_str()).unwrap();
+    let (string, program2) = Program::<CurrentNetwork>::parse(program2_str.as_str()).unwrap();
     assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
 
     /******************************* program 3 *******************************/
@@ -761,7 +761,7 @@ fn test_complex_dynamic_graph_construction_internal(
         "call zero.aleo/c r1 r2 into r4;".to_string()
     };
 
-    let program3_string = format!(
+    let program3_str = format!(
         r"
         import zero.aleo;
         import one.aleo;
@@ -781,7 +781,7 @@ fn test_complex_dynamic_graph_construction_internal(
             assert.eq true true;",
     );
 
-    let (string, program3) = Program::<CurrentNetwork>::parse(program3_string.as_str()).unwrap();
+    let (string, program3) = Program::<CurrentNetwork>::parse(program3_str.as_str()).unwrap();
     assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
 
     /******************************* program 4 *******************************/
@@ -802,7 +802,7 @@ fn test_complex_dynamic_graph_construction_internal(
         "call three.aleo/e r1 r2 into r3;".to_string()
     };
 
-    let program4_string = format!(
+    let program4_str = format!(
         r"
     import two.aleo;
     import three.aleo;
@@ -820,7 +820,7 @@ fn test_complex_dynamic_graph_construction_internal(
         assert.eq true true;",
     );
 
-    let (string, program4) = Program::<CurrentNetwork>::parse(program4_string.as_str()).unwrap();
+    let (string, program4) = Program::<CurrentNetwork>::parse(program4_str.as_str()).unwrap();
     assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
 
     // Initialize the RNG.

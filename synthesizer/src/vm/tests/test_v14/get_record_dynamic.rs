@@ -36,7 +36,7 @@ fn test_get_record_dynamic() {
     let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Initialize a new program.
-    let program_string = format!(
+    let program_str = format!(
         r"
         program {program_name_str}.aleo;
 
@@ -108,7 +108,7 @@ fn test_get_record_dynamic() {
         "
     );
 
-    let program = Program::<CurrentNetwork>::from_str(&program_string).unwrap();
+    let program = Program::<CurrentNetwork>::from_str(&program_str).unwrap();
 
     // Initialize the VM.
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
@@ -297,4 +297,83 @@ fn test_get_record_dynamic() {
         .to_string()
         .contains("root in the dynamic record does not match")
     );
+}
+
+// Translates the output of a call to credits.aleo/transfer_public_to_private
+// into a dynamic record to ensure signature verification has not been broken by
+// the new caller metadata
+#[test]
+fn tanslate_transfer_public_to_private() {
+    let credits_program_str = Identifier::<CurrentNetwork>::from_str("credits").unwrap();
+    let network_str = "aleo";
+    let transfer_function_name = Identifier::<CurrentNetwork>::from_str("transfer_public_to_private").unwrap();
+    let credits_field = credits_program_str.to_field().unwrap();
+    let network_field = Identifier::<CurrentNetwork>::from_str(network_str).unwrap().to_field().unwrap();
+    let transfer_function_field = transfer_function_name.to_field().unwrap();
+
+    let program_str = format!(
+        r"
+        program dynamic_credits.aleo;
+
+        // Calls transfer_public_to_private and publicly outputs amount
+        function transfer_pub_priv_and_inform:
+            input r0 as u64.private;
+
+            call.dynamic {credits_field} {network_field} {transfer_function_field}
+                with self.caller r0 (as address.private u64.public)
+                into r1 r2 (as dynamic.record dynamic.future);
+
+            get.record.dynamic r1.microcredits into r3 as u64;
+
+            async transfer_pub_priv_and_inform r2 into r4;
+
+            output r3 as u64.public;
+            output r4 as dynamic_credits.aleo/transfer_pub_priv_and_inform.future;
+
+        finalize transfer_pub_priv_and_inform:
+            input r0 as dynamic.future;
+            await r0;
+
+        constructor:
+            assert.eq true true;
+    "
+    );
+
+    let program = Program::<CurrentNetwork>::from_str(&program_str).unwrap();
+
+    let rng = &mut TestRng::default();
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    // Deploy the program
+    println!("Deploying program dynamic_credits.aleo...");
+    let transaction_deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[transaction_deploy], rng);
+
+    // Execute the function
+    println!("Executing root function dynamic_credits.aleo/transfer_pub_priv_and_inform...");
+    let transaction_transfer = vm
+        .execute(
+            &caller_private_key,
+            ("dynamic_credits.aleo", "transfer_pub_priv_and_inform"),
+            vec![Value::<CurrentNetwork>::from_str("57u64").unwrap()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    // TODO (Antonio) remove
+    // print the ID of the credits.aleo credits.record translation key
+    let stack = vm.process().read().get_stack("credits.aleo").unwrap();
+    let translation_key =
+        stack.get_translation_verifying_key(&Identifier::<CurrentNetwork>::from_str("credits").unwrap()).unwrap();
+    println!("translation key: {}", translation_key.id);
+    vm.check_transaction(&transaction_transfer, None, rng).unwrap();
+
+    // TODO (Antonio) fix
+    add_and_test(&vm, &caller_private_key, &[transaction_transfer], rng);
 }

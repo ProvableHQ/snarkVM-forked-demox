@@ -50,6 +50,69 @@ use snarkvm_utilities::TestRng;
 // - Test the case with the interface of a dynamic call doesn't match the mode
 // - Conditional execution with finalize scopes
 
+/************************* Dynamic-record test cases *************************/
+//
+// The following list contains some translation- and dynamic-record-related
+// situations tested in this module. Note it is non-exhaustive in that it does
+// not detail all tested aspects of the functionality. Each situation is
+// followed by a test case (of several, in some instances) where it arises.
+//
+// Single-translation test cases
+// - input dynamic -> static external
+//   In: translation.rs::test_translation_input_dynamic_external
+// - input dynamic -> static non-external
+//   In: translation.rs::test_translation_input_dynamic_non_external
+// - output static non-external -> dynamic
+//   In: translation.rs::test_translation_output_non_external_dynamic
+// - output static external -> dynamic
+//   In: translation.rs::test_translation_output_external_dynamic
+//
+// Chained cases
+// - input static -> dynamic passed as static -> dynamic, output as dynamic -> static
+// - input static -> dynamic passed as static -> dynamic, output as dynamic (check dynamic-record OutputID changes as expected)
+// - input static external -> dynamic subsequently passed as input dynamic -> static
+// - output static -> dynamic subsequently passed as output dynamic -> static
+// - static converted to dynamic outside the ledger
+//       passed as input dynamic -> static
+//       modify it (mint new)
+//       output static -> dynamic
+//       input dynamic -> dynamic (no translation)
+//       input dynamic -> static
+//   translation.rs::test_translation_triple
+//
+// get.record.dynamic
+// - Record entries with different visibility but coinciding identifiers can be read with the same get.record.dynamic instruction
+//   In: mixed.rs::test_translation_get_dynamic_cast_to_dynamic
+//       note product_id is private in toy.record and public in ladder.record and both are read in manager.aleo/verify_signature
+// - Dynamic records coming from different static records can be read with the same get.record.dynamic instruction
+//   In: mixed.rs::test_translation_get_dynamic_cast_to_dynamic (e. g. manager.aleo/verify_signature)
+//
+// Consumption/production
+// - Casting a static record into a dynamic one and passing the latter to a function expecting a dynamic record does not consume it
+//   In: mixed.rs::test_translation_get_dynamic_cast_to_dynamic Case 1
+//       (the call to function_verify_signature_field does not cause a double spend, as expected)
+// - Casting a static record into a dynamic one and passing the latter to a function expecting a static record (translation involved) consumes it
+//   In: cast.rs::test_cast_simple Case 2 (fails due to double spend)
+// - TODO check vm.transition_store().records().count() is as expected when a record is produced/translated
+//
+// Key-fetching
+// - Translations for the same record across different transitions are proved/verified with the same key (in the same Varuna batch)
+//   In: translation.rs::test_translation_triple
+//       three translations for gas.record:
+//        - input dynamic -> static non-external
+//        - output static non-external -> dynamic
+//        - input dynamic -> static external
+//       Run with the snark-print feature and observe the batch with 3 instances at the end
+// - output static {program_a/record_name_a, program_a/record_name_b, program_b/record_name_a, program_b/ record_name_b} -> dynamic: four differeny keys should be fetched
+//   In: translation.rs::test_differing_keys
+//       Run with the snark-print feature and observe the batch sizes [1, 1, 1, 1, 1, 1, 1, 1, 1] (translation key IDs are also displayed for convenience)
+//
+// Signature consistency
+// - Translate an output record fom a call to a preexisting program to ensure signature-verification circuit has not changed
+//   In: get_record_dynamic.rs::tanslate_transfer_public_to_private
+
+// Adds the given transactions into a new block and asserts all of them were
+// accepted
 fn add_and_test(
     vm: &VM<CurrentNetwork, LedgerType>,
     caller_private_key: &PrivateKey<CurrentNetwork>,

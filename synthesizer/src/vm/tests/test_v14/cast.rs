@@ -122,7 +122,7 @@ fn test_cast_simple() {
     let network_field = network_name.to_field().unwrap();
     let function_get_age_in_years_stat_callee_field = function_get_age_in_years_stat_callee_name.to_field().unwrap();
 
-    let program_a_string = r"
+    let program_a_str = r"
         program garden_center.aleo;
 
         record plant:
@@ -144,7 +144,7 @@ fn test_cast_simple() {
             assert.eq true true;
         ";
 
-    let program_b_string = format!(
+    let program_b_str = format!(
         r"
         import garden_center.aleo;
 
@@ -202,8 +202,8 @@ fn test_cast_simple() {
     );
 
     // Initialize a new program.
-    let program_a = Program::<CurrentNetwork>::from_str(program_a_string).unwrap();
-    let program_b = Program::<CurrentNetwork>::from_str(&program_b_string).unwrap();
+    let program_a = Program::<CurrentNetwork>::from_str(program_a_str).unwrap();
+    let program_b = Program::<CurrentNetwork>::from_str(&program_b_str).unwrap();
 
     // Initialize the VM.
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), &mut rng);

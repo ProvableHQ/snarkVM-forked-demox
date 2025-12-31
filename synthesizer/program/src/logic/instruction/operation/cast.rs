@@ -338,7 +338,7 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
             CastType::DynamicRecord => {
                 ensure!(inputs.len() == 1, "Casting to a dynamic record requires exactly 1 operand");
 
-                // TODO (dynamic dispatch) do we have access to the type of the register self.operands[0]? I would like to add the sanity check
+                // TODO (dynamic_dispatch) do we have access to the type of the register self.operands[0]? I would like to add the sanity check
                 //     matches!(register_type, RegisterType::Record(..) | RegisterType::ExternalRecord(..))
                 // but cannot find the type in the stack or registers objects
 
@@ -634,7 +634,7 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
             CastType::DynamicRecord => {
                 ensure!(inputs.len() == 1, "Casting to a dynamic record requires exactly 1 operand");
 
-                // TODO (dynamic dispatch) do we have access to the type of the register self.operands[0]? I would like to add the sanity check
+                // TODO (dynamic_dispatch) do we have access to the type of the register self.operands[0]? I would like to add the sanity check
                 //     matches!(register_type, RegisterType::Record(..) | RegisterType::ExternalRecord(..))
                 // but cannot find the type in the stack or registers objects
 

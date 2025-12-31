@@ -35,6 +35,16 @@ impl<A: Aleo> Response<A> {
             None => compute_function_id(network_id, program_id, function_name),
         };
 
+        if outputs.len() != output_types.len() || output_types.len() != output_registers.len() {
+            let msg = format!(
+                "Mismatch in the number of outputs, output types, and output registers: {} vs {} vs {}",
+                outputs.len(),
+                output_types.len(),
+                output_registers.len()
+            );
+            return A::halt(msg);
+        }
+
         match outputs
             .iter()
             .zip_eq(output_types)
