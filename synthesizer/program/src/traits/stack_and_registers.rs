@@ -199,8 +199,11 @@ pub trait StackTrait<N: Network> {
     /// Returns a reference to the function with the given function name.
     fn get_function_ref(&self, function_name: &Identifier<N>) -> Result<&Function<N>>;
 
-    /// Returns the expected number of calls for the given function name.
-    fn get_number_of_calls(&self, function_name: &Identifier<N>) -> Result<usize>;
+    /// Returns the minimum number of calls for the given function name.
+    fn get_minimum_number_of_calls(&self, function_name: &Identifier<N>) -> Result<usize>;
+
+    /// Returns whether or not a function has a dynamic call in its execution.
+    fn contains_dynamic_call(&self, function_name: &Identifier<N>) -> Result<bool>;
 
     /// Samples a value for the given value_type.
     fn sample_value<R: Rng + CryptoRng>(

@@ -42,6 +42,8 @@ pub struct TransitionMemory<N: Network> {
     reverse_tcm_map: MemoryMap<Field<N>, N::TransitionID>,
     /// The signer commitments.
     scm_map: MemoryMap<N::TransitionID, Field<N>>,
+    /// The `is_dynamic` map.
+    is_dynamic_map: MemoryMap<N::TransitionID, bool>,
     /// The optional caller inputs map.
     caller_inputs_map: MemoryMap<N::TransitionID, Vec<Input<N>>>,
     /// The optional caller outputs map.
@@ -58,6 +60,7 @@ impl<N: Network> TransitionStorage<N> for TransitionMemory<N> {
     type TCMMap = MemoryMap<N::TransitionID, Field<N>>;
     type ReverseTCMMap = MemoryMap<Field<N>, N::TransitionID>;
     type SCMMap = MemoryMap<N::TransitionID, Field<N>>;
+    type IsDynamicMap = MemoryMap<N::TransitionID, bool>;
     type CallerInputsMap = MemoryMap<N::TransitionID, Vec<Input<N>>>;
     type CallerOutputsMap = MemoryMap<N::TransitionID, Vec<Output<N>>>;
 
@@ -73,6 +76,7 @@ impl<N: Network> TransitionStorage<N> for TransitionMemory<N> {
             tcm_map: MemoryMap::default(),
             reverse_tcm_map: MemoryMap::default(),
             scm_map: MemoryMap::default(),
+            is_dynamic_map: MemoryMap::default(),
             caller_inputs_map: MemoryMap::default(),
             caller_outputs_map: MemoryMap::default(),
         })
@@ -116,6 +120,11 @@ impl<N: Network> TransitionStorage<N> for TransitionMemory<N> {
     /// Returns the signer commitments.
     fn scm_map(&self) -> &Self::SCMMap {
         &self.scm_map
+    }
+
+    /// Returns the `is_dynamic` map.
+    fn is_dynamic_map(&self) -> &Self::IsDynamicMap {
+        &self.is_dynamic_map
     }
 
     /// Returns the caller inputs map.

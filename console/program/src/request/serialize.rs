@@ -22,7 +22,11 @@ impl<N: Network> Serialize for Request<N> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match serializer.is_human_readable() {
             true => {
-                let num_fields = if self.dynamic.is_some() { 12 } else { 11 };
+                // Determine the number of fields based on whether is_dynamic is present.
+                let num_fields = match self.version() {
+                    RequestVersion::V1 => 11,
+                    RequestVersion::V2 => 12,
+                };
                 let mut request = serializer.serialize_struct("Request", num_fields)?;
                 request.serialize_field("signer", &self.signer)?;
                 request.serialize_field("network", &self.network_id)?;
@@ -35,8 +39,9 @@ impl<N: Network> Serialize for Request<N> {
                 request.serialize_field("tvk", &self.tvk)?;
                 request.serialize_field("tcm", &self.tcm)?;
                 request.serialize_field("scm", &self.scm)?;
-                if let Some(is_dynamic) = self.dynamic {
-                    request.serialize_field("dynamic", &is_dynamic)?;
+                // If the request is V2, serialize the dynamic flag.
+                if self.version() == RequestVersion::V2 {
+                    request.serialize_field("dynamic", &self.is_dynamic())?;
                 }
                 request.end()
             }
@@ -77,8 +82,8 @@ impl<'de, N: Network> Deserialize<'de> for Request<N> {
                     DeserializeExt::take_from_value::<D>(&mut request, "tcm")?,
                     // Retrieve the `scm`.
                     DeserializeExt::take_from_value::<D>(&mut request, "scm")?,
-                    // Retrieve the `is_dynamic` flag.
-                    DeserializeExt::take_from_value::<D>(&mut request, "dynamic").ok(),
+                    // Retrieve the `is_dynamic` flag (None if missing, indicating V1 legacy).
+                    DeserializeExt::take_from_value::<D>(&mut request, "is_dynamic").ok(),
                 )))
             }
             false => FromBytesDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "request"),

@@ -27,6 +27,15 @@ use snarkvm_console_account::{Address, ComputeKey, GraphKey, PrivateKey, Signatu
 use snarkvm_console_network::Network;
 use snarkvm_console_types::prelude::*;
 
+/// The version for a request.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(super) enum RequestVersion {
+    /// V1 requests do not have a `dynamic` flag and are implicitly static.
+    V1 = 1,
+    /// V2 requests include a `dynamic` flag to indicate whether or not the request is dynamic.
+    V2 = 2,
+}
+
 #[derive(Clone, PartialEq, Eq)]
 pub struct Request<N: Network> {
     /// The request signer.
@@ -51,7 +60,8 @@ pub struct Request<N: Network> {
     tcm: Field<N>,
     /// The signer commitment.
     scm: Field<N>,
-    /// An optional flag indicating whether or not the request is dynamic.
+    /// A flag indicating whether or not the request is dynamic.
+    /// Note that`None` indicates that the request is not dynamic.
     dynamic: Option<bool>,
 }
 
@@ -187,14 +197,22 @@ impl<N: Network> Request<N> {
         &self.scm
     }
 
-    /// Returns the optional dynamic flag.
-    pub fn dynamic(&self) -> Option<bool> {
+    /// Returns the dynamic flag.
+    pub const fn dynamic(&self) -> Option<bool> {
         self.dynamic
     }
 
     /// Returns whether or not the request is dynamic.
     pub fn is_dynamic(&self) -> bool {
         self.dynamic.unwrap_or(false)
+    }
+
+    /// Returns the version for this request.
+    pub(super) fn version(&self) -> RequestVersion {
+        match self.dynamic {
+            None => RequestVersion::V1,
+            Some(_) => RequestVersion::V2,
+        }
     }
 
     /// Returns the expected caller input IDs for a dynamic call by:

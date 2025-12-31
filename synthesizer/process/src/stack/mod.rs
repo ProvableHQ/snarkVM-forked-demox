@@ -359,9 +359,9 @@ impl<N: Network> Stack<N> {
 
         // Check that the functions are valid.
         for function in self.program.functions().values() {
-            // Determine the number of calls for the function.
-            // This includes a safety check for the maximum number of calls.
-            self.get_number_of_calls(function.name())?;
+            // Determine the minimum number of calls for the function.
+            // This includes a safety check against maximum allowed number of calls.
+            self.get_minimum_number_of_calls(function.name())?;
         }
         Ok(())
     }

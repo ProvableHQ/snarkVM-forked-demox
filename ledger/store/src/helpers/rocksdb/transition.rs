@@ -49,6 +49,8 @@ pub struct TransitionDB<N: Network> {
     reverse_tcm_map: DataMap<Field<N>, N::TransitionID>,
     /// The signer commitments.
     scm_map: DataMap<N::TransitionID, Field<N>>,
+    /// The `is_dynamic` map.
+    is_dynamic_map: DataMap<N::TransitionID, bool>,
     /// The caller inputs map.
     caller_inputs_map: DataMap<N::TransitionID, Vec<Input<N>>>,
     /// The caller outputs map.
@@ -65,6 +67,7 @@ impl<N: Network> TransitionStorage<N> for TransitionDB<N> {
     type TCMMap = DataMap<N::TransitionID, Field<N>>;
     type ReverseTCMMap = DataMap<Field<N>, N::TransitionID>;
     type SCMMap = DataMap<N::TransitionID, Field<N>>;
+    type IsDynamicMap = DataMap<N::TransitionID, bool>;
     type CallerInputsMap = DataMap<N::TransitionID, Vec<Input<N>>>;
     type CallerOutputsMap = DataMap<N::TransitionID, Vec<Output<N>>>;
 
@@ -80,6 +83,7 @@ impl<N: Network> TransitionStorage<N> for TransitionDB<N> {
             tcm_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Transition(TransitionMap::TCM))?,
             reverse_tcm_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(),  MapID::Transition(TransitionMap::ReverseTCM))?,
             scm_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Transition(TransitionMap::SCM))?,
+            is_dynamic_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Transition(TransitionMap::IsDynamic))?,
             caller_inputs_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Transition(TransitionMap::CallerInputs))?,
             caller_outputs_map: rocksdb::RocksDB::open_map(N::ID, storage, MapID::Transition(TransitionMap::CallerOutputs))?,
         })
@@ -124,6 +128,11 @@ impl<N: Network> TransitionStorage<N> for TransitionDB<N> {
     fn scm_map(&self) -> &Self::SCMMap {
         &self.scm_map
     }
+
+    /// Returns the `is_dynamic` map.
+    fn is_dynamic_map(&self) -> &Self::IsDynamicMap {
+        &self.is_dynamic_map
+    } 
 
     /// Returns the caller inputs map.
     fn caller_inputs_map(&self) -> &Self::CallerInputsMap {

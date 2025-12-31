@@ -876,8 +876,11 @@ fn test_malicious_caller_inputs_outputs() {
         *child_transition.tcm(),
         *child_transition.scm(),
         Some(
-            TransitionCallerMetadata::new(dishonest_caller_inputs, child_transition.caller_outputs().unwrap().to_vec())
-                .unwrap(),
+            TransitionCallerMetadata::new_dynamic(
+                dishonest_caller_inputs,
+                child_transition.caller_outputs().unwrap().to_vec(),
+            )
+            .unwrap(),
         ),
     )
     .unwrap();
@@ -950,8 +953,11 @@ fn test_malicious_caller_inputs_outputs() {
         *child_transition.tcm(),
         *child_transition.scm(),
         Some(
-            TransitionCallerMetadata::new(child_transition.caller_inputs().unwrap().to_vec(), dishonest_caller_outputs)
-                .unwrap(),
+            TransitionCallerMetadata::new_dynamic(
+                child_transition.caller_inputs().unwrap().to_vec(),
+                dishonest_caller_outputs,
+            )
+            .unwrap(),
         ),
     )
     .unwrap();

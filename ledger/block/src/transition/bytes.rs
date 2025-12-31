@@ -15,14 +15,14 @@
 
 use super::*;
 
-// TODO (@d0cd) True versioning for transitions.
 impl<N: Network> FromBytes for Transition<N> {
     /// Reads the output from a buffer.
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
-        // Read the version and ensure that it is valid.
+        // Read the version.
         let version = match u8::read_le(&mut reader)? {
-            version @ (1 | 2) => version,
-            _ => return Err(error("Invalid request version")),
+            1 => TransitionVersion::V1,
+            2 => TransitionVersion::V2,
+            v => return Err(error(format!("Invalid transition version: {v}"))),
         };
 
         // Read the transition ID.
@@ -73,40 +73,29 @@ impl<N: Network> FromBytes for Transition<N> {
         // Read the signer commitment.
         let scm = FromBytes::read_le(&mut reader)?;
 
-        // Read the optional caller metadata.
+        // If the version is V2, read the caller metadata.
         let caller_metadata = match version {
-            1 => None,
-            2 => {
-                // Read the number of caller inputs.
-                let num_caller_inputs = u8::read_le(&mut reader)?;
-                // Ensure the number of caller inputs is within bounds.
-                if num_caller_inputs as usize > N::MAX_INPUTS {
-                    return Err(error(format!(
-                        "Transition (from 'read_le') has too many caller inputs ({} > {})",
-                        num_caller_inputs,
-                        N::MAX_INPUTS
-                    )));
+            TransitionVersion::V1 => None,
+            TransitionVersion::V2 => {
+                // Read the is_dynamic flag.
+                let is_dynamic = bool::read_le(&mut reader)?;
+                // If the metadata is dynamic, then read the inputs and outputs.
+                if is_dynamic {
+                    // Read the caller inputs.
+                    let caller_inputs =
+                        (0..num_inputs).map(|_| FromBytes::read_le(&mut reader)).collect::<Result<Vec<_>, _>>()?;
+                    // Read the caller outputs.
+                    let caller_outputs =
+                        (0..num_outputs).map(|_| FromBytes::read_le(&mut reader)).collect::<Result<Vec<_>, _>>()?;
+                    // Construct the caller metadata.
+                    Some(
+                        TransitionCallerMetadata::new_dynamic(caller_inputs, caller_outputs)
+                            .map_err(|e| error(e.to_string()))?,
+                    )
+                } else {
+                    Some(TransitionCallerMetadata::new_static())
                 }
-                // Read the caller inputs.
-                let caller_inputs =
-                    (0..num_caller_inputs).map(|_| FromBytes::read_le(&mut reader)).collect::<Result<Vec<_>, _>>()?;
-                // Read the number of caller outputs.
-                let num_caller_outputs = u8::read_le(&mut reader)?;
-                // Ensure the number of caller outputs is within bounds.
-                if num_caller_outputs as usize > N::MAX_OUTPUTS {
-                    return Err(error(format!(
-                        "Transition (from 'read_le') has too many caller outputs ({} > {})",
-                        num_caller_outputs,
-                        N::MAX_OUTPUTS
-                    )));
-                }
-                // Read the caller outputs.
-                let caller_outputs =
-                    (0..num_caller_outputs).map(|_| FromBytes::read_le(&mut reader)).collect::<Result<Vec<_>, _>>()?;
-                // Construct the caller metadata.
-                Some(TransitionCallerMetadata::new(caller_inputs, caller_outputs).map_err(|e| error(e.to_string()))?)
             }
-            _ => return Err(error("Invalid transition version")),
         };
 
         // Construct the candidate transition.
@@ -124,10 +113,7 @@ impl<N: Network> ToBytes for Transition<N> {
     /// Writes the literal to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         // Write the version.
-        match self.caller_metadata.is_some() {
-            false => 1u8.write_le(&mut writer)?,
-            true => 2u8.write_le(&mut writer)?,
-        }
+        (self.version() as u8).write_le(&mut writer)?;
 
         // Write the transition ID.
         self.id.write_le(&mut writer)?;
@@ -153,19 +139,20 @@ impl<N: Network> ToBytes for Transition<N> {
         // Write the signer commitment.
         self.scm.write_le(&mut writer)?;
 
-        // Write the optional caller metadata.
+        // If the version is V2, write the caller metadata.
         if let Some(caller_metadata) = &self.caller_metadata {
-            // Write the number of caller inputs.
-            (u8::try_from(caller_metadata.inputs().len()).map_err(|e| error(e.to_string()))?).write_le(&mut writer)?;
-            // Write the caller inputs.
-            for caller_input in caller_metadata.inputs() {
-                caller_input.write_le(&mut writer)?;
-            }
-            // Write the number of caller outputs.
-            (u8::try_from(caller_metadata.outputs().len()).map_err(|e| error(e.to_string()))?).write_le(&mut writer)?;
-            // Write the caller outputs.
-            for caller_output in caller_metadata.outputs() {
-                caller_output.write_le(&mut writer)?;
+            // Write the is_dynamic flag.
+            caller_metadata.is_dynamic().write_le(&mut writer)?;
+            // If the metadata is dynamic, write the inputs and outputs.
+            if caller_metadata.is_dynamic() {
+                // Write the caller inputs.
+                for input in caller_metadata.inputs() {
+                    input.write_le(&mut writer)?;
+                }
+                // Write the caller outputs.
+                for output in caller_metadata.outputs() {
+                    output.write_le(&mut writer)?;
+                }
             }
         }
 
@@ -199,7 +186,7 @@ mod tests {
             // Sample the transition.
             let static_transition = crate::transition::test_helpers::sample_transition(rng);
 
-            let caller_metadata = TransitionCallerMetadata::new(
+            let caller_metadata = TransitionCallerMetadata::new_dynamic(
                 static_transition.inputs().to_vec(),
                 static_transition.outputs().to_vec(),
             )

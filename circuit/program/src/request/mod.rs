@@ -152,8 +152,8 @@ pub struct Request<A: Aleo> {
     tcm: Field<A>,
     /// The signer commitment.
     scm: Field<A>,
-    /// An optional flag indicating whether or not the request is dynamic.
-    //  Note. This field is intentionally excluded from the circuit representation and is only used to eject back to the console representation.
+    /// An flag indicating whether or not the request is dynamic.
+    /// Note that this field is intentionally excluded from the circuit representation and is only used to eject back to the console representation.
     dynamic: Option<bool>,
 }
 
@@ -308,11 +308,6 @@ impl<A: Aleo> Request<A> {
     /// Returns the signer commitment.
     pub const fn scm(&self) -> &Field<A> {
         &self.scm
-    }
-
-    /// Returns the dynamic flag.
-    pub const fn dynamic(&self) -> Option<bool> {
-        self.dynamic
     }
 
     /// Returns whether or not the request is dynamic.

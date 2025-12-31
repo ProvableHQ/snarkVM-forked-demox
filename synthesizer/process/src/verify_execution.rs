@@ -43,8 +43,9 @@ impl<N: Network> Process<N> {
             let transition = execution.peek()?;
             // Retrieve the stack.
             let stack = self.get_stack(transition.program_id())?;
+            // TODO (@d0cd)
             // Ensure the number of calls matches the number of transitions.
-            let _number_of_calls = stack.get_number_of_calls(transition.function_name())?;
+            let _number_of_calls = stack.get_minimum_number_of_calls(transition.function_name())?;
 
             // TODO (dynamic_dispatch) re-introduce or redesign, fails to account for dynamic calls
             // ensure!(

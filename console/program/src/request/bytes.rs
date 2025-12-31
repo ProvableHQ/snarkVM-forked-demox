@@ -18,10 +18,11 @@ use super::*;
 impl<N: Network> FromBytes for Request<N> {
     /// Reads the request from a buffer.
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
-        // Read the version and ensure that it is valid.
+        // Read the version.
         let version = match u8::read_le(&mut reader)? {
-            version @ (1 | 2) => version,
-            _ => return Err(error("Invalid request version")),
+            1 => RequestVersion::V1,
+            2 => RequestVersion::V2,
+            v => return Err(error(format!("Invalid request version: {v}"))),
         };
         // Read the signer.
         let signer = FromBytes::read_le(&mut reader)?;
@@ -49,11 +50,11 @@ impl<N: Network> FromBytes for Request<N> {
         let tcm = FromBytes::read_le(&mut reader)?;
         // Read the signer commitment.
         let scm = FromBytes::read_le(&mut reader)?;
-        // Read the dynamic flag.
+
+        // If the version is V2, read the dynamic flag.
         let dynamic = match version {
-            1 => None,
-            2 => Some(bool::read_le(&mut reader)?),
-            _ => return Err(error("Invalid request version")),
+            RequestVersion::V1 => None,
+            RequestVersion::V2 => Some(bool::read_le(&mut reader)?),
         };
 
         Ok(Self::from((
@@ -77,10 +78,8 @@ impl<N: Network> ToBytes for Request<N> {
     /// Writes the request to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         // Write the version.
-        match self.dynamic.is_some() {
-            false => 1u8.write_le(&mut writer)?,
-            true => 2u8.write_le(&mut writer)?,
-        }
+        let version = self.version();
+        (version as u8).write_le(&mut writer)?;
         // Write the signer.
         self.signer.write_le(&mut writer)?;
         // Write the network ID.
@@ -118,9 +117,10 @@ impl<N: Network> ToBytes for Request<N> {
         self.tcm.write_le(&mut writer)?;
         // Write the signer commitment.
         self.scm.write_le(&mut writer)?;
-        // If the request is dynamic, write the dynamic flag.
-        if let Some(is_dynamic) = self.dynamic {
-            is_dynamic.write_le(&mut writer)?;
+
+        // If the version is V2, write the dynamic flag.
+        if version == RequestVersion::V2 {
+            self.is_dynamic().write_le(&mut writer)?;
         }
 
         Ok(())

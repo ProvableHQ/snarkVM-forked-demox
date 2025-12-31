@@ -179,8 +179,6 @@ impl<N: Network> Parser for GetDynamic<N> {
         // Parse the whitespace from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
 
-        // TODO (@d0cd) Verify that the grammar does not have ambiguities.
-
         // Parse the program name operand from the string.
         let (string, program_name) = Operand::parse(string)?;
         // Parse the whitespace from the string.

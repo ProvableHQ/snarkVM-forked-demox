@@ -2687,7 +2687,8 @@ fn test_long_import_chain_with_calls() {
         process.add_program(&program).unwrap();
         // Check that the number of calls is correct.
         let stack = process.get_stack(program.id()).unwrap();
-        let number_of_calls = stack.get_number_of_calls(program.functions().into_iter().next().unwrap().0).unwrap();
+        let number_of_calls =
+            stack.get_minimum_number_of_calls(program.functions().into_iter().next().unwrap().0).unwrap();
         assert_eq!(number_of_calls, i + 1);
     }
 

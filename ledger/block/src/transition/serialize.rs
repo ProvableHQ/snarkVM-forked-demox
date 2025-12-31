@@ -20,7 +20,13 @@ impl<N: Network> Serialize for Transition<N> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match serializer.is_human_readable() {
             true => {
-                let num_fields = if self.caller_metadata.is_some() { 10 } else { 8 };
+                let num_fields = match self.caller_metadata() {
+                    None => 7,
+                    Some(metadata) => match metadata.is_dynamic() {
+                        true => 8,
+                        false => 10,
+                    },
+                };
                 let mut transition = serializer.serialize_struct("Transition", num_fields)?;
                 transition.serialize_field("id", &self.id)?;
                 transition.serialize_field("program", &self.program_id)?;
@@ -31,8 +37,11 @@ impl<N: Network> Serialize for Transition<N> {
                 transition.serialize_field("tcm", &self.tcm)?;
                 transition.serialize_field("scm", &self.scm)?;
                 if let Some(caller_metadata) = &self.caller_metadata {
-                    transition.serialize_field("caller_inputs", caller_metadata.inputs())?;
-                    transition.serialize_field("caller_outputs", caller_metadata.outputs())?;
+                    transition.serialize_field("is_dynamic", &caller_metadata.is_dynamic())?;
+                    if caller_metadata.is_dynamic() {
+                        transition.serialize_field("caller_inputs", caller_metadata.inputs())?;
+                        transition.serialize_field("caller_outputs", caller_metadata.outputs())?;
+                    }
                 }
                 transition.end()
             }
@@ -52,26 +61,22 @@ impl<'de, N: Network> Deserialize<'de> for Transition<N> {
                 let id: N::TransitionID = DeserializeExt::take_from_value::<D>(&mut transition, "id")?;
 
                 // Retrieve the optional caller metadata fields.
-                let caller_inputs: Option<Vec<Input<N>>> = serde_json::from_value(
-                    transition.get_mut("caller_inputs").unwrap_or(&mut serde_json::Value::Null).take(),
-                )
-                .map_err(de::Error::custom)?;
-                let caller_outputs: Option<Vec<Output<N>>> = serde_json::from_value(
-                    transition.get_mut("caller_outputs").unwrap_or(&mut serde_json::Value::Null).take(),
-                )
-                .map_err(de::Error::custom)?;
-
-                // Construct the optional caller metadata.
-                let caller_metadata = match (caller_inputs, caller_outputs) {
-                    (Some(inputs), Some(outputs)) => {
-                        Some(TransitionCallerMetadata::new(inputs, outputs).map_err(de::Error::custom)?)
+                let is_dynamic: Option<bool> = DeserializeExt::take_from_value::<D>(&mut transition, "is_dynamic").ok();
+                let caller_metadata = match is_dynamic {
+                    Some(is_dynamic) => {
+                        if is_dynamic {
+                            Some(
+                                TransitionCallerMetadata::new_dynamic(
+                                    DeserializeExt::take_from_value::<D>(&mut transition, "caller_inputs")?,
+                                    DeserializeExt::take_from_value::<D>(&mut transition, "caller_outputs")?,
+                                )
+                                .map_err(de::Error::custom)?,
+                            )
+                        } else {
+                            Some(TransitionCallerMetadata::new_static())
+                        }
                     }
-                    (None, None) => None,
-                    _ => {
-                        return Err(de::Error::custom(
-                            "caller_inputs and caller_outputs must both be present or both absent",
-                        ));
-                    }
+                    None => None,
                 };
 
                 // Recover the transition.

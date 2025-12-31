@@ -333,9 +333,6 @@ impl<N: Network> Stack<N> {
                 Instruction::Call(call) => CallTrait::execute(call, self, &mut registers, rng),
                 // If the instruction is a `call.dynamic` instruction, we need to handle it separately.
                 Instruction::CallDynamic(call_dynamic) => {
-                    // Increment the number of public variables.
-                    // TODO (@d0cd): Explain this count.
-                    //num_public += 7;
                     // Execute the dynamic call.
                     CallTrait::execute(call_dynamic, self, &mut registers, rng)
                 }

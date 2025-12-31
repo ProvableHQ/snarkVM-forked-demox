@@ -232,4 +232,30 @@ impl<N: Network> Request<N> {
             rng,
         )
     }
+
+    /// Returns a V1 request.
+    pub fn sign_v1<R: Rng + CryptoRng>(
+        private_key: &PrivateKey<N>,
+        program_id: ProgramID<N>,
+        function_name: Identifier<N>,
+        inputs: impl ExactSizeIterator<Item = impl TryInto<Value<N>>>,
+        input_types: &[ValueType<N>],
+        root_tvk: Option<Field<N>>,
+        is_root: bool,
+        program_checksum: Option<Field<N>>,
+        rng: &mut R,
+    ) -> Result<Self> {
+        Self::sign(
+            private_key,
+            program_id,
+            function_name,
+            inputs,
+            input_types,
+            root_tvk,
+            is_root,
+            program_checksum,
+            None,
+            rng,
+        )
+    }
 }

@@ -194,6 +194,7 @@ pub enum TransitionMap {
     TCM = DataID::TransitionTCMMap as u16,
     ReverseTCM = DataID::TransitionReverseTCMMap as u16,
     SCM = DataID::TransitionSCMMap as u16,
+    IsDynamic = DataID::IsDynamicMap as u16,
     CallerInputs = DataID::TransitionCallerInputMap as u16,
     CallerOutputs = DataID::TransitionCallerOutputMap as u16,
 }
@@ -312,6 +313,8 @@ enum DataID {
     InputDynamicRecordMap,
     // Track dynamic record outputs.
     OutputDynamicRecordMap,
+    // Track whether a transition is dynamic.
+    IsDynamicMap,
     // Track caller inputs.
     TransitionCallerInputMap,
     // Track caller outputs.

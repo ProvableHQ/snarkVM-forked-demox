@@ -496,10 +496,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                 .collect::<Vec<_>>(),
                         )?;
 
-                        // Anonymous helper which synthesizes the translation
-                        // key for a given program-record combination (if it has
-                        // not been synthesized yet) and stores it in the
-                        // program's stack.
+                        // A helper function that synthesizes the translation key for a given program-record combination (if it has not been synthesized yet) and stores it in the program's stack.
                         let ensure_translation_proving_key =
                             |program_id: &ProgramID<N>, record_name: &Identifier<N>, rng: &mut R| -> Result<()> {
                                 let record_stack = match program_id == stack.program_id() {

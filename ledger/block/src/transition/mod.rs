@@ -27,28 +27,23 @@ mod string;
 use console::{
     network::prelude::*,
     program::{
-        Ciphertext,
-        Identifier,
-        InputID,
-        OutputID,
-        ProgramID,
-        Record,
-        Register,
-        Request,
-        Response,
-        TRANSITION_DEPTH,
-        TransitionLeaf,
-        TransitionPath,
-        TransitionTree,
-        Value,
-        ValueType,
-        compute_function_id,
+        Ciphertext, Identifier, InputID, OutputID, ProgramID, Record, Register, Request, Response, TRANSITION_DEPTH,
+        TransitionLeaf, TransitionPath, TransitionTree, Value, ValueType, compute_function_id,
     },
     types::{Field, Group},
 };
 
-/// The caller metadata for a dynamic transition.
-/// Note: This struct is used for internal memory organization only.
+/// The version of a transition.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(super) enum TransitionVersion {
+    /// V1 transitions do not have caller metadata.
+    V1 = 1,
+    /// V2 transitions include caller metadata to indicate whether or not the transition is dynamic.
+    V2 = 2,
+}
+
+/// The caller metadata for a transition.
+// Note: This struct is used for internal memory organization only.
 // TODO (@reviewers) This structure informs the Transition of the *caller's* view of the Transition inputs and outputs. It gives the child easy access to inputs/outputs which are viewed differently by the caller parent and the child, which is limited to the following at the moment:
 // - input static/external records received as dynamic ones by the callee
 // - output static/external records received as dynamic ones by the caller
@@ -56,6 +51,8 @@ use console::{
 // An alternative design was considered, where TransitionCallerMetadata would contain a more compact representation including only differing inputs/outputs. This would be slightly more cumbersom to work with, but more memory efficient and elegant. Decide whether switching to the latter desing is desired (at least at this stage).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TransitionCallerMetadata<N: Network> {
+    /// Whether or not the transition is dynamic.
+    is_dynamic: bool,
     /// The caller inputs.
     inputs: Vec<Input<N>>,
     /// The caller outputs.
@@ -63,8 +60,13 @@ pub struct TransitionCallerMetadata<N: Network> {
 }
 
 impl<N: Network> TransitionCallerMetadata<N> {
-    /// Creates new transition caller metadata.
-    pub fn new(inputs: Vec<Input<N>>, outputs: Vec<Output<N>>) -> Result<Self> {
+    /// Creates a new static caller metadata.
+    pub fn new_static() -> Self {
+        Self { is_dynamic: false, inputs: Vec::new(), outputs: Vec::new() }
+    }
+
+    /// Creates a new dynamic caller metadata.
+    pub fn new_dynamic(inputs: Vec<Input<N>>, outputs: Vec<Output<N>>) -> Result<Self> {
         // Check that the number of inputs is within bounds.
         ensure!(
             inputs.len() <= N::MAX_INPUTS,
@@ -79,7 +81,7 @@ impl<N: Network> TransitionCallerMetadata<N> {
             outputs.len(),
             N::MAX_OUTPUTS
         );
-        Ok(Self { inputs, outputs })
+        Ok(Self { is_dynamic: true, inputs, outputs })
     }
 
     /// Returns the caller inputs.
@@ -90,6 +92,11 @@ impl<N: Network> TransitionCallerMetadata<N> {
     /// Returns the caller outputs.
     pub fn outputs(&self) -> &[Output<N>] {
         &self.outputs
+    }
+
+    /// Returns whether or not the transition metadata is dynamic.
+    pub fn is_dynamic(&self) -> bool {
+        self.is_dynamic
     }
 }
 
@@ -112,7 +119,6 @@ pub struct Transition<N: Network> {
     /// The transition signer commitment.
     scm: Field<N>,
     /// The optional caller metadata.
-    /// Note. This is only present if and only if the transition is dynamic.
     caller_metadata: Option<TransitionCallerMetadata<N>>,
 }
 
@@ -129,22 +135,25 @@ impl<N: Network> Transition<N> {
         scm: Field<N>,
         caller_metadata: Option<TransitionCallerMetadata<N>>,
     ) -> Result<Self> {
-        // If caller metadata is present, ensure the counts match.
+        // If caller metadata is present and is dynamic, ensure the counts match.
         if let Some(ref metadata) = caller_metadata {
-            ensure!(
-                metadata.inputs().len() == inputs.len(),
-                "Transition has mismatched caller inputs count ({} != {}).",
-                metadata.inputs().len(),
-                inputs.len()
-            );
-            ensure!(
-                metadata.outputs().len() == outputs.len(),
-                "Transition has mismatched caller outputs count ({} != {}).",
-                metadata.outputs().len(),
-                outputs.len()
-            );
+            if metadata.is_dynamic() {
+                ensure!(
+                    metadata.inputs().len() == inputs.len(),
+                    "Transition has mismatched caller inputs count ({} != {}).",
+                    metadata.inputs().len(),
+                    inputs.len()
+                );
+                ensure!(
+                    metadata.outputs().len() == outputs.len(),
+                    "Transition has mismatched caller outputs count ({} != {}).",
+                    metadata.outputs().len(),
+                    outputs.len()
+                );
+            }
         }
         // Compute the transition ID.
+        // TODO (@reviewers): Should the caller metadata be included in the transition ID computation?
         let function_tree = Self::function_tree(&inputs, &outputs)?;
         let id = N::hash_bhp512(&(*function_tree.root(), tcm).to_bits_le())?;
         // Return the transition.
@@ -404,32 +413,34 @@ impl<N: Network> Transition<N> {
             .collect::<Result<Vec<_>>>()?;
 
         // Compute and verify the caller metadata.
-        let caller_metadata = if request.is_dynamic() {
-            // Construct and verify the caller inputs.
-            let caller_inputs = construct_inputs(&request.caller_input_ids()?, &request.caller_inputs()?)?;
-            // Construct and verify the caller outputs.
-            let caller_outputs = response
-                .caller_outputs()?
-                .iter()
-                .zip(output_types.iter())
-                .zip(outputs.iter())
-                .enumerate()
-                .map(|(output_index, ((caller_output_value, callee_output_type), callee_output))| {
-                    match (&caller_output_value, callee_output_type) {
-                        // Convert the record output to a dynamic record output.
-                        (Value::DynamicRecord(_), ValueType::Record(..) | ValueType::ExternalRecord(..)) => {
-                            construct_output(output_index, &None, caller_output_value, callee_output_type, &None)
+        let caller_metadata = match request.dynamic() {
+            None => None,
+            Some(false) => Some(TransitionCallerMetadata::new_static()),
+            Some(true) => {
+                // Construct and verify the caller inputs.
+                let caller_inputs = construct_inputs(&request.caller_input_ids()?, &request.caller_inputs()?)?;
+                // Construct and verify the caller outputs.
+                let caller_outputs = response
+                    .caller_outputs()?
+                    .iter()
+                    .zip(output_types.iter())
+                    .zip(outputs.iter())
+                    .enumerate()
+                    .map(|(output_index, ((caller_output_value, callee_output_type), callee_output))| {
+                        match (&caller_output_value, callee_output_type) {
+                            // Convert the record output to a dynamic record output.
+                            (Value::DynamicRecord(_), ValueType::Record(..) | ValueType::ExternalRecord(..)) => {
+                                construct_output(output_index, &None, caller_output_value, callee_output_type, &None)
+                            }
+                            // TODO (dynamic_dispatch) Do we need to handle futures here?
+                            // Otherwise, just return the output as is.
+                            _ => Ok(callee_output.clone()),
                         }
-                        // TODO (dynamic_dispatch) Do we need to handle futures here?
-                        // Otherwise, just return the output as is.
-                        _ => Ok(callee_output.clone()),
-                    }
-                })
-                .collect::<Result<Vec<_>>>()?;
-            // Construct the caller metadata.
-            Some(TransitionCallerMetadata::new(caller_inputs, caller_outputs)?)
-        } else {
-            None
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                // Construct the caller metadata.
+                Some(TransitionCallerMetadata::new_dynamic(caller_inputs, caller_outputs)?)
+            }
         };
 
         // Retrieve the `tpk`.
@@ -486,7 +497,15 @@ impl<N: Network> Transition<N> {
 
     /// Returns whether or not the transition is dynamic.
     pub fn is_dynamic(&self) -> bool {
-        self.caller_metadata.is_some()
+        self.caller_metadata.as_ref().is_some_and(|m| m.is_dynamic())
+    }
+
+    /// Returns the serialization version for this transition.
+    pub(super) fn version(&self) -> TransitionVersion {
+        match &self.caller_metadata {
+            None => TransitionVersion::V1,
+            Some(_) => TransitionVersion::V2,
+        }
     }
 
     /// Returns the optional caller metadata.
