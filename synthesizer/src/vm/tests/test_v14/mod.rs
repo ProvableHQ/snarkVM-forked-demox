@@ -110,6 +110,7 @@ use snarkvm_utilities::TestRng;
 // Signature consistency
 // - Translate an output record fom a call to a preexisting program to ensure signature-verification circuit has not changed
 //   In: get_record_dynamic.rs::tanslate_transfer_public_to_private
+// TODO (Antonio) complete
 
 // Adds the given transactions into a new block and asserts all of them were
 // accepted

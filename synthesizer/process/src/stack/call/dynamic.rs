@@ -523,6 +523,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
 
                         // TODO (dynamic_dispatch) move to a separate function to avoid clutter? Yes.
                         // TODO (dynamic_dispatch) some of these might be redundant with earlier checks (others are not, caught bug here)
+                        // TODO (Antonio) cf. above
                         assert_eq!(
                             caller_input_types.len(),
                             callee_input_types.len(),

@@ -33,6 +33,7 @@ type CircuitPH<A> = Poseidon2<A>;
 pub type RecordDataTree<A> = MerkleTree<A, CircuitLH<A>, CircuitPH<A>, RECORD_DATA_TREE_DEPTH>;
 
 // TODO (dynamic_dispatch) correct this and other instances of the specification: that is not the correct structure of the tree (odd-size layers are not filled with a single zero)
+// TODO (Antonio) cf. above
 /// A dynamic record is a fixed-size representation of a record.
 /// Like static `Record`s, a dynamic record contains an owner, nonce, and a version.
 /// However, instead of storing the full data, it only stores the Merkle root of the data.

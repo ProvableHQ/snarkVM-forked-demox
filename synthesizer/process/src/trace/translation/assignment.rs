@@ -163,6 +163,7 @@ impl<N: Network> TranslationAssignment<N> {
         // instead of being duplicated; and the fact that the InputID and
         // OutputID cases are the same for ExternalRecords could/should be
         // enforced by the code.
+        // TODO (Antonio) cf. above
         let actual_id_dynamic = {
             let mut preimage = Vec::new();
             preimage.push(circuit_function_id.clone());

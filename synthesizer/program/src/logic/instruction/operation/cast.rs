@@ -341,6 +341,7 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                 // TODO (dynamic_dispatch) do we have access to the type of the register self.operands[0]? I would like to add the sanity check
                 //     matches!(register_type, RegisterType::Record(..) | RegisterType::ExternalRecord(..))
                 // but cannot find the type in the stack or registers objects
+                // TODO (Antonio) cf. above
 
                 let record = match &inputs[0] {
                     Value::Record(record) => record,
@@ -637,6 +638,7 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                 // TODO (dynamic_dispatch) do we have access to the type of the register self.operands[0]? I would like to add the sanity check
                 //     matches!(register_type, RegisterType::Record(..) | RegisterType::ExternalRecord(..))
                 // but cannot find the type in the stack or registers objects
+                // TODO (Antonio) cf. above
 
                 let record = match &inputs[0] {
                     circuit::Value::Record(record) => record,
