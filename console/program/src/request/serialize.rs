@@ -82,8 +82,8 @@ impl<'de, N: Network> Deserialize<'de> for Request<N> {
                     DeserializeExt::take_from_value::<D>(&mut request, "tcm")?,
                     // Retrieve the `scm`.
                     DeserializeExt::take_from_value::<D>(&mut request, "scm")?,
-                    // Retrieve the `is_dynamic` flag (None if missing, indicating V1 legacy).
-                    DeserializeExt::take_from_value::<D>(&mut request, "is_dynamic").ok(),
+                    // Retrieve the `dynamic` flag, if it exists.
+                    DeserializeExt::take_from_value::<D>(&mut request, "dynamic").ok(),
                 )))
             }
             false => FromBytesDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "request"),
