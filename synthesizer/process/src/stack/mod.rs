@@ -76,6 +76,7 @@ use snarkvm_synthesizer_program::{
     Instruction,
     Operand,
     Program,
+    RecordTranslationData,
     RegistersCircuit,
     RegistersSigner,
     RegistersTrait,
@@ -96,6 +97,7 @@ use std::sync::{Arc, Weak};
 use rayon::prelude::*;
 
 pub type Assignments<N> = Arc<RwLock<Vec<(circuit::Assignment<<N as Environment>::Field>, CallMetrics<N>)>>>;
+pub type Translations<N> = Arc<RwLock<Vec<RecordTranslationData<N>>>>;
 
 /// The `CallStack` is used to track the current state of the program execution.
 #[derive(Clone, Debug)]
@@ -109,7 +111,7 @@ pub enum CallStack<N: Network> {
     /// Evaluate a function.
     Evaluate(Authorization<N>),
     /// Execute a function and produce a proof.
-    Execute(Authorization<N>, Arc<RwLock<Trace<N>>>),
+    Execute(Authorization<N>, Arc<RwLock<Trace<N>>>, Translations<N>),
     /// Execute a function and create the circuit assignment.
     PackageRun(Vec<Request<N>>, PrivateKey<N>, Assignments<N>),
 }
@@ -135,8 +137,12 @@ impl<N: Network> CallStack<N> {
     }
 
     /// Initializes a call stack as `Self::Execute`.
-    pub fn execute(authorization: Authorization<N>, trace: Arc<RwLock<Trace<N>>>) -> Result<Self> {
-        Ok(CallStack::Execute(authorization, trace))
+    pub fn execute(
+        authorization: Authorization<N>,
+        trace: Arc<RwLock<Trace<N>>>,
+        translations: Translations<N>,
+    ) -> Result<Self> {
+        Ok(CallStack::Execute(authorization, trace, translations))
     }
 }
 
@@ -160,9 +166,11 @@ impl<N: Network> CallStack<N> {
                 )
             }
             CallStack::Evaluate(authorization) => CallStack::Evaluate(authorization.replicate()),
-            CallStack::Execute(authorization, trace) => {
-                CallStack::Execute(authorization.replicate(), Arc::new(RwLock::new(trace.read().clone())))
-            }
+            CallStack::Execute(authorization, trace, translations) => CallStack::Execute(
+                authorization.replicate(),
+                Arc::new(RwLock::new(trace.read().clone())),
+                Arc::new(RwLock::new(translations.read().clone())),
+            ),
             CallStack::PackageRun(requests, private_key, assignments) => {
                 CallStack::PackageRun(requests.clone(), *private_key, Arc::new(RwLock::new(assignments.read().clone())))
             }

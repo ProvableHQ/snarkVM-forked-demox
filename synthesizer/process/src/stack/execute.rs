@@ -519,7 +519,7 @@ impl<N: Network> Stack<N> {
             lap!(timer, "Save the circuit assignment");
         }
         // If the circuit is in `Execute` mode, then execute the circuit into a transition.
-        else if let CallStack::Execute(_, trace) = registers.call_stack_ref() {
+        else if let CallStack::Execute(_, trace, translations) = registers.call_stack_ref() {
             registers.ensure_console_and_circuit_registers_match()?;
 
             // Construct the transition.
@@ -543,7 +543,7 @@ impl<N: Network> Stack<N> {
                 console_request.input_ids(),
                 &transition,
                 (proving_key, assignment),
-                registers.record_translation_data(),
+                &translations.read(),
                 metrics,
             )?;
         }

@@ -17,7 +17,8 @@ use super::*;
 
 mod append;
 mod remove;
-mod test_print;
+//TODO (@Antonio95) This module doesn't exist. Commenting to pass clippy.
+//mod test_print;
 mod update;
 mod update_many;
 

@@ -130,7 +130,7 @@ impl<A: Aleo> DynamicFuture<A> {
 impl<A: Aleo> Eject for DynamicFuture<A> {
     type Primitive = console::DynamicFuture<A::Network>;
 
-    /// Ejects the mode of the dynmaic future.
+    /// Ejects the mode of the dynamic future.
     fn eject_mode(&self) -> Mode {
         let program_name_mode = Eject::eject_mode(self.program_name());
         let program_network_mode = Eject::eject_mode(self.program_network());

@@ -292,7 +292,7 @@ impl<N: Network> Response<N> {
         &self.outputs
     }
 
-    /// Converts a response outputs into the expected caller outputs for a dynamic call by:
+    /// Returns the expected caller outputs for a dynamic call by:
     /// - converting all record outputs to dynamic record outputs
     /// - converting all future outputs to dynamic future outputs.
     /// - leaving all other outputs unchanged.
@@ -307,6 +307,77 @@ impl<N: Network> Response<N> {
                 Value::Future(future) => Ok(Value::DynamicFuture(DynamicFuture::from_future(future)?)),
                 Value::DynamicFuture(_) => bail!("A dynamic future cannot be a response output"),
                 _ => Ok(output.clone()),
+            })
+            .collect::<Result<Vec<_>>>()
+    }
+
+    /// Returns the expected caller output IDs for a dynamic call by:
+    /// - converting all record output IDs to dynamic record output IDs
+    /// - converting all future output IDs to dynamic future output IDs.
+    /// - leaving all other output IDs unchanged.
+    pub fn caller_output_ids(
+        &self,
+        network_id: &U16<N>,
+        program_id: &ProgramID<N>,
+        function_name: &Identifier<N>,
+        num_inputs: usize,
+        tvk: &Field<N>,
+        tcm: &Field<N>,
+    ) -> Result<Vec<OutputID<N>>> {
+        // Compute the function ID.
+        let function_id = compute_function_id(network_id, program_id, function_name)?;
+        // Get the caller outputs.
+        let caller_outputs = self.caller_outputs()?;
+        // Compute the caller output IDs for the caller outputs.
+        caller_outputs
+            .iter()
+            .zip_eq(self.output_ids.iter())
+            .enumerate()
+            .map(|(index, (output, callee_output_id))| {
+                match callee_output_id {
+                    OutputID::Record(_, _, _) => {
+                        // Ensure the caller output is a dynamic record.
+                        ensure!(matches!(output, Value::DynamicRecord(..)), "Expected a dynamic record output");
+
+                        // Construct the (console) output index as a field element.
+                        let index = Field::from_u16(
+                            u16::try_from(num_inputs + index).or_halt_with::<N>("Output index exceeds u16"),
+                        );
+                        // Construct the preimage as `(function ID || output || tvk || index)`.
+                        let mut preimage = Vec::new();
+                        preimage.push(function_id);
+                        preimage.extend(output.to_fields()?);
+                        preimage.push(*tvk);
+                        preimage.push(index);
+                        // Hash the output to a field element.
+                        let output_hash = N::hash_psd8(&preimage)?;
+
+                        // Return the output ID.
+                        Ok(OutputID::DynamicRecord(output_hash))
+                    }
+                    OutputID::Future(_) => {
+                        // Ensure the caller output is a dynamic future.
+                        ensure!(matches!(output, Value::DynamicFuture(..)), "Expected a dynamic future output");
+
+                        // Construct the (console) output index as a field element.
+                        let index = Field::from_u16(
+                            u16::try_from(num_inputs + index).or_halt_with::<N>("Output index exceeds u16"),
+                        );
+                        // Construct the preimage as `(function ID || output || tcm || index)`.
+                        let mut preimage = Vec::new();
+                        preimage.push(function_id);
+                        preimage.extend(output.to_fields()?);
+                        preimage.push(*tcm);
+                        preimage.push(index);
+                        // Hash the output to a field element.
+                        let output_hash = N::hash_psd8(&preimage)?;
+
+                        // Return the output ID.
+                        Ok(OutputID::DynamicFuture(output_hash))
+                    }
+                    // Otherwise, return the output ID unchanged.
+                    _ => Ok(callee_output_id.clone()),
+                }
             })
             .collect::<Result<Vec<_>>>()
     }

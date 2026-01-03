@@ -214,7 +214,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
 
             // Eject the existing circuit.
             let r1cs = A::eject_r1cs_and_reset();
-            let (request, caller_response_outputs, translation_data) = {
+            let (request, caller_response_outputs) = {
                 // Resolve the program and function.
                 let target = resolve_dynamic_target(
                     registers.call_stack_ref(),
@@ -298,15 +298,13 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         let caller_response_outputs = callee_response.caller_outputs()?;
 
                         // Return the request verification inputs and response.
-                        (request_verification_inputs, caller_response_outputs, None)
+                        (request_verification_inputs, caller_response_outputs)
                     }
                     // In `Synthesize` or `CheckDeployment` mode, we use dummy inputs and outputs to avoid building a full sub-circuit.
                     CallStack::Synthesize(_, private_key, ..) | CallStack::CheckDeployment(_, private_key, ..) => {
-                        // Sample a random program ID.
-                        // Note. It does not matter what program ID we use here, since we are only synthesizing dummy outputs.
+                        // Note that it does not matter what program ID we use here, since we are only synthesizing dummy outputs.
                         let program_id = ProgramID::from_str("a.aleo")?;
-                        // Sample a random function name.
-                        // Note. It does not matter what function name we use here, since we are only synthesizing dummy outputs.
+                        // Note that it does not matter what function name we use here, since we are only synthesizing dummy outputs.
                         let function_name = Identifier::<N>::from_str("a")?;
 
                         // Compute the address.
@@ -359,7 +357,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             .collect::<Result<Vec<_>>>()?;
 
                         // Return the request verification inputs and response.
-                        (request_verification_inputs, callee_response_outputs, None)
+                        (request_verification_inputs, callee_response_outputs)
                     }
                     // In PackageRun mode, we sign and execute the request once.
                     CallStack::PackageRun(_, private_key, ..) => {
@@ -420,14 +418,14 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         let caller_response_outputs = callee_response.caller_outputs()?;
 
                         // Return the request verification inputs and response.
-                        (request_verification_inputs, caller_response_outputs, None)
+                        (request_verification_inputs, caller_response_outputs)
                     }
                     // In `Evaluate` mode, throw an error.
                     CallStack::Evaluate(..) => {
                         bail!("Cannot 'execute' a function in 'evaluate' mode.")
                     }
                     // In `Execute` mode, evaluate and execute the instructions.
-                    CallStack::Execute(authorization, ..) => {
+                    CallStack::Execute(authorization, _, translations) => {
                         // Get the target.
                         let Some(target) = target else {
                             bail!("Failed to resolve the target of the dynamic call in 'Authorize' mode.")
@@ -469,32 +467,11 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                 console_callee_response.outputs(),
                                 callee_response.outputs()
                             );
-                            bail!("Function '{}' outputs do not match in a 'call' instruction.", callee_function.name())
+                            bail!(
+                                "Function '{}' outputs do not match in a 'call.dynamic' instruction.",
+                                callee_function.name()
+                            )
                         }
-
-                        // Convert the callee's outputs to the caller's context.
-                        // TODO (@d0cd). This is an inelgant way to pass around this data. Redesign, including translation data preparation below.
-                        let caller_response = Response::new(
-                            callee_request.signer(),
-                            callee_request.network_id(),
-                            callee_request.program_id(),
-                            callee_request.function_name(),
-                            callee_request.inputs().len(),
-                            callee_request.tvk(),
-                            callee_request.tcm(),
-                            callee_response.caller_outputs()?,
-                            self.destination_types(),
-                            &target
-                                .substack()
-                                .get_function_ref(target.function_name())?
-                                .outputs()
-                                .iter()
-                                .map(|output| match output.operand() {
-                                    Operand::Register(register) => Some(register.clone()),
-                                    _ => None,
-                                })
-                                .collect::<Vec<_>>(),
-                        )?;
 
                         // A helper function that synthesizes the translation key for a given program-record combination (if it has not been synthesized yet) and stores it in the program's stack.
                         let ensure_translation_proving_key =
@@ -519,7 +496,6 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         let callee_input_types = callee_function.input_types();
                         let caller_console_inputs = inputs;
                         let callee_console_inputs = callee_request.inputs();
-                        let mut translation_data = Vec::new();
 
                         // TODO (dynamic_dispatch) move to a separate function to avoid clutter? Yes.
                         // TODO (dynamic_dispatch) some of these might be redundant with earlier checks (others are not, caught bug here)
@@ -600,7 +576,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
 
                                     ensure_translation_proving_key(&program_id, &record_name, rng)?;
 
-                                    translation_data.push(RecordTranslationData {
+                                    translations.write().push(RecordTranslationData {
                                         record_static: record_static.clone(),
                                         record_dynamic,
                                         program_id,
@@ -629,7 +605,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
 
                                     ensure_translation_proving_key(&program_id, &record_name, rng)?;
 
-                                    translation_data.push(RecordTranslationData {
+                                    translations.write().push(RecordTranslationData {
                                         record_static: record_static.clone(),
                                         record_dynamic,
                                         program_id,
@@ -649,11 +625,18 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             }
                         }
                         // Collect record outputs to translate.
-                        let caller_console_outputs = caller_response.outputs();
-                        let caller_console_output_ids = caller_response.output_ids();
+                        let caller_console_outputs = callee_response.caller_outputs()?;
+                        let caller_console_output_ids = callee_response.caller_output_ids(
+                            callee_request.network_id(),
+                            callee_request.program_id(),
+                            callee_request.function_name(),
+                            callee_request.inputs().len(),
+                            callee_request.tvk(),
+                            callee_request.tcm(),
+                        )?;
                         let caller_output_types = self.destination_types();
-                        let callee_console_outputs = console_callee_response.outputs();
-                        let callee_console_output_ids = console_callee_response.output_ids();
+                        let callee_console_outputs = callee_response.outputs();
+                        let callee_console_output_ids = callee_response.output_ids();
                         let callee_output_types = callee_function.output_types();
 
                         // Check that all the lengths are the same.
@@ -733,7 +716,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
 
                                     ensure_translation_proving_key(&program_id, &record_name, rng)?;
 
-                                    translation_data.push(RecordTranslationData {
+                                    translations.write().push(RecordTranslationData {
                                         record_static: record_static.clone(),
                                         record_dynamic: record_dynamic.clone(),
                                         program_id,
@@ -766,7 +749,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                         // gamma does not exist for output records and is irrelevant in the circuit when is_input = false
                                         gamma: None,
                                         id_static: *id_static,
-                                        id_dynamic: *id_dynamic,
+                                        id_dynamic,
                                         input_output_index: (num_inputs + operand_index) as u16,
                                     });
                                 }
@@ -783,7 +766,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
 
                                     ensure_translation_proving_key(&program_id, &record_name, rng)?;
 
-                                    translation_data.push(RecordTranslationData {
+                                    translations.write().push(RecordTranslationData {
                                         record_static: record_static.clone(),
                                         record_dynamic: record_dynamic.clone(),
                                         program_id,
@@ -795,7 +778,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                         record_view_key: None,
                                         gamma: None,
                                         id_static: *id_static,
-                                        id_dynamic: *id_dynamic,
+                                        id_dynamic,
                                         input_output_index: (num_inputs + operand_index) as u16,
                                     });
                                 }
@@ -804,19 +787,11 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         }
 
                         // Return the caller's request and response.
-                        (callee_request_verification_inputs, caller_response.outputs().to_vec(), Some(translation_data))
+                        (callee_request_verification_inputs, callee_response.caller_outputs()?)
                     }
                 }
             };
             lap!(timer, "Computed the request and response");
-
-            // TODO (dynamic_dispatch): If we let Registers keep e.g. an Arc<Stack>, we can just access Registers above.
-            // TODO (@d0cd)
-            if let Some(translation_data) = translation_data {
-                for translation_datum in translation_data {
-                    registers.insert_record_translation_data(translation_datum);
-                }
-            }
 
             // Inject the existing circuit.
             A::inject_r1cs(r1cs);

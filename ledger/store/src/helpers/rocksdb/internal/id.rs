@@ -309,7 +309,7 @@ enum DataID {
     // Track deployments that contain an optional checksum
     DeploymentChecksumMap,
 
-    // Track dynmaic record inputs.
+    // Track dynamic record inputs.
     InputDynamicRecordMap,
     // Track dynamic record outputs.
     OutputDynamicRecordMap,

@@ -443,11 +443,12 @@ impl<N: Network> Transition<N> {
                     .map(|(output_index, ((caller_output_value, callee_output_type), callee_output))| {
                         match (&caller_output_value, callee_output_type) {
                             // Convert the record output to a dynamic record output.
+                            // Note that we do not explicitly convert future outputs to dynamic future outputs at this point.
+                            //  Since the future is a public output, the verifier can compute the corresponding dynamic future directly.
                             (Value::DynamicRecord(_), ValueType::Record(..) | ValueType::ExternalRecord(..)) => {
                                 construct_output(output_index, &None, caller_output_value, callee_output_type, &None)
                             }
-                            // TODO (dynamic_dispatch) Do we need to handle futures here?
-                            // Otherwise, just return the output as is.
+                            // In other cases, return the callee output as is.
                             _ => Ok(callee_output.clone()),
                         }
                     })

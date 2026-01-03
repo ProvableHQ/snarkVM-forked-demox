@@ -317,7 +317,7 @@ impl<N: Network> Translation<N> {
                         | (Output::Record(..), Output::ExternalRecord(..), ValueType::ExternalRecord(..)) => {
                             // This is an admissible type combination which requires no translation
                         }
-                        // TODO (@d0cd) Consider dynamic futures.
+                        // Note that dynamic futures are never output directly from a callee function nor are they constructed when creating the caller outputs.
                         _ => {
                             ensure!(
                                 Output::variants_match(caller_output, callee_output)

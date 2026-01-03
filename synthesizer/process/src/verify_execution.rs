@@ -43,16 +43,24 @@ impl<N: Network> Process<N> {
             let transition = execution.peek()?;
             // Retrieve the stack.
             let stack = self.get_stack(transition.program_id())?;
-            // TODO (@d0cd)
-            // Ensure the number of calls matches the number of transitions.
-            let _number_of_calls = stack.get_minimum_number_of_calls(transition.function_name())?;
-
-            // TODO (dynamic_dispatch) re-introduce or redesign, fails to account for dynamic calls
-            // ensure!(
-            //     number_of_calls == execution.len(),
-            //     "The number of transitions in the execution is incorrect. Expected {number_of_calls}, but found {}",
-            //     execution.len()
-            // );
+            // If the root transition contains a dynamic call,
+            // - ensure that the number of calls is less than or equal to the number of transitions.
+            // - otherwise, ensure that the number of calls matches the number of transitions.
+            if stack.contains_dynamic_call(transition.function_name())? {
+                ensure!(
+                    stack.get_minimum_number_of_calls(transition.function_name())? <= execution.len(),
+                    "The number of transitions in the execution is incorrect. Expected at least {}, but found {}",
+                    stack.get_minimum_number_of_calls(transition.function_name())?,
+                    execution.len()
+                );
+            } else {
+                ensure!(
+                    stack.get_minimum_number_of_calls(transition.function_name())? == execution.len(),
+                    "The number of transitions in the execution is incorrect. Expected {}, but found {}",
+                    stack.get_minimum_number_of_calls(transition.function_name())?,
+                    execution.len()
+                );
+            }
 
             // Output the locator of the main function.
             Locator::new(*transition.program_id(), *transition.function_name()).to_string()

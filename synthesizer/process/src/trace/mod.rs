@@ -101,7 +101,7 @@ impl<N: Network> Trace<N> {
         input_ids: &[InputID<N>],
         transition: &Transition<N>,
         (proving_key, assignment): (ProvingKey<N>, Assignment<N::Field>),
-        record_translation_data: &Option<Vec<RecordTranslationData<N>>>,
+        translations: &[RecordTranslationData<N>],
         metrics: CallMetrics<N>,
     ) -> Result<()> {
         // Ensure the inclusion assignments and global state root have not been set.
@@ -111,8 +111,8 @@ impl<N: Network> Trace<N> {
 
         // Insert the transition into the inclusion and, if applicable, translation tasks.
         self.inclusion_tasks.insert_transition(input_ids, transition)?;
-        if let Some(record_translation_data) = record_translation_data {
-            self.translation_tasks.insert_transition(*transition.id(), record_translation_data.clone())?;
+        if !translations.is_empty() {
+            self.translation_tasks.insert_transition(*transition.id(), translations.to_vec())?;
         }
 
         // Construct the locator.

@@ -272,12 +272,6 @@ pub trait RegistersSigner<N: Network>: RegistersTrait<N> {
     /// Sets the transition view key.
     fn set_tvk(&mut self, tvk: Field<N>);
 
-    /// Returns the record translation data.
-    fn record_translation_data(&self) -> &Option<Vec<RecordTranslationData<N>>>;
-
-    /// Sets the record translation data.
-    fn insert_record_translation_data(&mut self, new_record_translation_data: RecordTranslationData<N>);
-
     /// Returns the request.
     fn request(&self) -> Result<&Request<N>>;
 
