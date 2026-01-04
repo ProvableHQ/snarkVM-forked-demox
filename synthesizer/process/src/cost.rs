@@ -147,7 +147,6 @@ pub fn deploy_compute_cost_in_microcredits(
     cost_details: DeployCostDetails,
     consensus_version: ConsensusVersion,
 ) -> Result<u64> {
-    // TODO (dynamic_dispatch): add translation-circuit-related storage costs? (eg. verifying keys)
     let (storage_cost, synthesis_cost, constructor_cost, _) = cost_details;
     let cost_to_check = if consensus_version >= ConsensusVersion::V10 {
         // From V10, only include the constructor compute cost for
@@ -524,8 +523,7 @@ pub fn cost_per_command<N: Network>(
             | CastType::GroupYCoordinate
             | CastType::Record(_)
             | CastType::ExternalRecord(_) => Ok(500),
-            // TODO (dynamic_dispatch) in principle a cast to dynamic record should never go through the lossy pathway. Handle this better?
-            CastType::DynamicRecord => Ok(500),
+            CastType::DynamicRecord => bail!("`cast.lossy` does not support dynamic records"),
         },
         Command::Instruction(Instruction::CommitBHP256(commit)) => {
             cost_in_size(stack, finalize_types, commit.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)

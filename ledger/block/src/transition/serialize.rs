@@ -39,8 +39,9 @@ impl<N: Network> Serialize for Transition<N> {
                 if let Some(caller_metadata) = &self.caller_metadata {
                     transition.serialize_field("is_dynamic", &caller_metadata.is_dynamic())?;
                     if caller_metadata.is_dynamic() {
-                        transition.serialize_field("caller_inputs", caller_metadata.inputs())?;
-                        transition.serialize_field("caller_outputs", caller_metadata.outputs())?;
+                        // Note that the unwraps are safe, since `is_dynamic()` implies the presence of inputs and outputs.
+                        transition.serialize_field("caller_inputs", caller_metadata.inputs().unwrap())?;
+                        transition.serialize_field("caller_outputs", caller_metadata.outputs().unwrap())?;
                     }
                 }
                 transition.end()

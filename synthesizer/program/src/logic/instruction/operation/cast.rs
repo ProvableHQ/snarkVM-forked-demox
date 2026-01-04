@@ -336,18 +336,14 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                 bail!("Illegal operation: Cannot cast to an external record.")
             }
             CastType::DynamicRecord => {
+                // Check that there is exactly one input.
                 ensure!(inputs.len() == 1, "Casting to a dynamic record requires exactly 1 operand");
-
-                // TODO (dynamic_dispatch) do we have access to the type of the register self.operands[0]? I would like to add the sanity check
-                //     matches!(register_type, RegisterType::Record(..) | RegisterType::ExternalRecord(..))
-                // but cannot find the type in the stack or registers objects
-                // TODO (Antonio) cf. above
-
-                let record = match &inputs[0] {
-                    Value::Record(record) => record,
+                // Retrieve and convert the record into a dynamic record.
+                let dynamic_record = match &inputs[0] {
+                    Value::Record(record) => DynamicRecord::from_record(record)?,
                     _ => bail!("Casting to a dynamic record requires the operand value to be a record"),
                 };
-                registers.store(stack, &self.destination, Value::DynamicRecord(DynamicRecord::from_record(record)?))
+                registers.store(stack, &self.destination, Value::DynamicRecord(dynamic_record))
             }
         }
     }
@@ -633,23 +629,15 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                 bail!("Illegal operation: Cannot cast to an external record.")
             }
             CastType::DynamicRecord => {
+                // Check that there is exactly one input.
                 ensure!(inputs.len() == 1, "Casting to a dynamic record requires exactly 1 operand");
-
-                // TODO (dynamic_dispatch) do we have access to the type of the register self.operands[0]? I would like to add the sanity check
-                //     matches!(register_type, RegisterType::Record(..) | RegisterType::ExternalRecord(..))
-                // but cannot find the type in the stack or registers objects
-                // TODO (Antonio) cf. above
-
-                let record = match &inputs[0] {
-                    circuit::Value::Record(record) => record,
+                // Retrieve and convert the record into a dynamic record.
+                let dynamic_record = match &inputs[0] {
+                    circuit::Value::Record(record) => circuit::DynamicRecord::from_record(record)?,
                     _ => bail!("Casting to a dynamic record requires the operand value to be a record"),
                 };
-
-                registers.store_circuit(
-                    stack,
-                    &self.destination,
-                    circuit::Value::DynamicRecord(circuit::DynamicRecord::from_record(record)?),
-                )
+                // Store the dynamic record.
+                registers.store_circuit(stack, &self.destination, circuit::Value::DynamicRecord(dynamic_record))
             }
         }
     }

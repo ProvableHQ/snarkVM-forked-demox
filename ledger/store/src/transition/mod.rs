@@ -221,9 +221,10 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
             if let Some(caller_metadata) = transition.caller_metadata() {
                 self.is_dynamic_map().insert(transition_id, caller_metadata.is_dynamic())?;
                 // If the caller metadata is dynamic, store the caller inputs and outputs.
+                // Note that the unwraps are safe, since `is_dynamic()` implies the presence of inputs and outputs.
                 if caller_metadata.is_dynamic() {
-                    self.caller_inputs_map().insert(transition_id, caller_metadata.inputs().to_vec())?;
-                    self.caller_outputs_map().insert(transition_id, caller_metadata.outputs().to_vec())?;
+                    self.caller_inputs_map().insert(transition_id, caller_metadata.inputs().unwrap().to_vec())?;
+                    self.caller_outputs_map().insert(transition_id, caller_metadata.outputs().unwrap().to_vec())?;
                 }
             }
             Ok(())

@@ -144,13 +144,14 @@ impl<N: Network> ToBytes for Transition<N> {
             // Write the is_dynamic flag.
             caller_metadata.is_dynamic().write_le(&mut writer)?;
             // If the metadata is dynamic, write the inputs and outputs.
+            // Note that the unwraps are safe, since `is_dynamic()` implies the presence of inputs and outputs.
             if caller_metadata.is_dynamic() {
                 // Write the caller inputs.
-                for input in caller_metadata.inputs() {
+                for input in caller_metadata.inputs().unwrap() {
                     input.write_le(&mut writer)?;
                 }
                 // Write the caller outputs.
-                for output in caller_metadata.outputs() {
+                for output in caller_metadata.outputs().unwrap() {
                     output.write_le(&mut writer)?;
                 }
             }

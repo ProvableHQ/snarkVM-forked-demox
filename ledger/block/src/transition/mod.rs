@@ -98,14 +98,20 @@ impl<N: Network> TransitionCallerMetadata<N> {
         Ok(Self { is_dynamic: true, inputs, outputs })
     }
 
-    /// Returns the caller inputs.
-    pub fn inputs(&self) -> &[Input<N>] {
-        &self.inputs
+    /// Returns the caller inputs, if the metadata is dynamic.
+    pub fn inputs(&self) -> Option<&[Input<N>]> {
+        match self.is_dynamic {
+            false => None,
+            true => Some(&self.inputs),
+        }
     }
 
-    /// Returns the caller outputs.
-    pub fn outputs(&self) -> &[Output<N>] {
-        &self.outputs
+    /// Returns the caller outputs, if the metadata is dynamic.
+    pub fn outputs(&self) -> Option<&[Output<N>]> {
+        match self.is_dynamic {
+            false => None,
+            true => Some(&self.outputs),
+        }
     }
 
     /// Returns whether or not the transition metadata is dynamic.
@@ -152,16 +158,17 @@ impl<N: Network> Transition<N> {
         // If caller metadata is present and is dynamic, ensure the counts match.
         if let Some(ref metadata) = caller_metadata {
             if metadata.is_dynamic() {
+                // Note that the unwraps are safe, since `is_dynamic()` implies the presence of inputs and outputs.
+                let num_caller_inputs = metadata.inputs().unwrap().len();
+                let num_caller_outputs = metadata.outputs().unwrap().len();
                 ensure!(
-                    metadata.inputs().len() == inputs.len(),
-                    "Transition has mismatched caller inputs count ({} != {}).",
-                    metadata.inputs().len(),
+                    num_caller_inputs == inputs.len(),
+                    "Transition has mismatched caller inputs count ({num_caller_inputs} != {}).",
                     inputs.len()
                 );
                 ensure!(
-                    metadata.outputs().len() == outputs.len(),
-                    "Transition has mismatched caller outputs count ({} != {}).",
-                    metadata.outputs().len(),
+                    num_caller_outputs == outputs.len(),
+                    "Transition has mismatched caller outputs count ({num_caller_outputs} != {}).",
                     outputs.len()
                 );
             }
@@ -528,14 +535,14 @@ impl<N: Network> Transition<N> {
         self.caller_metadata.as_ref()
     }
 
-    /// Returns the optional caller inputs.
+    /// Returns the caller inputs, if the transition is dynamic.
     pub fn caller_inputs(&self) -> Option<&[Input<N>]> {
-        self.caller_metadata.as_ref().map(|m| m.inputs())
+        self.caller_metadata.as_ref().and_then(|m| m.inputs())
     }
 
-    /// Returns the optional caller outputs.
+    /// Returns the caller outputs, if the transition is dynamic.
     pub fn caller_outputs(&self) -> Option<&[Output<N>]> {
-        self.caller_metadata.as_ref().map(|m| m.outputs())
+        self.caller_metadata.as_ref().and_then(|m| m.outputs())
     }
 }
 
