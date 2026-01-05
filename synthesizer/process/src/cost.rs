@@ -219,7 +219,7 @@ pub fn deployment_cost_v2<N: Network>(
     // Check that the functions are valid.
     for function in deployment.program().functions().values() {
         // Get the finalize cost.
-        let finalize_cost = cost_in_microcredits_v3(&stack, function.name())?;
+        let finalize_cost = minimum_cost_in_microcredits_v3(&stack, function.name())?;
         // Check that the finalize cost does not exceed the maximum.
         ensure!(
             finalize_cost <= N::TRANSACTION_SPEND_LIMIT[1].1,
@@ -278,7 +278,7 @@ pub fn deployment_cost_v1<N: Network>(
     // Check that the functions are valid.
     for function in deployment.program().functions().values() {
         // Get the finalize cost.
-        let finalize_cost = cost_in_microcredits_v2(&stack, function.name())?;
+        let finalize_cost = minimum_cost_in_microcredits_v2(&stack, function.name())?;
         // Check that the finalize cost does not exceed the maximum.
         ensure!(
             finalize_cost <= N::TRANSACTION_SPEND_LIMIT[0].1,
@@ -304,7 +304,8 @@ pub fn deployment_cost_v1<N: Network>(
     Ok((minimum_cost, (storage_cost, synthesis_cost, constructor_cost, namespace_cost)))
 }
 
-/// Returns the *minimum* cost in microcredits to publish the given execution using the ARC_0005_COMPUTE_DISCOUNT.
+/// Returns the cost in microcredits to publish the given execution using the ARC_0005_COMPUTE_DISCOUNT.
+/// For executions with dynamic futures, this computes the exact cost by iterating over concrete transitions.
 fn execution_cost_v3<N: Network>(
     process: &Process<N>,
     execution: &Execution<N>,
@@ -313,36 +314,9 @@ fn execution_cost_v3<N: Network>(
     // Compute the storage cost in microcredits.
     let storage_cost = execution_storage_cost::<N>(execution_size);
 
-    // Get the root transition.
-    let transition = execution.peek()?;
-
-    // Get the finalize cost for the root transition.
-    let stack = process.get_stack(transition.program_id())?;
-    let finalize_cost = cost_in_microcredits_v3(&stack, transition.function_name())?;
-
-    // Compute the minimum cost in microcredits.
-    let minimum_cost = storage_cost
-        .checked_add(finalize_cost)
-        .ok_or(anyhow!("The total cost computation overflowed for an execution"))?;
-
-    Ok((minimum_cost, (storage_cost, finalize_cost)))
-}
-
-/// Returns the *minimum* cost in microcredits to publish the given execution.
-fn execution_cost_v2<N: Network>(
-    process: &Process<N>,
-    execution: &Execution<N>,
-    execution_size: u64,
-) -> Result<(MinimumCost, ExecuteCostDetails)> {
-    // Compute the storage cost in microcredits.
-    let storage_cost = execution_storage_cost::<N>(execution_size);
-
-    // Get the root transition.
-    let transition = execution.peek()?;
-
-    // Get the finalize cost for the root transition.
-    let stack = process.get_stack(transition.program_id())?;
-    let finalize_cost = cost_in_microcredits_v2(&stack, transition.function_name())?;
+    // Compute the finalize cost by iterating over all concrete transitions.
+    // This handles dynamic futures correctly because we know the actual functions called.
+    let finalize_cost = execution_finalize_cost(process, execution, ConsensusFeeVersion::V3)?;
 
     // Compute the total cost in microcredits.
     let total_cost = storage_cost
@@ -352,7 +326,30 @@ fn execution_cost_v2<N: Network>(
     Ok((total_cost, (storage_cost, finalize_cost)))
 }
 
-/// Returns the *minimum* cost in microcredits to publish the given execution.
+/// Returns the cost in microcredits to publish the given execution.
+/// For executions with dynamic futures, this computes the exact cost by iterating over concrete transitions.
+fn execution_cost_v2<N: Network>(
+    process: &Process<N>,
+    execution: &Execution<N>,
+    execution_size: u64,
+) -> Result<(MinimumCost, ExecuteCostDetails)> {
+    // Compute the storage cost in microcredits.
+    let storage_cost = execution_storage_cost::<N>(execution_size);
+
+    // Compute the finalize cost by iterating over all concrete transitions.
+    // This handles dynamic futures correctly because we know the actual functions called.
+    let finalize_cost = execution_finalize_cost(process, execution, ConsensusFeeVersion::V2)?;
+
+    // Compute the total cost in microcredits.
+    let total_cost = storage_cost
+        .checked_add(finalize_cost)
+        .ok_or(anyhow!("The total cost computation overflowed for an execution"))?;
+
+    Ok((total_cost, (storage_cost, finalize_cost)))
+}
+
+/// Returns the cost in microcredits to publish the given execution.
+/// For executions with dynamic futures, this computes the exact cost by iterating over concrete transitions.
 fn execution_cost_v1<N: Network>(
     process: &Process<N>,
     execution: &Execution<N>,
@@ -361,12 +358,9 @@ fn execution_cost_v1<N: Network>(
     // Compute the storage cost in microcredits.
     let storage_cost = execution_storage_cost::<N>(execution_size);
 
-    // Get the root transition.
-    let transition = execution.peek()?;
-
-    // Get the finalize cost for the root transition.
-    let stack = process.get_stack(transition.program_id())?;
-    let finalize_cost = cost_in_microcredits_v1(&stack, transition.function_name())?;
+    // Compute the finalize cost by iterating over all concrete transitions.
+    // This handles dynamic futures correctly because we know the actual functions called.
+    let finalize_cost = execution_finalize_cost(process, execution, ConsensusFeeVersion::V1)?;
 
     // Compute the total cost in microcredits.
     let total_cost = storage_cost
@@ -903,22 +897,92 @@ pub fn constructor_cost_in_microcredits_v1<N: Network>(stack: &Stack<N>) -> Resu
 }
 
 /// Returns the minimum number of microcredits required to run the finalize using the ARC-0005 cost reduction factor.
-pub fn cost_in_microcredits_v3<N: Network>(stack: &Stack<N>, function_name: &Identifier<N>) -> Result<u64> {
-    cost_in_microcredits(stack, function_name, ConsensusFeeVersion::V3)
+/// Note: For dynamic futures, this only provides a lower bound on the cost because the target functions
+/// cannot be statically determined. For exact execution cost, use `execution_finalize_cost`.
+pub fn minimum_cost_in_microcredits_v3<N: Network>(stack: &Stack<N>, function_name: &Identifier<N>) -> Result<u64> {
+    minimum_cost_in_microcredits(stack, function_name, ConsensusFeeVersion::V3)
+}
+
+/// Returns the finalize cost for a single function's finalize block, without recursively following futures.
+/// This is used for runtime cost calculation where we iterate over concrete transitions.
+/// Note: This returns the RAW cost without applying the quotient divisor. The caller is responsible
+/// for applying the quotient after summing all costs to avoid integer division truncation errors.
+fn finalize_cost_for_single_function_raw<N: Network>(
+    stack: &Stack<N>,
+    function_name: &Identifier<N>,
+    consensus_fee_version: ConsensusFeeVersion,
+) -> Result<u64> {
+    // Get the finalize logic. If the function does not have a finalize scope, no cost is incurred.
+    let Some(finalize) = stack.get_function_ref(function_name)?.finalize_logic() else {
+        return Ok(0);
+    };
+
+    // Get the finalize types.
+    let finalize_types = stack.get_finalize_types(finalize.name())?;
+
+    // Sum the cost of all commands in the finalize block.
+    // Note: We don't recursively follow futures here because each transition's
+    // finalize cost is computed separately when iterating over all transitions.
+    let mut finalize_cost = 0u64;
+    for command in finalize.commands() {
+        finalize_cost = finalize_cost
+            .checked_add(cost_per_command(stack, &finalize_types, command, consensus_fee_version)?)
+            .ok_or(anyhow!("Finalize cost overflowed"))?;
+    }
+
+    Ok(finalize_cost)
+}
+
+/// Returns the total finalize cost for an execution by iterating over all concrete transitions.
+/// This gives an exact cost calculation because we know which functions were actually called.
+/// The complexity is O(MAX_TRANSITIONS * MAX_COMMANDS_PER_FINALIZE) which is bounded.
+pub(crate) fn execution_finalize_cost<N: Network>(
+    process: &Process<N>,
+    execution: &Execution<N>,
+    consensus_fee_version: ConsensusFeeVersion,
+) -> Result<u64> {
+    // Get the quotient for the cost reduction factor.
+    // We apply this at the end after summing all costs to match the behavior of
+    // minimum_cost_in_microcredits and avoid integer division truncation errors.
+    let quotient = match consensus_fee_version {
+        ConsensusFeeVersion::V1 | ConsensusFeeVersion::V2 => 1,
+        ConsensusFeeVersion::V3 => N::ARC_0005_COMPUTE_DISCOUNT,
+    };
+
+    let mut total_cost = 0u64;
+
+    // Iterate over all transitions and sum their finalize costs.
+    // This is bounded by Transaction::MAX_TRANSITIONS.
+    for transition in execution.transitions() {
+        // Get the stack for this transition's program.
+        let stack = process.get_stack(transition.program_id())?;
+        // Compute the raw finalize cost for this single transition (without quotient).
+        let cost = finalize_cost_for_single_function_raw(&stack, transition.function_name(), consensus_fee_version)?;
+        // Add to the total.
+        total_cost = total_cost.checked_add(cost).ok_or(anyhow!("Execution finalize cost overflowed"))?;
+    }
+
+    // Apply the quotient divisor at the end (matching behavior of minimum_cost_in_microcredits).
+    Ok(total_cost / quotient)
 }
 
 /// Returns the minimum number of microcredits required to run the finalize.
-pub fn cost_in_microcredits_v2<N: Network>(stack: &Stack<N>, function_name: &Identifier<N>) -> Result<u64> {
-    cost_in_microcredits(stack, function_name, ConsensusFeeVersion::V2)
+/// Note: For dynamic futures, this only provides a lower bound on the cost because the target functions
+/// cannot be statically determined. For exact execution cost, use `execution_finalize_cost`.
+pub fn minimum_cost_in_microcredits_v2<N: Network>(stack: &Stack<N>, function_name: &Identifier<N>) -> Result<u64> {
+    minimum_cost_in_microcredits(stack, function_name, ConsensusFeeVersion::V2)
 }
 
 /// Returns the minimum number of microcredits required to run the finalize (deprecated).
-pub fn cost_in_microcredits_v1<N: Network>(stack: &Stack<N>, function_name: &Identifier<N>) -> Result<u64> {
-    cost_in_microcredits(stack, function_name, ConsensusFeeVersion::V1)
+/// Note: For dynamic futures, this only provides a lower bound on the cost because the target functions
+/// cannot be statically determined. For exact execution cost, use `execution_finalize_cost`.
+pub fn minimum_cost_in_microcredits_v1<N: Network>(stack: &Stack<N>, function_name: &Identifier<N>) -> Result<u64> {
+    minimum_cost_in_microcredits(stack, function_name, ConsensusFeeVersion::V1)
 }
 
-// A helper function to compute the cost in microcredits for a given function.
-fn cost_in_microcredits<N: Network>(
+// A helper function to compute the minimum cost in microcredits for a given function.
+// This performs static analysis and recursively follows static futures, but not dynamic futures.
+fn minimum_cost_in_microcredits<N: Network>(
     stack: &Stack<N>,
     function_name: &Identifier<N>,
     consensus_fee_version: ConsensusFeeVersion,
@@ -944,7 +1008,9 @@ fn cost_in_microcredits<N: Network>(
             Transaction::<N>::MAX_TRANSITIONS
         );
         // Get the finalize logic. If the function does not have a finalize scope then no cost is incurred.
-        // TODO (dynamic_dispatch). This only creates a lower bound on the cost in microcredts.
+        // Note: For dynamic futures, this only creates a lower bound on the cost because we cannot
+        // statically determine which functions will be called. For exact execution cost calculation,
+        // use `execution_finalize_cost` which iterates over concrete transitions.
         if let Some(finalize) = stack_ref.get_function_ref(&function_name)?.finalize_logic() {
             // Queue the futures to be tallied.
             for input in finalize.inputs() {
@@ -1296,5 +1362,349 @@ function dummy:",
         run_test::<CanaryV0, AleoCanaryV0>();
         run_test::<MainnetV0, AleoV0>();
         run_test::<TestnetV0, AleoTestnetV0>();
+    }
+
+    // Test program with finalize blocks for cost comparison test
+    const FINALIZE_PROGRAM: &str = r#"
+program finalize_test.aleo;
+
+mapping counter:
+    key as u64.public;
+    value as u64.public;
+
+function increment:
+    input r0 as u64.public;
+    async increment r0 into r1;
+    output r1 as finalize_test.aleo/increment.future;
+
+finalize increment:
+    input r0 as u64.public;
+    get.or_use counter[r0] 0u64 into r1;
+    add r1 1u64 into r2;
+    set r2 into counter[r0];
+"#;
+
+    #[test]
+    fn test_execution_finalize_cost_matches_static() {
+        // This test verifies that for executions WITHOUT dynamic futures,
+        // the runtime cost calculation (execution_finalize_cost) matches
+        // the static cost calculation (minimum_cost_in_microcredits).
+
+        let mut process = Process::load().unwrap();
+        let program = Program::from_str(FINALIZE_PROGRAM).unwrap();
+        let function_name = Identifier::from_str("increment").unwrap();
+
+        // Get execution using the test helper
+        let execution = get_execution(&mut process, &program, &function_name, ["42u64"].into_iter());
+
+        // Get the stack for static cost calculation
+        let stack = process.get_stack(program.id()).unwrap();
+
+        // Calculate costs using both methods for all fee versions
+        // V1
+        let static_cost_v1 = minimum_cost_in_microcredits_v1(&stack, &function_name).unwrap();
+        let runtime_cost_v1 = execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V1).unwrap();
+        assert_eq!(
+            static_cost_v1, runtime_cost_v1,
+            "V1: Static and runtime costs should match: static={static_cost_v1}, runtime={runtime_cost_v1}"
+        );
+
+        // V2
+        let static_cost_v2 = minimum_cost_in_microcredits_v2(&stack, &function_name).unwrap();
+        let runtime_cost_v2 = execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V2).unwrap();
+        assert_eq!(
+            static_cost_v2, runtime_cost_v2,
+            "V2: Static and runtime costs should match: static={static_cost_v2}, runtime={runtime_cost_v2}"
+        );
+
+        // V3
+        let static_cost_v3 = minimum_cost_in_microcredits_v3(&stack, &function_name).unwrap();
+        let runtime_cost_v3 = execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V3).unwrap();
+        assert_eq!(
+            static_cost_v3, runtime_cost_v3,
+            "V3: Static and runtime costs should match: static={static_cost_v3}, runtime={runtime_cost_v3}"
+        );
+
+        // Verify costs are non-zero to ensure meaningful test
+        assert!(static_cost_v1 > 0, "Expected non-zero cost");
+        println!("Single function - Static cost V3: {static_cost_v3}");
+    }
+
+    #[test]
+    fn test_execution_finalize_cost_matches_static_nested_calls() {
+        // This test verifies cost calculation with NESTED static futures.
+        // Program structure:
+        //   caller.aleo/call_child -> child.aleo/child_fn
+        // Both have finalize blocks, and caller awaits child's future.
+
+        // Child program with a finalize block
+        let (_, child_program) = Program::<MainnetV0>::parse(
+            r"
+program child.aleo;
+
+mapping child_counter:
+    key as u64.public;
+    value as u64.public;
+
+function child_fn:
+    input r0 as u64.public;
+    async child_fn r0 into r1;
+    output r1 as child.aleo/child_fn.future;
+
+finalize child_fn:
+    input r0 as u64.public;
+    get.or_use child_counter[r0] 0u64 into r1;
+    add r1 1u64 into r2;
+    set r2 into child_counter[r0];
+",
+        )
+        .unwrap();
+
+        // Caller program that calls child and awaits its future
+        let (_, caller_program) = Program::<MainnetV0>::parse(
+            r"
+import child.aleo;
+
+program caller.aleo;
+
+mapping caller_counter:
+    key as u64.public;
+    value as u64.public;
+
+function call_child:
+    input r0 as u64.public;
+    call child.aleo/child_fn r0 into r1;
+    async call_child r1 r0 into r2;
+    output r2 as caller.aleo/call_child.future;
+
+finalize call_child:
+    input r0 as child.aleo/child_fn.future;
+    input r1 as u64.public;
+    await r0;
+    get.or_use caller_counter[r1] 0u64 into r2;
+    add r2 10u64 into r3;
+    set r3 into caller_counter[r1];
+",
+        )
+        .unwrap();
+
+        // Build the process with both programs
+        let mut process = crate::test_helpers::sample_process(&child_program);
+        process.add_program(&caller_program).unwrap();
+
+        let function_name = Identifier::from_str("call_child").unwrap();
+
+        // Get execution
+        let execution = get_execution(&mut process, &caller_program, &function_name, ["42u64"].into_iter());
+
+        // Verify we have 2 transitions (child + caller)
+        assert_eq!(execution.transitions().count(), 2, "Expected 2 transitions for nested call");
+
+        // Get the stack for static cost calculation
+        let stack = process.get_stack(caller_program.id()).unwrap();
+
+        // Calculate costs using both methods
+        let static_cost_v3 = minimum_cost_in_microcredits_v3(&stack, &function_name).unwrap();
+        let runtime_cost_v3 = execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V3).unwrap();
+
+        println!("Nested calls - Static cost V3: {static_cost_v3}");
+        println!("Nested calls - Runtime cost V3: {runtime_cost_v3}");
+        println!("Nested calls - Number of transitions: {}", execution.transitions().count());
+
+        assert_eq!(
+            static_cost_v3, runtime_cost_v3,
+            "V3: Static and runtime costs should match for nested calls: static={static_cost_v3}, runtime={runtime_cost_v3}"
+        );
+
+        // Also verify V1 and V2
+        let static_cost_v1 = minimum_cost_in_microcredits_v1(&stack, &function_name).unwrap();
+        let runtime_cost_v1 = execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V1).unwrap();
+        assert_eq!(
+            static_cost_v1, runtime_cost_v1,
+            "V1: Static and runtime costs should match for nested calls: static={static_cost_v1}, runtime={runtime_cost_v1}"
+        );
+
+        let static_cost_v2 = minimum_cost_in_microcredits_v2(&stack, &function_name).unwrap();
+        let runtime_cost_v2 = execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V2).unwrap();
+        assert_eq!(
+            static_cost_v2, runtime_cost_v2,
+            "V2: Static and runtime costs should match for nested calls: static={static_cost_v2}, runtime={runtime_cost_v2}"
+        );
+
+        // Verify costs are non-zero and nested cost > single cost
+        assert!(static_cost_v3 > 0, "Expected non-zero cost for nested calls");
+    }
+
+    #[test]
+    fn test_execution_finalize_cost_matches_static_complex_call_graph() {
+        // This test verifies cost calculation with a COMPLEX call graph:
+        //
+        // root.aleo/main
+        //   -> level1_a.aleo/fn_a (has finalize with await)
+        //        -> leaf.aleo/leaf_fn (has finalize)
+        //   -> level1_b.aleo/fn_b (has finalize with await)
+        //        -> leaf.aleo/leaf_fn (has finalize)
+        //
+        // Execution order: leaf, fn_a, leaf, fn_b, main
+        // Total: 5 transitions, 5 finalize blocks
+
+        // Leaf program - called twice
+        let (_, leaf_program) = Program::<MainnetV0>::parse(
+            r"
+program leaf.aleo;
+
+mapping leaf_data:
+    key as u64.public;
+    value as u64.public;
+
+function leaf_fn:
+    input r0 as u64.public;
+    async leaf_fn r0 into r1;
+    output r1 as leaf.aleo/leaf_fn.future;
+
+finalize leaf_fn:
+    input r0 as u64.public;
+    get.or_use leaf_data[r0] 0u64 into r1;
+    add r1 1u64 into r2;
+    set r2 into leaf_data[r0];
+",
+        )
+        .unwrap();
+
+        // Level 1 program A - calls leaf
+        let (_, level1_a_program) = Program::<MainnetV0>::parse(
+            r"
+import leaf.aleo;
+
+program level1_a.aleo;
+
+mapping level1_a_data:
+    key as u64.public;
+    value as u64.public;
+
+function fn_a:
+    input r0 as u64.public;
+    call leaf.aleo/leaf_fn r0 into r1;
+    async fn_a r1 r0 into r2;
+    output r2 as level1_a.aleo/fn_a.future;
+
+finalize fn_a:
+    input r0 as leaf.aleo/leaf_fn.future;
+    input r1 as u64.public;
+    await r0;
+    get.or_use level1_a_data[r1] 0u64 into r2;
+    add r2 100u64 into r3;
+    set r3 into level1_a_data[r1];
+",
+        )
+        .unwrap();
+
+        // Level 1 program B - also calls leaf
+        let (_, level1_b_program) = Program::<MainnetV0>::parse(
+            r"
+import leaf.aleo;
+
+program level1_b.aleo;
+
+mapping level1_b_data:
+    key as u64.public;
+    value as u64.public;
+
+function fn_b:
+    input r0 as u64.public;
+    call leaf.aleo/leaf_fn r0 into r1;
+    async fn_b r1 r0 into r2;
+    output r2 as level1_b.aleo/fn_b.future;
+
+finalize fn_b:
+    input r0 as leaf.aleo/leaf_fn.future;
+    input r1 as u64.public;
+    await r0;
+    get.or_use level1_b_data[r1] 0u64 into r2;
+    add r2 200u64 into r3;
+    set r3 into level1_b_data[r1];
+",
+        )
+        .unwrap();
+
+        // Root program - calls both level1_a and level1_b
+        // Note: must import leaf.aleo for transitive dependency resolution
+        let (_, root_program) = Program::<MainnetV0>::parse(
+            r"
+import leaf.aleo;
+import level1_a.aleo;
+import level1_b.aleo;
+
+program root.aleo;
+
+mapping root_data:
+    key as u64.public;
+    value as u64.public;
+
+function main:
+    input r0 as u64.public;
+    call level1_a.aleo/fn_a r0 into r1;
+    call level1_b.aleo/fn_b r0 into r2;
+    async main r1 r2 r0 into r3;
+    output r3 as root.aleo/main.future;
+
+finalize main:
+    input r0 as level1_a.aleo/fn_a.future;
+    input r1 as level1_b.aleo/fn_b.future;
+    input r2 as u64.public;
+    await r0;
+    await r1;
+    get.or_use root_data[r2] 0u64 into r3;
+    add r3 1000u64 into r4;
+    set r4 into root_data[r2];
+",
+        )
+        .unwrap();
+
+        // Build the process with all programs
+        let mut process = crate::test_helpers::sample_process(&leaf_program);
+        process.add_program(&level1_a_program).unwrap();
+        process.add_program(&level1_b_program).unwrap();
+        process.add_program(&root_program).unwrap();
+
+        let function_name = Identifier::from_str("main").unwrap();
+
+        // Get execution
+        let execution = get_execution(&mut process, &root_program, &function_name, ["42u64"].into_iter());
+
+        // Verify we have 5 transitions
+        let num_transitions = execution.transitions().count();
+        println!("Complex call graph - Number of transitions: {num_transitions}");
+        assert_eq!(num_transitions, 5, "Expected 5 transitions for complex call graph");
+
+        // Get the stack for static cost calculation
+        let stack = process.get_stack(root_program.id()).unwrap();
+
+        // Calculate costs using both methods
+        let static_cost_v3 = minimum_cost_in_microcredits_v3(&stack, &function_name).unwrap();
+        let runtime_cost_v3 = execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V3).unwrap();
+
+        println!("Complex call graph - Static cost V3: {static_cost_v3}");
+        println!("Complex call graph - Runtime cost V3: {runtime_cost_v3}");
+
+        assert_eq!(
+            static_cost_v3, runtime_cost_v3,
+            "V3: Static and runtime costs should match for complex call graph: static={static_cost_v3}, runtime={runtime_cost_v3}"
+        );
+
+        // Also verify V1 and V2
+        let static_cost_v1 = minimum_cost_in_microcredits_v1(&stack, &function_name).unwrap();
+        let runtime_cost_v1 = execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V1).unwrap();
+        assert_eq!(static_cost_v1, runtime_cost_v1, "V1: Static and runtime costs should match for complex call graph");
+
+        let static_cost_v2 = minimum_cost_in_microcredits_v2(&stack, &function_name).unwrap();
+        let runtime_cost_v2 = execution_finalize_cost(&process, &execution, ConsensusFeeVersion::V2).unwrap();
+        assert_eq!(static_cost_v2, runtime_cost_v2, "V2: Static and runtime costs should match for complex call graph");
+
+        // Verify costs are meaningful
+        assert!(static_cost_v3 > 0, "Expected non-zero cost");
+        println!(
+            "Complex call graph - V1 cost: {static_cost_v1}, V2 cost: {static_cost_v2}, V3 cost: {static_cost_v3}"
+        );
     }
 }
