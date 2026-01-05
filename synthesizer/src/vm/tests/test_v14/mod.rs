@@ -89,7 +89,10 @@ use snarkvm_utilities::TestRng;
 //       (the call to function_verify_signature_field does not cause a double spend, as expected)
 // - Casting a static record into a dynamic one and passing the latter to a function expecting a static record (translation involved) consumes it
 //   In: cast.rs::test_cast_simple Case 2 (fails due to double spend)
-// - TODO check vm.transition_store().records().count() is as expected when a record is produced/translated
+// - A record is only produced once even if it is subsequently output as a dynamic record by the caller
+//   In: mixed.rs::test_execution_cost_for_authorization
+// - A record is only consumed once even if it is subsequently passed as a dynamic record to a callee
+//   In: mixed.rs::test_translation_get_dynamic_cast_to_dynamic
 //
 // Key-fetching
 // - Translations for the same record across different transitions are proved/verified with the same key (in the same Varuna batch)
@@ -106,9 +109,8 @@ use snarkvm_utilities::TestRng;
 // Signature consistency
 // - Translate an output record fom a call to a preexisting program to ensure signature-verification circuit has not changed
 //   In: get_record_dynamic.rs::tanslate_transfer_public_to_private
-// TODO (Antonio) complete
 
-// Adds the given transactions into a new block and asserts all of them were
+// Adds the given transactions to a new block and asserts all of them were
 // accepted
 fn add_and_test(
     vm: &VM<CurrentNetwork, LedgerType>,
