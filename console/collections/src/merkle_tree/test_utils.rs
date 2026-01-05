@@ -27,21 +27,21 @@ use snarkvm_console_types::prelude::*;
 /// Each node (including leaves) is truncated to a number of its
 /// least-significant characters controlled by the `node_width` argument.
 ///
-/// Nodes whose value is the empty hash are displayed as `e_0`. Nodes whose
-/// value is `hash(empty hash, empty hash)` are displayed as `e_1`. Virtual
+/// Nodes whose value is the empty hash are displayed as `e`. Nodes whose
+/// value is `hash(empty hash, empty hash)` are displayed as `E`. Virtual
 /// leaves used to pad the lowest level, which are not stored in the tree but
 /// considered to have the value of the empty hash, are displayed as a sequence
 /// of `-` characters.
 ///
 /// Fully padded subtrees (that is, right subtrees replaced by the empty hash)
-/// are represented by the string ` \ e_0` next to their parent.
+/// are represented by the string ` \ e` next to their parent.
 ///
 /// Arguments:
 /// - `merkle_tree`: The Merkle tree to print.
 /// - `path_hasher`: The path hasher, used to compute the value of the empty
 ///   hash and the the hash of two empty hashes.
 /// - `node_width`: The number of characters used to display each node. Must be
-///   at least 3 (due to `e_0` and `e_1`).
+///   at least 1.
 pub fn print_merkle_tree<
     N: Environment,
     LH: LeafHash<Hash = PH::Hash>,
@@ -54,15 +54,15 @@ pub fn print_merkle_tree<
 ) -> Result<()> {
     let empty_hash = path_hasher.hash_empty()?;
     let empty_hash_hash = path_hasher.hash_children(&empty_hash, &empty_hash)?;
-    let empty_hash_str = format!("{:<node_width$}", "e_0");
-    let empty_hash_hash_str = format!("{:<node_width$}", "e_1");
+    let empty_hash_str = format!("{:<node_width$}", "e");
+    let empty_hash_hash_str = format!("{:<node_width$}", "E");
     let padding_leaf_str = format!("{:<node_width$}", "-".repeat(node_width));
 
     // For depth > 2, all levels are printed in a two-character space for
     // alignment purposes. An extra character is allotted for the colon.
     let level_width = if DEPTH > 9 { 3 } else { 2 };
 
-    ensure!(node_width >= 3, "node_width must be at least 3");
+    ensure!(node_width >= 1, "node_width must be at least 1");
 
     // Anonymous auxiliary function to format a node.
     let node_string = |element: Field<N>| {
@@ -101,7 +101,7 @@ pub fn print_merkle_tree<
         .collect_vec();
 
     for (level, root) in padded_roots.into_iter().rev().enumerate() {
-        println!("Level {:<level_width$} {} \\ e_0", format!("{level}:"), node_string(root));
+        println!("Level {:<level_width$} {} \\ e", format!("{level}:"), node_string(root));
     }
 
     // Phase 2: Print the unpadded subtree

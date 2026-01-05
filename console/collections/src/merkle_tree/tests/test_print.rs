@@ -84,7 +84,7 @@ fn test_print_merkle_tree() {
     let merkle_tree = MerkleTree::<CurrentEnvironment, LH, PH, 10>::new(&leaf_hasher, &path_hasher, &leaves).unwrap();
 
     println!("\nCase 5: DEPTH 10, 17 leaves (root: {:?})\n", merkle_tree.root());
-    print_merkle_tree(&merkle_tree, &path_hasher, 3).unwrap();
+    print_merkle_tree(&merkle_tree, &path_hasher, 1).unwrap();
 
     println!();
 }
