@@ -45,41 +45,17 @@ pub type FutureArgumentTree<E> = MerkleTree<E, Poseidon8<E>, Poseidon2<E>, FUTUR
 /// finalize foo: input r0 as address.public; input r1 as u64.public;
 /// ```
 ///
-/// It's merkleization is as follows:
+/// The leaves of its Merkle tree are computed as follows:
 /// ```text
-///   L_0    L_1    (leaves: hashed entries)
-///     \    /
-///      P_0        (internal node)
-///       |
-///      P_1        (padding level 1)
-///       |
-///      P_2        (padding level 2)
-///       |
-///       R         (root, padding level 3)
-///
 /// L_0 := HashPSD8(ToFields(arg_0))
 /// L_1 := HashPSD8(ToFields(arg_1))
-/// P_0 := HashPSD2(L_0, L_1)
-/// P_1 := HashPSD2(P_0, empty_hash)
-/// P_2 := HashPSD2(P_1, empty_hash)
-///   R := HashPSD2(P_2, empty_hash)
 /// ```
 ///
-/// For finalize scopes with a different number of arguments, leaves are first
-/// padded to the next power of 2 using `empty_hash` hashes, then a balanced
-/// binary tree is built. Note that, in concrete terms, at most one `empty_hash`
-/// leaf is added: the rest are only virtual in that instead nodes with the
-/// value `HashPSD2(empty_hash, empty_hash)` are added to the next level, which
-/// is indeed full of size equal to a power of 2.
+/// Note that `ToFields` encodes the arguments's variant.
 ///
-/// Padding levels are then added as needed to reach the full tree depth
-/// `FUTURE_ARGUMENT_TREE_DEPTH` (4), each of which is constructed by hashing the
-/// root of the previous level together with `empty_hash`.
-///
-/// Note that:
-///  - `empty_hash` is the value returned by the `hash_empty` function the
-///    `PathHash` implementation for `HashPSD2`.
-///  - `ToFields` encodes the arguments's variant.
+/// The tree has depth `FUTURE_ARGUMENT_TREE_DEPTH = 4` and is constructed with
+/// path hasher `HashPSD2` and the padding scheme outlined in
+/// [`snarkVM`'s `MerkleTree`](snarkvm_console_collections::merkle_tree::MerkleTree).
 #[derive(Clone)]
 pub struct DynamicFuture<N: Network> {
     /// The program name.
