@@ -131,7 +131,9 @@ impl<N: Network> TranslationAssignment<N> {
             console::types::Field::<N>::from_u16(self.input_output_index),
         );
 
-        // Inject the commitment or serial number of the non-external record (if `static_is_external`) or the input/output ID of the external record (if not `static_is_external`) as `Mode::Public`.
+        // Inject the commitment or serial number of the non-external record (if
+        // `static_is_external`) or the input/output ID of the external record
+        // (if not `static_is_external`) as `Mode::Public`.
         let circuit_id_static = circuit::Field::<A>::new(circuit::Mode::Public, self.id_static);
 
         // Inject the ID of the dynamic record as `Mode::Public`.

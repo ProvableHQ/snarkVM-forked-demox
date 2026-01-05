@@ -56,23 +56,24 @@ pub type RecordDataTree<E> = MerkleTree<E, Poseidon8<E>, Poseidon2<E>, RECORD_DA
 /// The console data.
 pub type RecordData<N> = IndexMap<Identifier<N>, Entry<N, Plaintext<N>>>;
 
-/// A dynamic record is a fixed-size representation of a record.
-/// Like static `Record`s, a dynamic record contains an owner, nonce, and a version.
-/// However, instead of storing the full data, it only stores the Merkle root of the data.
-/// This ensures that all dynamic records have a constant size, regardless of the amount of data they contain.
+/// A dynamic record is a fixed-size representation of a record. Like static
+/// `Record`s, a dynamic record contains an owner, nonce, and a version.
+/// However, instead of storing the full data, it only stores the Merkle root of
+/// the data. This ensures that all dynamic records have a constant size,
+/// regardless of the amount of data they contain.
 ///
 /// Suppose we have the following record with two data entries:
 ///
-/// ```ignore
+/// ```text
 /// record foo:
 ///     owner as address.private;
 ///     microcredits as u64.private;
 ///     memo as [u8; 32u32].public;
 /// ```
 ///
-/// Its merkle-ization produces a tree of depth `RECORD_DATA_TREE_DEPTH` (5). With 2 leaves:
+/// Its merkleization is as follows:
 ///
-/// ```ignore
+/// ```text
 ///   L_0    L_1    (leaves: hashed entries)
 ///     \    /
 ///      P_0        (internal node)
@@ -88,18 +89,26 @@ pub type RecordData<N> = IndexMap<Identifier<N>, Entry<N, Plaintext<N>>>;
 /// L_0 := HashPSD8(microcredits || ToFields(entry_0))
 /// L_1 := HashPSD8(memo || ToFields(entry_1))
 /// P_0 := HashPSD2(L_0, L_1)
-/// P_1 := HashPSD2(P_0, ZERO)
-/// P_2 := HashPSD2(P_1, ZERO)
-/// P_3 := HashPSD2(P_2, ZERO)
-///   R := HashPSD2(P_3, ZERO)
+/// P_1 := HashPSD2(P_0, empty_hash)
+/// P_2 := HashPSD2(P_1, empty_hash)
+/// P_3 := HashPSD2(P_2, empty_hash)
+///   R := HashPSD2(P_3, empty_hash)
 /// ```
 ///
-/// For records with more entries, leaves are first padded to the next power of 2 using
-/// `ZERO` hashes, then a balanced binary tree is built. Padding levels are added as
-/// needed to reach the full tree depth.
+/// For records with a different number of entries, leaves are first padded to
+/// the next power of 2 using `empty_hash` hashes, then a balanced binary tree
+/// is built. Note that, in concrete terms, at most one `empty_hash` leaf is
+/// added: the rest are only virtual in that instead nodes with the value
+/// `HashPSD2(empty_hash, empty_hash)` are added to the next level, which is
+/// indeed full of size equal to a power of 2.
+///
+/// Padding levels are then added as needed to reach the full tree depth
+/// `RECORD_DATA_TREE_DEPTH` (5), each of which is constructed by hashing the
+/// root of the previous level together with `empty_hash`.
 ///
 /// Note that:
-///  - `ZERO` is defined by the `PathHash` implementation for `HashPSD2`.
+///  - `empty_hash` is the value returned by the `hash_empty` function the
+///    `PathHash` implementation for `HashPSD2`.
 ///  - `ToFields` encodes the entry's mode and plaintext variant.
 #[derive(Clone)]
 pub struct DynamicRecord<N: Network> {
@@ -196,8 +205,9 @@ impl<N: Network> DynamicRecord<N> {
         Record::<N, Plaintext<N>>::from_plaintext(owner, data.clone(), self.nonce, self.version)
     }
 
-    /// Injects the ordered entries in `data` into the circuit and computes the
-    /// Merkle tree containing those entires as leaves.
+    /// Computes the Merkle tree containing the given (ordered) entires as
+    /// leaves. More details on the structure of the tree can be found in
+    /// [`DynamicRecord`].
     pub fn merkleize_data(data: &IndexMap<Identifier<N>, Entry<N, Plaintext<N>>>) -> Result<RecordDataTree<N>> {
         // Construct the leaves.
         let leaves = data
