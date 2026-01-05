@@ -64,17 +64,15 @@ use snarkvm_utilities::TestRng;
 //   In: translation.rs::test_translation_output_external_dynamic
 //
 // Chained cases
-// - input static -> dynamic passed as static -> dynamic, output as dynamic -> static
-// - input static -> dynamic passed as static -> dynamic, output as dynamic (check dynamic-record OutputID changes as expected)
-// - input static external -> dynamic subsequently passed as input dynamic -> static
-// - output static -> dynamic subsequently passed as output dynamic -> static
-// - static converted to dynamic outside the ledger
+// - Static record minted in previous transaction converted to dynamic one outside the ledger and VM, then:
 //       passed as input dynamic -> static
-//       modify it (mint new)
+//       modify it (= mint new one)
 //       output static -> dynamic
 //       input dynamic -> dynamic (no translation)
 //       input dynamic -> static
-//   translation.rs::test_translation_triple
+//   In: translation.rs::test_translation_triple
+// - Input (dynamic, dynamic, dynamic) -> (static, static, static), output as static -> dynamic
+//   In: mixed.rs: test_execution_cost_for_authorization
 //
 // get.record.dynamic
 // - Record entries with different visibility but coinciding identifiers can be read with the same get.record.dynamic instruction

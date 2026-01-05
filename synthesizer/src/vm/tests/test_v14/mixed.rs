@@ -626,9 +626,9 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
 
     assert!(
         vm.execute(
-            // We still execute with the 2's private key so that record
-            // consumption can proceed - it is the signature we would like to
-            // fail.
+            // We still execute with client 2's private key so that record
+            // consumption can proceed - it is the product-signature we would
+            // like to fail.
             &client_2_private_key,
             ("factory.aleo", "decomission_ladder"),
             decomission_toy_inputs.into_iter(),
