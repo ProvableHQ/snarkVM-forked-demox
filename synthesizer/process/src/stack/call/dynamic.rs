@@ -506,9 +506,14 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         );
 
                         // Synthesize translation proving keys and store input translations.
+                        // Push to the top bucket of the translation stack (the caller's level).
                         for translation in input_translations {
                             ensure_translation_proving_key(&translation.program_id, &translation.record_name, rng)?;
-                            translations.write().push(translation);
+                            translations
+                                .write()
+                                .last_mut()
+                                .ok_or_else(|| anyhow!("Translation stack is empty"))?
+                                .push(translation);
                         }
 
                         // Collect output record translations.
@@ -560,9 +565,14 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         )?;
 
                         // Synthesize translation proving keys and store output translations.
+                        // Push to the top bucket of the translation stack (the caller's level).
                         for translation in output_translations {
                             ensure_translation_proving_key(&translation.program_id, &translation.record_name, rng)?;
-                            translations.write().push(translation);
+                            translations
+                                .write()
+                                .last_mut()
+                                .ok_or_else(|| anyhow!("Translation stack is empty"))?
+                                .push(translation);
                         }
 
                         // Return the caller's request and response.

@@ -944,6 +944,7 @@ fn cost_in_microcredits<N: Network>(
             Transaction::<N>::MAX_TRANSITIONS
         );
         // Get the finalize logic. If the function does not have a finalize scope then no cost is incurred.
+        // TODO (dynamic_dispatch). This only creates a lower bound on the cost in microcredts.
         if let Some(finalize) = stack_ref.get_function_ref(&function_name)?.finalize_logic() {
             // Queue the futures to be tallied.
             for input in finalize.inputs() {

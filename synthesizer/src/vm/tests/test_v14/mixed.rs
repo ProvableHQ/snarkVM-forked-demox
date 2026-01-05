@@ -45,7 +45,7 @@ fn test_execution_cost_for_authorization() {
     let check_tossed_coin_field =
         Identifier::<CurrentNetwork>::from_str(check_tossed_coin_str).unwrap().to_field().unwrap();
 
-    let program_a_str = format!(
+    let program_a_source = format!(
         r"
         program {program_a_str}.aleo;
 
@@ -145,7 +145,7 @@ fn test_execution_cost_for_authorization() {
         "
     );
 
-    let program_b_str = format!(
+    let program_b_source = format!(
         r"
         import {program_a_str}.aleo;
 
@@ -161,8 +161,8 @@ fn test_execution_cost_for_authorization() {
         "
     );
 
-    let program_a = Program::<CurrentNetwork>::from_str(&program_a_str).unwrap();
-    let program_b = Program::<CurrentNetwork>::from_str(&program_b_str).unwrap();
+    let program_a = Program::<CurrentNetwork>::from_str(&program_a_source).unwrap();
+    let program_b = Program::<CurrentNetwork>::from_str(&program_b_source).unwrap();
 
     // Initialize the VM.
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);

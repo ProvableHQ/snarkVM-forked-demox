@@ -170,6 +170,13 @@ impl<N: Network> Stack<N> {
         // Retrieve the next request.
         let console_request = call_stack.pop()?;
 
+        // If in Execute mode, push a new translation bucket for this execution level.
+        // Translations from dynamic calls made at this level will be pushed to this bucket,
+        // and the bucket will be popped when the transition is inserted.
+        if let CallStack::Execute(_, _, translations) = &call_stack {
+            translations.write().push(Vec::new());
+        }
+
         // Ensure the network ID matches.
         ensure!(
             **console_request.network_id() == N::ID,
@@ -538,12 +545,17 @@ impl<N: Network> Stack<N> {
                 num_response_constraints,
             };
 
+            // Pop the translation bucket for this execution level.
+            // This bucket contains translations from dynamic calls made at this level.
+            let translation_bucket =
+                translations.write().pop().ok_or_else(|| anyhow!("Translation stack underflow: no bucket to pop"))?;
+
             // Add the transition to the trace.
             trace.write().insert_transition(
                 console_request.input_ids(),
                 &transition,
                 (proving_key, assignment),
-                &translations.read(),
+                &translation_bucket,
                 metrics,
             )?;
         }

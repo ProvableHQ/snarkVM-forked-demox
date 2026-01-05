@@ -176,7 +176,7 @@ impl<N: Network> Translation<N> {
                 "Not all (callee) translation tasks have been consumed for transition ID {}: there are {}, but only {} have been consumed",
                 transition_id,
                 self.translation_tasks.get(transition_id).unwrap().len(),
-                *next_task - 1
+                *next_task
             );
         }
 

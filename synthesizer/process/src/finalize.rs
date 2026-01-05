@@ -433,7 +433,9 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
         // Check that all future registers have been awaited.
         let mut unawaited = Vec::new();
         for input in finalize.inputs() {
-            if matches!(input.finalize_type(), FinalizeType::Future(_)) && !awaited.contains(input.register()) {
+            if matches!(input.finalize_type(), FinalizeType::Future(_) | FinalizeType::DynamicFuture)
+                && !awaited.contains(input.register())
+            {
                 unawaited.push(input.register().clone());
             }
         }
