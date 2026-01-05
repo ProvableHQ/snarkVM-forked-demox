@@ -68,13 +68,13 @@ fn test_print_merkle_tree() {
     println!("\nCase 3: DEPTH 4, 8 leaves (root: {:?})\n", merkle_tree.root());
     print_merkle_tree(&merkle_tree, &path_hasher, 3).unwrap();
 
-    // Case 4: Depth 5, 17 leaves.
-    let num_leaves = 17;
+    // Case 4: Depth 4, 9 leaves.
+    let num_leaves = 9;
 
     let leaves = (0..num_leaves).map(|_| Field::<CurrentEnvironment>::rand(&mut rng).to_bits_le()).collect::<Vec<_>>();
-    let merkle_tree = MerkleTree::<CurrentEnvironment, LH, PH, 5>::new(&leaf_hasher, &path_hasher, &leaves).unwrap();
+    let merkle_tree = MerkleTree::<CurrentEnvironment, LH, PH, 4>::new(&leaf_hasher, &path_hasher, &leaves).unwrap();
 
-    println!("\nCase 4: DEPTH 5, 17 leaves (root: {:?})\n", merkle_tree.root());
+    println!("\nCase 4: DEPTH 4, 9 leaves (root: {:?})\n", merkle_tree.root());
     print_merkle_tree(&merkle_tree, &path_hasher, 3).unwrap();
 
     // Case 5: Depth 10, 17 leaves.
