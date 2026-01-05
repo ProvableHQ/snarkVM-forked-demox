@@ -22,11 +22,10 @@ pub use path::*;
 #[cfg(test)]
 mod tests;
 
-//TODO (@Antonio95) This module doesn't exist. Commenting to pass clippy.
-// #[cfg(any(test, feature = "test-utils"))]
-// mod test_utils;
-// #[cfg(any(test, feature = "test-utils"))]
-// pub use test_utils::*;
+#[cfg(any(test, feature = "test-utils"))]
+mod test_utils;
+#[cfg(any(test, feature = "test-utils"))]
+pub use test_utils::*;
 
 use snarkvm_console_types::prelude::*;
 
