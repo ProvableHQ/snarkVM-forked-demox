@@ -79,9 +79,6 @@ pub struct DynamicFuture<A: Aleo> {
     function_name: Field<A>,
     /// The Merkle root of the arguments.
     root: Field<A>,
-    /// The optional console Merkle tree of the arguments.
-    /// Note: This is NOT part of the circuit representation.
-    tree: Option<console::FutureArgumentTree<A::Network>>,
     /// The optional console arguments.
     /// Note: This is NOT part of the circuit representation.
     arguments: Option<Vec<console::Argument<A::Network>>>,
@@ -97,7 +94,6 @@ impl<A: Aleo> Inject for DynamicFuture<A> {
             program_network: Inject::new(mode, *value.program_network()),
             function_name: Inject::new(mode, *value.function_name()),
             root: Inject::new(mode, *value.root()),
-            tree: value.tree().clone(),
             arguments: value.arguments().clone(),
         }
     }
@@ -122,11 +118,6 @@ impl<A: Aleo> DynamicFuture<A> {
     /// Returns the Merkle root of the arguments.
     pub const fn root(&self) -> &Field<A> {
         &self.root
-    }
-
-    /// Returns the optional console Merkle tree of the arguments.
-    pub const fn tree(&self) -> &Option<console::FutureArgumentTree<A::Network>> {
-        &self.tree
     }
 
     /// Returns the console arguments.
@@ -154,7 +145,6 @@ impl<A: Aleo> Eject for DynamicFuture<A> {
             Eject::eject_value(self.program_network()),
             Eject::eject_value(self.function_name()),
             Eject::eject_value(self.root()),
-            self.tree.clone(),
             self.arguments.clone(),
         )
     }

@@ -119,10 +119,17 @@ fn add_and_test(
     // Check the transactions.
     let transactions: Vec<_> = transactions
         .iter()
-        .map(|tx| {
+        .map(|tx_0| {
             // Serialize and deserialize the transaction to ensure consistency.
-            let tx = Transaction::<CurrentNetwork>::from_bytes_le(&tx.to_bytes_le().unwrap()).unwrap();
-            let tx = Transaction::<CurrentNetwork>::from_str(&tx.to_string()).unwrap();
+            let tx_bytes_0 = tx_0.to_bytes_le().unwrap();
+            let tx_1 = Transaction::<CurrentNetwork>::from_bytes_le(&tx_bytes_0).unwrap();
+            assert_eq!(tx_0, &tx_1);
+            assert_eq!(tx_bytes_0, tx_1.to_bytes_le().unwrap());
+            // Stringify and parse the transaction to ensure consistency.
+            let tx_1_string = tx_1.to_string();
+            let tx = Transaction::<CurrentNetwork>::from_str(&tx_1_string).unwrap();
+            assert_eq!(tx_0, &tx);
+            assert_eq!(tx_1_string, tx.to_string());
             // Check the transaction.
             vm.check_transaction(&tx, None, rng).map_err(|e| anyhow!("Transaction check failed: {e}")).unwrap();
             tx

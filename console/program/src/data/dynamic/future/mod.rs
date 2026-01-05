@@ -90,8 +90,6 @@ pub struct DynamicFuture<N: Network> {
     function_name: Field<N>,
     /// The Merkle root of the arguments.
     root: Field<N>,
-    /// The optional Merkle tree of the arguments.
-    tree: Option<FutureArgumentTree<N>>,
     /// The optional arguments.
     arguments: Option<Vec<Argument<N>>>,
 }
@@ -103,10 +101,9 @@ impl<N: Network> DynamicFuture<N> {
         program_network: Field<N>,
         function_name: Field<N>,
         root: Field<N>,
-        tree: Option<FutureArgumentTree<N>>,
         arguments: Option<Vec<Argument<N>>>,
     ) -> Self {
-        Self { program_name, program_network, function_name, root, tree, arguments }
+        Self { program_name, program_network, function_name, root, arguments }
     }
 }
 
@@ -129,11 +126,6 @@ impl<N: Network> DynamicFuture<N> {
     /// Returns the Merkle root of the arguments.
     pub const fn root(&self) -> &Field<N> {
         &self.root
-    }
-
-    /// Returns the optional Merkle tree of the arguments.
-    pub const fn tree(&self) -> &Option<FutureArgumentTree<N>> {
-        &self.tree
     }
 
     /// Returns the optional arguments.
@@ -167,7 +159,7 @@ impl<N: Network> DynamicFuture<N> {
         // Get the root.
         let root = *tree.root();
 
-        Ok(Self::new_unchecked(program_name, program_network, function_name, root, Some(tree), Some(arguments)))
+        Ok(Self::new_unchecked(program_name, program_network, function_name, root, Some(arguments)))
     }
 
     /// Creates a static record from a dynamic record.

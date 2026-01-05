@@ -38,6 +38,7 @@ impl<N: Network> Future<N> {
             pair(pair(Sanitizer::parse_whitespaces, tag(",")), Sanitizer::parse),
             alt((
                 map(|input| Self::parse_internal(input, depth + 1), Argument::Future),
+                map(DynamicFuture::parse, Argument::DynamicFuture),
                 map(Plaintext::parse, Argument::Plaintext),
             )),
         )(string)?;
@@ -210,7 +211,14 @@ impl<N: Network> Future<N> {
                         }
                     }
                     Argument::DynamicFuture(dynamic_future) => {
-                        write!(f, "\n{:indent$}{dynamic_future},", "", indent = (depth + 2) * INDENT,)
+                        match i == self.arguments.len() - 1 {
+                            true => {
+                                // Print the last argument without a comma.
+                                write!(f, "\n{:indent$}{dynamic_future}", "", indent = (depth + 2) * INDENT,)
+                            }
+                            // Print the argument with a comma.
+                            false => write!(f, "\n{:indent$}{dynamic_future},", "", indent = (depth + 2) * INDENT,),
+                        }
                     }
                 }
             })?;

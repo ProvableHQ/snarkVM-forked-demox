@@ -441,7 +441,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // Ensure the fee is sufficient to cover the cost.
                 if *fee.base_amount()? < minimum_cost {
                     bail!(
-                        "Transaction '{id}' has an insufficient base fee (deployment) - requires {minimum_cost} microcredits"
+                        "Transaction '{id}' has an insufficient base fee (deployment) - has {}, requires {minimum_cost} microcredits",
+                        *fee.base_amount()?
                     )
                 }
                 // Verify the fee.
@@ -472,7 +473,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         // Ensure the fee is sufficient to cover the cost.
                         if *fee.base_amount()? < minimum_cost {
                             bail!(
-                                "Transaction '{id}' has an insufficient base fee (execution) - requires {minimum_cost} microcredits"
+                                "Transaction '{id}' has an insufficient base fee (execution) - has {}, requires {minimum_cost} microcredits",
+                                *fee.base_amount()?
                             )
                         }
                     } else {

@@ -18,11 +18,11 @@ use super::*;
 impl<N: Network> FromBytes for DynamicRecord<N> {
     /// Reads the dynamic record from a buffer.
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
-        // Read and validate the variant.
+        // Read and validate the version.
         match u8::read_le(&mut reader) {
-            Ok(0) => {} // The only valid variant for a dynamic record.
+            Ok(0) => {} // The only valid version for a dynamic record.
             _ => {
-                return Err(error("Failed to deserialize dynamic record - invalid variant"));
+                return Err(error("Failed to deserialize dynamic record - invalid version"));
             }
         }
 
@@ -45,8 +45,8 @@ impl<N: Network> FromBytes for DynamicRecord<N> {
 impl<N: Network> ToBytes for DynamicRecord<N> {
     /// Writes the record to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
-        // Write the variant.
-        1u8.write_le(&mut writer)?;
+        // Write the version.
+        0u8.write_le(&mut writer)?;
 
         // Write the owner.
         self.owner.write_le(&mut writer)?;

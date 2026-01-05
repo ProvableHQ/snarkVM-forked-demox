@@ -27,7 +27,7 @@ impl<N: Network> FromBytes for DynamicFuture<N> {
         // Read the argument root.
         let root = Field::read_le(&mut reader)?;
         // Return the dynamic future.
-        Ok(Self::new_unchecked(program_name, program_network, function_name, root, None, None))
+        Ok(Self::new_unchecked(program_name, program_network, function_name, root, None))
     }
 }
 

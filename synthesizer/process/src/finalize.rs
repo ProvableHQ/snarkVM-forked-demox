@@ -156,6 +156,18 @@ impl<N: Network> Process<N> {
         }
         lap!(timer, "Verify the number of transitions");
 
+        // Collect all of the futures in the execution's transitions and compute their corresponding dynamic future roots.
+        let root_to_future: HashMap<Field<N>, &Future<N>> = execution
+            .transitions()
+            .filter_map(|transition| {
+                transition.outputs().last().and_then(|output| output.future()).and_then(|future| {
+                    let dynamic_future = DynamicFuture::from_future(future).ok()?;
+                    let root = *dynamic_future.root();
+                    Some((root, future))
+                })
+            })
+            .collect();
+
         // Construct the call graph.
         let consensus_version = N::CONSENSUS_VERSION(state.block_height())?;
         let call_graph = match (ConsensusVersion::V1..=ConsensusVersion::V2).contains(&consensus_version) {
@@ -168,10 +180,10 @@ impl<N: Network> Process<N> {
             // Finalize the root transition.
             // Note that this will result in all the remaining transitions being finalized, since the number
             // of calls matches the number of transitions.
-            let mut finalize_operations = finalize_transition(state, store, &stack, transition, call_graph)?;
+            let mut finalize_operations =
+                finalize_transition(state, store, &stack, transition, call_graph, root_to_future)?;
 
             /* Finalize the fee. */
-
             if let Some(fee) = fee {
                 // Retrieve the fee stack.
                 let fee_stack = self.get_stack(fee.program_id())?;
@@ -226,7 +238,7 @@ fn finalize_fee_transition<N: Network, P: FinalizeStorage<N>>(
     };
 
     // Finalize the transition.
-    match finalize_transition(state, store, stack, fee, call_graph) {
+    match finalize_transition(state, store, stack, fee, call_graph, Default::default()) {
         // If the evaluation succeeds, return the finalize operations.
         Ok(finalize_operations) => Ok(finalize_operations),
         // If the evaluation fails, bail and return the error.
@@ -298,6 +310,7 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
     stack: &Arc<Stack<N>>,
     transition: &Transition<N>,
     call_graph: HashMap<N::TransitionID, Vec<N::TransitionID>>,
+    root_to_future: HashMap<Field<N>, &Future<N>>,
 ) -> Result<Vec<FinalizeOperation<N>>> {
     // Retrieve the program ID.
     let program_id = transition.program_id();
@@ -393,7 +406,8 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
                         &stack,
                         &registers,
                         transition_id,
-                        nonce
+                        nonce,
+                        &root_to_future,
                     )) {
                         Ok(Ok(callee_state)) => callee_state,
                         // If the evaluation fails, bail and return the error.
@@ -574,16 +588,18 @@ fn setup_await<N: Network>(
     registers: &FinalizeRegisters<N>,
     transition_id: N::TransitionID,
     nonce: u64,
+    root_to_future: &HashMap<Field<N>, &Future<N>>,
 ) -> Result<FinalizeState<N>> {
     // Retrieve the input as a future.
     let (future, is_dynamic) = match registers.load(stack.deref(), &Operand::Register(await_.register().clone()))? {
         Value::Future(future) => (future, false),
         Value::DynamicFuture(dynamic_future) => {
-            println!("Dynamic future: {dynamic_future:?}");
-            println!("  Arguments: {:?}", dynamic_future.arguments());
-            (dynamic_future.to_future()?, true)
+            // Look up the corresponding future from the dynamic future root.
+            match root_to_future.get(dynamic_future.root()) {
+                Some(future) => ((*future).clone(), true),
+                None => bail!("Dynamic future root '{:?}' not found in root-to-future map", dynamic_future.root()),
+            }
         }
-
         _ => bail!("The input to 'await' is not a future or dynamic future"),
     };
     // Initialize the state.
