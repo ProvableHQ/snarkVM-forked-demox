@@ -116,14 +116,24 @@ fn add_and_test(
     transactions: &[Transaction<CurrentNetwork>],
     rng: &mut TestRng,
 ) {
-    for (index, transaction) in transactions.iter().enumerate() {
-        vm.check_transaction(transaction, None, rng)
-            .map_err(|e| anyhow!("Transaction {index} check failed: {e}"))
-            .unwrap();
-    }
-    let block = sample_next_block(vm, caller_private_key, transactions, rng).unwrap();
+    // Check the transactions.
+    let transactions: Vec<_> = transactions
+        .iter()
+        .map(|tx| {
+            // Serialize and deserialize the transaction to ensure consistency.
+            let tx = Transaction::<CurrentNetwork>::from_bytes_le(&tx.to_bytes_le().unwrap()).unwrap();
+            let tx = Transaction::<CurrentNetwork>::from_str(&tx.to_string()).unwrap();
+            // Check the transaction.
+            vm.check_transaction(&tx, None, rng).map_err(|e| anyhow!("Transaction check failed: {e}")).unwrap();
+            tx
+        })
+        .collect();
+    // Sample the next block.
+    let block = sample_next_block(vm, caller_private_key, &transactions, rng).unwrap();
+    // Assert all transactions were accepted.
     assert_eq!(block.transactions().num_accepted(), transactions.len());
     assert_eq!(block.transactions().num_rejected(), 0);
     assert_eq!(block.aborted_transaction_ids().len(), 0);
+    // Add the next block to the VM.
     vm.add_next_block(&block).unwrap();
 }

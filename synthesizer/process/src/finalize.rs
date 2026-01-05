@@ -578,7 +578,12 @@ fn setup_await<N: Network>(
     // Retrieve the input as a future.
     let (future, is_dynamic) = match registers.load(stack.deref(), &Operand::Register(await_.register().clone()))? {
         Value::Future(future) => (future, false),
-        Value::DynamicFuture(dynamic_future) => (dynamic_future.to_future()?, true),
+        Value::DynamicFuture(dynamic_future) => {
+            println!("Dynamic future: {dynamic_future:?}");
+            println!("  Arguments: {:?}", dynamic_future.arguments());
+            (dynamic_future.to_future()?, true)
+        }
+
         _ => bail!("The input to 'await' is not a future or dynamic future"),
     };
     // Initialize the state.

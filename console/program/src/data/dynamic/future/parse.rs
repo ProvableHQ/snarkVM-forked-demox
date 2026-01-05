@@ -117,7 +117,15 @@ impl<N: Network> FromStr for DynamicFuture<N> {
 impl<N: Network> Debug for DynamicFuture<N> {
     /// Prints the future as a string.
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        Display::fmt(self, f)
+        writeln!(
+            f,
+            "{{ program_name: {}, program_network: {}, function_name: {}, root: {}, arguments: {:?} }}",
+            self.program_name(),
+            self.program_network(),
+            self.function_name(),
+            self.root(),
+            self.arguments()
+        )
     }
 }
 
