@@ -62,7 +62,8 @@ impl<N: Network> Package<N> {
         let function = program.get_function(&function_name)?;
         // Save all the prover and verifier files for any function calls that are made.
         for instruction in function.instructions() {
-            // TODO (dynamic_dispatch): review all locations using Call and consider adding CallDynamic variants.
+            // Note: `CallDynamic` is not handled here because its targets are resolved at runtime,
+            // so we cannot preload prover/verifier files for dynamic calls at execution time.
             if let Instruction::Call(call) = instruction {
                 // Retrieve the external stack and resource.
                 let (external_stack, resource) = match call.operator() {

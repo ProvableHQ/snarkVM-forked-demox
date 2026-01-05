@@ -61,26 +61,29 @@ pub type RecordData<N> = IndexMap<Identifier<N>, Entry<N, Plaintext<N>>>;
 /// However, instead of storing the full data, it only stores the Merkle root of the data.
 /// This ensures that all dynamic records have a constant size, regardless of the amount of data they contain.
 ///
-/// Suppose we have the following record:
+/// Suppose we have the following record with two data entries:
 ///
+/// ```ignore
 /// record foo:
 ///     owner as address.private;
 ///     microcredits as u64.private;
 ///     memo as [u8; 32u32].public;
+/// ```
 ///
-/// It's merkle-ization is as follows:
+/// Its merkle-ization produces a tree of depth `RECORD_DATA_TREE_DEPTH` (5). With 2 leaves:
 ///
-///        R
-///        |
-///       P_0
-///        |
-///       P_1
-///        |
-///       P_2
-///        |
-///       P_3
-///      /  \
-///   L_0    L_1
+/// ```ignore
+///   L_0    L_1    (leaves: hashed entries)
+///     \    /
+///      P_0        (internal node)
+///       |
+///      P_1        (padding level 1)
+///       |
+///      P_2        (padding level 2)
+///       |
+///      P_3        (padding level 3)
+///       |
+///       R         (root, padding level 4)
 ///
 /// L_0 := HashPSD8(microcredits || ToFields(entry_0))
 /// L_1 := HashPSD8(memo || ToFields(entry_1))
@@ -89,6 +92,11 @@ pub type RecordData<N> = IndexMap<Identifier<N>, Entry<N, Plaintext<N>>>;
 /// P_2 := HashPSD2(P_1, ZERO)
 /// P_3 := HashPSD2(P_2, ZERO)
 ///   R := HashPSD2(P_3, ZERO)
+/// ```
+///
+/// For records with more entries, leaves are first padded to the next power of 2 using
+/// `ZERO` hashes, then a balanced binary tree is built. Padding levels are added as
+/// needed to reach the full tree depth.
 ///
 /// Note that:
 ///  - `ZERO` is defined by the `PathHash` implementation for `HashPSD2`.
@@ -233,7 +241,202 @@ mod tests {
         assert_eq!(CurrentNetwork::MAX_DATA_ENTRIES.ilog2(), RECORD_DATA_TREE_DEPTH as u32);
     }
 
-    // TODO (dynamic_dispatch): Test different record formats.
-    // TODO (dynamic_dispatch): Test that you can correctly prove membership of an entry.
-    // TODO (dynamic_dispatch): Benchmark merkleization performance for records of various sizes.
+    #[test]
+    fn test_different_record_formats() {
+        use crate::{Entry, Identifier, Literal, Owner, Plaintext, Record};
+        use snarkvm_console_types::{Address, Field, Group, Scalar, U8, U64};
+        use snarkvm_utilities::{TestRng, Uniform};
+
+        let rng = &mut TestRng::default();
+
+        // Test 1: Record with private literal entries.
+        {
+            let owner = Owner::<CurrentNetwork, Plaintext<CurrentNetwork>>::Private(Plaintext::from(Literal::Address(
+                Address::rand(rng),
+            )));
+            let data = indexmap::indexmap! {
+                Identifier::from_str("amount").unwrap() => Entry::Private(Plaintext::from(Literal::U64(U64::rand(rng)))),
+                Identifier::from_str("secret").unwrap() => Entry::Private(Plaintext::from(Literal::Field(Field::rand(rng)))),
+            };
+            let nonce = Group::rand(rng);
+            let version = U8::new(1);
+            let record =
+                Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_plaintext(owner, data, nonce, version)
+                    .unwrap();
+            let dynamic = DynamicRecord::from_record(&record).unwrap();
+
+            // Verify roundtrip.
+            let reconstructed = dynamic.to_record(true).unwrap();
+            assert_eq!(record.nonce(), reconstructed.nonce());
+            assert_eq!(record.version(), reconstructed.version());
+            assert_eq!(record.data(), reconstructed.data());
+        }
+
+        // Test 2: Record with public literal entries.
+        {
+            let owner = Owner::<CurrentNetwork, Plaintext<CurrentNetwork>>::Public(Address::rand(rng));
+            let data = indexmap::indexmap! {
+                Identifier::from_str("balance").unwrap() => Entry::Public(Plaintext::from(Literal::U64(U64::rand(rng)))),
+                Identifier::from_str("id").unwrap() => Entry::Public(Plaintext::from(Literal::Scalar(Scalar::rand(rng)))),
+            };
+            let nonce = Group::rand(rng);
+            let version = U8::new(0);
+            let record =
+                Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_plaintext(owner, data, nonce, version)
+                    .unwrap();
+            let dynamic = DynamicRecord::from_record(&record).unwrap();
+
+            // Verify roundtrip.
+            let reconstructed = dynamic.to_record(false).unwrap();
+            assert_eq!(record.nonce(), reconstructed.nonce());
+            assert_eq!(record.version(), reconstructed.version());
+            assert_eq!(record.data(), reconstructed.data());
+        }
+
+        // Test 3: Record with mixed visibility entries.
+        {
+            let owner = Owner::<CurrentNetwork, Plaintext<CurrentNetwork>>::Private(Plaintext::from(Literal::Address(
+                Address::rand(rng),
+            )));
+            let data = indexmap::indexmap! {
+                Identifier::from_str("public_field").unwrap() => Entry::Public(Plaintext::from(Literal::Field(Field::rand(rng)))),
+                Identifier::from_str("private_field").unwrap() => Entry::Private(Plaintext::from(Literal::Field(Field::rand(rng)))),
+                Identifier::from_str("constant_field").unwrap() => Entry::Constant(Plaintext::from(Literal::Field(Field::rand(rng)))),
+            };
+            let nonce = Group::rand(rng);
+            let version = U8::new(1);
+            let record =
+                Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_plaintext(owner, data, nonce, version)
+                    .unwrap();
+            let dynamic = DynamicRecord::from_record(&record).unwrap();
+
+            // Verify roundtrip.
+            let reconstructed = dynamic.to_record(true).unwrap();
+            assert_eq!(record.data(), reconstructed.data());
+        }
+
+        // Test 4: Record with struct entries.
+        {
+            let owner = Owner::<CurrentNetwork, Plaintext<CurrentNetwork>>::Public(Address::rand(rng));
+            let inner_struct = Plaintext::Struct(
+                indexmap::indexmap! {
+                    Identifier::from_str("x").unwrap() => Plaintext::from(Literal::U64(U64::rand(rng))),
+                    Identifier::from_str("y").unwrap() => Plaintext::from(Literal::U64(U64::rand(rng))),
+                },
+                Default::default(),
+            );
+            let data = indexmap::indexmap! {
+                Identifier::from_str("point").unwrap() => Entry::Private(inner_struct),
+            };
+            let nonce = Group::rand(rng);
+            let version = U8::new(0);
+            let record =
+                Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_plaintext(owner, data, nonce, version)
+                    .unwrap();
+            let dynamic = DynamicRecord::from_record(&record).unwrap();
+
+            // Verify roundtrip.
+            let reconstructed = dynamic.to_record(false).unwrap();
+            assert_eq!(record.data(), reconstructed.data());
+        }
+
+        // Test 5: Empty record (no data entries).
+        {
+            let owner = Owner::<CurrentNetwork, Plaintext<CurrentNetwork>>::Public(Address::rand(rng));
+            let data = indexmap::IndexMap::new();
+            let nonce = Group::rand(rng);
+            let version = U8::new(0);
+            let record =
+                Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_plaintext(owner, data, nonce, version)
+                    .unwrap();
+            let dynamic = DynamicRecord::from_record(&record).unwrap();
+
+            // Verify roundtrip.
+            let reconstructed = dynamic.to_record(false).unwrap();
+            assert_eq!(record.data(), reconstructed.data());
+        }
+    }
+
+    #[test]
+    fn test_membership_proof() {
+        use crate::{Entry, Identifier, Literal, Owner, Plaintext, Record};
+        use snarkvm_console_types::{Address, Field, Group, U8, U64};
+        use snarkvm_utilities::{TestRng, Uniform};
+
+        let rng = &mut TestRng::default();
+
+        // Create a record with multiple entries.
+        let owner = Owner::<CurrentNetwork, Plaintext<CurrentNetwork>>::Public(Address::rand(rng));
+        let data = indexmap::indexmap! {
+            Identifier::from_str("entry_0").unwrap() => Entry::Private(Plaintext::from(Literal::U64(U64::rand(rng)))),
+            Identifier::from_str("entry_1").unwrap() => Entry::Public(Plaintext::from(Literal::Field(Field::rand(rng)))),
+            Identifier::from_str("entry_2").unwrap() => Entry::Private(Plaintext::from(Literal::U64(U64::rand(rng)))),
+            Identifier::from_str("entry_3").unwrap() => Entry::Public(Plaintext::from(Literal::Field(Field::rand(rng)))),
+        };
+        let nonce = Group::rand(rng);
+        let version = U8::new(1);
+        let _record =
+            Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_plaintext(owner, data.clone(), nonce, version)
+                .unwrap();
+
+        // Merkleize the data.
+        let tree = DynamicRecord::<CurrentNetwork>::merkleize_data(&data).unwrap();
+        let root = tree.root();
+
+        // Construct the leaves in the same order as merkleize_data.
+        let leaves: Vec<Vec<Field<CurrentNetwork>>> = data
+            .iter()
+            .map(|(name, entry)| {
+                let mut leaf = vec![name.to_field().unwrap()];
+                leaf.extend(entry.to_fields().unwrap());
+                leaf
+            })
+            .collect();
+
+        // Test proving and verifying membership for each entry.
+        for (index, leaf) in leaves.iter().enumerate() {
+            // Generate a proof for this entry.
+            let proof = tree.prove(index, leaf).unwrap();
+
+            // Verify the proof.
+            assert!(tree.verify(&proof, root, leaf), "Membership proof failed for entry {index}");
+        }
+
+        // Test that a modified leaf fails verification.
+        let mut modified_leaf = leaves[0].clone();
+        modified_leaf[0] = Field::rand(rng);
+        let proof = tree.prove(0, &leaves[0]).unwrap();
+        assert!(!tree.verify(&proof, root, &modified_leaf), "Modified leaf should fail verification");
+    }
+
+    #[test]
+    fn test_merkleization_performance() {
+        use crate::{Entry, Identifier, Literal, Plaintext};
+        use snarkvm_console_types::U64;
+        use snarkvm_utilities::{TestRng, Uniform};
+        use std::time::Instant;
+
+        let rng = &mut TestRng::default();
+
+        // Test merkleization performance for records of various sizes.
+        for num_entries in [1, 2, 4, 8, 16] {
+            let mut data = indexmap::IndexMap::new();
+            for i in 0..num_entries {
+                let name = Identifier::from_str(&format!("entry_{i}")).unwrap();
+                let entry = Entry::Private(Plaintext::from(Literal::U64(U64::rand(rng))));
+                data.insert(name, entry);
+            }
+
+            let start = Instant::now();
+            let iterations = 100;
+            for _ in 0..iterations {
+                let _ = DynamicRecord::<CurrentNetwork>::merkleize_data(&data).unwrap();
+            }
+            let elapsed = start.elapsed();
+            let avg_micros = elapsed.as_micros() / iterations;
+
+            // Just print performance info; no assertion as performance varies by machine.
+            println!("Merkleization of {num_entries} entries: avg {avg_micros}µs per iteration");
+        }
+    }
 }

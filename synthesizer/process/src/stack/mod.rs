@@ -37,7 +37,7 @@ mod evaluate;
 mod execute;
 mod helpers;
 
-use crate::{CallMetrics, Process, Trace};
+use crate::{CallMetrics, Process, Trace, trace::RecordTranslationData};
 use console::{
     account::{Address, PrivateKey},
     network::prelude::*,
@@ -76,7 +76,6 @@ use snarkvm_synthesizer_program::{
     Instruction,
     Operand,
     Program,
-    RecordTranslationData,
     RegistersCircuit,
     RegistersSigner,
     RegistersTrait,

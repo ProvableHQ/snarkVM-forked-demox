@@ -46,10 +46,6 @@ use snarkvm_synthesizer_process::execution_cost_for_authorization;
 use snarkvm_synthesizer_program::Program;
 use snarkvm_utilities::TestRng;
 
-// TODO (dynamic_dispatch)
-// - Test the case with the interface of a dynamic call doesn't match the mode
-// - Conditional execution with finalize scopes
-
 /************************* Dynamic-record test cases *************************/
 //
 // The following list contains some translation- and dynamic-record-related

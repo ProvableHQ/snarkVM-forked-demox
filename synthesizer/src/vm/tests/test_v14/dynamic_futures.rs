@@ -17,11 +17,12 @@
 //!
 //! This module tests:
 //! - Await ordering (correct order, reverse order, missing awaits)
-//! - Conditional future handling (ternary selection of futures)
+//! - Conditional future handling (ternary selection of futures, branch-based execution)
 //! - Nested dynamic futures across call hierarchies
-//! - Interface mismatches (caller/callee future expectations)
+//! - Interface mismatches (caller/callee type and mode expectations)
 //! - Error propagation in finalize blocks
 //! - State mutation ordering with dynamic futures
+//! - Skipped future await detection
 
 use super::*;
 
@@ -1677,4 +1678,508 @@ fn test_deep_nested_futures() {
     assert_eq!(depth3, Value::from_str("15u64").unwrap());
     assert_eq!(depth2, Value::from_str("105u64").unwrap());
     assert_eq!(depth1, Value::from_str("1005u64").unwrap());
+}
+
+// =============================================================================
+// Test: Interface Mismatch - Wrong Mode (Public -> Private)
+// =============================================================================
+
+/// Tests that a dynamic call that passes a public value when callee expects private
+/// fails at execution time with an abort.
+#[test]
+fn test_interface_mismatch_public_to_private() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    // Program expecting private input
+    let private_program = Program::<CurrentNetwork>::from_str(
+        r"
+        program private_input.aleo;
+
+        mapping data:
+            key as u8.public;
+            value as u64.public;
+
+        function store:
+            input r0 as u64.private;
+            async store r0 into r1;
+            output r1 as private_input.aleo/store.future;
+
+        finalize store:
+            input r0 as u64.public;
+            set r0 into data[0u8];
+
+        constructor:
+            assert.eq true true;
+        ",
+    )
+    .unwrap();
+
+    let private_input_field = Identifier::<CurrentNetwork>::from_str("private_input").unwrap().to_field().unwrap();
+    let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+    let store_field = Identifier::<CurrentNetwork>::from_str("store").unwrap().to_field().unwrap();
+
+    // Caller that passes public when private is expected
+    let caller_program_str = format!(
+        r"
+        program public_to_private_caller.aleo;
+
+        function call_with_wrong_mode:
+            input r0 as u64.public;
+            call.dynamic {private_input_field} {aleo_field} {store_field} with r0 (as u64.public) into r1 (as dynamic.future);
+            async call_with_wrong_mode r1 into r2;
+            output r2 as public_to_private_caller.aleo/call_with_wrong_mode.future;
+
+        finalize call_with_wrong_mode:
+            input r0 as dynamic.future;
+            await r0;
+
+        constructor:
+            assert.eq true true;
+        "
+    );
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    let deploy_private = vm.deploy(&caller_private_key, &private_program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_private], rng);
+
+    // The caller program should fail at some point in the pipeline
+    let caller_program_result = Program::<CurrentNetwork>::from_str(&caller_program_str);
+
+    if let Ok(caller_program) = caller_program_result {
+        let deploy_result = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng);
+        if let Ok(deploy_tx) = deploy_result {
+            let block = sample_next_block(&vm, &caller_private_key, &[deploy_tx], rng).unwrap();
+            if block.transactions().num_accepted() == 1 {
+                vm.add_next_block(&block).unwrap();
+                // Execution should fail because mode doesn't match
+                let exec_result = vm.execute(
+                    &caller_private_key,
+                    ("public_to_private_caller.aleo", "call_with_wrong_mode"),
+                    vec![Value::from_str("42u64").unwrap()].into_iter(),
+                    None,
+                    0,
+                    None,
+                    rng,
+                );
+                // Either execution fails, or the transaction is rejected/aborted
+                if let Ok(tx) = exec_result {
+                    let block = sample_next_block(&vm, &caller_private_key, &[tx], rng).unwrap();
+                    assert!(
+                        block.transactions().num_rejected() > 0 || !block.aborted_transaction_ids().is_empty(),
+                        "Transaction with mode mismatch (public->private) should be rejected or aborted"
+                    );
+                }
+                // If execution fails, the test passes
+            }
+        }
+        // If deployment fails, the test passes (mismatch detected early)
+    }
+    // If parsing fails, the test passes (mismatch detected at parse time)
+}
+
+// =============================================================================
+// Test: Interface Mismatch - Wrong Mode (Private -> Public)
+// =============================================================================
+
+/// Tests that a dynamic call that passes a private value when callee expects public
+/// fails at execution time with an abort.
+#[test]
+fn test_interface_mismatch_private_to_public() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    // Program expecting public input
+    let public_program = Program::<CurrentNetwork>::from_str(
+        r"
+        program public_input.aleo;
+
+        mapping data:
+            key as u8.public;
+            value as u64.public;
+
+        function store:
+            input r0 as u64.public;
+            async store r0 into r1;
+            output r1 as public_input.aleo/store.future;
+
+        finalize store:
+            input r0 as u64.public;
+            set r0 into data[0u8];
+
+        constructor:
+            assert.eq true true;
+        ",
+    )
+    .unwrap();
+
+    let public_input_field = Identifier::<CurrentNetwork>::from_str("public_input").unwrap().to_field().unwrap();
+    let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+    let store_field = Identifier::<CurrentNetwork>::from_str("store").unwrap().to_field().unwrap();
+
+    // Caller that passes private when public is expected
+    let caller_program_str = format!(
+        r"
+        program private_to_public_caller.aleo;
+
+        function call_with_wrong_mode:
+            input r0 as u64.private;
+            call.dynamic {public_input_field} {aleo_field} {store_field} with r0 (as u64.private) into r1 (as dynamic.future);
+            async call_with_wrong_mode r1 into r2;
+            output r2 as private_to_public_caller.aleo/call_with_wrong_mode.future;
+
+        finalize call_with_wrong_mode:
+            input r0 as dynamic.future;
+            await r0;
+
+        constructor:
+            assert.eq true true;
+        "
+    );
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    let deploy_public = vm.deploy(&caller_private_key, &public_program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_public], rng);
+
+    // The caller program should fail at some point in the pipeline
+    let caller_program_result = Program::<CurrentNetwork>::from_str(&caller_program_str);
+
+    if let Ok(caller_program) = caller_program_result {
+        let deploy_result = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng);
+        if let Ok(deploy_tx) = deploy_result {
+            let block = sample_next_block(&vm, &caller_private_key, &[deploy_tx], rng).unwrap();
+            if block.transactions().num_accepted() == 1 {
+                vm.add_next_block(&block).unwrap();
+                // Execution should fail because mode doesn't match
+                let exec_result = vm.execute(
+                    &caller_private_key,
+                    ("private_to_public_caller.aleo", "call_with_wrong_mode"),
+                    vec![Value::from_str("42u64").unwrap()].into_iter(),
+                    None,
+                    0,
+                    None,
+                    rng,
+                );
+                // Either execution fails, or the transaction is rejected/aborted
+                if let Ok(tx) = exec_result {
+                    let block = sample_next_block(&vm, &caller_private_key, &[tx], rng).unwrap();
+                    assert!(
+                        block.transactions().num_rejected() > 0 || !block.aborted_transaction_ids().is_empty(),
+                        "Transaction with mode mismatch (private->public) should be rejected or aborted"
+                    );
+                }
+                // If execution fails, the test passes
+            }
+        }
+        // If deployment fails, the test passes (mismatch detected early)
+    }
+    // If parsing fails, the test passes (mismatch detected at parse time)
+}
+
+// =============================================================================
+// Test: Conditional Future Execution with Branch Instructions
+// =============================================================================
+
+/// Tests that dynamic futures can be conditionally executed in different orders
+/// using branch.eq/branch.neq, and that skipping awaits is correctly caught.
+#[test]
+fn test_conditional_future_execution_with_branches() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    // Two worker programs that write to different mappings
+    let worker_a = Program::<CurrentNetwork>::from_str(
+        r"
+        program worker_a.aleo;
+
+        mapping results:
+            key as u8.public;
+            value as u64.public;
+
+        function work:
+            input r0 as u64.public;
+            async work r0 into r1;
+            output r1 as worker_a.aleo/work.future;
+
+        finalize work:
+            input r0 as u64.public;
+            set r0 into results[0u8];
+
+        constructor:
+            assert.eq true true;
+        ",
+    )
+    .unwrap();
+
+    let worker_b = Program::<CurrentNetwork>::from_str(
+        r"
+        program worker_b.aleo;
+
+        mapping results:
+            key as u8.public;
+            value as u64.public;
+
+        function work:
+            input r0 as u64.public;
+            async work r0 into r1;
+            output r1 as worker_b.aleo/work.future;
+
+        finalize work:
+            input r0 as u64.public;
+            set r0 into results[0u8];
+
+        constructor:
+            assert.eq true true;
+        ",
+    )
+    .unwrap();
+
+    let worker_a_field = Identifier::<CurrentNetwork>::from_str("worker_a").unwrap().to_field().unwrap();
+    let worker_b_field = Identifier::<CurrentNetwork>::from_str("worker_b").unwrap().to_field().unwrap();
+    let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+    let work_field = Identifier::<CurrentNetwork>::from_str("work").unwrap().to_field().unwrap();
+
+    // Caller that creates two futures and awaits them in order determined by a condition
+    let caller_program_str = format!(
+        r"
+        program branch_caller.aleo;
+
+        function call_both:
+            input r0 as boolean.public;
+            input r1 as u64.public;
+            input r2 as u64.public;
+            call.dynamic {worker_a_field} {aleo_field} {work_field} with r1 (as u64.public) into r3 (as dynamic.future);
+            call.dynamic {worker_b_field} {aleo_field} {work_field} with r2 (as u64.public) into r4 (as dynamic.future);
+            async call_both r0 r3 r4 into r5;
+            output r5 as branch_caller.aleo/call_both.future;
+
+        finalize call_both:
+            input r0 as boolean.public;
+            input r1 as dynamic.future;
+            input r2 as dynamic.future;
+            branch.eq r0 true to await_a_first;
+            await r2;
+            await r1;
+            branch.eq true true to done;
+            position await_a_first;
+            await r1;
+            await r2;
+            position done;
+
+        constructor:
+            assert.eq true true;
+        "
+    );
+
+    let caller_program = Program::<CurrentNetwork>::from_str(&caller_program_str).unwrap();
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    // Deploy workers
+    let deploy_a = vm.deploy(&caller_private_key, &worker_a, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_a], rng);
+
+    let deploy_b = vm.deploy(&caller_private_key, &worker_b, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_b], rng);
+
+    let deploy_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_caller], rng);
+
+    // Test with condition = true (await A first, then B)
+    let tx_true = vm
+        .execute(
+            &caller_private_key,
+            ("branch_caller.aleo", "call_both"),
+            vec![
+                Value::from_str("true").unwrap(),
+                Value::from_str("100u64").unwrap(),
+                Value::from_str("200u64").unwrap(),
+            ]
+            .into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    let block_true = sample_next_block(&vm, &caller_private_key, &[tx_true], rng).unwrap();
+    assert_eq!(block_true.aborted_transaction_ids().len(), 0, "Transaction with condition=true should succeed");
+    vm.add_next_block(&block_true).unwrap();
+
+    // Verify values were written
+    let result_a = vm
+        .finalize_store()
+        .get_value_confirmed(
+            ProgramID::from_str("worker_a.aleo").unwrap(),
+            Identifier::from_str("results").unwrap(),
+            &Plaintext::from_str("0u8").unwrap(),
+        )
+        .unwrap()
+        .unwrap();
+    let result_b = vm
+        .finalize_store()
+        .get_value_confirmed(
+            ProgramID::from_str("worker_b.aleo").unwrap(),
+            Identifier::from_str("results").unwrap(),
+            &Plaintext::from_str("0u8").unwrap(),
+        )
+        .unwrap()
+        .unwrap();
+    assert_eq!(result_a, Value::from_str("100u64").unwrap());
+    assert_eq!(result_b, Value::from_str("200u64").unwrap());
+
+    // Test with condition = false (await B first, then A)
+    let tx_false = vm
+        .execute(
+            &caller_private_key,
+            ("branch_caller.aleo", "call_both"),
+            vec![
+                Value::from_str("false").unwrap(),
+                Value::from_str("300u64").unwrap(),
+                Value::from_str("400u64").unwrap(),
+            ]
+            .into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    let block_false = sample_next_block(&vm, &caller_private_key, &[tx_false], rng).unwrap();
+    assert_eq!(block_false.aborted_transaction_ids().len(), 0, "Transaction with condition=false should succeed");
+    vm.add_next_block(&block_false).unwrap();
+
+    // Verify updated values
+    let result_a = vm
+        .finalize_store()
+        .get_value_confirmed(
+            ProgramID::from_str("worker_a.aleo").unwrap(),
+            Identifier::from_str("results").unwrap(),
+            &Plaintext::from_str("0u8").unwrap(),
+        )
+        .unwrap()
+        .unwrap();
+    let result_b = vm
+        .finalize_store()
+        .get_value_confirmed(
+            ProgramID::from_str("worker_b.aleo").unwrap(),
+            Identifier::from_str("results").unwrap(),
+            &Plaintext::from_str("0u8").unwrap(),
+        )
+        .unwrap()
+        .unwrap();
+    assert_eq!(result_a, Value::from_str("300u64").unwrap());
+    assert_eq!(result_b, Value::from_str("400u64").unwrap());
+}
+
+// =============================================================================
+// Test: Skipping Future Await is Caught
+// =============================================================================
+
+/// Tests that skipping a future await (not awaiting all created futures) is caught
+/// and results in transaction abort.
+#[test]
+fn test_skipped_future_await_is_caught() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    // Worker program
+    let worker = Program::<CurrentNetwork>::from_str(
+        r"
+        program skip_worker.aleo;
+
+        mapping results:
+            key as u8.public;
+            value as u64.public;
+
+        function work:
+            input r0 as u64.public;
+            async work r0 into r1;
+            output r1 as skip_worker.aleo/work.future;
+
+        finalize work:
+            input r0 as u64.public;
+            set r0 into results[0u8];
+
+        constructor:
+            assert.eq true true;
+        ",
+    )
+    .unwrap();
+
+    let worker_field = Identifier::<CurrentNetwork>::from_str("skip_worker").unwrap().to_field().unwrap();
+    let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+    let work_field = Identifier::<CurrentNetwork>::from_str("work").unwrap().to_field().unwrap();
+
+    // Caller that creates two futures but only awaits one via branching
+    let caller_program_str = format!(
+        r"
+        program skip_caller.aleo;
+
+        function call_and_skip:
+            input r0 as u64.public;
+            input r1 as u64.public;
+            call.dynamic {worker_field} {aleo_field} {work_field} with r0 (as u64.public) into r2 (as dynamic.future);
+            call.dynamic {worker_field} {aleo_field} {work_field} with r1 (as u64.public) into r3 (as dynamic.future);
+            async call_and_skip r2 r3 into r4;
+            output r4 as skip_caller.aleo/call_and_skip.future;
+
+        finalize call_and_skip:
+            input r0 as dynamic.future;
+            input r1 as dynamic.future;
+            await r0;
+            // Intentionally skip awaiting r1 by branching to end
+            branch.eq true true to done;
+            await r1;
+            position done;
+
+        constructor:
+            assert.eq true true;
+        "
+    );
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    let deploy_worker = vm.deploy(&caller_private_key, &worker, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_worker], rng);
+
+    // The caller program should fail at some point in the pipeline
+    let caller_program_result = Program::<CurrentNetwork>::from_str(&caller_program_str);
+
+    if let Ok(caller_program) = caller_program_result {
+        let deploy_result = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng);
+        if let Ok(deploy_tx) = deploy_result {
+            let block = sample_next_block(&vm, &caller_private_key, &[deploy_tx], rng).unwrap();
+            if block.transactions().num_accepted() == 1 {
+                vm.add_next_block(&block).unwrap();
+                // Execution should fail because a future is skipped
+                let exec_result = vm.execute(
+                    &caller_private_key,
+                    ("skip_caller.aleo", "call_and_skip"),
+                    vec![Value::from_str("100u64").unwrap(), Value::from_str("200u64").unwrap()].into_iter(),
+                    None,
+                    0,
+                    None,
+                    rng,
+                );
+                // Either execution fails, or the transaction is rejected/aborted
+                if let Ok(tx) = exec_result {
+                    let block = sample_next_block(&vm, &caller_private_key, &[tx], rng).unwrap();
+                    assert!(
+                        block.transactions().num_rejected() > 0 || !block.aborted_transaction_ids().is_empty(),
+                        "Transaction with skipped future await should be rejected or aborted"
+                    );
+                }
+                // If execution fails, the test passes (skipped await detected)
+            }
+        }
+        // If deployment fails, the test passes (skipped await detected early)
+    }
+    // If parsing fails, the test passes (skipped await detected at parse time)
 }

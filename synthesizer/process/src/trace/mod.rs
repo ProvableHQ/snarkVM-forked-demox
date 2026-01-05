@@ -20,7 +20,7 @@ mod inclusion;
 pub use inclusion::*;
 
 mod translation;
-pub use translation::*;
+pub use translation::{RecordTranslationData, *};
 
 use crate::Process;
 
@@ -32,7 +32,7 @@ use console::{
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use snarkvm_ledger_block::{Execution, Fee, Transition};
 use snarkvm_ledger_query::QueryTrait;
-use snarkvm_synthesizer_program::{RecordTranslationData, StackTrait};
+use snarkvm_synthesizer_program::StackTrait;
 use snarkvm_synthesizer_snark::{Proof, ProvingKey, VerifyingKey};
 
 use std::{collections::HashMap, sync::OnceLock};

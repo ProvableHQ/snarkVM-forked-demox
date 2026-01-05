@@ -507,23 +507,20 @@ pub fn cost_per_command<N: Network>(
             CastType::Plaintext(plaintext_type) => Ok(plaintext_size_in_bytes(stack, plaintext_type)?
                 .saturating_mul(CAST_PER_BYTE_COST)
                 .saturating_add(CAST_BASE_COST)),
-            CastType::GroupXCoordinate
-            | CastType::GroupYCoordinate
-            | CastType::Record(_)
-            | CastType::ExternalRecord(_) => Ok(500),
-            // TODO (dynamic_dispatch) cost; note the input can be a non-external record or an external record but the circuits are the same
-            CastType::DynamicRecord => Ok(500),
+            CastType::GroupXCoordinate | CastType::GroupYCoordinate => Ok(500),
+            CastType::Record(_) => bail!("'cast' to a record is not supported in finalize"),
+            CastType::ExternalRecord(_) => bail!("'cast' to an external record is not supported in finalize"),
+            CastType::DynamicRecord => bail!("'cast' to a dynamic record is not supported in finalize"),
         },
         Command::Instruction(Instruction::CastLossy(cast_lossy)) => match cast_lossy.cast_type() {
             CastType::Plaintext(PlaintextType::Literal(_)) => Ok(500),
             CastType::Plaintext(plaintext_type) => Ok(plaintext_size_in_bytes(stack, plaintext_type)?
                 .saturating_mul(CAST_PER_BYTE_COST)
                 .saturating_add(CAST_BASE_COST)),
-            CastType::GroupXCoordinate
-            | CastType::GroupYCoordinate
-            | CastType::Record(_)
-            | CastType::ExternalRecord(_) => Ok(500),
-            CastType::DynamicRecord => bail!("`cast.lossy` does not support dynamic records"),
+            CastType::GroupXCoordinate | CastType::GroupYCoordinate => Ok(500),
+            CastType::Record(_) => bail!("'cast.lossy' to a record is not supported in finalize"),
+            CastType::ExternalRecord(_) => bail!("'cast.lossy' to an external record is not supported in finalize"),
+            CastType::DynamicRecord => bail!("'cast.lossy' to a dynamic record is not supported in finalize"),
         },
         Command::Instruction(Instruction::CommitBHP256(commit)) => {
             cost_in_size(stack, finalize_types, commit.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)

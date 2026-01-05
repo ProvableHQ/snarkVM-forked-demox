@@ -102,7 +102,7 @@ impl<N: Network> Command<N> {
 
     /// Returns `true` if the command is a call instruction.
     pub fn is_call(&self) -> bool {
-        matches!(self, Command::Instruction(Instruction::Call(_)))
+        matches!(self, Command::Instruction(Instruction::Call(_) | Instruction::CallDynamic(_)))
     }
 
     /// Returns `true` if the command is a cast to record instruction.

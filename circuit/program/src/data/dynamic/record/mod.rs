@@ -18,6 +18,7 @@ mod find;
 mod to_bits;
 mod to_fields;
 mod to_id;
+pub use to_id::compute_record_id;
 
 use crate::{Access, Aleo, Entry, Equal, Identifier, Literal, Plaintext, Record, ToBits, ToFields, Value};
 
@@ -32,14 +33,12 @@ type CircuitPH<A> = Poseidon2<A>;
 /// The record data tree.
 pub type RecordDataTree<A> = MerkleTree<A, CircuitLH<A>, CircuitPH<A>, RECORD_DATA_TREE_DEPTH>;
 
-// TODO (dynamic_dispatch) correct this and other instances of the specification: that is not the correct structure of the tree (odd-size layers are not filled with a single zero)
-// TODO (Antonio) cf. above
 /// A dynamic record is a fixed-size representation of a record.
 /// Like static `Record`s, a dynamic record contains an owner, nonce, and a version.
 /// However, instead of storing the full data, it only stores the Merkle root of the data.
 /// This ensures that all dynamic records have a constant size, regardless of the amount of data they contain.
 ///
-/// Suppose we have the following record:
+/// Suppose we have the following record with two data entries:
 ///
 /// ```ignore
 /// record foo:
@@ -48,20 +47,20 @@ pub type RecordDataTree<A> = MerkleTree<A, CircuitLH<A>, CircuitPH<A>, RECORD_DA
 ///     memo as [u8; 32u32].public;
 /// ```
 ///
-/// It's merkle-ization is as follows:
+/// Its merkle-ization produces a tree of depth `RECORD_DATA_TREE_DEPTH` (5). With 2 leaves:
 ///
 /// ```ignore
-///        R
-///        |
-///       P_0
-///        |
-///       P_1
-///        |
-///       P_2
-///        |
-///       P_3
-///      /  \
-///   L_0    L_1
+///   L_0    L_1    (leaves: hashed entries)
+///     \    /
+///      P_0        (internal node)
+///       |
+///      P_1        (padding level 1)
+///       |
+///      P_2        (padding level 2)
+///       |
+///      P_3        (padding level 3)
+///       |
+///       R         (root, padding level 4)
 ///
 /// L_0 := HashPSD8(microcredits || ToFields(entry_0))
 /// L_1 := HashPSD8(memo || ToFields(entry_1))
@@ -71,6 +70,10 @@ pub type RecordDataTree<A> = MerkleTree<A, CircuitLH<A>, CircuitPH<A>, RECORD_DA
 /// P_3 := HashPSD2(P_2, ZERO)
 ///   R := HashPSD2(P_3, ZERO)
 /// ```
+///
+/// For records with more entries, leaves are first padded to the next power of 2 using
+/// `ZERO` hashes, then a balanced binary tree is built. Padding levels are added as
+/// needed to reach the full tree depth.
 ///
 /// Note that:
 ///  - `ZERO` is defined by the `PathHash` implementation for `HashPSD2`.

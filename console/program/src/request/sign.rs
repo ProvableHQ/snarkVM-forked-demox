@@ -182,6 +182,7 @@ impl<N: Network> Request<N> {
     }
 
     /// Returns a static request.
+    /// Note: Static requests do not include the `dynamic` field, resulting in V1 transitions.
     pub fn sign_static<R: Rng + CryptoRng>(
         private_key: &PrivateKey<N>,
         program_id: ProgramID<N>,
@@ -202,7 +203,7 @@ impl<N: Network> Request<N> {
             root_tvk,
             is_root,
             program_checksum,
-            Some(false),
+            None,
             rng,
         )
     }

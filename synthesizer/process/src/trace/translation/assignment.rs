@@ -159,19 +159,13 @@ impl<N: Network> TranslationAssignment<N> {
 
         // ******** Computing the IDs of the dynamic and static records
 
-        // TODO (dynamic_dispatch) All instances of this code should point to a single place
-        // instead of being duplicated; and the fact that the InputID and
-        // OutputID cases are the same for ExternalRecords could/should be
-        // enforced by the code.
-        // TODO (Antonio) cf. above
-        let actual_id_dynamic = {
-            let mut preimage = Vec::new();
-            preimage.push(circuit_function_id.clone());
-            preimage.extend(circuit_record_dynamic.to_fields());
-            preimage.push(circuit_tvk.clone());
-            preimage.push(circuit_input_output_index.clone());
-            A::hash_psd8(&preimage)
-        };
+        // Compute the ID of the dynamic record.
+        let actual_id_dynamic = circuit::compute_record_id(
+            circuit_function_id.clone(),
+            circuit_record_dynamic.to_fields(),
+            circuit_tvk.clone(),
+            circuit_input_output_index.clone(),
+        );
 
         let circuit_static_commitment =
             circuit_record_static.to_commitment(&circuit_program_id, &circuit_record_name, &circuit_record_view_key);
@@ -181,23 +175,18 @@ impl<N: Network> TranslationAssignment<N> {
             circuit_static_commitment.clone(),
         );
 
-        // Input/output ID of the static record if it is not external (serial number of or commitment)
+        // Input/output ID of the static record if it is not external (serial number or commitment).
         let actual_id_static_non_external =
             circuit::Field::<A>::ternary(&circuit_is_input, &circuit_static_serial_number, &circuit_static_commitment);
 
-        // Input/output ID of the static record if it is external
-        // TODO (dynamic_disaptch) All instances of this code should point to a single place
-        // instead of being duplicated; and the fact that the InputID and
-        // OutputID cases are the same for ExternalRecords could/should be
-        // enforced by the code.
-        let actual_id_static_external = {
-            let mut preimage = Vec::new();
-            preimage.push(circuit_function_id);
-            preimage.extend(circuit_record_static.to_fields());
-            preimage.push(circuit_tvk);
-            preimage.push(circuit_input_output_index);
-            A::hash_psd8(&preimage)
-        };
+        // Input/output ID of the static record if it is external.
+        // Note: External records have the same InputID and OutputID formula.
+        let actual_id_static_external = circuit::compute_record_id(
+            circuit_function_id,
+            circuit_record_static.to_fields(),
+            circuit_tvk,
+            circuit_input_output_index,
+        );
 
         let actual_id_static = circuit::Field::<A>::ternary(
             &circuit_static_is_external,
