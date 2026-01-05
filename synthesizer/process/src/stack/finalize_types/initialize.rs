@@ -902,7 +902,7 @@ impl<N: Network> FinalizeTypes<N> {
             Opcode::ECDSA(opcode) => RegisterTypes::check_ecdsa_opcode(opcode, instruction)?,
             Opcode::Serialize(opcode) => RegisterTypes::check_serialize_opcode(opcode, instruction)?,
             Opcode::Deserialize(opcode) => RegisterTypes::check_deserialize_opcode(opcode, instruction)?,
-            Opcode::GetDynamicRecord(_) => {
+            Opcode::GetRecordDynamic(_) => {
                 bail!("Illegal operation: Cannot read from a dynamic record in a finalize scope.")
             }
         }

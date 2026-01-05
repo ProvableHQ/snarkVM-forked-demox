@@ -33,7 +33,7 @@ pub enum Opcode {
     /// The opcdode is a for a deserialize operation (i.e. `deserialize.bytes.raw`).
     Deserialize(&'static str),
     /// The opcode is for a get.record.dynamic operation (i.e. `get.record.dynamic`).
-    GetDynamicRecord(&'static str),
+    GetRecordDynamic(&'static str),
     /// The opcode is for a hash operation (i.e. `hash.psd4`).
     Hash(&'static str),
     /// The opcode is for an 'is' operation (i.e. `is.eq`).
@@ -61,7 +61,7 @@ impl Deref for Opcode {
             Opcode::Command(opcode) => opcode,
             Opcode::Commit(opcode) => opcode,
             Opcode::Deserialize(opcode) => opcode,
-            Opcode::GetDynamicRecord(opcode) => opcode,
+            Opcode::GetRecordDynamic(opcode) => opcode,
             Opcode::Hash(opcode) => opcode,
             Opcode::Is(opcode) => opcode,
             Opcode::Literal(opcode) => opcode,
@@ -90,7 +90,7 @@ impl Display for Opcode {
             Self::Command(opcode) => write!(f, "{opcode}"),
             Self::Commit(opcode) => write!(f, "{opcode}"),
             Self::Deserialize(opcode) => write!(f, "{opcode}"),
-            Self::GetDynamicRecord(opcode) => write!(f, "{opcode}"),
+            Self::GetRecordDynamic(opcode) => write!(f, "{opcode}"),
             Self::Hash(opcode) => write!(f, "{opcode}"),
             Self::Is(opcode) => write!(f, "{opcode}"),
             Self::Literal(opcode) => write!(f, "{opcode}"),
