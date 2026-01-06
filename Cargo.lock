@@ -3127,6 +3127,7 @@ dependencies = [
  "criterion",
  "indexmap 2.12.1",
  "rayon",
+ "serde",
  "snarkvm-console-algorithms",
  "snarkvm-console-network",
  "snarkvm-console-types",

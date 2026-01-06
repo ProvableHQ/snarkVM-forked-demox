@@ -152,7 +152,10 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
                     error!("Failed to update the current epoch hash at block {}", block.height());
                 }
             }
-            // Clear the epoch provers cache.
+            // Clear the epoch provers cache. This is done because once the ledger enters a new epoch,
+            // all solutions from the previous epoch are no longer relevant.
+            // Note: solutions that land on exactly the epoch boundary are still considered part of the previous epoch,
+            // because they were created prior to the advancement to the new epoch (using the previous epoch's puzzle).
             self.epoch_provers_cache.write().clear();
         } else {
             // If the block is not part of a new epoch, add the new provers to the epoch prover cache.
