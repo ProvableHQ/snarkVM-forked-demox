@@ -262,7 +262,7 @@ impl<N: Network> Stack<N> {
     }
 
     /// Partially initializes a new stack, given the process and the program, without checking for validity.
-    /// Note. This method should **NOT** be used by the on-chain VM to add new program, use `Stack::new` instead.
+    /// Note. This method should be used with caution, as it does not verify the well-formedness of the program.
     pub fn new_raw(process: &Process<N>, program: &Program<N>, edition: u16) -> Result<Self> {
         // Check that the program is well-formed.
         check_program_is_well_formed(program)?;

@@ -61,7 +61,7 @@ use console::{
     types::{Field, U16, U64},
 };
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
-use snarkvm_ledger_block::{Deployment, Execution, Fee, Input, Output, Transaction, Transition};
+use snarkvm_ledger_block::{Deployment, DeploymentVersion, Execution, Fee, Input, Output, Transaction, Transition};
 use snarkvm_ledger_store::{FinalizeStorage, FinalizeStore, atomic_batch_scope};
 use snarkvm_synthesizer_program::{
     Branch,

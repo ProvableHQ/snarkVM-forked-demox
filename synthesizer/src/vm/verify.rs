@@ -396,9 +396,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     }
                     DeploymentVersion::V3 => {
                         // For `V3` (ammendment) deployments, check that:
+                        // - The program is not `credits.aleo`.
                         // - The edition is zero.
                         // - The program already exists in the store and process.
                         // - The existing program and checksum matches the one in the deployment.
+
+                        // Check that the program is not `credits.aleo`.
+                        ensure!(deployment.program_id() != &ProgramID::credits(), "Cannot deploy 'credits.aleo'");
 
                         // Check that the edition is zero.
                         ensure!(
