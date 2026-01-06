@@ -54,9 +54,10 @@ fn test_ensure_acyclic_call_graph_bails_on_cycle() {
     let b_1 = tid(3);
 
     let call_graph: HashMap<_, Vec<_>> = HashMap::from([(a, vec![b_0]), (b_0, vec![b_1]), (b_1, vec![])]);
+    // Post-order: b_1, b_0, a
     let tid_to_locator: IndexMap<_, _> = IndexMap::from([
-        (b_0, locator("foo.aleo", "b")),
         (b_1, locator("foo.aleo", "b")),
+        (b_0, locator("foo.aleo", "b")),
         (a, locator("foo.aleo", "a")),
     ]);
 
@@ -83,10 +84,11 @@ fn test_ensure_acyclic_call_graph_accepts_tree() {
 
     let call_graph: HashMap<_, Vec<_>> =
         HashMap::from([(a, vec![b, c]), (b, vec![d_0]), (c, vec![d_1]), (d_0, vec![]), (d_1, vec![])]);
+    // Post-order: d_0, b, d_1, c, a
     let tid_to_locator: IndexMap<_, _> = IndexMap::from([
         (d_0, locator("foo.aleo", "d")),
-        (d_1, locator("foo.aleo", "d")),
         (b, locator("foo.aleo", "b")),
+        (d_1, locator("foo.aleo", "d")),
         (c, locator("foo.aleo", "c")),
         (a, locator("foo.aleo", "a")),
     ]);
@@ -169,13 +171,86 @@ fn test_ensure_acyclic_call_graph_bails_on_cycle_with_reused_locator() {
         (d_0, vec![]),
         (d_2, vec![]),
     ]);
+    // Post-order: d_0, b, d_2, d_1, c, a
     let tid_to_locator: IndexMap<_, _> = IndexMap::from([
         (d_0, locator("foo.aleo", "d")),
-        (d_1, locator("foo.aleo", "d")),
-        (d_2, locator("foo.aleo", "d")),
-        (c, locator("foo.aleo", "c")),
         (b, locator("foo.aleo", "b")),
+        (d_2, locator("foo.aleo", "d")),
+        (d_1, locator("foo.aleo", "d")),
+        (c, locator("foo.aleo", "c")),
         (a, locator("foo.aleo", "a")),
+    ]);
+
+    let err =
+        Process::<CurrentNetwork>::ensure_acyclic_call_graph(&call_graph, &tid_to_locator).unwrap_err().to_string();
+    assert!(err.contains("Cycle detected"), "Unexpected error: {err}");
+}
+
+#[test]
+fn test_ensure_acyclic_call_graph_bails_on_no_root_found() {
+    // Empty call graph - no root to start traversal from.
+    let call_graph: HashMap<_, Vec<_>> = HashMap::new();
+    let tid_to_locator: IndexMap<_, _> = IndexMap::new();
+
+    let err =
+        Process::<CurrentNetwork>::ensure_acyclic_call_graph(&call_graph, &tid_to_locator).unwrap_err().to_string();
+    assert!(err.contains("No root found"), "Unexpected error: {err}");
+}
+
+#[test]
+fn test_ensure_acyclic_call_graph_distinguishes_paths() {
+    // A -> {B, C}; B -> C; C -> B
+    // This should pass as cycle-free because B and C are called in different contexts.
+    let a = tid(1);
+    let b_0 = tid(2);
+    let c_0 = tid(3);
+    let b_1 = tid(4);
+    let c_1 = tid(5);
+
+    let call_graph: HashMap<_, Vec<_>> =
+        HashMap::from([(a, vec![b_0, c_0]), (b_0, vec![c_1]), (c_0, vec![b_1]), (b_1, vec![]), (c_1, vec![])]);
+
+    let tid_to_locator: IndexMap<_, _> = IndexMap::from([
+        (c_1, locator("foo.aleo", "c")),
+        (b_0, locator("foo.aleo", "b")),
+        (b_1, locator("foo.aleo", "b")),
+        (c_0, locator("foo.aleo", "c")),
+        (a, locator("foo.aleo", "a")),
+    ]);
+
+    Process::<CurrentNetwork>::ensure_acyclic_call_graph(&call_graph, &tid_to_locator).unwrap();
+}
+
+#[test]
+fn test_ensure_acyclic_call_graph_detects_longer_cycles() {
+    // A0 -> {B0, C0}; B0 -> {C1, D0}; D0 -> A1; C0 -> B1
+    // This creates a cycle: A0 -> B0 -> D0 -> A1 (where A1 has the same locator as A0)
+    let a_0 = tid(1);
+    let a_1 = tid(2);
+    let b_0 = tid(3);
+    let b_1 = tid(4);
+    let c_0 = tid(5);
+    let c_1 = tid(6);
+    let d_0 = tid(7);
+
+    let call_graph: HashMap<_, Vec<_>> = HashMap::from([
+        (a_0, vec![b_0, c_0]),
+        (b_0, vec![c_1, d_0]),
+        (b_1, vec![]),
+        (c_0, vec![b_1]),
+        (c_1, vec![]),
+        (d_0, vec![a_1]),
+        (a_1, vec![]),
+    ]);
+
+    let tid_to_locator: IndexMap<_, _> = IndexMap::from([
+        (c_1, locator("foo.aleo", "c")),
+        (a_1, locator("foo.aleo", "a")),
+        (d_0, locator("foo.aleo", "d")),
+        (b_0, locator("foo.aleo", "b")),
+        (b_1, locator("foo.aleo", "b")),
+        (c_0, locator("foo.aleo", "c")),
+        (a_0, locator("foo.aleo", "a")),
     ]);
 
     let err =

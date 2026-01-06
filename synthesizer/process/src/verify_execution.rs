@@ -733,7 +733,6 @@ impl<N: Network> Process<N> {
         let mut active_locators: HashSet<Locator<N>> = HashSet::from([*root_locator]);
         // Perform an explicit-stack DFS; encountering an already-active locator indicates a cycle.
         while let Some((node, next_child_index)) = stack.pop() {
-            let node_locator = tid_to_locator.get(&node).ok_or_else(|| anyhow!("Missing locator for '{node}'"))?;
             let children_tids = call_graph.get(&node).ok_or_else(|| anyhow!("Missing node '{node}'"))?;
 
             if next_child_index < children_tids.len() {
@@ -751,6 +750,7 @@ impl<N: Network> Process<N> {
                 stack.push((child_tid, 0));
             } else {
                 // Done exploring this node; remove its locator from the active call path.
+                let node_locator = tid_to_locator.get(&node).ok_or_else(|| anyhow!("Missing locator for '{node}'"))?;
                 active_locators.remove(node_locator);
             }
         }
