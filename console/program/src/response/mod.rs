@@ -335,7 +335,7 @@ impl<N: Network> Response<N> {
             .enumerate()
             .map(|(index, (output, callee_output_id))| {
                 match callee_output_id {
-                    OutputID::Record(_, _, _) => {
+                    OutputID::Record(_, _, _) | OutputID::ExternalRecord(_) => {
                         // Ensure the caller output is a dynamic record.
                         ensure!(matches!(output, Value::DynamicRecord(..)), "Expected a dynamic record output");
 

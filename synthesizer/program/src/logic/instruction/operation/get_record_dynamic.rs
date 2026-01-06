@@ -46,7 +46,7 @@ type CircuitPH<A> = circuit::Poseidon2<A>;
 /// Retrieves the value of an entry in a dynamic record.
 // TODO (@reviewers). Do we want to consider alternate names? `dynamic.record.entry`, `access.record.dynamic`, etc.
 #[derive(Clone, PartialEq, Eq, Hash)]
-pub struct GetDynamicRecord<N: Network> {
+pub struct GetRecordDynamic<N: Network> {
     /// The register containing the dynamic record being read.
     // It is always of the form `Operand::Register(Register::Locator(u64))`.
     operands: [Operand<N>; 1],
@@ -59,7 +59,7 @@ pub struct GetDynamicRecord<N: Network> {
     plaintext_type: PlaintextType<N>,
 }
 
-impl<N: Network> GetDynamicRecord<N> {
+impl<N: Network> GetRecordDynamic<N> {
     /// Initializes a new `get.record.dynamic` instruction.
     #[inline]
     pub fn new(operand: Operand<N>, destination: Register<N>, plaintext_type: PlaintextType<N>) -> Result<Self> {
@@ -85,7 +85,7 @@ impl<N: Network> GetDynamicRecord<N> {
     /// Returns the opcode.
     #[inline]
     pub const fn opcode() -> Opcode {
-        Opcode::GetDynamicRecord("get.record.dynamic")
+        Opcode::GetRecordDynamic("get.record.dynamic")
     }
 
     /// Returns the operands in the operation.
@@ -101,7 +101,7 @@ impl<N: Network> GetDynamicRecord<N> {
     }
 }
 
-impl<N: Network> GetDynamicRecord<N> {
+impl<N: Network> GetRecordDynamic<N> {
     /// Evaluates the instruction.
     pub fn evaluate(&self, stack: &impl StackTrait<N>, registers: &mut impl RegistersTrait<N>) -> Result<()> {
         // Retrieve the dynamic record
@@ -248,7 +248,7 @@ impl<N: Network> GetDynamicRecord<N> {
     }
 }
 
-impl<N: Network> GetDynamicRecord<N> {
+impl<N: Network> GetRecordDynamic<N> {
     // Internal auxiliary function which computes the (native) Merkle path to
     // the given entry. If the record data is not present, it is populated with
     // arbitrary values first and the event is logged. This can happen
@@ -330,7 +330,7 @@ impl<N: Network> GetDynamicRecord<N> {
     }
 }
 
-impl<N: Network> Parser for GetDynamicRecord<N> {
+impl<N: Network> Parser for GetRecordDynamic<N> {
     /// Parses a string into an operation.
     fn parse(string: &str) -> ParserResult<Self> {
         // Parse the whitespace and comments from the string.
@@ -369,7 +369,7 @@ impl<N: Network> Parser for GetDynamicRecord<N> {
     }
 }
 
-impl<N: Network> FromStr for GetDynamicRecord<N> {
+impl<N: Network> FromStr for GetRecordDynamic<N> {
     type Err = Error;
 
     /// Parses a string into an operation.
@@ -386,14 +386,14 @@ impl<N: Network> FromStr for GetDynamicRecord<N> {
     }
 }
 
-impl<N: Network> Debug for GetDynamicRecord<N> {
+impl<N: Network> Debug for GetRecordDynamic<N> {
     /// Prints the operation as a string.
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         Display::fmt(self, f)
     }
 }
 
-impl<N: Network> Display for GetDynamicRecord<N> {
+impl<N: Network> Display for GetRecordDynamic<N> {
     /// Prints the operation to a string.
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         // Print the operation.
@@ -409,7 +409,7 @@ impl<N: Network> Display for GetDynamicRecord<N> {
     }
 }
 
-impl<N: Network> FromBytes for GetDynamicRecord<N> {
+impl<N: Network> FromBytes for GetRecordDynamic<N> {
     /// Reads the operation from a buffer.
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
         let operand = Operand::read_le(&mut reader)?;
@@ -430,7 +430,7 @@ impl<N: Network> FromBytes for GetDynamicRecord<N> {
     }
 }
 
-impl<N: Network> ToBytes for GetDynamicRecord<N> {
+impl<N: Network> ToBytes for GetRecordDynamic<N> {
     /// Writes the operation to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         // Write the source operand.
@@ -451,14 +451,14 @@ mod tests {
     use console::{network::MainnetV0, program::ArrayType};
     type CurrentNetwork = MainnetV0;
 
-    fn test_serialization(instruction: GetDynamicRecord<CurrentNetwork>) {
+    fn test_serialization(instruction: GetRecordDynamic<CurrentNetwork>) {
         let bytes = instruction.to_bytes_le().unwrap();
-        let bytes_result = GetDynamicRecord::from_bytes_le(&bytes[..]);
+        let bytes_result = GetRecordDynamic::from_bytes_le(&bytes[..]);
         assert!(bytes_result.is_ok());
         assert_eq!(instruction, bytes_result.unwrap());
 
         let str = instruction.to_string();
-        let str_result = GetDynamicRecord::from_str(&str);
+        let str_result = GetRecordDynamic::from_str(&str);
         assert!(str_result.is_ok());
         assert_eq!(instruction, str_result.unwrap());
     }
@@ -467,7 +467,7 @@ mod tests {
     fn test_parse_and_serialization() {
         // ************ Literal types ************
         let (remainder, instruction) =
-            GetDynamicRecord::<CurrentNetwork>::parse("get.record.dynamic r0.outdated into r1 as bool").unwrap();
+            GetRecordDynamic::<CurrentNetwork>::parse("get.record.dynamic r0.outdated into r1 as bool").unwrap();
         assert!(remainder.is_empty());
         assert_eq!(instruction.operands().len(), 1);
         assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
@@ -477,7 +477,7 @@ mod tests {
         test_serialization(instruction);
 
         let (remainder, instruction) =
-            GetDynamicRecord::<CurrentNetwork>::parse("get.record.dynamic r0.middleman into r1 as address").unwrap();
+            GetRecordDynamic::<CurrentNetwork>::parse("get.record.dynamic r0.middleman into r1 as address").unwrap();
         assert!(remainder.is_empty());
         assert_eq!(instruction.operands().len(), 1);
         assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
@@ -486,7 +486,7 @@ mod tests {
         assert_eq!(instruction.plaintext_type, PlaintextType::from_str("address").unwrap());
 
         let (remainder, instruction) =
-            GetDynamicRecord::<CurrentNetwork>::parse("get.record.dynamic r0.sk into r1 as field").unwrap();
+            GetRecordDynamic::<CurrentNetwork>::parse("get.record.dynamic r0.sk into r1 as field").unwrap();
         assert!(remainder.is_empty());
         assert_eq!(instruction.operands().len(), 1);
         assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
@@ -496,7 +496,7 @@ mod tests {
         test_serialization(instruction);
 
         let (remainder, instruction) =
-            GetDynamicRecord::<CurrentNetwork>::parse("get.record.dynamic r0.pk into r1 as group").unwrap();
+            GetRecordDynamic::<CurrentNetwork>::parse("get.record.dynamic r0.pk into r1 as group").unwrap();
         assert!(remainder.is_empty());
         assert_eq!(instruction.operands().len(), 1);
         assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
@@ -506,7 +506,7 @@ mod tests {
         test_serialization(instruction);
 
         let (remainder, instruction) =
-            GetDynamicRecord::<CurrentNetwork>::parse("get.record.dynamic r0.crs_byte into r1 as u8").unwrap();
+            GetRecordDynamic::<CurrentNetwork>::parse("get.record.dynamic r0.crs_byte into r1 as u8").unwrap();
         assert!(remainder.is_empty());
         assert_eq!(instruction.operands().len(), 1);
         assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
@@ -516,7 +516,7 @@ mod tests {
         test_serialization(instruction);
 
         let (remainder, instruction) =
-            GetDynamicRecord::<CurrentNetwork>::parse("get.record.dynamic r0.size into r1 as u16").unwrap();
+            GetRecordDynamic::<CurrentNetwork>::parse("get.record.dynamic r0.size into r1 as u16").unwrap();
         assert!(remainder.is_empty());
         assert_eq!(instruction.operands().len(), 1);
         assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
@@ -526,7 +526,7 @@ mod tests {
         test_serialization(instruction);
 
         let (remainder, instruction) =
-            GetDynamicRecord::<CurrentNetwork>::parse("get.record.dynamic r0.register into r1 as u32").unwrap();
+            GetRecordDynamic::<CurrentNetwork>::parse("get.record.dynamic r0.register into r1 as u32").unwrap();
         assert!(remainder.is_empty());
         assert_eq!(instruction.operands().len(), 1);
         assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
@@ -536,7 +536,7 @@ mod tests {
         test_serialization(instruction);
 
         let (remainder, instruction) =
-            GetDynamicRecord::<CurrentNetwork>::parse("get.record.dynamic r0.crs_byte into r1 as u8").unwrap();
+            GetRecordDynamic::<CurrentNetwork>::parse("get.record.dynamic r0.crs_byte into r1 as u8").unwrap();
         assert!(remainder.is_empty());
         assert_eq!(instruction.operands().len(), 1);
         assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
@@ -546,7 +546,7 @@ mod tests {
         test_serialization(instruction);
 
         let (remainder, instruction) =
-            GetDynamicRecord::<CurrentNetwork>::parse("get.record.dynamic r0.size into r1 as u16").unwrap();
+            GetRecordDynamic::<CurrentNetwork>::parse("get.record.dynamic r0.size into r1 as u16").unwrap();
         assert!(remainder.is_empty());
         assert_eq!(instruction.operands().len(), 1);
         assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
@@ -556,7 +556,7 @@ mod tests {
         test_serialization(instruction);
 
         let (remainder, instruction) =
-            GetDynamicRecord::<CurrentNetwork>::parse("get.record.dynamic r0.register into r1 as u32").unwrap();
+            GetRecordDynamic::<CurrentNetwork>::parse("get.record.dynamic r0.register into r1 as u32").unwrap();
         assert!(remainder.is_empty());
         assert_eq!(instruction.operands().len(), 1);
         assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
@@ -566,7 +566,7 @@ mod tests {
         test_serialization(instruction);
 
         let (remainder, instruction) =
-            GetDynamicRecord::<CurrentNetwork>::parse("get.record.dynamic r0.usize into r1 as u64").unwrap();
+            GetRecordDynamic::<CurrentNetwork>::parse("get.record.dynamic r0.usize into r1 as u64").unwrap();
         assert!(remainder.is_empty());
         assert_eq!(instruction.operands().len(), 1);
         assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
@@ -576,7 +576,7 @@ mod tests {
         test_serialization(instruction);
 
         let (remainder, instruction) =
-            GetDynamicRecord::<CurrentNetwork>::parse("get.record.dynamic r0.long into r1 as u128").unwrap();
+            GetRecordDynamic::<CurrentNetwork>::parse("get.record.dynamic r0.long into r1 as u128").unwrap();
         assert!(remainder.is_empty());
         assert_eq!(instruction.operands().len(), 1);
         assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
@@ -587,7 +587,7 @@ mod tests {
 
         // ************ Other correct cases ************
         let (remainder, instruction) =
-            GetDynamicRecord::<CurrentNetwork>::parse("get.record.dynamic r3.banana into r3 as fruit_struct").unwrap();
+            GetRecordDynamic::<CurrentNetwork>::parse("get.record.dynamic r3.banana into r3 as fruit_struct").unwrap();
         assert!(remainder.is_empty());
         assert_eq!(instruction.operands().len(), 1);
         assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(3)));
@@ -597,7 +597,7 @@ mod tests {
         test_serialization(instruction);
 
         let (remainder, instruction) =
-            GetDynamicRecord::<CurrentNetwork>::parse("get.record.dynamic r1.apples into r1 as [fruit_struct; 20u32]")
+            GetRecordDynamic::<CurrentNetwork>::parse("get.record.dynamic r1.apples into r1 as [fruit_struct; 20u32]")
                 .unwrap();
         assert!(remainder.is_empty());
         assert_eq!(instruction.operands().len(), 1);
@@ -610,7 +610,7 @@ mod tests {
         );
         test_serialization(instruction);
 
-        let (remainder, instruction) = GetDynamicRecord::<CurrentNetwork>::parse(
+        let (remainder, instruction) = GetRecordDynamic::<CurrentNetwork>::parse(
             "get.record.dynamic r45.dragonfruit_matrix into r49 as [[fruit_struct; 20u32]; 10u32]",
         )
         .unwrap();
@@ -646,7 +646,7 @@ mod tests {
         ];
 
         for case in incorrect_cases {
-            assert!(GetDynamicRecord::<CurrentNetwork>::parse(case).is_err());
+            assert!(GetRecordDynamic::<CurrentNetwork>::parse(case).is_err());
         }
     }
 }

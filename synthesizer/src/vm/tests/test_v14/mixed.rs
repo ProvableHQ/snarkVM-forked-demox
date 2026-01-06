@@ -224,6 +224,8 @@ fn test_execution_cost_for_authorization() {
 
     println!("Executing {program_a_str}.aleo/weld_dynamically...");
 
+    let count_before_weld_dynamically = vm.transition_store().records().count();
+
     let transaction = vm
         .execute(
             &caller_private_key,
@@ -271,6 +273,10 @@ fn test_execution_cost_for_authorization() {
 
     // Ensuring transaction verification passes
     add_and_test(&vm, &caller_private_key, &[transaction], rng);
+
+    // We check exactly one static record has been produced, even though it was
+    // translated to a dynamic one when output
+    assert_eq!(vm.transition_store().records().count(), count_before_weld_dynamically + 1);
 }
 
 #[test]
@@ -509,6 +515,10 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
     let decomission_toy_inputs =
         [Value::from_str(&toy_1_record.to_string()).unwrap(), Value::from_str(&toy_1_signature.to_string()).unwrap()];
 
+    let number_of_consumed_records_before = vm.transition_store().serial_numbers().count();
+
+    println!("Executing {program_b_name}.aleo/decomission_toy...");
+
     let transaction_decomission_toy_1 = vm
         .execute(
             &client_1_private_key,
@@ -522,6 +532,10 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
         .unwrap();
 
     add_and_test(&vm, &client_1_private_key, &[transaction_decomission_toy_1], rng);
+
+    // Check exactly one record has been consumed (despite the cast to dynamic +
+    // dynamic call)
+    assert_eq!(vm.transition_store().serial_numbers().count(), number_of_consumed_records_before + 1);
 
     // ********** Case 2: Ladder painting, failed and successful decomissioning **********
 
@@ -612,9 +626,9 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
 
     assert!(
         vm.execute(
-            // We still execute with the 2's private key so that record
-            // consumption can proceed - it is the signature we would like to
-            // fail.
+            // We still execute with client 2's private key so that record
+            // consumption can proceed - it is the product-signature we would
+            // like to fail.
             &client_2_private_key,
             ("factory.aleo", "decomission_ladder"),
             decomission_toy_inputs.into_iter(),
@@ -672,6 +686,4 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
     assert_eq!(block.aborted_transaction_ids(), &[decomission_ladder_1_again_id]);
-
-    // TODO (Antonio) complete
 }

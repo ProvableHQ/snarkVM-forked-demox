@@ -156,6 +156,25 @@ impl<N: Network> Process<N> {
         }
         lap!(timer, "Verify the number of transitions");
 
+        // Collect all of the futures in the execution's transitions and compute their corresponding dynamic future keys.
+        // The key is (program_name, program_network, function_name, root) to uniquely identify each future,
+        // since different futures may have the same root if their arguments happen to be identical.
+        let dynamic_future_to_future: HashMap<(Field<N>, Field<N>, Field<N>, Field<N>), &Future<N>> = execution
+            .transitions()
+            .filter_map(|transition| {
+                transition.outputs().last().and_then(|output| output.future()).and_then(|future| {
+                    let dynamic_future = DynamicFuture::from_future(future).ok()?;
+                    let key = (
+                        *dynamic_future.program_name(),
+                        *dynamic_future.program_network(),
+                        *dynamic_future.function_name(),
+                        *dynamic_future.root(),
+                    );
+                    Some((key, future))
+                })
+            })
+            .collect();
+
         // Construct the call graph.
         let consensus_version = N::CONSENSUS_VERSION(state.block_height())?;
         let call_graph = match (ConsensusVersion::V1..=ConsensusVersion::V2).contains(&consensus_version) {
@@ -168,10 +187,10 @@ impl<N: Network> Process<N> {
             // Finalize the root transition.
             // Note that this will result in all the remaining transitions being finalized, since the number
             // of calls matches the number of transitions.
-            let mut finalize_operations = finalize_transition(state, store, &stack, transition, call_graph)?;
+            let mut finalize_operations =
+                finalize_transition(state, store, &stack, transition, call_graph, dynamic_future_to_future)?;
 
             /* Finalize the fee. */
-
             if let Some(fee) = fee {
                 // Retrieve the fee stack.
                 let fee_stack = self.get_stack(fee.program_id())?;
@@ -226,7 +245,7 @@ fn finalize_fee_transition<N: Network, P: FinalizeStorage<N>>(
     };
 
     // Finalize the transition.
-    match finalize_transition(state, store, stack, fee, call_graph) {
+    match finalize_transition(state, store, stack, fee, call_graph, Default::default()) {
         // If the evaluation succeeds, return the finalize operations.
         Ok(finalize_operations) => Ok(finalize_operations),
         // If the evaluation fails, bail and return the error.
@@ -298,6 +317,7 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
     stack: &Arc<Stack<N>>,
     transition: &Transition<N>,
     call_graph: HashMap<N::TransitionID, Vec<N::TransitionID>>,
+    dynamic_future_to_future: HashMap<(Field<N>, Field<N>, Field<N>, Field<N>), &Future<N>>,
 ) -> Result<Vec<FinalizeOperation<N>>> {
     // Retrieve the program ID.
     let program_id = transition.program_id();
@@ -393,7 +413,8 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
                         &stack,
                         &registers,
                         transition_id,
-                        nonce
+                        nonce,
+                        &dynamic_future_to_future,
                     )) {
                         Ok(Ok(callee_state)) => callee_state,
                         // If the evaluation fails, bail and return the error.
@@ -574,11 +595,25 @@ fn setup_await<N: Network>(
     registers: &FinalizeRegisters<N>,
     transition_id: N::TransitionID,
     nonce: u64,
+    dynamic_future_to_future: &HashMap<(Field<N>, Field<N>, Field<N>, Field<N>), &Future<N>>,
 ) -> Result<FinalizeState<N>> {
     // Retrieve the input as a future.
     let (future, is_dynamic) = match registers.load(stack.deref(), &Operand::Register(await_.register().clone()))? {
         Value::Future(future) => (future, false),
-        Value::DynamicFuture(dynamic_future) => (dynamic_future.to_future()?, true),
+        Value::DynamicFuture(dynamic_future) => {
+            // Construct the key from the dynamic future's program name, network, function name, and root.
+            let key = (
+                *dynamic_future.program_name(),
+                *dynamic_future.program_network(),
+                *dynamic_future.function_name(),
+                *dynamic_future.root(),
+            );
+            // Look up the corresponding future from the dynamic future key.
+            match dynamic_future_to_future.get(&key) {
+                Some(future) => ((*future).clone(), true),
+                None => bail!("Dynamic future '{key:?}' not found in dynamic-future-to-future map"),
+            }
+        }
         _ => bail!("The input to 'await' is not a future or dynamic future"),
     };
     // Initialize the state.

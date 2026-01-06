@@ -303,7 +303,7 @@ fn test_get_record_dynamic() {
 // into a dynamic record to ensure signature verification has not been broken by
 // the new caller metadata
 #[test]
-fn tanslate_transfer_public_to_private() {
+fn translate_transfer_public_to_private() {
     let credits_program_str = Identifier::<CurrentNetwork>::from_str("credits").unwrap();
     let network_str = "aleo";
     let transfer_function_name = Identifier::<CurrentNetwork>::from_str("transfer_public_to_private").unwrap();
@@ -346,13 +346,54 @@ fn tanslate_transfer_public_to_private() {
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
     let caller_private_key = sample_genesis_private_key(rng);
+    let address = Address::try_from(&caller_private_key).unwrap();
+    println!("Caller address: {address}");
 
     // Deploy the program
     println!("Deploying program dynamic_credits.aleo...");
     let transaction_deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
     add_and_test(&vm, &caller_private_key, &[transaction_deploy], rng);
 
-    // Execute the function
+    // Print the initial balance
+    let Some(Value::Plaintext(Plaintext::Literal(Literal::U64(initial_balance), _))) = vm
+        .finalize_store()
+        .get_value_confirmed(
+            ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap(),
+            Identifier::from_str("account").unwrap(),
+            &Plaintext::from_str(&address.to_string()).unwrap(),
+        )
+        .unwrap()
+    else {
+        panic!("Failed to get initial balance");
+    };
+    println!("Initial balance: {initial_balance}");
+
+    // Deposit some credits to the program.
+    let transaction = vm
+        .execute(
+            &caller_private_key,
+            ("credits.aleo", "transfer_public"),
+            vec![
+                Value::from_str(
+                    &ProgramID::<CurrentNetwork>::from_str("dynamic_credits.aleo")
+                        .unwrap()
+                        .to_address()
+                        .unwrap()
+                        .to_string(),
+                )
+                .unwrap(),
+                Value::<CurrentNetwork>::from_str("57u64").unwrap(),
+            ]
+            .into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+
+    // Execute the dynamic call.
     println!("Executing root function dynamic_credits.aleo/transfer_pub_priv_and_inform...");
     let transaction_transfer = vm
         .execute(
@@ -365,15 +406,5 @@ fn tanslate_transfer_public_to_private() {
             rng,
         )
         .unwrap();
-
-    // TODO (Antonio) remove
-    // print the ID of the credits.aleo credits.record translation key
-    let stack = vm.process().read().get_stack("credits.aleo").unwrap();
-    let translation_key =
-        stack.get_translation_verifying_key(&Identifier::<CurrentNetwork>::from_str("credits").unwrap()).unwrap();
-    println!("translation key: {}", translation_key.id);
-    vm.check_transaction(&transaction_transfer, None, rng).unwrap();
-
-    // TODO (Antonio) fix
     add_and_test(&vm, &caller_private_key, &[transaction_transfer], rng);
 }

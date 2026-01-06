@@ -27,7 +27,7 @@ impl<N: Network> Parser for DynamicFuture<N> {
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
         // Parse the "program_name" from the string.
-        let (string, _) = tag("program_name")(string)?;
+        let (string, _) = tag("_program_name")(string)?;
         // Parse the whitespace from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
         // Parse the ":" from the string.
@@ -44,7 +44,7 @@ impl<N: Network> Parser for DynamicFuture<N> {
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
         // Parse the "program_network" from the string.
-        let (string, _) = tag("program_network")(string)?;
+        let (string, _) = tag("_program_network")(string)?;
         // Parse the whitespace from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
         // Parse the ":" from the string.
@@ -61,7 +61,7 @@ impl<N: Network> Parser for DynamicFuture<N> {
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
         // Parse the "function_name" from the string.
-        let (string, _) = tag("function_name")(string)?;
+        let (string, _) = tag("_function_name")(string)?;
         // Parse the whitespace from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
         // Parse the ":" from the string.
@@ -78,7 +78,7 @@ impl<N: Network> Parser for DynamicFuture<N> {
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
         // Parse the "root" from the string.
-        let (string, _) = tag("root")(string)?;
+        let (string, _) = tag("_root")(string)?;
         // Parse the whitespace from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
         // Parse the ":" from the string.
@@ -93,7 +93,7 @@ impl<N: Network> Parser for DynamicFuture<N> {
         // Parse the "}" from the string.
         let (string, _) = tag("}")(string)?;
 
-        Ok((string, Self::new_unchecked(program_name, program_network, function_name, root, None, None)))
+        Ok((string, Self::new_unchecked(program_name, program_network, function_name, root, None)))
     }
 }
 
@@ -117,7 +117,15 @@ impl<N: Network> FromStr for DynamicFuture<N> {
 impl<N: Network> Debug for DynamicFuture<N> {
     /// Prints the future as a string.
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        Display::fmt(self, f)
+        writeln!(
+            f,
+            "{{ _program_name: {}, _program_network: {}, _function_name: {}, _root: {}, arguments: {:?} }}",
+            self.program_name(),
+            self.program_network(),
+            self.function_name(),
+            self.root(),
+            self.arguments()
+        )
     }
 }
 
@@ -131,9 +139,9 @@ impl<N: Network> Display for DynamicFuture<N> {
 impl<N: Network> DynamicFuture<N> {
     /// Prints the dynamic future with the given indentation depth.
     fn fmt_internal(&self, f: &mut Formatter) -> fmt::Result {
-        writeln!(
+        write!(
             f,
-            "{{ program_name: {}, program_network: {}, function_name: {}, root: {} }}",
+            "{{ _program_name: {}, _program_network: {}, _function_name: {}, _root: {} }}",
             self.program_name(),
             self.program_network(),
             self.function_name(),

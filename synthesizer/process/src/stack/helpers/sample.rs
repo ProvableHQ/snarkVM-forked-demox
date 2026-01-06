@@ -51,7 +51,7 @@ impl<N: Network> Stack<N> {
         // Sample a random argument root.
         let argument_root = Field::rand(rng);
 
-        Ok(DynamicFuture::new_unchecked(program_name, program_network, function_name, argument_root, None, None))
+        Ok(DynamicFuture::new_unchecked(program_name, program_network, function_name, argument_root, None))
     }
 
     // Samples a dynamic record value.

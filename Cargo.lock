@@ -3127,6 +3127,7 @@ dependencies = [
  "criterion",
  "indexmap 2.12.1",
  "rayon",
+ "serde",
  "snarkvm-console-algorithms",
  "snarkvm-console-network",
  "snarkvm-console-types",
@@ -3173,6 +3174,7 @@ name = "snarkvm-console-program"
 version = "4.4.0"
 dependencies = [
  "bincode",
+ "criterion",
  "enum-iterator",
  "enum_index",
  "enum_index_derive",

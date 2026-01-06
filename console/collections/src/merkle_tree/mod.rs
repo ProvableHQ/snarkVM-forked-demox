@@ -22,22 +22,23 @@ pub use path::*;
 #[cfg(test)]
 mod tests;
 
-//TODO (@Antonio95) This module doesn't exist. Commenting to pass clippy.
-// #[cfg(any(test, feature = "test-utils"))]
-// mod test_utils;
-// #[cfg(any(test, feature = "test-utils"))]
-// pub use test_utils::*;
+#[cfg(any(test, feature = "test-utils"))]
+mod test_utils;
+#[cfg(any(test, feature = "test-utils"))]
+pub use test_utils::*;
 
 use snarkvm_console_types::prelude::*;
 
 use aleo_std::prelude::*;
 
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
-#[derive(Clone)]
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(bound = "E: Serialize + DeserializeOwned, LH: Serialize + DeserializeOwned, PH: Serialize + DeserializeOwned")]
 pub struct MerkleTree<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>>, const DEPTH: u8> {
     /// The leaf hasher for the Merkle tree.
     leaf_hasher: LH,

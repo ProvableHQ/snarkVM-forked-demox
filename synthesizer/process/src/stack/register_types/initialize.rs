@@ -614,14 +614,14 @@ impl<N: Network> RegisterTypes<N> {
             }
             Opcode::Serialize(opcode) => Self::check_serialize_opcode(opcode, instruction)?,
             Opcode::Deserialize(opcode) => Self::check_deserialize_opcode(opcode, instruction)?,
-            Opcode::GetDynamicRecord(_) => {
+            Opcode::GetRecordDynamic(_) => {
                 ensure!(instruction.operands().len() == 1, "Expected 1 operand.");
                 ensure!(
                     instruction.destinations().len() == 1,
                     "Instruction '{instruction}' has multiple destinations."
                 );
                 ensure!(
-                    matches!(instruction, Instruction::GetDynamicRecord(..)),
+                    matches!(instruction, Instruction::GetRecordDynamic(..)),
                     "Instruction '{instruction}' is not a get.record.dynamic operation."
                 );
             }

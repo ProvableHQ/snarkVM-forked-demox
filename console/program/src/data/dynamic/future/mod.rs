@@ -31,42 +31,54 @@ pub const FUTURE_ARGUMENT_TREE_DEPTH: u8 = 4;
 /// The future argument tree.
 pub type FutureArgumentTree<E> = MerkleTree<E, Poseidon8<E>, Poseidon2<E>, FUTURE_ARGUMENT_TREE_DEPTH>;
 
-/// A dynamic future is a fixed-size representation of a future.
-/// Like static `Future`s, a dynamic future contains a program ID and function name.
-/// These are however represented as `Field` elements as opposed to `Identifier`s to ensure a fixed size.
-/// Dynamic futures also store a Merkle root of the arguments to the future instead of the arguments themselves.
-/// This ensures that all dynamic futures have a constant size, regardless of the amount of data they contain.
+/// A dynamic future is a fixed-size representation of a future. Like static
+/// `Future`s, a dynamic future contains a program ID and function name. These
+/// are however represented as `Field` elements as opposed to `Identifier`s to
+/// ensure a fixed size. Dynamic futures also store a Merkle root of the
+/// arguments to the future instead of the arguments themselves. This ensures
+/// that all dynamic futures have a constant size, regardless of the amount of
+/// data they contain.
 ///
 /// Suppose we have the following `finalize` scope:
 ///
-/// finalize foo:
-///     input r0 as address.public;
-///     input r1 as u64.public;
+/// ```text
+/// finalize foo: input r0 as address.public; input r1 as u64.public;
+/// ```
 ///
-/// It's merkle-ization is as follows:
-///
-///        R
-///        |
-///       P_0
-///        |
-///       P_1
-///        |
-///       P_2
-///        |
-///       P_3
-///      /  \
-///   L_0    L_1
+/// It's merkleization is as follows:
+/// ```text
+///   L_0    L_1    (leaves: hashed entries)
+///     \    /
+///      P_0        (internal node)
+///       |
+///      P_1        (padding level 1)
+///       |
+///      P_2        (padding level 2)
+///       |
+///       R         (root, padding level 3)
 ///
 /// L_0 := HashPSD8(ToFields(arg_0))
 /// L_1 := HashPSD8(ToFields(arg_1))
 /// P_0 := HashPSD2(L_0, L_1)
-/// P_1 := HashPSD2(P_0, ZERO)
-/// P_2 := HashPSD2(P_1, ZERO)
-/// P_3 := HashPSD2(P_2, ZERO)
-///   R := HashPSD2(P_3, ZERO)
+/// P_1 := HashPSD2(P_0, empty_hash)
+/// P_2 := HashPSD2(P_1, empty_hash)
+///   R := HashPSD2(P_2, empty_hash)
+/// ```
+///
+/// For finalize scopes with a different number of arguments, leaves are first
+/// padded to the next power of 2 using `empty_hash` hashes, then a balanced
+/// binary tree is built. Note that, in concrete terms, at most one `empty_hash`
+/// leaf is added: the rest are only virtual in that instead nodes with the
+/// value `HashPSD2(empty_hash, empty_hash)` are added to the next level, which
+/// is indeed full of size equal to a power of 2.
+///
+/// Padding levels are then added as needed to reach the full tree depth
+/// `FUTURE_ARGUMENT_TREE_DEPTH` (4), each of which is constructed by hashing the
+/// root of the previous level together with `empty_hash`.
 ///
 /// Note that:
-///  - `ZERO` is defined by the `PathHash` implementation for `HashPSD2`.
+///  - `empty_hash` is the value returned by the `hash_empty` function the
+///    `PathHash` implementation for `HashPSD2`.
 ///  - `ToFields` encodes the arguments's variant.
 #[derive(Clone)]
 pub struct DynamicFuture<N: Network> {
@@ -78,8 +90,6 @@ pub struct DynamicFuture<N: Network> {
     function_name: Field<N>,
     /// The Merkle root of the arguments.
     root: Field<N>,
-    /// The optional Merkle tree of the arguments.
-    tree: Option<FutureArgumentTree<N>>,
     /// The optional arguments.
     arguments: Option<Vec<Argument<N>>>,
 }
@@ -91,10 +101,9 @@ impl<N: Network> DynamicFuture<N> {
         program_network: Field<N>,
         function_name: Field<N>,
         root: Field<N>,
-        tree: Option<FutureArgumentTree<N>>,
         arguments: Option<Vec<Argument<N>>>,
     ) -> Self {
-        Self { program_name, program_network, function_name, root, tree, arguments }
+        Self { program_name, program_network, function_name, root, arguments }
     }
 }
 
@@ -117,11 +126,6 @@ impl<N: Network> DynamicFuture<N> {
     /// Returns the Merkle root of the arguments.
     pub const fn root(&self) -> &Field<N> {
         &self.root
-    }
-
-    /// Returns the optional Merkle tree of the arguments.
-    pub const fn tree(&self) -> &Option<FutureArgumentTree<N>> {
-        &self.tree
     }
 
     /// Returns the optional arguments.
@@ -155,7 +159,7 @@ impl<N: Network> DynamicFuture<N> {
         // Get the root.
         let root = *tree.root();
 
-        Ok(Self::new_unchecked(program_name, program_network, function_name, root, Some(tree), Some(arguments)))
+        Ok(Self::new_unchecked(program_name, program_network, function_name, root, Some(arguments)))
     }
 
     /// Creates a static record from a dynamic record.
@@ -181,6 +185,10 @@ mod tests {
     use super::*;
     use snarkvm_console_network::MainnetV0;
 
+    use crate::Plaintext;
+
+    use core::str::FromStr;
+
     type CurrentNetwork = MainnetV0;
 
     #[test]
@@ -188,7 +196,94 @@ mod tests {
         assert_eq!(CurrentNetwork::MAX_INPUTS.ilog2(), FUTURE_ARGUMENT_TREE_DEPTH as u32);
     }
 
-    // TODO: Test different future arguments.
-    // TODO: Test that you can correctly prove membership of an argument.
-    // TODO: Benchmark merkleization performance for futures of various sizes.
+    fn create_test_future(arguments: Vec<Argument<CurrentNetwork>>) -> Future<CurrentNetwork> {
+        Future::new(ProgramID::from_str("test.aleo").unwrap(), Identifier::from_str("foo").unwrap(), arguments)
+    }
+
+    fn assert_round_trip(arguments: Vec<Argument<CurrentNetwork>>) {
+        let future = create_test_future(arguments);
+        let dynamic = DynamicFuture::from_future(&future).unwrap();
+        let recovered = dynamic.to_future().unwrap();
+        assert_eq!(future.program_id(), recovered.program_id());
+        assert_eq!(future.function_name(), recovered.function_name());
+        for (a, b) in future.arguments().iter().zip(recovered.arguments().iter()) {
+            assert!(*a.is_equal(b));
+        }
+    }
+
+    #[test]
+    fn test_round_trip_various_arguments() {
+        // No arguments.
+        assert_round_trip(vec![]);
+
+        // Plaintext literals.
+        assert_round_trip(vec![
+            Argument::Plaintext(Plaintext::from_str("true").unwrap()),
+            Argument::Plaintext(Plaintext::from_str("100u64").unwrap()),
+        ]);
+
+        // Struct and array.
+        assert_round_trip(vec![Argument::Plaintext(Plaintext::from_str("{ x: 1field, y: 2field }").unwrap())]);
+
+        // Nested Future argument.
+        let inner =
+            Future::new(ProgramID::from_str("inner.aleo").unwrap(), Identifier::from_str("bar").unwrap(), vec![
+                Argument::Plaintext(Plaintext::from_str("42u64").unwrap()),
+            ]);
+        assert_round_trip(vec![Argument::Future(inner.clone())]);
+
+        // DynamicFuture argument.
+        assert_round_trip(vec![Argument::DynamicFuture(DynamicFuture::from_future(&inner).unwrap())]);
+
+        // Max arguments (16).
+        let max_args: Vec<_> =
+            (0..16).map(|i| Argument::Plaintext(Plaintext::from_str(&format!("{i}u64")).unwrap())).collect();
+        assert_round_trip(max_args);
+    }
+
+    #[test]
+    fn test_root_determinism() {
+        let args1 = vec![Argument::Plaintext(Plaintext::from_str("100u64").unwrap())];
+        let args2 = vec![Argument::Plaintext(Plaintext::from_str("100u64").unwrap())];
+        let args3 = vec![Argument::Plaintext(Plaintext::from_str("200u64").unwrap())];
+
+        let d1 = DynamicFuture::from_future(&create_test_future(args1)).unwrap();
+        let d2 = DynamicFuture::from_future(&create_test_future(args2)).unwrap();
+        let d3 = DynamicFuture::from_future(&create_test_future(args3)).unwrap();
+
+        assert_eq!(d1.root(), d2.root(), "Same arguments should produce same root");
+        assert_ne!(d1.root(), d3.root(), "Different arguments should produce different roots");
+    }
+
+    #[test]
+    fn test_membership_proofs() {
+        let inner =
+            Future::new(ProgramID::from_str("inner.aleo").unwrap(), Identifier::from_str("bar").unwrap(), vec![
+                Argument::Plaintext(Plaintext::from_str("1u64").unwrap()),
+            ]);
+        let arguments = vec![
+            Argument::Plaintext(Plaintext::from_str("100u64").unwrap()),
+            Argument::Future(inner),
+            Argument::Plaintext(Plaintext::from_str("200u64").unwrap()),
+        ];
+        let dynamic = DynamicFuture::from_future(&create_test_future(arguments.clone())).unwrap();
+
+        // Build tree and verify root matches.
+        let leaves: Vec<_> = arguments.iter().map(|a| a.to_fields().unwrap()).collect();
+        let leaf_hasher = Poseidon8::setup("DynamicFutureLeafHasher").unwrap();
+        let path_hasher = Poseidon2::setup("DynamicFuturePathHasher").unwrap();
+        let tree = FutureArgumentTree::new(&leaf_hasher, &path_hasher, &leaves).unwrap();
+        assert_eq!(tree.root(), dynamic.root());
+
+        // Valid proofs.
+        for (i, leaf) in leaves.iter().enumerate() {
+            let path = tree.prove(i, leaf).unwrap();
+            assert!(tree.verify(&path, tree.root(), leaf));
+        }
+
+        // Invalid proofs.
+        let path = tree.prove(0, &leaves[0]).unwrap();
+        assert!(!tree.verify(&path, tree.root(), &leaves[1])); // Wrong leaf.
+        assert!(!tree.verify(&path, &Field::from_u64(12345), &leaves[0])); // Wrong root.
+    }
 }
