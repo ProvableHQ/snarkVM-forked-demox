@@ -290,13 +290,18 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
                     .iter()
                     .zip_eq(x_polys)
                     .enumerate()
-                    .map(|(_j, (w_poly, x_poly))| {
-                        let z_time = start_timer!(move || format!("Compute z poly for circuit {} {}", circuit.id, _j));
+                    .map(|(j, (w_poly, x_poly))| {
+                        let z_time = start_timer!(move || format!("Compute z poly for circuit {} {}", circuit.id, j));
+
                         let mut assignment =
                             w_poly.0.polynomial().as_dense().unwrap().mul_by_vanishing_poly(*input_domain);
                         // Zip safety: `x_poly` is smaller than `z_poly`.
                         assignment.coeffs.iter_mut().zip(&x_poly.coeffs).for_each(|(z, x)| *z += x);
                         end_timer!(z_time);
+                        // j may not be used if the timer feature is disabled.
+                        #[allow(unused_variables)]
+                        let _ = j;
+                        // return the assignment
                         assignment
                     })
                     .collect();

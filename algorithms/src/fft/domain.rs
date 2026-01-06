@@ -42,6 +42,9 @@ use std::{borrow::Cow, fmt};
 
 use anyhow::{Result, ensure};
 
+#[cfg(feature = "serial")]
+use itertools::Itertools;
+
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
