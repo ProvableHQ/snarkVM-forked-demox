@@ -185,6 +185,10 @@ mod tests {
     use super::*;
     use snarkvm_console_network::MainnetV0;
 
+    use crate::Plaintext;
+
+    use core::str::FromStr;
+
     type CurrentNetwork = MainnetV0;
 
     #[test]
@@ -192,7 +196,94 @@ mod tests {
         assert_eq!(CurrentNetwork::MAX_INPUTS.ilog2(), FUTURE_ARGUMENT_TREE_DEPTH as u32);
     }
 
-    // TODO (dynamic_dispatch): Test different future arguments.
-    // TODO (dynamic_dispatch): Test that you can correctly prove membership of an argument.
-    // TODO (dynamic_dispatch): Benchmark merkleization performance for futures of various sizes.
+    fn create_test_future(arguments: Vec<Argument<CurrentNetwork>>) -> Future<CurrentNetwork> {
+        Future::new(ProgramID::from_str("test.aleo").unwrap(), Identifier::from_str("foo").unwrap(), arguments)
+    }
+
+    fn assert_round_trip(arguments: Vec<Argument<CurrentNetwork>>) {
+        let future = create_test_future(arguments);
+        let dynamic = DynamicFuture::from_future(&future).unwrap();
+        let recovered = dynamic.to_future().unwrap();
+        assert_eq!(future.program_id(), recovered.program_id());
+        assert_eq!(future.function_name(), recovered.function_name());
+        for (a, b) in future.arguments().iter().zip(recovered.arguments().iter()) {
+            assert!(*a.is_equal(b));
+        }
+    }
+
+    #[test]
+    fn test_round_trip_various_arguments() {
+        // No arguments.
+        assert_round_trip(vec![]);
+
+        // Plaintext literals.
+        assert_round_trip(vec![
+            Argument::Plaintext(Plaintext::from_str("true").unwrap()),
+            Argument::Plaintext(Plaintext::from_str("100u64").unwrap()),
+        ]);
+
+        // Struct and array.
+        assert_round_trip(vec![Argument::Plaintext(Plaintext::from_str("{ x: 1field, y: 2field }").unwrap())]);
+
+        // Nested Future argument.
+        let inner =
+            Future::new(ProgramID::from_str("inner.aleo").unwrap(), Identifier::from_str("bar").unwrap(), vec![
+                Argument::Plaintext(Plaintext::from_str("42u64").unwrap()),
+            ]);
+        assert_round_trip(vec![Argument::Future(inner.clone())]);
+
+        // DynamicFuture argument.
+        assert_round_trip(vec![Argument::DynamicFuture(DynamicFuture::from_future(&inner).unwrap())]);
+
+        // Max arguments (16).
+        let max_args: Vec<_> =
+            (0..16).map(|i| Argument::Plaintext(Plaintext::from_str(&format!("{i}u64")).unwrap())).collect();
+        assert_round_trip(max_args);
+    }
+
+    #[test]
+    fn test_root_determinism() {
+        let args1 = vec![Argument::Plaintext(Plaintext::from_str("100u64").unwrap())];
+        let args2 = vec![Argument::Plaintext(Plaintext::from_str("100u64").unwrap())];
+        let args3 = vec![Argument::Plaintext(Plaintext::from_str("200u64").unwrap())];
+
+        let d1 = DynamicFuture::from_future(&create_test_future(args1)).unwrap();
+        let d2 = DynamicFuture::from_future(&create_test_future(args2)).unwrap();
+        let d3 = DynamicFuture::from_future(&create_test_future(args3)).unwrap();
+
+        assert_eq!(d1.root(), d2.root(), "Same arguments should produce same root");
+        assert_ne!(d1.root(), d3.root(), "Different arguments should produce different roots");
+    }
+
+    #[test]
+    fn test_membership_proofs() {
+        let inner =
+            Future::new(ProgramID::from_str("inner.aleo").unwrap(), Identifier::from_str("bar").unwrap(), vec![
+                Argument::Plaintext(Plaintext::from_str("1u64").unwrap()),
+            ]);
+        let arguments = vec![
+            Argument::Plaintext(Plaintext::from_str("100u64").unwrap()),
+            Argument::Future(inner),
+            Argument::Plaintext(Plaintext::from_str("200u64").unwrap()),
+        ];
+        let dynamic = DynamicFuture::from_future(&create_test_future(arguments.clone())).unwrap();
+
+        // Build tree and verify root matches.
+        let leaves: Vec<_> = arguments.iter().map(|a| a.to_fields().unwrap()).collect();
+        let leaf_hasher = Poseidon8::setup("DynamicFutureLeafHasher").unwrap();
+        let path_hasher = Poseidon2::setup("DynamicFuturePathHasher").unwrap();
+        let tree = FutureArgumentTree::new(&leaf_hasher, &path_hasher, &leaves).unwrap();
+        assert_eq!(tree.root(), dynamic.root());
+
+        // Valid proofs.
+        for (i, leaf) in leaves.iter().enumerate() {
+            let path = tree.prove(i, leaf).unwrap();
+            assert!(tree.verify(&path, tree.root(), leaf));
+        }
+
+        // Invalid proofs.
+        let path = tree.prove(0, &leaves[0]).unwrap();
+        assert!(!tree.verify(&path, tree.root(), &leaves[1])); // Wrong leaf.
+        assert!(!tree.verify(&path, &Field::from_u64(12345), &leaves[0])); // Wrong root.
+    }
 }
