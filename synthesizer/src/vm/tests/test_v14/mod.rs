@@ -25,7 +25,8 @@ mod call_dynamic;
 
 mod dynamic_futures;
 
-mod recursion;
+// NOTE: these tests can be re-enabled if we ever allow cycles, see `fn ensure_acyclic_call_graph`.
+// mod recursion;
 
 mod translation;
 
