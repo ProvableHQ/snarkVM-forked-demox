@@ -102,50 +102,13 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                 // Get the input types of the callee.
                 let input_types = substack.program().get_function_ref(function_name)?.input_types();
                 // Ensure that the number of inputs match.
+                // Ensure the number of inputs matches the number of input types.
                 if input_types.len() != inputs.len() {
                     bail!("Expected {} inputs, found {}", input_types.len(), inputs.len())
                 }
 
-                // Convert the inputs to the callee's context.
-                // TODO (@d0cd): Do we need to check that they match? I think no because `CallDynamic::output_types should have`
-                ensure!(
-                    inputs.len() == input_types.len(),
-                    "[evaluate Authorize] Expected {} inputs, but {} were provided.",
-                    input_types.len(),
-                    inputs.len()
-                );
-                let callee_inputs = inputs
-                    .iter()
-                    .zip(input_types.iter())
-                    .map(|(input, input_type)| {
-                        let value = match (input, input_type) {
-                            (Value::DynamicRecord(dynamic_record), ValueType::Record(record_name)) => {
-                                // Look up the owner visibility.
-                                let owner_is_private = substack.program().get_record(record_name)?.owner().is_private();
-                                Value::Record(dynamic_record.to_record(owner_is_private)?)
-                            }
-                            (Value::DynamicRecord(dynamic_record), ValueType::ExternalRecord(locator)) => {
-                                let record_program_id = locator.program_id();
-                                let record_name = locator.resource();
-
-                                // Obtain the program where the external record is defined (which must be imported inside the callee)
-                                // TODO (dynamic_dispatch) make sure this handles substack-fetching correctly
-                                // TODO (@d0cd)
-                                let external_record_stack = substack.get_external_stack(record_program_id)?;
-
-                                // Look up the owner visibility.
-                                let owner_is_private =
-                                    external_record_stack.program().get_record(record_name)?.owner().is_private();
-
-                                Value::Record(dynamic_record.to_record(owner_is_private)?)
-                            }
-                            // For other types, we assume they are directly compatible.
-                            _ => input.clone(),
-                        };
-                        // TODO(@d0cd) Check that the converted input matches the input type.
-                        Ok(value)
-                    })
-                    .collect::<Result<Vec<_>>>()?;
+                // Convert the caller's inputs to the callee's context.
+                let callee_inputs = convert_caller_inputs_to_callee_inputs(inputs, &input_types, substack)?;
 
                 // Compute the request.
                 let request = Request::sign_dynamic(
@@ -154,10 +117,6 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                     *function.name(),
                     callee_inputs.iter(),
                     &function.input_types(),
-                    inputs.iter(),
-                    self.operand_types(),
-                    self.destination_types(),
-                    registers.request()?,
                     root_tvk,
                     is_root,
                     program_checksum,
@@ -174,7 +133,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             // Evaluate the function.
             let response = substack.evaluate_function::<A, R>(call_stack, console_caller, root_tvk, rng)?;
             // Convert the callee's outputs to the caller's context.
-            response.dynamic_call_outputs(self.destination_types())?
+            response.caller_outputs()?
         }
         // Else, throw an error.
         else {
@@ -185,7 +144,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         // Assign the outputs to the destination registers.
         ensure!(
             outputs.len() == self.destinations().len(),
-            "[evaluate Dynamic] Expected {} outputs, but {} were provided.",
+            "Expected {} outputs, but {} were provided.",
             self.destinations().len(),
             outputs.len()
         );
@@ -255,7 +214,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
 
             // Eject the existing circuit.
             let r1cs = A::eject_r1cs_and_reset();
-            let (request, caller_response_outputs, translation_data) = {
+            let (request, caller_response_outputs) = {
                 // Resolve the program and function.
                 let target = resolve_dynamic_target(
                     registers.call_stack_ref(),
@@ -272,7 +231,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                 let console_caller = Some(*stack.program_id());
 
                 match registers.call_stack_ref() {
-                    // If the circuit is in authorize mode, then add any external calls to the stack.
+                    // In `Authorize` mode, add any external calls to the stack.
                     CallStack::Authorize(_, private_key, authorization) => {
                         // Get the target.
                         let Some(target) = target else {
@@ -299,66 +258,14 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         // Get the input types of the callee.
                         let input_types =
                             &target.substack().program().get_function_ref(target.function_name())?.input_types();
-                        // Ensure that the number of inputs match.
+                        // Ensure the number of inputs matches the number of input types.
                         if input_types.len() != inputs.len() {
                             bail!("Expected {} inputs, found {}", input_types.len(), inputs.len())
                         }
-                        // Convert the inputs to the callee's context.
-                        // TODO (@d0cd): Do we need to check that they match? I think no because `CallDynamic::output_types should have`
-                        ensure!(
-                            inputs.len() == input_types.len(),
-                            "[execute Authorize] Expected {} inputs, but {} were provided.",
-                            input_types.len(),
-                            inputs.len()
-                        );
-                        let callee_inputs = inputs
-                            .iter()
-                            .zip(input_types.iter())
-                            .map(|(input, input_type)| match (input, input_type) {
-                                (Value::Future(future), ValueType::DynamicFuture) => {
-                                    Ok(Value::DynamicFuture(DynamicFuture::from_future(future)?))
-                                }
-                                (Value::DynamicRecord(dynamic_record), ValueType::Record(record_name)) => {
-                                    // Look up the owner visibility.
-                                    let owner_is_private =
-                                        target.substack().program().get_record(record_name)?.owner().is_private();
-                                    Ok(Value::Record(dynamic_record.to_record(owner_is_private)?))
-                                }
-                                (Value::DynamicRecord(dynamic_record), ValueType::ExternalRecord(locator)) => {
-                                    let record_program_id = locator.program_id();
-                                    let record_name = locator.resource();
 
-                                    // Obtain the program where the external record is defined (which must be imported inside the callee)
-                                    // TODO (dynamic_dispatch, @d0cd) make sure this handles substack-fetching correctly
-                                    // TODO (dynamic_dispatch) verify that we want to be using `get_exteranl_stack`, ditto for others.
-                                    let external_record_stack =
-                                        target.substack().get_external_stack(record_program_id)?;
-
-                                    // Look up the owner visibility.
-                                    let owner_is_private =
-                                        external_record_stack.program().get_record(record_name)?.owner().is_private();
-
-                                    Ok(Value::Record(dynamic_record.to_record(owner_is_private)?))
-                                }
-                                (Value::DynamicFuture(dynamic_future), ValueType::Future(locator)) => {
-                                    // Construct the dynamic future.
-                                    let future = dynamic_future.to_future()?;
-                                    // Ensure that the locator matches.
-                                    ensure!(
-                                        future.program_id() == locator.program_id(),
-                                        "Locator program ID does not match for dynamic future."
-                                    );
-                                    ensure!(
-                                        future.function_name() == locator.resource(),
-                                        "Locator resource does not match for dynamic future."
-                                    );
-
-                                    Ok(Value::Future(dynamic_future.to_future()?))
-                                }
-                                // For other types, we assume they are directly compatible.
-                                _ => Ok(input.clone()),
-                            })
-                            .collect::<Result<Vec<_>>>()?;
+                        // Convert the caller's inputs to the callee's context.
+                        let callee_inputs =
+                            convert_caller_inputs_to_callee_inputs(&inputs, input_types, target.substack())?;
 
                         // Construct the callee's version of the request.
                         let callee_request = Request::sign_dynamic(
@@ -367,10 +274,6 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             *function.name(),
                             callee_inputs.iter(),
                             input_types,
-                            inputs.iter(),
-                            self.operand_types(),
-                            self.destination_types(),
-                            registers.request()?,
                             root_tvk,
                             is_root,
                             program_checksum,
@@ -392,20 +295,16 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             target.substack().execute_function::<A, R>(call_stack, console_caller, root_tvk, rng)?;
 
                         // Convert the callee's outputs to the caller's context.
-                        let caller_response_outputs = callee_response
-                            .dynamic_call_outputs(callee_request.caller_output_types().as_ref().unwrap())?;
+                        let caller_response_outputs = callee_response.caller_outputs()?;
 
                         // Return the request verification inputs and response.
-                        (request_verification_inputs, caller_response_outputs, None)
+                        (request_verification_inputs, caller_response_outputs)
                     }
-                    // TODO (@d0cd): Synthesize based on the declared outputs of the instruction.
-                    // In Synthesize mode (with an existing proving key) or CheckDeployment mode, we generate dummy outputs to avoid building a full sub-circuit.
+                    // In `Synthesize` or `CheckDeployment` mode, we use dummy inputs and outputs to avoid building a full sub-circuit.
                     CallStack::Synthesize(_, private_key, ..) | CallStack::CheckDeployment(_, private_key, ..) => {
-                        // Sample a random program ID.
-                        // Note. It does not matter what program ID we use here, since we are only synthesizing dummy outputs.
+                        // Note that it does not matter what program ID we use here, since we are only synthesizing dummy outputs.
                         let program_id = ProgramID::from_str("a.aleo")?;
-                        // Sample a random function name.
-                        // Note. It does not matter what function name we use here, since we are only synthesizing dummy outputs.
+                        // Note that it does not matter what function name we use here, since we are only synthesizing dummy outputs.
                         let function_name = Identifier::<N>::from_str("a")?;
 
                         // Compute the address.
@@ -458,7 +357,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             .collect::<Result<Vec<_>>>()?;
 
                         // Return the request verification inputs and response.
-                        (request_verification_inputs, callee_response_outputs, None)
+                        (request_verification_inputs, callee_response_outputs)
                     }
                     // In PackageRun mode, we sign and execute the request once.
                     CallStack::PackageRun(_, private_key, ..) => {
@@ -488,60 +387,8 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             bail!("Expected {} inputs, found {}", input_types.len(), inputs.len())
                         }
                         // Convert the inputs to the callee's context.
-                        // TODO (@d0cd): Do we need to check that they match? I think no because `CallDynamic::output_types should have`
-                        ensure!(
-                            inputs.len() == input_types.len(),
-                            "[execute PackageRun] Expected {} inputs, but {} were provided.",
-                            input_types.len(),
-                            inputs.len()
-                        );
-                        let callee_inputs = inputs
-                            .iter()
-                            .zip(input_types.iter())
-                            .map(|(input, input_type)| match (input, input_type) {
-                                (Value::Future(future), ValueType::DynamicFuture) => {
-                                    Ok(Value::DynamicFuture(DynamicFuture::from_future(future)?))
-                                }
-                                (Value::DynamicRecord(dynamic_record), ValueType::Record(record_name)) => {
-                                    // Look up the owner visibility.
-                                    let owner_is_private =
-                                        target.substack().program().get_record(record_name)?.owner().is_private();
-                                    Ok(Value::Record(dynamic_record.to_record(owner_is_private)?))
-                                }
-                                (Value::DynamicRecord(dynamic_record), ValueType::ExternalRecord(locator)) => {
-                                    let record_program_id = locator.program_id();
-                                    let record_name = locator.resource();
-
-                                    // Obtain the program where the external record is defined (which must be imported inside the callee)
-                                    // TODO (dynamic_dispatch) make sure this handles substack-fetching correctly
-                                    let external_record_stack =
-                                        target.substack().get_external_stack(record_program_id)?;
-
-                                    // Look up the owner visibility.
-                                    let owner_is_private =
-                                        external_record_stack.program().get_record(record_name)?.owner().is_private();
-
-                                    Ok(Value::Record(dynamic_record.to_record(owner_is_private)?))
-                                }
-                                (Value::DynamicFuture(dynamic_future), ValueType::Future(locator)) => {
-                                    // Construct the dynamic future.
-                                    let future = dynamic_future.to_future()?;
-                                    // Ensure that the locator matches.
-                                    ensure!(
-                                        future.program_id() == locator.program_id(),
-                                        "Locator program ID does not match for dynamic future."
-                                    );
-                                    ensure!(
-                                        future.function_name() == locator.resource(),
-                                        "Locator resource does not match for dynamic future."
-                                    );
-
-                                    Ok(Value::Future(dynamic_future.to_future()?))
-                                }
-                                // For other types, we assume they are directly compatible.
-                                _ => Ok(input.clone()),
-                            })
-                            .collect::<Result<Vec<_>>>()?;
+                        let callee_inputs =
+                            convert_caller_inputs_to_callee_inputs(&inputs, input_types, target.substack())?;
                         // Construct the callee's version of the request.
                         let callee_request = Request::sign_dynamic(
                             private_key,
@@ -549,10 +396,6 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             *function.name(),
                             callee_inputs.iter(),
                             input_types,
-                            inputs.iter(),
-                            self.operand_types(),
-                            self.destination_types(),
-                            registers.request()?,
                             root_tvk,
                             is_root,
                             program_checksum,
@@ -572,18 +415,17 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             target.substack().execute_function::<A, _>(call_stack, console_caller, root_tvk, rng)?;
 
                         // Convert the callee's outputs to the caller's context.
-                        let caller_response_outputs = callee_response
-                            .dynamic_call_outputs(callee_request.caller_output_types().as_ref().unwrap())?;
+                        let caller_response_outputs = callee_response.caller_outputs()?;
 
                         // Return the request verification inputs and response.
-                        (request_verification_inputs, caller_response_outputs, None)
+                        (request_verification_inputs, caller_response_outputs)
                     }
-                    // If the circuit is in evaluate mode, then throw an error.
+                    // In `Evaluate` mode, throw an error.
                     CallStack::Evaluate(..) => {
                         bail!("Cannot 'execute' a function in 'evaluate' mode.")
                     }
-                    // If the circuit is in execute mode, then evaluate and execute the instructions.
-                    CallStack::Execute(authorization, ..) => {
+                    // In `Execute` mode, evaluate and execute the instructions.
+                    CallStack::Execute(authorization, _, translations) => {
                         // Get the target.
                         let Some(target) = target else {
                             bail!("Failed to resolve the target of the dynamic call in 'Authorize' mode.")
@@ -625,37 +467,13 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                 console_callee_response.outputs(),
                                 callee_response.outputs()
                             );
-                            bail!("Function '{}' outputs do not match in a 'call' instruction.", callee_function.name())
+                            bail!(
+                                "Function '{}' outputs do not match in a 'call.dynamic' instruction.",
+                                callee_function.name()
+                            )
                         }
 
-                        // Convert the callee's outputs to the caller's context.
-                        // TODO (@d0cd). This is an inelgant way to pass around this data. Redesign, including translation data preparation below.
-                        let caller_response = Response::new(
-                            callee_request.signer(),
-                            callee_request.network_id(),
-                            callee_request.program_id(),
-                            callee_request.function_name(),
-                            callee_request.inputs().len(),
-                            callee_request.tvk(),
-                            callee_request.tcm(),
-                            callee_response.dynamic_call_outputs(self.destination_types())?,
-                            self.destination_types(),
-                            &target
-                                .substack()
-                                .get_function_ref(target.function_name())?
-                                .outputs()
-                                .iter()
-                                .map(|output| match output.operand() {
-                                    Operand::Register(register) => Some(register.clone()),
-                                    _ => None,
-                                })
-                                .collect::<Vec<_>>(),
-                        )?;
-
-                        // Anonymous helper which synthesizes the translation
-                        // key for a given program-record combination (if it has
-                        // not been synthesized yet) and stores it in the
-                        // program's stack.
+                        // A helper function that synthesizes the translation key for a given program-record combination (if it has not been synthesized yet) and stores it in the program's stack.
                         let ensure_translation_proving_key =
                             |program_id: &ProgramID<N>, record_name: &Identifier<N>, rng: &mut R| -> Result<()> {
                                 let record_stack = match program_id == stack.program_id() {
@@ -666,7 +484,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                 record_stack.synthesize_translation_key::<A, R>(record_name, rng)
                             };
 
-                        let caller_console_input_ids = callee_request.caller_input_ids().clone().unwrap_or_default();
+                        let caller_console_input_ids = callee_request.caller_input_ids()?;
                         let callee_console_input_ids = callee_request.input_ids();
                         let callee_console_function_id = compute_function_id(
                             &U16::<N>::new(N::ID),
@@ -674,307 +492,95 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             callee_request.function_name(),
                         )?;
 
-                        let caller_input_types = self.operand_types();
-                        let callee_input_types = callee_function.input_types();
-                        let caller_console_inputs = inputs;
-                        let callee_console_inputs = callee_request.inputs();
-                        let mut translation_data = Vec::new();
-
-                        // TODO (dynamic_dispatch) move to a separate function to avoid clutter? Yes.
-                        // TODO (dynamic_dispatch) some of these might be redundant with earlier checks (others are not, caught bug here)
-                        assert_eq!(
-                            caller_input_types.len(),
-                            callee_input_types.len(),
-                            "Caller and callee input types should have the same length ({} vs. {})",
-                            caller_input_types.len(),
-                            callee_input_types.len()
-                        );
-                        assert_eq!(
-                            caller_console_inputs.len(),
-                            callee_console_inputs.len(),
-                            "Caller and callee console inputs should have the same length ({} vs. {})",
-                            caller_console_inputs.len(),
-                            callee_console_inputs.len()
-                        );
-                        assert_eq!(
-                            caller_console_input_ids.len(),
-                            callee_console_input_ids.len(),
-                            "Caller and callee console input IDs should have the same length ({} vs. {})",
-                            caller_console_input_ids.len(),
-                            callee_console_input_ids.len()
-                        );
-                        assert_eq!(
-                            caller_input_types.len(),
-                            caller_console_input_ids.len(),
-                            "Caller input types and input IDs should have the same length ({} vs. {})",
-                            caller_input_types.len(),
-                            caller_console_input_ids.len()
-                        );
-                        assert_eq!(
-                            caller_input_types.len(),
-                            caller_console_inputs.len(),
-                            "Caller input types and inputs should have the same length ({} vs. {})",
-                            caller_input_types.len(),
-                            caller_console_inputs.len()
-                        );
-
-                        for (
-                            operand_index,
-                            (
-                                caller_input_value,
-                                caller_input_id,
-                                caller_input_type,
-                                callee_input_value,
-                                callee_input_id,
-                                callee_input_type,
-                            ),
-                        ) in itertools::izip!(
-                            caller_console_inputs,
-                            caller_console_input_ids,
-                            caller_input_types,
-                            callee_console_inputs,
+                        // Collect input record translations.
+                        let input_translations = collect_input_translations(
+                            &inputs,
+                            &caller_console_input_ids,
+                            self.operand_types(),
+                            callee_request.inputs(),
                             callee_console_input_ids,
-                            callee_input_types
-                        )
-                        .enumerate()
-                        {
-                            match (
-                                caller_input_value,
-                                caller_input_id,
-                                caller_input_type,
-                                callee_input_value,
-                                callee_input_id,
-                                callee_input_type,
-                            ) {
-                                (
-                                    Value::DynamicRecord(record_dynamic),
-                                    InputID::DynamicRecord(id_dynamic),
-                                    ValueType::DynamicRecord,
-                                    Value::Record(record_static),
-                                    InputID::Record(_record_commitment, gamma, record_view_key, serial_number, _tag),
-                                    ValueType::Record(record_name),
-                                ) => {
-                                    let program_id = *callee_request.program_id();
+                            &callee_function.input_types(),
+                            callee_request.program_id(),
+                            callee_console_function_id,
+                            *callee_request.tvk(),
+                        );
 
-                                    ensure_translation_proving_key(&program_id, &record_name, rng)?;
-
-                                    translation_data.push(RecordTranslationData {
-                                        record_static: record_static.clone(),
-                                        record_dynamic,
-                                        program_id,
-                                        function_id: callee_console_function_id,
-                                        record_name,
-                                        is_input: true,
-                                        static_is_external: false,
-                                        tvk: *callee_request.tvk(),
-                                        record_view_key: Some(*record_view_key),
-                                        gamma: Some(*gamma),
-                                        id_static: *serial_number,
-                                        id_dynamic,
-                                        input_output_index: operand_index as u16,
-                                    });
-                                }
-                                (
-                                    Value::DynamicRecord(record_dynamic),
-                                    InputID::DynamicRecord(id_dynamic),
-                                    ValueType::DynamicRecord,
-                                    Value::Record(record_static),
-                                    InputID::ExternalRecord(id_static),
-                                    ValueType::ExternalRecord(record_locator),
-                                ) => {
-                                    let program_id = *record_locator.program_id();
-                                    let record_name = *record_locator.resource();
-
-                                    ensure_translation_proving_key(&program_id, &record_name, rng)?;
-
-                                    translation_data.push(RecordTranslationData {
-                                        record_static: record_static.clone(),
-                                        record_dynamic,
-                                        program_id,
-                                        function_id: callee_console_function_id,
-                                        record_name,
-                                        is_input: true,
-                                        static_is_external: true,
-                                        tvk: *callee_request.tvk(),
-                                        record_view_key: None,
-                                        gamma: None,
-                                        id_static: *id_static,
-                                        id_dynamic,
-                                        input_output_index: operand_index as u16,
-                                    });
-                                }
-                                _ => {} // No translation to perform.
-                            }
+                        // Synthesize translation proving keys and store input translations.
+                        // Push to the top bucket of the translation stack (the caller's level).
+                        for translation in input_translations {
+                            ensure_translation_proving_key(&translation.program_id, &translation.record_name, rng)?;
+                            translations
+                                .write()
+                                .last_mut()
+                                .ok_or_else(|| anyhow!("Translation stack is empty"))?
+                                .push(translation);
                         }
-                        // Collect record outputs to translate.
-                        let caller_console_outputs = caller_response.outputs();
-                        let caller_console_output_ids = caller_response.output_ids();
-                        let caller_output_types = self.destination_types();
-                        let callee_console_outputs = console_callee_response.outputs();
-                        let callee_console_output_ids = console_callee_response.output_ids();
-                        let callee_output_types = callee_function.output_types();
 
-                        // Check that all the lengths are the same.
-                        assert_eq!(
-                            caller_console_outputs.len(),
-                            callee_console_outputs.len(),
-                            "Caller and callee console outputs should have the same length ({} vs. {})",
-                            caller_console_outputs.len(),
-                            callee_console_outputs.len()
-                        );
-                        assert_eq!(
-                            caller_console_outputs.len(),
-                            caller_console_output_ids.len(),
-                            "Caller console outputs and output IDs should have the same length ({} vs. {})",
-                            caller_console_outputs.len(),
-                            caller_console_output_ids.len()
-                        );
-                        assert_eq!(
-                            caller_console_outputs.len(),
-                            caller_output_types.len(),
-                            "Caller console outputs and output types should have the same length ({} vs. {})",
-                            caller_console_outputs.len(),
-                            caller_output_types.len()
-                        );
-                        assert_eq!(
-                            callee_console_outputs.len(),
-                            callee_output_types.len(),
-                            "Callee console outputs and output types should have the same length ({} vs. {})",
-                            callee_console_outputs.len(),
-                            callee_output_types.len()
-                        );
-                        assert_eq!(
-                            callee_console_outputs.len(),
-                            callee_console_output_ids.len(),
-                            "Callee console outputs and output IDs should have the same length ({} vs. {})",
-                            callee_console_outputs.len(),
-                            callee_console_output_ids.len()
-                        );
+                        // Collect output record translations.
+                        let caller_console_outputs = callee_response.caller_outputs()?;
+                        let caller_console_output_ids = callee_response.caller_output_ids(
+                            callee_request.network_id(),
+                            callee_request.program_id(),
+                            callee_request.function_name(),
+                            callee_request.inputs().len(),
+                            callee_request.tvk(),
+                            callee_request.tcm(),
+                        )?;
 
-                        for (
-                            operand_index,
-                            (
-                                caller_output_value,
-                                caller_output_id,
-                                caller_output_type,
-                                callee_output_value,
-                                callee_output_id,
-                                callee_output_type,
-                            ),
-                        ) in itertools::izip!(
-                            caller_console_outputs,
-                            caller_console_output_ids,
-                            caller_output_types,
-                            callee_console_outputs,
-                            callee_console_output_ids,
-                            callee_output_types
-                        )
-                        .enumerate()
-                        {
-                            match (
-                                caller_output_value,
-                                caller_output_id,
-                                caller_output_type,
-                                callee_output_value,
-                                callee_output_id,
-                                callee_output_type,
-                            ) {
-                                (
-                                    Value::DynamicRecord(record_dynamic),
-                                    OutputID::DynamicRecord(id_dynamic),
-                                    ValueType::DynamicRecord,
-                                    Value::Record(record_static),
-                                    OutputID::Record(id_static, _checksum, _sender_ciphertext),
-                                    ValueType::Record(record_name),
-                                ) => {
-                                    let program_id = *callee_request.program_id();
+                        // Closure to compute record view key for non-external output records.
+                        let compute_record_view_key = |operand_index: usize,
+                                                       record_static: &console::program::Record<N, Plaintext<N>>|
+                         -> Result<Option<Field<N>>> {
+                            // Get the output index.
+                            let Some(Operand::Register(register)) = target
+                                .substack()
+                                .get_function_ref(target.function_name())?
+                                .outputs()
+                                .get_index(operand_index)
+                                .map(|op| op.operand())
+                            else {
+                                bail!("Expected output to be a register");
+                            };
+                            // Prepare the index as a field element.
+                            let index = Field::from_u64(register.locator());
+                            // Compute the randomizer as `HashToScalar(tvk || index)`.
+                            let randomizer = N::hash_to_scalar_psd2(&[*callee_request.tvk(), index])?;
+                            // Compute the record view key.
+                            let rvk = (*record_static.owner().to_group() * randomizer).to_x_coordinate();
+                            Ok(Some(rvk))
+                        };
 
-                                    ensure_translation_proving_key(&program_id, &record_name, rng)?;
+                        let output_translations = collect_output_translations(
+                            &caller_console_outputs,
+                            &caller_console_output_ids,
+                            self.destination_types(),
+                            callee_response.outputs(),
+                            callee_response.output_ids(),
+                            &callee_function.output_types(),
+                            callee_request.program_id(),
+                            callee_console_function_id,
+                            *callee_request.tvk(),
+                            num_inputs,
+                            compute_record_view_key,
+                        )?;
 
-                                    translation_data.push(RecordTranslationData {
-                                        record_static: record_static.clone(),
-                                        record_dynamic: record_dynamic.clone(),
-                                        program_id,
-                                        function_id: callee_console_function_id,
-                                        record_name,
-                                        is_input: false,
-                                        static_is_external: false,
-                                        tvk: *callee_request.tvk(),
-                                        record_view_key: {
-                                            // Get the output index.
-                                            let Some(Operand::Register(register)) = target
-                                                .substack()
-                                                .get_function_ref(target.function_name())?
-                                                .outputs()
-                                                .get_index(operand_index)
-                                                .map(|op| op.operand())
-                                            else {
-                                                bail!("Expected output to be a register");
-                                            };
-                                            // Prepare the index as a field element.
-                                            let index = Field::from_u64(register.locator());
-                                            // Compute the randomizer as `HashToScalar(tvk || index)`.
-                                            let randomizer = N::hash_to_scalar_psd2(&[*callee_request.tvk(), index])?;
-                                            // Compute the record view key.
-                                            let rvk =
-                                                (*record_static.owner().to_group() * randomizer).to_x_coordinate();
-
-                                            Some(rvk)
-                                        },
-                                        // gamma does not exist for output records and is irrelevant in the circuit when is_input = false
-                                        gamma: None,
-                                        id_static: *id_static,
-                                        id_dynamic: *id_dynamic,
-                                        input_output_index: (num_inputs + operand_index) as u16,
-                                    });
-                                }
-                                (
-                                    Value::DynamicRecord(record_dynamic),
-                                    OutputID::DynamicRecord(id_dynamic),
-                                    ValueType::DynamicRecord,
-                                    Value::Record(record_static),
-                                    OutputID::ExternalRecord(id_static),
-                                    ValueType::ExternalRecord(record_locator),
-                                ) => {
-                                    let program_id = *record_locator.program_id();
-                                    let record_name = *record_locator.resource();
-
-                                    ensure_translation_proving_key(&program_id, &record_name, rng)?;
-
-                                    translation_data.push(RecordTranslationData {
-                                        record_static: record_static.clone(),
-                                        record_dynamic: record_dynamic.clone(),
-                                        program_id,
-                                        function_id: callee_console_function_id,
-                                        record_name,
-                                        is_input: false,
-                                        static_is_external: true,
-                                        tvk: *callee_request.tvk(),
-                                        record_view_key: None,
-                                        gamma: None,
-                                        id_static: *id_static,
-                                        id_dynamic: *id_dynamic,
-                                        input_output_index: (num_inputs + operand_index) as u16,
-                                    });
-                                }
-                                _ => {} // No translation to perform.
-                            }
+                        // Synthesize translation proving keys and store output translations.
+                        // Push to the top bucket of the translation stack (the caller's level).
+                        for translation in output_translations {
+                            ensure_translation_proving_key(&translation.program_id, &translation.record_name, rng)?;
+                            translations
+                                .write()
+                                .last_mut()
+                                .ok_or_else(|| anyhow!("Translation stack is empty"))?
+                                .push(translation);
                         }
 
                         // Return the caller's request and response.
-                        (callee_request_verification_inputs, caller_response.outputs().to_vec(), Some(translation_data))
+                        (callee_request_verification_inputs, callee_response.caller_outputs()?)
                     }
                 }
             };
             lap!(timer, "Computed the request and response");
-
-            // TODO(dynamic_dispatch): If we let Registers keep e.g. an Arc<Stack>, we can just access Registers above.
-            // TODO (@d0cd)
-            if let Some(translation_data) = translation_data {
-                for translation_datum in translation_data {
-                    registers.insert_record_translation_data(translation_datum);
-                }
-            }
 
             // Inject the existing circuit.
             A::inject_r1cs(r1cs);
@@ -1089,7 +695,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
     }
 }
 
-// Information needed to verify the callee's request for a dynamic call.
+// Information needed to verify the callee's request in a dynamic call.
 struct RequestVerificationInputs<N: Network> {
     // The network ID.
     pub network_id: U16<N>,
@@ -1113,10 +719,6 @@ impl<N: Network> RequestVerificationInputs<N> {
     /// Constructs the request verification inputs from a request and caller input IDs.
     #[inline]
     pub fn from(request: &Request<N>) -> Result<Self> {
-        // Ensure the the caller input IDs are present.
-        let Some(caller_input_ids) = &request.caller_input_ids() else {
-            bail!("Missing caller input IDs for request verification inputs.")
-        };
         Ok(Self {
             network_id: *request.network_id(),
             program_id: *request.program_id(),
@@ -1125,9 +727,82 @@ impl<N: Network> RequestVerificationInputs<N> {
             sk_tag: *request.sk_tag(),
             tvk: *request.tvk(),
             tcm: *request.tcm(),
-            caller_input_ids: caller_input_ids.clone(),
+            caller_input_ids: request.caller_input_ids()?,
         })
     }
+}
+
+/// Converts caller inputs to callee inputs for a dynamic call.
+///
+/// In a dynamic call, the caller provides inputs in its own context (e.g., `DynamicRecord`),
+/// but the callee expects inputs in its context (e.g., `Record` with a specific type).
+/// This function performs the necessary conversions:
+///
+/// - `DynamicRecord` → `Record`: When the callee expects a `Record` or `ExternalRecord`,
+///   the dynamic record is converted to a concrete record by looking up the owner visibility
+///   from the callee's program.
+///
+/// - `Future` / `DynamicFuture`: These are not allowed as inputs to dynamic calls and will
+///   cause this function to return an error.
+///
+/// - All other types: Passed through unchanged, assuming direct compatibility.
+///
+/// # Arguments
+/// * `inputs` - The caller's input values
+/// * `input_types` - The callee's expected input types
+/// * `stack` - The callee's stack, used to look up record type information
+///
+/// # Returns
+/// A vector of converted values suitable for the callee's context.
+///
+/// # Errors
+/// Returns an error if:
+/// - A `Future` or `DynamicFuture` is provided as input
+/// - Record type lookup fails
+/// - Dynamic record conversion fails
+fn convert_caller_inputs_to_callee_inputs<N: Network>(
+    inputs: &[Value<N>],
+    input_types: &[ValueType<N>],
+    stack: &Stack<N>,
+) -> Result<Vec<Value<N>>> {
+    inputs
+        .iter()
+        .zip(input_types.iter())
+        .map(|(input, input_type)| {
+            match (input, input_type) {
+                // Convert DynamicRecord to Record when callee expects a Record.
+                (Value::DynamicRecord(dynamic_record), ValueType::Record(record_name)) => {
+                    // Look up the owner visibility from the callee's program.
+                    let owner_is_private = stack.program().get_record(record_name)?.owner().is_private();
+                    Ok(Value::Record(dynamic_record.to_record(owner_is_private)?))
+                }
+                // Convert DynamicRecord to Record when callee expects an ExternalRecord.
+                (Value::DynamicRecord(dynamic_record), ValueType::ExternalRecord(locator)) => {
+                    let record_program_id = locator.program_id();
+                    let record_name = locator.resource();
+
+                    // Obtain the program where the external record is defined.
+                    let external_record_stack = stack.get_external_stack(record_program_id)?;
+
+                    // Look up the owner visibility from the external program.
+                    let owner_is_private =
+                        external_record_stack.program().get_record(record_name)?.owner().is_private();
+
+                    Ok(Value::Record(dynamic_record.to_record(owner_is_private)?))
+                }
+                // Futures are not allowed as inputs to dynamic calls.
+                (Value::Future(_), _) => {
+                    bail!("A future cannot be an input to a dynamic call.")
+                }
+                // Dynamic futures are not allowed as inputs to dynamic calls.
+                (Value::DynamicFuture(_), _) => {
+                    bail!("A dynamic future cannot be an input to a dynamic call.")
+                }
+                // For all other types, pass through unchanged.
+                _ => Ok(input.clone()),
+            }
+        })
+        .collect()
 }
 
 // A reference to a stack, either local or external.
@@ -1264,4 +939,230 @@ fn resolve_dynamic_target<'a, N: Network>(
     } else {
         bail!("Dynamic call to '{program_id}/{function_name}' is invalid or unsupported.")
     }
+}
+
+/// Validates that all translation arrays have the same length.
+fn validate_translation_array_lengths(
+    context: &str,
+    caller_values_len: usize,
+    caller_ids_len: usize,
+    caller_types_len: usize,
+    callee_values_len: usize,
+    callee_ids_len: usize,
+    callee_types_len: usize,
+) {
+    // Ensure caller and callee have the same number of values.
+    assert_eq!(
+        caller_values_len, callee_values_len,
+        "{context}: caller and callee values should have the same length ({caller_values_len} vs. {callee_values_len})"
+    );
+    // Ensure caller values and IDs have the same length.
+    assert_eq!(
+        caller_values_len, caller_ids_len,
+        "{context}: caller values and IDs should have the same length ({caller_values_len} vs. {caller_ids_len})"
+    );
+    // Ensure caller values and types have the same length.
+    assert_eq!(
+        caller_values_len, caller_types_len,
+        "{context}: caller values and types should have the same length ({caller_values_len} vs. {caller_types_len})"
+    );
+    // Ensure callee values and IDs have the same length.
+    assert_eq!(
+        callee_values_len, callee_ids_len,
+        "{context}: callee values and IDs should have the same length ({callee_values_len} vs. {callee_ids_len})"
+    );
+    // Ensure callee values and types have the same length.
+    assert_eq!(
+        callee_values_len, callee_types_len,
+        "{context}: callee values and types should have the same length ({callee_values_len} vs. {callee_types_len})"
+    );
+}
+
+/// Collects input record translations from dynamic to static records.
+/// The caller is responsible for synthesizing translation proving keys.
+fn collect_input_translations<N: Network>(
+    caller_values: &[Value<N>],
+    caller_ids: &[InputID<N>],
+    caller_types: &[ValueType<N>],
+    callee_values: &[Value<N>],
+    callee_ids: &[InputID<N>],
+    callee_types: &[ValueType<N>],
+    callee_program_id: &ProgramID<N>,
+    function_id: Field<N>,
+    tvk: Field<N>,
+) -> Vec<RecordTranslationData<N>> {
+    // Validate that all arrays have the same length.
+    validate_translation_array_lengths(
+        "Inputs",
+        caller_values.len(),
+        caller_ids.len(),
+        caller_types.len(),
+        callee_values.len(),
+        callee_ids.len(),
+        callee_types.len(),
+    );
+
+    // Initialize the translations vector.
+    let mut translations = Vec::new();
+
+    // Iterate over all inputs, matching caller and callee data.
+    for (operand_index, (caller_value, caller_id, caller_type, callee_value, callee_id, callee_type)) in
+        itertools::izip!(caller_values, caller_ids, caller_types, callee_values, callee_ids, callee_types).enumerate()
+    {
+        match (caller_value, caller_id, caller_type, callee_value, callee_id, callee_type) {
+            // Case: DynamicRecord translates to a non-external Record.
+            (
+                Value::DynamicRecord(record_dynamic),
+                InputID::DynamicRecord(id_dynamic),
+                ValueType::DynamicRecord,
+                Value::Record(record_static),
+                InputID::Record(_record_commitment, gamma, record_view_key, serial_number, _tag),
+                ValueType::Record(record_name),
+            ) => {
+                // Add the translation data for this non-external record.
+                translations.push(RecordTranslationData {
+                    record_static: record_static.clone(),
+                    record_dynamic: record_dynamic.clone(),
+                    program_id: *callee_program_id,
+                    function_id,
+                    record_name: *record_name,
+                    is_input: true,
+                    static_is_external: false,
+                    tvk,
+                    record_view_key: Some(*record_view_key),
+                    gamma: Some(*gamma),
+                    id_static: *serial_number,
+                    id_dynamic: *id_dynamic,
+                    input_output_index: operand_index as u16,
+                });
+            }
+            // Case: DynamicRecord translates to an ExternalRecord.
+            (
+                Value::DynamicRecord(record_dynamic),
+                InputID::DynamicRecord(id_dynamic),
+                ValueType::DynamicRecord,
+                Value::Record(record_static),
+                InputID::ExternalRecord(id_static),
+                ValueType::ExternalRecord(record_locator),
+            ) => {
+                // Add the translation data for this external record.
+                translations.push(RecordTranslationData {
+                    record_static: record_static.clone(),
+                    record_dynamic: record_dynamic.clone(),
+                    program_id: *record_locator.program_id(),
+                    function_id,
+                    record_name: *record_locator.resource(),
+                    is_input: true,
+                    static_is_external: true,
+                    tvk,
+                    record_view_key: None,
+                    gamma: None,
+                    id_static: *id_static,
+                    id_dynamic: *id_dynamic,
+                    input_output_index: operand_index as u16,
+                });
+            }
+            // All other cases do not require translation.
+            _ => {}
+        }
+    }
+
+    translations
+}
+
+/// Collects output record translations from static to dynamic records.
+/// The `compute_record_view_key` closure computes the record view key for non-external records.
+fn collect_output_translations<N: Network>(
+    caller_values: &[Value<N>],
+    caller_ids: &[OutputID<N>],
+    caller_types: &[ValueType<N>],
+    callee_values: &[Value<N>],
+    callee_ids: &[OutputID<N>],
+    callee_types: &[ValueType<N>],
+    callee_program_id: &ProgramID<N>,
+    function_id: Field<N>,
+    tvk: Field<N>,
+    num_inputs: usize,
+    compute_record_view_key: impl Fn(usize, &console::program::Record<N, Plaintext<N>>) -> Result<Option<Field<N>>>,
+) -> Result<Vec<RecordTranslationData<N>>> {
+    // Validate that all arrays have the same length.
+    validate_translation_array_lengths(
+        "Outputs",
+        caller_values.len(),
+        caller_ids.len(),
+        caller_types.len(),
+        callee_values.len(),
+        callee_ids.len(),
+        callee_types.len(),
+    );
+
+    // Initialize the translations vector.
+    let mut translations = Vec::new();
+
+    // Iterate over all outputs, matching caller and callee data.
+    for (operand_index, (caller_value, caller_id, caller_type, callee_value, callee_id, callee_type)) in
+        itertools::izip!(caller_values, caller_ids, caller_types, callee_values, callee_ids, callee_types).enumerate()
+    {
+        match (caller_value, caller_id, caller_type, callee_value, callee_id, callee_type) {
+            // Case: DynamicRecord translates to a non-external Record.
+            (
+                Value::DynamicRecord(record_dynamic),
+                OutputID::DynamicRecord(id_dynamic),
+                ValueType::DynamicRecord,
+                Value::Record(record_static),
+                OutputID::Record(id_static, _checksum, _sender_ciphertext),
+                ValueType::Record(record_name),
+            ) => {
+                // Compute the record view key for this non-external record.
+                let record_view_key = compute_record_view_key(operand_index, record_static)?;
+
+                // Add the translation data for this non-external record.
+                translations.push(RecordTranslationData {
+                    record_static: record_static.clone(),
+                    record_dynamic: record_dynamic.clone(),
+                    program_id: *callee_program_id,
+                    function_id,
+                    record_name: *record_name,
+                    is_input: false,
+                    static_is_external: false,
+                    tvk,
+                    record_view_key,
+                    gamma: None,
+                    id_static: *id_static,
+                    id_dynamic: *id_dynamic,
+                    input_output_index: (num_inputs + operand_index) as u16,
+                });
+            }
+            // Case: DynamicRecord translates to an ExternalRecord.
+            (
+                Value::DynamicRecord(record_dynamic),
+                OutputID::DynamicRecord(id_dynamic),
+                ValueType::DynamicRecord,
+                Value::Record(record_static),
+                OutputID::ExternalRecord(id_static),
+                ValueType::ExternalRecord(record_locator),
+            ) => {
+                // Add the translation data for this external record.
+                translations.push(RecordTranslationData {
+                    record_static: record_static.clone(),
+                    record_dynamic: record_dynamic.clone(),
+                    program_id: *record_locator.program_id(),
+                    function_id,
+                    record_name: *record_locator.resource(),
+                    is_input: false,
+                    static_is_external: true,
+                    tvk,
+                    record_view_key: None,
+                    gamma: None,
+                    id_static: *id_static,
+                    id_dynamic: *id_dynamic,
+                    input_output_index: (num_inputs + operand_index) as u16,
+                });
+            }
+            // All other cases do not require translation.
+            _ => {}
+        }
+    }
+
+    Ok(translations)
 }

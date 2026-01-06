@@ -22,33 +22,28 @@ impl<N: Network> Serialize for Request<N> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match serializer.is_human_readable() {
             true => {
-                // TODO(@dynamic_dispatch): ensure optionals are set atomically.
-                let num_fields = if self.caller_input_ids.is_some() { 15 } else { 11 };
-                let mut transition = serializer.serialize_struct("Request", num_fields)?;
-                transition.serialize_field("signer", &self.signer)?;
-                transition.serialize_field("network", &self.network_id)?;
-                transition.serialize_field("program", &self.program_id)?;
-                transition.serialize_field("function", &self.function_name)?;
-                transition.serialize_field("input_ids", &self.input_ids)?;
-                transition.serialize_field("inputs", &self.inputs)?;
-                transition.serialize_field("signature", &self.signature)?;
-                transition.serialize_field("sk_tag", &self.sk_tag)?;
-                transition.serialize_field("tvk", &self.tvk)?;
-                transition.serialize_field("tcm", &self.tcm)?;
-                transition.serialize_field("scm", &self.scm)?;
-                if let Some(caller_input_ids) = &self.caller_input_ids {
-                    transition.serialize_field("caller_input_ids", caller_input_ids)?;
+                // Determine the number of fields based on whether is_dynamic is present.
+                let num_fields = match self.version() {
+                    RequestVersion::V1 => 11,
+                    RequestVersion::V2 => 12,
+                };
+                let mut request = serializer.serialize_struct("Request", num_fields)?;
+                request.serialize_field("signer", &self.signer)?;
+                request.serialize_field("network", &self.network_id)?;
+                request.serialize_field("program", &self.program_id)?;
+                request.serialize_field("function", &self.function_name)?;
+                request.serialize_field("input_ids", &self.input_ids)?;
+                request.serialize_field("inputs", &self.inputs)?;
+                request.serialize_field("signature", &self.signature)?;
+                request.serialize_field("sk_tag", &self.sk_tag)?;
+                request.serialize_field("tvk", &self.tvk)?;
+                request.serialize_field("tcm", &self.tcm)?;
+                request.serialize_field("scm", &self.scm)?;
+                // If the request is V2, serialize the dynamic flag.
+                if self.version() == RequestVersion::V2 {
+                    request.serialize_field("dynamic", &self.is_dynamic())?;
                 }
-                if let Some(caller_inputs) = &self.caller_inputs {
-                    transition.serialize_field("caller_inputs", caller_inputs)?;
-                }
-                if let Some(caller_output_types) = &self.caller_output_types {
-                    transition.serialize_field("caller_output_types", caller_output_types)?;
-                }
-                if let Some(caller_request) = &self.caller_request {
-                    transition.serialize_field("caller_request", caller_request)?;
-                }
-                transition.end()
+                request.end()
             }
             false => ToBytesSerializer::serialize_with_size_encoding(self, serializer),
         }
@@ -62,6 +57,7 @@ impl<'de, N: Network> Deserialize<'de> for Request<N> {
             true => {
                 // Parse the request from a string into a value.
                 let mut request = serde_json::Value::deserialize(deserializer)?;
+
                 // Recover the request.
                 Ok(Self::from((
                     // Retrieve the signer.
@@ -86,26 +82,8 @@ impl<'de, N: Network> Deserialize<'de> for Request<N> {
                     DeserializeExt::take_from_value::<D>(&mut request, "tcm")?,
                     // Retrieve the `scm`.
                     DeserializeExt::take_from_value::<D>(&mut request, "scm")?,
-                    // Retrieve the optional caller input IDs.
-                    serde_json::from_value(
-                        request.get_mut("caller_input_ids").unwrap_or(&mut serde_json::Value::Null).take(),
-                    )
-                    .map_err(de::Error::custom)?,
-                    // Retrieve the optional caller inputs.
-                    serde_json::from_value(
-                        request.get_mut("caller_inputs").unwrap_or(&mut serde_json::Value::Null).take(),
-                    )
-                    .map_err(de::Error::custom)?,
-                    // Retrieve the optional caller output types.
-                    serde_json::from_value(
-                        request.get_mut("caller_output_types").unwrap_or(&mut serde_json::Value::Null).take(),
-                    )
-                    .map_err(de::Error::custom)?,
-                    // Retrieve the optional caller Request.
-                    serde_json::from_value(
-                        request.get_mut("caller_request").unwrap_or(&mut serde_json::Value::Null).take(),
-                    )
-                    .map_err(de::Error::custom)?,
+                    // Retrieve the `dynamic` flag, if it exists.
+                    DeserializeExt::take_from_value::<D>(&mut request, "dynamic").ok(),
                 )))
             }
             false => FromBytesDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "request"),

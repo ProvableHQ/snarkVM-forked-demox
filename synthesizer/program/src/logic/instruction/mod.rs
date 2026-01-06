@@ -143,7 +143,7 @@ pub enum Instruction<N: Network> {
     /// Computes whether `signature` is valid for the given Ethereum `address` and `message` using ECDSA with SHA3-512 and raw inputs.
     ECDSAVerifySha3_512Eth(ECDSAVerifySha3_512Eth<N>),
     /// Gets a dynamic record entry.
-    GetDynamicRecord(GetDynamicRecord<N>),
+    GetRecordDynamic(GetRecordDynamic<N>),
     /// Computes whether `first` is greater than `second` as a boolean, storing the outcome in `destination`.
     GreaterThan(GreaterThan<N>),
     /// Computes whether `first` is greater than or equal to `second` as a boolean, storing the outcome in `destination`.
@@ -453,7 +453,7 @@ macro_rules! instruction {
 
             // Dynamic calls are introduced in `ConsensusVersion::V14`
             CallDynamic,
-            GetDynamicRecord,
+            GetRecordDynamic,
 
             // New opcodes should be added here, with a comment on which consensus version they were added in.
         }}
@@ -645,7 +645,7 @@ mod tests {
         // Sanity check the number of instructions is unchanged.
         // Note that the number of opcodes **MUST NOT** exceed u16::MAX.
         assert_eq!(
-            119,
+            121,
             Instruction::<CurrentNetwork>::OPCODES.len(),
             "Update me if the number of instructions changes."
         );

@@ -51,8 +51,6 @@ impl<N: Network> Stack<N> {
             verifying_keys.push((*function_name, (verifying_key, certificate)));
         }
 
-        // TODO(dynamic_dispatch): from new consensus version onwards, synthesize the record keys. Gate by consensus version.
-
         // Initialize a vector for the verifying keys and certificates.
         let mut translation_verifying_keys = Vec::with_capacity(self.program.records().len());
 
@@ -76,6 +74,12 @@ impl<N: Network> Stack<N> {
             translation_verifying_keys.push((*record_name, (verifying_key, certificate)));
         }
 
+        // If there are no program records, do not include translation verifying keys.
+        let translation_verifying_keys = match translation_verifying_keys.is_empty() {
+            true => None,
+            false => Some(translation_verifying_keys),
+        };
+
         finish!(timer);
 
         // Return the deployment.
@@ -83,9 +87,9 @@ impl<N: Network> Stack<N> {
             *self.program_edition,
             self.program.clone(),
             verifying_keys,
+            Some(self.program.to_checksum()),
+            Some(Address::zero()),
             translation_verifying_keys,
-            None,
-            None,
         )
     }
 
@@ -140,19 +144,6 @@ impl<N: Network> Stack<N> {
         // Sample a dummy `caller` for circuit synthesis.
         let caller = None;
 
-        // Check that the number of functions matches the number of verifying keys.
-        ensure!(
-            deployment.program().functions().len() == deployment.verifying_keys().len(),
-            "The number of functions in the program does not match the number of verifying keys"
-        );
-
-        // Check that the number of records matches the number of translation verifying keys.
-        ensure!(
-            deployment.program().records().len() == deployment.translation_verifying_keys().len(),
-            "The number of records in the program does not match the number of translation verifying keys"
-        );
-
-        // TODO (dynamic_dispatch) how does this check relate to translation verifying keys and consensus versions?
         #[cfg(not(any(test, feature = "test")))]
         // Skip the certificate verification if the consensus version is before ConsensusVersion::V8.
         // Circuit synthesis was changed in a backwards incompatible way in ConsensusVersion::V8.
@@ -204,7 +195,7 @@ impl<N: Network> Stack<N> {
             let is_root = true;
 
             // Compute the request, with a burner private key.
-            let request = Request::sign(
+            let request = Request::sign_static(
                 &burner_private_key,
                 *program_id,
                 *function.name(),
@@ -237,65 +228,6 @@ impl<N: Network> Stack<N> {
             call_stacks.push((function.name(), call_stack, assignments));
         }
 
-        // Iterate through the program records and produce translation assignments.
-        ensure!(
-            deployment.program().records().len() == deployment.translation_verifying_keys().len(),
-            "The number of records in the program does not match the number of translation verifying keys"
-        );
-        let translation_names_assignments = deployment
-            .program()
-            .records()
-            .iter()
-            .map(|(record_name, _record_type)| {
-                // Initialize a private key.
-                let private_key = PrivateKey::new(rng)?;
-                // Compute the address.
-                let address = Address::try_from(&private_key)?;
-
-                // TODO (dynamic_dispatch) should stack::sample be used here instead
-                // of rand? Also, some small improvements can be made here, eg in
-                // principle private_key itself is not necessary
-
-                // Construct a TranslationAssignment:
-                let program_id = *self.program_id();
-                let function_id = Field::<N>::from_u64(Uniform::rand(rng));
-                let record_name = *record_name;
-                let record_static = self.sample_record(&address, &record_name, Group::rand(rng), rng)?;
-                let record_dynamic = DynamicRecord::<N>::from_record(&record_static)?;
-                let translation_count = Uniform::rand(rng);
-                let tvk = Uniform::rand(rng);
-                let input_output_index = Uniform::rand(rng);
-                let record_view_key: Option<Field<N>> = Uniform::rand(rng);
-                let gamma: Option<Group<N>> = Uniform::rand(rng);
-                let id_dynamic = record_dynamic.to_id(function_id, tvk, U16::new(input_output_index)).unwrap();
-                let is_input = Uniform::rand(rng);
-                let static_is_external = Uniform::rand(rng);
-                let id_static = Uniform::rand(rng);
-
-                lap!(timer, "Sample the inputs to the translation circuit for record {record_name}");
-
-                Ok((
-                    record_name,
-                    TranslationAssignment::new(
-                        record_static,
-                        record_dynamic,
-                        program_id,
-                        function_id,
-                        record_name,
-                        is_input,
-                        static_is_external,
-                        translation_count,
-                        tvk,
-                        input_output_index,
-                        id_dynamic,
-                        id_static,
-                        record_view_key,
-                        gamma,
-                    ),
-                ))
-            })
-            .collect::<Result<Vec<_>>>()?;
-
         // Verify the certificates.
         let rngs = (0..call_stacks.len()).map(|_| StdRng::from_seed(seeded_rng.r#gen())).collect::<Vec<_>>();
         cfg_into_iter!(call_stacks).zip_eq(deployment.verifying_keys()).zip_eq(rngs).try_for_each(
@@ -318,18 +250,65 @@ impl<N: Network> Stack<N> {
             },
         )?;
 
-        // Verify the translation certificates.
-        ensure!(
-            translation_names_assignments.len() == deployment.translation_verifying_keys().len(),
-            "The number of records in the program does not match the number of translation verifying keys"
-        );
-        cfg_into_iter!(translation_names_assignments).zip(deployment.translation_verifying_keys()).try_for_each(
+        // If the deployment contains translation verifying keys, verify them.
+        if let Some(translation_verifying_keys) = deployment.translation_verifying_keys() {
+            // Iterate through the program records and produce translation assignments.
+            ensure!(
+                deployment.program().records().len() == translation_verifying_keys.len(),
+                "The number of records in the program does not match the number of translation verifying keys"
+            );
+            let translation_names_assignments = deployment
+                .program()
+                .records()
+                .iter()
+                .map(|(record_name, _record_type)| {
+                    // Construct a random `TranslationAssignment`.
+                    let program_id = *self.program_id();
+                    let function_id = Field::<N>::from_u64(Uniform::rand(rng));
+                    let record_name = *record_name;
+                    let record_static = self.sample_record(&Address::rand(rng), &record_name, Group::rand(rng), rng)?;
+                    let record_dynamic = DynamicRecord::<N>::from_record(&record_static)?;
+                    let translation_count = Uniform::rand(rng);
+                    let tvk = Uniform::rand(rng);
+                    let input_output_index = Uniform::rand(rng);
+                    let record_view_key: Option<Field<N>> = Uniform::rand(rng);
+                    let gamma: Option<Group<N>> = Uniform::rand(rng);
+                    let id_dynamic = record_dynamic.to_id(function_id, tvk, U16::new(input_output_index)).unwrap();
+                    let is_input = Uniform::rand(rng);
+                    let static_is_external = Uniform::rand(rng);
+                    let id_static = Uniform::rand(rng);
+
+                    lap!(timer, "Sample the inputs to the translation circuit for record {record_name}");
+
+                    Ok((
+                        record_name,
+                        TranslationAssignment::new(
+                            record_static,
+                            record_dynamic,
+                            program_id,
+                            function_id,
+                            record_name,
+                            is_input,
+                            static_is_external,
+                            translation_count,
+                            tvk,
+                            input_output_index,
+                            id_dynamic,
+                            id_static,
+                            record_view_key,
+                            gamma,
+                        ),
+                    ))
+                })
+                .collect::<Result<Vec<_>>>()?;
+
+            // Verify the translation certificates.
+            cfg_into_iter!(translation_names_assignments).zip(translation_verifying_keys).try_for_each(
             |((record_name, translation_assignment), (_, (verifying_key, certificate)))| {
                 // Synthesize the circuit.
                 match translation_assignment.to_circuit_assignment::<A>() {
                     Err(err) => Err(anyhow!("Failed to synthesize the circuit for '{record_name}': {err}")),
                     Ok(circuit_assignment) => {
-                        // TODO (dynamic_dispatch): unlike in the transition-verifying-key case, we only need one assignment per record name, here, correct?
                         // Ensure the certificate is valid.
                         ensure!(
                             certificate.verify(&record_name.to_string(), &circuit_assignment, verifying_key),
@@ -338,8 +317,8 @@ impl<N: Network> Stack<N> {
                         Ok(())
                     },
                 }
-            },
-        )?;
+            })?;
+        }
 
         finish!(timer);
 

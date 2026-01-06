@@ -2852,7 +2852,7 @@ mod sanity_checks {
         // Sample 'is_root'.
         let is_root = true;
         // Compute the request.
-        let request = Request::sign(
+        let request = Request::sign_static(
             private_key,
             program_id,
             function_name,

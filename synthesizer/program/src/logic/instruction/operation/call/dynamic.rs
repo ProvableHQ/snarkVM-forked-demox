@@ -21,7 +21,7 @@ use crate::{
 
 use console::{
     network::prelude::*,
-    program::{Register, RegisterType, ValueType},
+    program::{LiteralType, PlaintextType, Register, RegisterType, ValueType},
 };
 
 /// Dynamically calls the operands into the declared type.
@@ -30,8 +30,6 @@ use console::{
 /// The remaining operands are the arguments to the call.
 /// The destination registers along with their expected types are specified after the `into` keyword.
 /// i.e. `call.dynamic r0 r1 with r2 r3 (as address.private u64.private) into r4 r5 (as u64 dynamic.future);`
-// TODO (@d0cd) Consider "with" to delineate program and function names, e.g. dcall credits r0 with r0 r1 into r2 (as u64 dynamic.future);
-// TODO (@d0cd) Should we allow operands to be identifiers so that we can allow function names to be specified directly.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct CallDynamic<N: Network> {
     /// The operands.
@@ -176,10 +174,52 @@ impl<N: Network> CallDynamic<N> {
     pub fn output_types(
         &self,
         _stack: &impl StackTrait<N>,
-        _input_types: &[RegisterType<N>],
+        input_types: &[RegisterType<N>],
     ) -> Result<Vec<RegisterType<N>>> {
-        // TODO (@d0cd) fix for type check static records...
-        Ok(self.destination_types.clone().into_iter().map(RegisterType::from).collect())
+        // Ensure the number of input types is correct.
+        if input_types.len() < 3 {
+            bail!("Instruction '{}' expects at least 3 inputs, found {} inputs", Self::opcode(), input_types.len())
+        }
+        // Ensure the number of input types matches the number of operands.
+        if input_types.len() != self.operands.len() {
+            bail!(
+                "Instruction '{}' expects {} inputs, found {} inputs",
+                Self::opcode(),
+                self.operands.len(),
+                input_types.len()
+            )
+        }
+        // Ensure the number of the input types minus 3 matches the number of operand types.
+        // Note that the unwrap is safe since we check that there are at least three input types.
+        if input_types.len().checked_sub(3).unwrap() != self.operand_types.len() {
+            bail!(
+                "Instruction '{}' expects {} operand types, found {} operand types",
+                Self::opcode(),
+                self.operand_types.len(),
+                input_types.len().checked_sub(3).unwrap()
+            )
+        }
+        // Ensure the first three input types are field elements.
+        for (i, input_type) in input_types.iter().enumerate().take(3) {
+            if *input_type != RegisterType::Plaintext(PlaintextType::Literal(LiteralType::Field)) {
+                bail!("Instruction '{}' expects input {i} to be a field element, found '{input_type}'", Self::opcode())
+            }
+        }
+        // Ensure the remaining input types match the operand types.
+        for (i, operand_type) in self.operand_types.iter().enumerate() {
+            let input_type = &input_types[i + 3];
+            if RegisterType::from(operand_type) != *input_type {
+                bail!(
+                    "Instruction '{}' expects input {} to be of type '{}', found '{}'",
+                    Self::opcode(),
+                    i + 3,
+                    RegisterType::from(operand_type),
+                    input_type
+                )
+            }
+        }
+        // Return the output types.
+        Ok(self.destination_types.iter().cloned().map(RegisterType::from).collect())
     }
 }
 
@@ -273,7 +313,7 @@ impl<N: Network> Parser for CallDynamic<N> {
                 // Parse the whitespace from the string.
                 let (string, _) = Sanitizer::parse_whitespaces(string)?;
                 // Parse the operands from the string.
-                let (string, operands) = many_m_n(0, N::MAX_OPERANDS, complete(parse_operand))(string)?;
+                let (string, operands) = many_m_n(1, N::MAX_OPERANDS, complete(parse_operand))(string)?;
                 // Parse the operand types from the string.
                 let (string, operand_types) = parse_value_types(string)?;
                 // Return the string, the operands, and the operand types.
@@ -294,7 +334,7 @@ impl<N: Network> Parser for CallDynamic<N> {
                 // Parse the whitespace from the string.
                 let (string, _) = Sanitizer::parse_whitespaces(string)?;
                 // Parse the destinations from the string.
-                let (string, destinations) = many_m_n(0, N::MAX_OPERANDS, complete(parse_destination))(string)?;
+                let (string, destinations) = many_m_n(1, N::MAX_OPERANDS, complete(parse_destination))(string)?;
                 // Parse the destination types from the string.
                 let (string, destination_types) = parse_value_types(string)?;
                 // Return the string, the destinations, and the destination types.
@@ -522,7 +562,7 @@ mod tests {
             ],
         );
 
-        // // TODO (@d0cd) Support for this test case.
+        // // TODO (dynamic_dispatch) Support for this test case.
         // check_parser(
         //     "call.dynamic 'credits' 'aleo' 'transfer_public' with aleo1wfyyj2uvwuqw0c0dqa5x70wrawnlkkvuepn4y08xyaqfqqwweqys39jayw 100u64 (as address.private u6.private) into r0 (as dynamic.future)",
         //     Operand::ProgramID(ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap()),

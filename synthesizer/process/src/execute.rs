@@ -38,8 +38,10 @@ impl<N: Network> Process<N> {
         let root_tvk = None;
         // Initialize the trace.
         let trace = Arc::new(RwLock::new(Trace::new()));
+        // Initialize the translations.
+        let translations = Arc::new(RwLock::new(Vec::new()));
         // Initialize the call stack.
-        let call_stack = CallStack::execute(authorization, trace.clone())?;
+        let call_stack = CallStack::execute(authorization, trace.clone(), translations)?;
         lap!(timer, "Initialize call stack");
 
         // Retrieve the stack.

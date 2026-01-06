@@ -22,10 +22,19 @@ mod sign;
 mod string;
 mod verify;
 
-use crate::{Identifier, Plaintext, ProgramID, Record, Value, ValueType, compute_function_id};
+use crate::{DynamicRecord, Identifier, Plaintext, ProgramID, Record, Value, ValueType, compute_function_id};
 use snarkvm_console_account::{Address, ComputeKey, GraphKey, PrivateKey, Signature, ViewKey};
 use snarkvm_console_network::Network;
 use snarkvm_console_types::prelude::*;
+
+/// The version for a request.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(super) enum RequestVersion {
+    /// V1 requests do not have a `dynamic` flag and are implicitly static.
+    V1 = 1,
+    /// V2 requests include a `dynamic` flag to indicate whether or not the request is dynamic.
+    V2 = 2,
+}
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct Request<N: Network> {
@@ -51,18 +60,9 @@ pub struct Request<N: Network> {
     tcm: Field<N>,
     /// The signer commitment.
     scm: Field<N>,
-    /// The optional caller input IDs.
-    /// Note. These are only present if and only if the request is dynamic.
-    caller_input_ids: Option<Vec<InputID<N>>>,
-    /// The optional caller input values.
-    /// Note. These are only present if and only if the request is dynamic.
-    caller_inputs: Option<Vec<Value<N>>>,
-    /// The optional caller output types.
-    /// Note. These are only present if and only if the request is dynamic.
-    caller_output_types: Option<Vec<ValueType<N>>>,
-    /// The optional caller Request.
-    /// Note. These are only present if and only if the request is dynamic.
-    caller_request: Option<Box<Request<N>>>,
+    /// A flag indicating whether or not the request is dynamic.
+    /// Note that`None` indicates that the request is not dynamic.
+    dynamic: Option<bool>,
 }
 
 impl<N: Network>
@@ -78,31 +78,12 @@ impl<N: Network>
         Field<N>,
         Field<N>,
         Field<N>,
-        Option<Vec<InputID<N>>>,
-        Option<Vec<Value<N>>>,
-        Option<Vec<ValueType<N>>>,
-        Option<Box<Request<N>>>,
+        Option<bool>,
     )> for Request<N>
 {
     /// Note: See `Request::sign` to create the request. This method is used to eject from a circuit.
     fn from(
-        (
-            signer,
-            network_id,
-            program_id,
-            function_name,
-            input_ids,
-            inputs,
-            signature,
-            sk_tag,
-            tvk,
-            tcm,
-            scm,
-            caller_input_ids,
-            caller_inputs,
-            caller_output_types,
-            caller_request,
-        ): (
+        (signer, network_id, program_id, function_name, input_ids, inputs, signature, sk_tag, tvk, tcm, scm, dynamic): (
             Address<N>,
             U16<N>,
             ProgramID<N>,
@@ -114,13 +95,9 @@ impl<N: Network>
             Field<N>,
             Field<N>,
             Field<N>,
-            Option<Vec<InputID<N>>>,
-            Option<Vec<Value<N>>>,
-            Option<Vec<ValueType<N>>>,
-            Option<Box<Request<N>>>,
+            Option<bool>,
         ),
     ) -> Self {
-        // TODO (@d0cd) Verify that adding checks here does not create failure cases.
         // Ensure that the number of inputs matches the number of input IDs.
         if inputs.len() != input_ids.len() {
             N::halt(format!(
@@ -128,29 +105,6 @@ impl<N: Network>
                 input_ids.len(),
                 inputs.len()
             ))
-        }
-
-        match (caller_input_ids.as_ref(), caller_inputs.as_ref()) {
-            (Some(caller_input_ids), Some(caller_inputs)) => {
-                // Ensure that the number of caller inputs matches the number of caller input IDs.
-                if caller_inputs.len() != caller_input_ids.len() {
-                    N::halt(format!(
-                        "Invalid request: mismatching number of caller input IDs ({}) and caller inputs ({})",
-                        caller_input_ids.len(),
-                        caller_inputs.len()
-                    ))
-                }
-                // Ensure that the number of caller inputs matches the number of inputs.
-                if caller_inputs.len() != inputs.len() {
-                    N::halt(format!(
-                        "Invalid request: mismatching number of caller inputs ({}) and inputs ({})",
-                        caller_inputs.len(),
-                        inputs.len()
-                    ))
-                }
-            }
-            (None, None) => {}
-            _ => N::halt("Invalid request: mismatching presence of caller input IDs and caller inputs"),
         }
 
         // Ensure the network ID is correct.
@@ -169,10 +123,7 @@ impl<N: Network>
                 tvk,
                 tcm,
                 scm,
-                caller_input_ids,
-                caller_inputs,
-                caller_output_types,
-                caller_request,
+                dynamic,
             }
         }
     }
@@ -246,29 +197,80 @@ impl<N: Network> Request<N> {
         &self.scm
     }
 
-    /// Returns the optional caller input IDs.
-    pub const fn caller_input_ids(&self) -> &Option<Vec<InputID<N>>> {
-        &self.caller_input_ids
-    }
-
-    /// Returns the optional caller input values.
-    pub const fn caller_inputs(&self) -> &Option<Vec<Value<N>>> {
-        &self.caller_inputs
-    }
-
-    /// Returns the optional caller Request.
-    pub const fn caller_output_types(&self) -> &Option<Vec<ValueType<N>>> {
-        &self.caller_output_types
-    }
-
-    /// Returns the optional caller Request.
-    pub const fn caller_request(&self) -> &Option<Box<Request<N>>> {
-        &self.caller_request
+    /// Returns the dynamic flag.
+    pub const fn dynamic(&self) -> Option<bool> {
+        self.dynamic
     }
 
     /// Returns whether or not the request is dynamic.
     pub fn is_dynamic(&self) -> bool {
-        self.caller_input_ids.is_some()
+        self.dynamic.unwrap_or(false)
+    }
+
+    /// Returns the version for this request.
+    pub(super) fn version(&self) -> RequestVersion {
+        match self.dynamic {
+            None => RequestVersion::V1,
+            Some(_) => RequestVersion::V2,
+        }
+    }
+
+    /// Returns the expected caller input IDs for a dynamic call by:
+    ///
+    /// - converting all record inputs to dynamic record inputs
+    /// - leaving all other inputs unchanged.
+    ///
+    /// and then computing their corresponding input IDs.
+    pub fn caller_input_ids(&self) -> Result<Vec<InputID<N>>> {
+        // Compute the function ID.
+        let function_id = compute_function_id(&self.network_id, &self.program_id, &self.function_name)?;
+
+        ensure!(
+            self.input_ids().len() == self.inputs.len(),
+            "Mismatched number of input IDs and inputs: {} vs. {}",
+            self.input_ids().len(),
+            self.inputs.len(),
+        );
+
+        // Compute and return the caller input IDs.
+        self.input_ids()
+            .iter()
+            .zip(self.inputs.iter())
+            .enumerate()
+            .map(|(index, (input_id, input))| match (input_id, input) {
+                (InputID::Constant(..), Value::Plaintext(..))
+                | (InputID::Public(..), Value::Plaintext(..))
+                | (InputID::Private(..), Value::Plaintext(..))
+                | (InputID::DynamicRecord(..), Value::DynamicRecord(..)) => Ok(*input_id),
+                (InputID::Record(..), Value::Record(record)) | (InputID::ExternalRecord(..), Value::Record(record)) => {
+                    // Convert index to u16.
+                    let index = u16::try_from(index).or_halt_with::<N>("Input index exceeds u16");
+                    // Convert the record to a dynamic record.
+                    let caller_input = Value::DynamicRecord(DynamicRecord::from_record(record)?);
+                    // Compute the input ID for the dynamic record.
+                    InputID::dynamic_record(function_id, &caller_input, self.tvk, index)
+                }
+                _ => bail!("Mismatching input ID and input value at index {index}"),
+            })
+            .collect()
+    }
+
+    /// Returns the expected caller inputs for a dynamic call by:
+    /// - converting all record inputs to dynamic record inputs
+    /// - leaving all other inputs unchanged.
+    pub fn caller_inputs(&self) -> Result<Vec<Value<N>>> {
+        self.inputs
+            .iter()
+            .map(|input| match input {
+                Value::Record(record) => {
+                    // This covers both the non-external and external record cases.
+                    Ok(Value::DynamicRecord(DynamicRecord::from_record(record)?))
+                }
+                Value::Future(_) => bail!("A future cannot be an input to a request."),
+                Value::DynamicFuture(_) => bail!("A dynamic future cannot be an input to a request."),
+                _ => Ok(input.clone()),
+            })
+            .collect::<Result<Vec<_>>>()
     }
 }
 
@@ -325,20 +327,8 @@ mod test_helpers {
 
                 // Compute the signed request.
                 let request = if bool::rand(rng) {
-                    Request::sign(&private_key, program_id, function_name, inputs.into_iter(), &input_types, root_tvk, is_root, program_checksum, rng).unwrap()
+                    Request::sign_static(&private_key, program_id, function_name, inputs.into_iter(), &input_types, root_tvk, is_root, program_checksum, rng).unwrap()
                 } else {
-                    // Sample the caller request.
-                    let caller_request = Request::sign(
-                        &private_key,
-                        program_id,
-                        Identifier::from_str("caller_function").unwrap(),
-                        inputs.clone().into_iter(),
-                        &input_types,
-                        root_tvk,
-                        is_root,
-                        program_checksum,
-                        rng,
-                    ).unwrap();
                     // Compute the dynamic signed request.
                     Request::sign_dynamic(
                         &private_key,
@@ -346,10 +336,6 @@ mod test_helpers {
                         function_name,
                         inputs.clone().into_iter(),
                         &input_types,
-                        inputs.into_iter(),
-                        &input_types,
-                        &[],
-                        &caller_request,
                         root_tvk,
                         is_root,
                         program_checksum,

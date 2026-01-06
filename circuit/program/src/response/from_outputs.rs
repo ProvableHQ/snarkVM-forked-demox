@@ -266,7 +266,7 @@ impl<A: Aleo> Response<A> {
             .collect();
 
         // Return the response.
-        Self { output_ids, outputs, is_dynamic: false }
+        Self { output_ids, outputs }
     }
 }
 
@@ -425,12 +425,12 @@ mod tests {
     #[rustfmt::skip]
     fn test_from_outputs_constant() -> Result<()> {
         // Static response without records.
-        check_from_outputs(Mode::Constant, "test.aleo", "foo", false, false, count_less_than!(19395, 4, 1497, 1505))?;
-        check_from_outputs(Mode::Constant, "credits.aleo", "transfer_public", false, false, count_less_than!(1009, 4, 1497, 1505))?; 
+        check_from_outputs(Mode::Constant, "test.aleo", "foo", false, false, count_less_than!(19397, 4, 1497, 1505))?;
+        check_from_outputs(Mode::Constant, "credits.aleo", "transfer_public", false, false, count_less_than!(1011, 4, 1497, 1505))?; 
 
         // Static response with records.
-        check_from_outputs(Mode::Constant, "test.aleo", "foo", false, true, count_less_than!(19441, 7, 13274, 13300))?;
-        check_from_outputs(Mode::Constant, "credits.aleo", "transfer_public", false, true, count_less_than!(5172, 7, 13376, 13402))?;
+        check_from_outputs(Mode::Constant, "test.aleo", "foo", false, true, count_less_than!(19445, 7, 13274, 13300))?;
+        check_from_outputs(Mode::Constant, "credits.aleo", "transfer_public", false, true, count_less_than!(5176, 7, 13376, 13402))?;
 
 
         // Dynamic response without records.
@@ -448,20 +448,20 @@ mod tests {
     #[rustfmt::skip]
     fn test_from_outputs_public() -> Result<()> {
         // Static response without records.
-        check_from_outputs(Mode::Public, "test.aleo", "foo", false, false, count_is!(<=19395, 4, 3762, 3770))?;
+        check_from_outputs(Mode::Public, "test.aleo", "foo", false, false, count_is!(<=19397, 4, 3762, 3770))?;
         check_from_outputs(Mode::Public, "credits.aleo", "transfer_public", false, false, count_is!(1009, 4, 3762, 3770))?;
 
         // Static response with records.
-        check_from_outputs(Mode::Public, "test.aleo", "foo", false, true, count_is!(<=18688, 7, 18057, 18085))?;
+        check_from_outputs(Mode::Public, "test.aleo", "foo", false, true, count_is!(<=18692, 7, 18057, 18085))?;
         check_from_outputs(Mode::Public, "credits.aleo", "transfer_public", false, true, count_is!(4419, 7, 18159, 18187))?;
 
         // Dynamic response without records.
-        check_from_outputs(Mode::Public, "test.aleo", "foo", true, false, count_is!(713, 4, 6611, 6625))?;
-        check_from_outputs(Mode::Public, "credits.aleo", "transfer_public", true, false, count_is!(713, 4, 6611, 6625))?;
+        check_from_outputs(Mode::Public, "test.aleo", "foo", true, false, count_is!(705, 4, 5472, 5486))?;
+        check_from_outputs(Mode::Public, "credits.aleo", "transfer_public", true, false, count_is!(707, 4, 5677, 5691))?;
 
         // Dynamic response with records.
-        check_from_outputs(Mode::Public, "test.aleo", "foo", true, true, count_is!(4095, 7, 22039, 22077))?;
-        check_from_outputs(Mode::Public, "credits.aleo", "transfer_public", true, true, count_is!(3963, 7, 22211, 22249))?;
+        check_from_outputs(Mode::Public, "test.aleo", "foo", true, true, count_is!(4087, 7, 19890, 19924))?;
+        check_from_outputs(Mode::Public, "credits.aleo", "transfer_public", true, true, count_is!(3957, 7, 20267, 20301))?;
 
         Ok(())
     }
@@ -470,20 +470,20 @@ mod tests {
     #[rustfmt::skip]
     fn test_from_outputs_private() -> Result<()> {
         // Static response without records.
-        check_from_outputs(Mode::Private, "test.aleo", "foo", false, false, count_is!(<=19395, 4, 3762, 3770))?;
+        check_from_outputs(Mode::Private, "test.aleo", "foo", false, false, count_is!(<=19397, 4, 3762, 3770))?;
         check_from_outputs(Mode::Private, "credits.aleo", "transfer_public", false, false, count_is!(1009, 4, 3762, 3770))?;
 
         // Static response with records.
-        check_from_outputs(Mode::Private, "test.aleo", "foo", false, true, count_is!(<=18688, 7, 18057, 18085))?;
+        check_from_outputs(Mode::Private, "test.aleo", "foo", false, true, count_is!(<=18692, 7, 18057, 18085))?;
         check_from_outputs(Mode::Private, "credits.aleo", "transfer_public", false, true, count_is!(4419, 7, 18159, 18187))?;
 
         // Dynamic response without records.
-        check_from_outputs(Mode::Private, "test.aleo", "foo", true, false, count_is!(713, 4, 6611, 6625))?;
-        check_from_outputs(Mode::Private, "credits.aleo", "transfer_public", true, false, count_is!(713, 4, 6611, 6625))?;
+        check_from_outputs(Mode::Private, "test.aleo", "foo", true, false, count_is!(705, 4, 5472, 5486))?;
+        check_from_outputs(Mode::Private, "credits.aleo", "transfer_public", true, false, count_is!(707, 4, 5677, 5691))?;
 
         // Dynamic response with records.
-        check_from_outputs(Mode::Private, "test.aleo", "foo", true, true, count_is!(4095, 7, 22039, 22077))?;
-        check_from_outputs(Mode::Private, "credits.aleo", "transfer_public", true, true, count_is!(3963, 7, 22211, 22249))?;
+        check_from_outputs(Mode::Private, "test.aleo", "foo", true, true, count_is!(4087, 7, 19890, 19924))?;
+        check_from_outputs(Mode::Private, "credits.aleo", "transfer_public", true, true, count_is!(3957, 7, 20267, 20301))?;
 
         Ok(())
     }

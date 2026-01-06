@@ -34,7 +34,6 @@ pub enum OutputID<A: Aleo> {
     /// The hash of the future output.
     Future(Field<A>),
     /// The hash of the external record's (function_id, record, tvk, output index).
-    // TODO (@d0cd): Verify that `function_id` is correct.
     DynamicRecord(Field<A>),
     // The hash of the dynamic future output.
     DynamicFuture(Field<A>),
@@ -63,8 +62,8 @@ impl<A: Aleo> Inject for OutputID<A> {
             // Inject the expected hash as `Mode::Public`.
             console::OutputID::Future(hash) => Self::Future(Field::new(Mode::Public, hash)),
             // Inject the expected hash as `Mode::Public`.
-            // TODO (@d0cd): Verify that the hash is hiding.
             console::OutputID::DynamicRecord(hash) => Self::DynamicRecord(Field::new(Mode::Public, hash)),
+            // Inject the expected hash as `Mode::Public`.
             console::OutputID::DynamicFuture(hash) => Self::DynamicFuture(Field::new(Mode::Public, hash)),
         }
     }
@@ -208,9 +207,6 @@ pub struct Response<A: Aleo> {
     output_ids: Vec<OutputID<A>>,
     /// The function outputs.
     outputs: Vec<Value<A>>,
-    /// TODO (@d0cd): Consider removing
-    /// Whether or not the response is dynamic.
-    is_dynamic: bool,
 }
 
 impl<A: Aleo> Response<A> {
@@ -222,11 +218,6 @@ impl<A: Aleo> Response<A> {
     /// Returns the function outputs.
     pub fn outputs(&self) -> &[Value<A>] {
         &self.outputs
-    }
-
-    /// Returns whether or not the response is dynamic.
-    pub fn is_dynamic(&self) -> bool {
-        self.is_dynamic
     }
 }
 
@@ -243,7 +234,6 @@ impl<A: Aleo> Eject for Response<A> {
         Self::Primitive::from((
             self.output_ids.iter().map(|output_id| output_id.eject_value()).collect(),
             self.outputs.eject_value(),
-            self.is_dynamic,
         ))
     }
 }

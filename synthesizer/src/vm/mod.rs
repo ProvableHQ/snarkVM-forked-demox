@@ -1633,9 +1633,9 @@ function do:
             deployment.edition(),
             deployment.program().clone(),
             vks_with_overreport,
-            Vec::new(),
             deployment.program_checksum(),
             deployment.program_owner(),
+            deployment.translation_verifying_keys().clone(),
         )
         .unwrap();
         let adjusted_transaction = Transaction::from_deployment(program_owner, adjusted_deployment, fee).unwrap();
@@ -1695,9 +1695,9 @@ function do:
             deployment.edition(),
             deployment.program().clone(),
             vks_with_underreport,
-            Vec::new(),
             deployment.program_checksum(),
             deployment.program_owner(),
+            deployment.translation_verifying_keys().clone(),
         )
         .unwrap();
         let deployment_id = adjusted_deployment.to_deployment_id().unwrap();
@@ -1777,9 +1777,9 @@ function do:
             deployment.edition(),
             deployment.program().clone(),
             vks_with_underreport,
-            Vec::new(),
             deployment.program_checksum(),
             deployment.program_owner(),
+            deployment.translation_verifying_keys().clone(),
         )
         .unwrap();
         let deployment_id = adjusted_deployment.to_deployment_id().unwrap();
@@ -2501,6 +2501,8 @@ finalize transfer_public_to_private:
         // Get the address of the wrapper program.
         let wrapper_program_id = ProgramID::from_str("credits_wrapper.aleo").unwrap();
 
+        println!("PRINT STRART");
+
         // Deploy the wrapper program.
         let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
 
@@ -2509,6 +2511,23 @@ finalize transfer_public_to_private:
 
         // Update the VM.
         vm.add_next_block(&block).unwrap();
+
+        // Check the balance of the caller.
+        let balance = match vm
+            .finalize_store()
+            .get_value_confirmed(
+                credits_program_id,
+                account_mapping_name,
+                &Plaintext::from(Literal::Address(caller_address)),
+            )
+            .unwrap()
+        {
+            Some(Value::Plaintext(Plaintext::Literal(Literal::U64(balance), _))) => *balance,
+            _ => panic!("Expected a valid balance"),
+        };
+        assert_eq!(balance, 182_499_995_767_962, "Update me if the initial balance changes.");
+
+        println!("PRINT END");
 
         // Call the wrapper program to transfer credits from the caller to the recipient.
         let transaction = vm
@@ -2706,7 +2725,6 @@ finalize transfer_public_to_private:
             tcm,
             scm,
             None,
-            None,
         )
         .unwrap();
 
@@ -2836,7 +2854,6 @@ finalize transfer_public_to_private:
             tpk,
             tcm,
             scm,
-            None,
             None,
         )
         .unwrap();
@@ -2973,7 +2990,6 @@ function add_thrice:
             tpk,
             tcm,
             scm,
-            None,
             None,
         )
         .unwrap();

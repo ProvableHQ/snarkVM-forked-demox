@@ -58,6 +58,8 @@ impl<N: Network> Parser for DynamicRecord<N> {
         let (string, _) = Sanitizer::parse(string)?;
         // Parse the "_nonce" tag from the string.
         let (string, _) = tag("_nonce")(string)?;
+        // Parse the whitespace from the string.
+        let (string, _) = Sanitizer::parse_whitespaces(string)?;
         // Parse the ":" from the string.
         let (string, _) = tag(":")(string)?;
         // Parse the whitespace and comments from the string.
@@ -81,8 +83,8 @@ impl<N: Network> Parser for DynamicRecord<N> {
             (string, None) => (string, U8::zero()),
             // If there is a version, then parse the version from the string.
             (string, Some(_)) => {
-                // Parse the whitespace and comments from the string.
-                let (string, _) = Sanitizer::parse(string)?;
+                // Parse the whitespace from the string.
+                let (string, _) = Sanitizer::parse_whitespaces(string)?;
                 // Parse the ":" from the string.
                 let (string, _) = tag(":")(string)?;
                 // Parse the whitespace and comments from the string.
@@ -97,7 +99,7 @@ impl<N: Network> Parser for DynamicRecord<N> {
         // Parse the '}' from the string.
         let (string, _) = tag("}")(string)?;
         // Output the dynamic record.
-        Ok((string, DynamicRecord::new_unchecked(owner, root, nonce, version, None, None)))
+        Ok((string, DynamicRecord::new_unchecked(owner, root, nonce, version, None)))
     }
 }
 

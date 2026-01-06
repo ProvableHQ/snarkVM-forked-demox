@@ -20,21 +20,24 @@ impl<N: Network> Serialize for Deployment<N> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match serializer.is_human_readable() {
             true => {
-                // Note: `Deployment::version` checks that either both or neither of the program checksum and program owner are present.
+                // Note: `Deployment::version` checks optional fields to determine the version.
                 let len = match self.version().map_err(ser::Error::custom)? {
                     DeploymentVersion::V1 => 3,
                     DeploymentVersion::V2 => 5,
+                    DeploymentVersion::V3 => 6,
                 };
                 let mut deployment = serializer.serialize_struct("Deployment", len)?;
                 deployment.serialize_field("edition", &self.edition)?;
                 deployment.serialize_field("program", &self.program)?;
                 deployment.serialize_field("verifying_keys", &self.verifying_keys)?;
-                deployment.serialize_field("translation_verifying_keys", &self.translation_verifying_keys)?;
                 if let Some(program_checksum) = &self.program_checksum {
                     deployment.serialize_field("program_checksum", program_checksum)?;
                 }
                 if let Some(program_owner) = &self.program_owner {
                     deployment.serialize_field("program_owner", program_owner)?;
+                }
+                if let Some(translation_verifying_keys) = &self.translation_verifying_keys {
+                    deployment.serialize_field("translation_verifying_keys", translation_verifying_keys)?;
                 }
                 deployment.end()
             }
@@ -59,8 +62,6 @@ impl<'de, N: Network> Deserialize<'de> for Deployment<N> {
                     DeserializeExt::take_from_value::<D>(&mut deployment, "program")?,
                     // Retrieve the verifying keys.
                     DeserializeExt::take_from_value::<D>(&mut deployment, "verifying_keys")?,
-                    // Retrieve the translation verifying keys.
-                    DeserializeExt::take_from_value::<D>(&mut deployment, "translation_verifying_keys")?,
                     // Retrieve the program checksum, if it exists.
                     serde_json::from_value(
                         deployment.get_mut("program_checksum").unwrap_or(&mut serde_json::Value::Null).take(),
@@ -69,6 +70,11 @@ impl<'de, N: Network> Deserialize<'de> for Deployment<N> {
                     // Retrieve the owner, if it exists.
                     serde_json::from_value(
                         deployment.get_mut("program_owner").unwrap_or(&mut serde_json::Value::Null).take(),
+                    )
+                    .map_err(de::Error::custom)?,
+                    // Retrieve the translation verifying keys, if it exists.
+                    serde_json::from_value(
+                        deployment.get_mut("translation_verifying_keys").unwrap_or(&mut serde_json::Value::Null).take(),
                     )
                     .map_err(de::Error::custom)?,
                 )
@@ -93,6 +99,7 @@ mod tests {
         for expected in [
             test_helpers::sample_deployment_v1(Uniform::rand(rng), rng),
             test_helpers::sample_deployment_v2(Uniform::rand(rng), rng),
+            test_helpers::sample_deployment_v3(Uniform::rand(rng), rng),
         ] {
             // Serialize
             let expected_string = &expected.to_string();
@@ -115,6 +122,7 @@ mod tests {
         for expected in [
             test_helpers::sample_deployment_v1(Uniform::rand(rng), rng),
             test_helpers::sample_deployment_v2(Uniform::rand(rng), rng),
+            test_helpers::sample_deployment_v3(Uniform::rand(rng), rng),
         ] {
             // Serialize
             let expected_bytes = expected.to_bytes_le()?;

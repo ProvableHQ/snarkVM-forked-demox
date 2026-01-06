@@ -21,7 +21,6 @@ use console::{
     network::Network,
     prelude::{Result, bail},
     program::{
-        DynamicRecord,
         Future,
         Identifier,
         Literal,
@@ -40,47 +39,6 @@ use console::{
 };
 use rand::{CryptoRng, Rng};
 use snarkvm_synthesizer_snark::{ProvingKey, VerifyingKey};
-
-// TODO (dynamic_dispatch) document
-// TODO (dynamic_dispatch) move to a better place (cannot be in process:Translation because of circular dependencies)
-// TODO (dynamic_dispatch) change visibility of internals, add constructors
-/// Data collected during execution to prove record translation in dynamic
-/// calls. It largely mirrors the `TranslationAssignment` struct in
-/// `process::trace::translation::assignment.rs`.
-#[derive(Clone, Debug)]
-pub struct RecordTranslationData<N: Network> {
-    /// The static record.
-    pub record_static: Record<N, Plaintext<N>>,
-    /// The dynamic record.
-    pub record_dynamic: DynamicRecord<N>,
-    /// The ID of the program where the static record is defined (whether external or not).
-    pub program_id: ProgramID<N>,
-    /// The function ID of the callee in the dynamic call.
-    pub function_id: Field<N>,
-    /// The name of the static record.
-    pub record_name: Identifier<N>,
-    /// True if translation is happening for an input to `dynamic.call` (static record is being produced) or an output of `dynamic.call` (static record is being consumed).
-    pub is_input: bool,
-    /// Whether the value type corresponding to the static record is `Record` or `ExternalRecord`.
-    pub static_is_external: bool,
-    /// The view key of the transition containing the dynamic call.
-    pub tvk: Field<N>,
-    /// The record view key of the static record. Irrelevant if `static_is_external` is true.
-    pub record_view_key: Option<Field<N>>,
-    /// The additional point used to produce the serial number. Irrelevant if `is_input` is false or `static_is_external` is true.
-    pub gamma: Option<Group<N>>,
-    // Note that the first three dynamic.call operands are reserved for call-related data, *however* this operand index still starts at 0 and is the same for caller and callee.
-    pub input_output_index: u16,
-    /// Index of the input operand or output destination that contains the (dynamic and static) record.
-    // Note that the first three dynamic.call operands are reserved for call-related data, *however* this operand index still starts at 0 and is the same for caller and callee.
-    pub id_dynamic: Field<N>,
-    /// The ID of the static record:
-    /// - If the static record is external, this is its `InputID` = `OutputID`.
-    /// - If the static record is not external, this is
-    ///    - Its `InputID`, i. e. its serial number, if the record is an input.
-    ///    - Its `OutputID`, i. e. its commitment, if the record is an output.
-    pub id_static: Field<N>,
-}
 
 /// This trait is intended to be implemented only by `snarkvm_synthesizer_process::Stack`.
 ///
@@ -198,8 +156,11 @@ pub trait StackTrait<N: Network> {
     /// Returns a reference to the function with the given function name.
     fn get_function_ref(&self, function_name: &Identifier<N>) -> Result<&Function<N>>;
 
-    /// Returns the expected number of calls for the given function name.
-    fn get_number_of_calls(&self, function_name: &Identifier<N>) -> Result<usize>;
+    /// Returns the minimum number of calls for the given function name.
+    fn get_minimum_number_of_calls(&self, function_name: &Identifier<N>) -> Result<usize>;
+
+    /// Returns whether or not a function has a dynamic call in its execution.
+    fn contains_dynamic_call(&self, function_name: &Identifier<N>) -> Result<bool>;
 
     /// Samples a value for the given value_type.
     fn sample_value<R: Rng + CryptoRng>(
@@ -267,12 +228,6 @@ pub trait RegistersSigner<N: Network>: RegistersTrait<N> {
 
     /// Sets the transition view key.
     fn set_tvk(&mut self, tvk: Field<N>);
-
-    /// Returns the record translation data.
-    fn record_translation_data(&self) -> Result<&Vec<RecordTranslationData<N>>>;
-
-    /// Sets the record translation data.
-    fn insert_record_translation_data(&mut self, new_record_translation_data: RecordTranslationData<N>);
 
     /// Returns the request.
     fn request(&self) -> Result<&Request<N>>;

@@ -42,7 +42,6 @@ pub enum Output<N: Network> {
     /// The future hash and (optional) future.
     Future(Field<N>, Option<Future<N>>),
     /// The hash of the dynamic record's (function id, record, tvk, output index).
-    // TODO (@d0cd): Verify that this is correct.
     DynamicRecord(Field<N>),
 }
 

@@ -143,7 +143,8 @@ fn test_fibonacci() {
 // - a function `six` that takes in a dynamic record and calls `four` twice. This should pass because the record is dynamic.
 // - a function `seven` that takes in a dynamic record and index. If the index is zero it calls `two`, else it calls itself recursively with index - 1. This should pass until the index exceeds the maximum call depth.
 // - a function `eight` that takes in a dynamic record and index. The function first calls `two`, then either calls `four` if index is zero, or calls itself recursively with index - 1. This should pass if the index is zero and fail otherwise due to double-spend.
-// - a function `nine` that takes in a dynamic record and index. The function first calls `one`, then either calls `three` if the index is zero, or calls itself recursively with index - 1. This should pass if the index is zero and fail otherwise due to record not existing.
+// TODO (@reviewers): Verify that consumption of local records is expected behavior in recursive calls.
+// - a function `nine` that takes in a dynamic record and index. The function first calls `one`, then either calls `three` if the index is zero, or calls itself recursively with index - 1 and the new record. This should pass as long as the number of transitions does not exceed the maximum allowed.
 #[test]
 fn test_recursive_dynamic_record_calls() {
     // Initialize an RNG.
@@ -365,9 +366,12 @@ constructor:
             let transaction = result.unwrap_or_else(|_| panic!("Expected {function_name} to succeed"));
             add_and_test(&vm, &caller_private_key, &[transaction], rng);
         } else if let Ok(transaction) = result {
-            // Check that the transaction fails to verify.
-            let transaction_fails = vm.check_transaction(&transaction, None, rng).is_err();
-            assert!(transaction_fails, "Expected {function_name} to fail");
+            // Check that the transaction fails during addition to the ledger.
+            let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
+            assert_eq!(block.transactions().num_accepted(), 0);
+            assert_eq!(block.transactions().num_rejected(), 0);
+            assert_eq!(block.aborted_transaction_ids().len(), 1);
+            vm.add_next_block(&block).unwrap();
         }
     };
 
@@ -472,27 +476,41 @@ constructor:
         rng,
     );
 
-    // Test function `nine` at index one which should fail due to record not existing.
+    // Test function `nine` at index one which should pass.
     execute_and_check(
         nine_name,
         vec![
             Value::DynamicRecord(DynamicRecord::from_record(&mint_record(rng)).unwrap()),
             Value::from_str("1u8").unwrap(),
         ],
-        false,
-        &format!("Testing function {nine_name} at index 1 which should fail due to record not existing"),
+        true,
+        &format!("Testing function {nine_name} at index 1 which should pass"),
         rng,
     );
 
-    // Test function `nine` at index two which should fail due to record not existing.
+    // Test function `nine` at index two which should pass.
     execute_and_check(
         nine_name,
         vec![
             Value::DynamicRecord(DynamicRecord::from_record(&mint_record(rng)).unwrap()),
             Value::from_str("2u8").unwrap(),
         ],
+        true,
+        &format!("Testing function {nine_name} at index 2 which should pass"),
+        rng,
+    );
+
+    // Test function `nine` at index 15 which should fail due to exceeding the maximum number of transitions.
+    execute_and_check(
+        nine_name,
+        vec![
+            Value::DynamicRecord(DynamicRecord::from_record(&mint_record(rng)).unwrap()),
+            Value::from_str("15u8").unwrap(),
+        ],
         false,
-        &format!("Testing function {nine_name} at index 2 which should fail due to record not existing"),
+        &format!(
+            "Testing function {nine_name} at index 15 which should fail due to exceeding the maximum number of transitions"
+        ),
         rng,
     );
 }

@@ -38,8 +38,12 @@ impl<N: Network> Process<N> {
 
         #[cfg(debug_assertions)]
         {
-            // Ensure the number of function calls in this function is 1.
-            if stack.get_number_of_calls(function.name())? != 1 {
+            // Ensure that there are no dynamic calls in this function.
+            if stack.contains_dynamic_call(function.name())? {
+                bail!("The function '{}/{}' should not have dynamic calls", stack.program_id(), function.name())
+            }
+            // Ensure the minimum number of function calls in this function is 1.
+            if stack.get_minimum_number_of_calls(function.name())? != 1 {
                 bail!("The number of function calls in '{}/{}' should be 1", stack.program_id(), function.name())
             }
             // Debug-mode only, as the `Transition` constructor recomputes the transition ID at initialization.
@@ -278,6 +282,8 @@ mod tests {
             snarkvm_ledger_test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), false, rng),
             snarkvm_ledger_test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), true, rng),
             snarkvm_ledger_test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(3, Uniform::rand(rng), true, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(3, Uniform::rand(rng), false, rng),
             snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(true, rng, 0),
             snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(false, rng, 0),
             snarkvm_ledger_test_helpers::sample_fee_private_transaction(rng),

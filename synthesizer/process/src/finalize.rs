@@ -47,12 +47,15 @@ impl<N: Network> Process<N> {
         for (function_name, (verifying_key, _)) in deployment.verifying_keys() {
             stack.insert_verifying_key(function_name, verifying_key.clone())?;
         }
+        lap!(timer, "Insert the verifying keys");
 
         // Insert the translation verifying keys.
-        for (record_name, (verifying_key, _)) in deployment.translation_verifying_keys() {
-            stack.insert_translation_verifying_key(record_name, verifying_key.clone())?;
+        if let Some(translation_verifying_keys) = deployment.translation_verifying_keys() {
+            for (record_name, (verifying_key, _)) in translation_verifying_keys {
+                stack.insert_translation_verifying_key(record_name, verifying_key.clone())?;
+            }
         }
-        lap!(timer, "Insert the verifying keys");
+        lap!(timer, "Insert the translation verifying keys");
 
         // Determine which mappings must be initialized.
         let mappings = match deployment.edition().is_zero() {
@@ -133,15 +136,44 @@ impl<N: Network> Process<N> {
         let transition = execution.peek()?;
         // Retrieve the stack.
         let stack = self.get_stack(transition.program_id())?;
-        // TODO (dynamic_dispatch) re-introduce or redesign, fails to account for dynamic calls
-        // Ensure the number of calls matches the number of transitions.
-        // let number_of_calls = stack.get_number_of_calls(transition.function_name())?;
-        // ensure!(
-        //     number_of_calls == execution.len(),
-        //     "The number of transitions in the execution is incorrect. Expected {number_of_calls}, but found {}",
-        //     execution.len()
-        // );
+        // If the root transition contains a dynamic call,
+        // - ensure that the number of calls is less than or equal to the number of transitions.
+        // - otherwise, ensure that the number of calls matches the number of transitions.
+        if stack.contains_dynamic_call(transition.function_name())? {
+            ensure!(
+                stack.get_minimum_number_of_calls(transition.function_name())? <= execution.len(),
+                "The number of transitions in the execution is incorrect. Expected at least {}, but found {}",
+                stack.get_minimum_number_of_calls(transition.function_name())?,
+                execution.len()
+            );
+        } else {
+            ensure!(
+                stack.get_minimum_number_of_calls(transition.function_name())? == execution.len(),
+                "The number of transitions in the execution is incorrect. Expected {}, but found {}",
+                stack.get_minimum_number_of_calls(transition.function_name())?,
+                execution.len()
+            );
+        }
         lap!(timer, "Verify the number of transitions");
+
+        // Collect all of the futures in the execution's transitions and compute their corresponding dynamic future keys.
+        // The key is (program_name, program_network, function_name, root) to uniquely identify each future,
+        // since different futures may have the same root if their arguments happen to be identical.
+        let dynamic_future_to_future: HashMap<(Field<N>, Field<N>, Field<N>, Field<N>), &Future<N>> = execution
+            .transitions()
+            .filter_map(|transition| {
+                transition.outputs().last().and_then(|output| output.future()).and_then(|future| {
+                    let dynamic_future = DynamicFuture::from_future(future).ok()?;
+                    let key = (
+                        *dynamic_future.program_name(),
+                        *dynamic_future.program_network(),
+                        *dynamic_future.function_name(),
+                        *dynamic_future.root(),
+                    );
+                    Some((key, future))
+                })
+            })
+            .collect();
 
         // Construct the call graph.
         let consensus_version = N::CONSENSUS_VERSION(state.block_height())?;
@@ -155,10 +187,10 @@ impl<N: Network> Process<N> {
             // Finalize the root transition.
             // Note that this will result in all the remaining transitions being finalized, since the number
             // of calls matches the number of transitions.
-            let mut finalize_operations = finalize_transition(state, store, &stack, transition, call_graph)?;
+            let mut finalize_operations =
+                finalize_transition(state, store, &stack, transition, call_graph, dynamic_future_to_future)?;
 
             /* Finalize the fee. */
-
             if let Some(fee) = fee {
                 // Retrieve the fee stack.
                 let fee_stack = self.get_stack(fee.program_id())?;
@@ -213,7 +245,7 @@ fn finalize_fee_transition<N: Network, P: FinalizeStorage<N>>(
     };
 
     // Finalize the transition.
-    match finalize_transition(state, store, stack, fee, call_graph) {
+    match finalize_transition(state, store, stack, fee, call_graph, Default::default()) {
         // If the evaluation succeeds, return the finalize operations.
         Ok(finalize_operations) => Ok(finalize_operations),
         // If the evaluation fails, bail and return the error.
@@ -285,6 +317,7 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
     stack: &Arc<Stack<N>>,
     transition: &Transition<N>,
     call_graph: HashMap<N::TransitionID, Vec<N::TransitionID>>,
+    dynamic_future_to_future: HashMap<(Field<N>, Field<N>, Field<N>, Field<N>), &Future<N>>,
 ) -> Result<Vec<FinalizeOperation<N>>> {
     // Retrieve the program ID.
     let program_id = transition.program_id();
@@ -380,7 +413,8 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
                         &stack,
                         &registers,
                         transition_id,
-                        nonce
+                        nonce,
+                        &dynamic_future_to_future,
                     )) {
                         Ok(Ok(callee_state)) => callee_state,
                         // If the evaluation fails, bail and return the error.
@@ -420,7 +454,9 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
         // Check that all future registers have been awaited.
         let mut unawaited = Vec::new();
         for input in finalize.inputs() {
-            if matches!(input.finalize_type(), FinalizeType::Future(_)) && !awaited.contains(input.register()) {
+            if matches!(input.finalize_type(), FinalizeType::Future(_) | FinalizeType::DynamicFuture)
+                && !awaited.contains(input.register())
+            {
                 unawaited.push(input.register().clone());
             }
         }
@@ -559,11 +595,25 @@ fn setup_await<N: Network>(
     registers: &FinalizeRegisters<N>,
     transition_id: N::TransitionID,
     nonce: u64,
+    dynamic_future_to_future: &HashMap<(Field<N>, Field<N>, Field<N>, Field<N>), &Future<N>>,
 ) -> Result<FinalizeState<N>> {
     // Retrieve the input as a future.
     let (future, is_dynamic) = match registers.load(stack.deref(), &Operand::Register(await_.register().clone()))? {
         Value::Future(future) => (future, false),
-        Value::DynamicFuture(dynamic_future) => (dynamic_future.to_future()?, true),
+        Value::DynamicFuture(dynamic_future) => {
+            // Construct the key from the dynamic future's program name, network, function name, and root.
+            let key = (
+                *dynamic_future.program_name(),
+                *dynamic_future.program_network(),
+                *dynamic_future.function_name(),
+                *dynamic_future.root(),
+            );
+            // Look up the corresponding future from the dynamic future key.
+            match dynamic_future_to_future.get(&key) {
+                Some(future) => ((*future).clone(), true),
+                None => bail!("Dynamic future '{key:?}' not found in dynamic-future-to-future map"),
+            }
+        }
         _ => bail!("The input to 'await' is not a future or dynamic future"),
     };
     // Initialize the state.

@@ -102,7 +102,7 @@ impl<N: Network> Command<N> {
 
     /// Returns `true` if the command is a call instruction.
     pub fn is_call(&self) -> bool {
-        matches!(self, Command::Instruction(Instruction::Call(_)))
+        matches!(self, Command::Instruction(Instruction::Call(_) | Instruction::CallDynamic(_)))
     }
 
     /// Returns `true` if the command is a cast to record instruction.
@@ -472,7 +472,7 @@ mod tests {
         assert_eq!(command, Command::from_bytes_le(&bytes).unwrap());
 
         // ContainsDynamic
-        let expected = "contains.dynamic r0.r1/r2[r3] into r4";
+        let expected = "contains.dynamic r0 r1 r2[r3] into r4;";
         let command = Command::<CurrentNetwork>::parse(expected).unwrap().1;
         let bytes = command.to_bytes_le().unwrap();
         assert_eq!(command, Command::from_bytes_le(&bytes).unwrap());
@@ -484,7 +484,7 @@ mod tests {
         assert_eq!(command, Command::from_bytes_le(&bytes).unwrap());
 
         // GetDynamic
-        let expected = "get.dynamic r0.r1/r2[r3] into r4";
+        let expected = "get.dynamic r0 r1 r2[r3] into r4 as field;";
         let command = Command::<CurrentNetwork>::parse(expected).unwrap().1;
         let bytes = command.to_bytes_le().unwrap();
         assert_eq!(command, Command::from_bytes_le(&bytes).unwrap());
@@ -496,7 +496,7 @@ mod tests {
         assert_eq!(command, Command::from_bytes_le(&bytes).unwrap());
 
         // GetOrDynamic
-        let expected = "get.or_use.dynamic r0.r1/r2[r3] r4 into r5";
+        let expected = "get.or_use.dynamic r0 r1 r2[r3] r4 into r5 as credits;";
         let command = Command::<CurrentNetwork>::parse(expected).unwrap().1;
         let bytes = command.to_bytes_le().unwrap();
         assert_eq!(command, Command::from_bytes_le(&bytes).unwrap());
@@ -567,7 +567,7 @@ mod tests {
         assert_eq!(expected, command.to_string());
 
         // ContainsDynamic
-        let expected = "contains.dynamic r0.r1/r2[r3] into r4";
+        let expected = "contains.dynamic r0 r1 r2[r3] into r4;";
         let command = Command::<CurrentNetwork>::parse(expected).unwrap().1;
         assert_eq!(Command::ContainsDynamic(ContainsDynamic::from_str(expected).unwrap()), command);
         assert_eq!(expected, command.to_string());
@@ -579,7 +579,7 @@ mod tests {
         assert_eq!(expected, command.to_string());
 
         // GetDynamic
-        let expected = "get.dynamic r0.r1/r2[r3] into r4";
+        let expected = "get.dynamic r0 r1 r2[r3] into r4 as u8;";
         let command = Command::<CurrentNetwork>::parse(expected).unwrap().1;
         assert_eq!(Command::GetDynamic(GetDynamic::from_str(expected).unwrap()), command);
         assert_eq!(expected, command.to_string());
@@ -591,7 +591,7 @@ mod tests {
         assert_eq!(expected, command.to_string());
 
         // GetOrDynamic
-        let expected = "get.or_use.dynamic r0.r1/r2[r3] r4 into r5";
+        let expected = "get.or_use.dynamic r0 r1 r2[r3] r4 into r5 as Foo;";
         let command = Command::<CurrentNetwork>::parse(expected).unwrap().1;
         assert_eq!(Command::GetOrUseDynamic(GetOrUseDynamic::from_str(expected).unwrap()), command);
         assert_eq!(expected, command.to_string());

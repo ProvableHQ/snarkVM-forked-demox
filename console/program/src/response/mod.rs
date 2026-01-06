@@ -43,14 +43,12 @@ pub struct Response<N: Network> {
     output_ids: Vec<OutputID<N>>,
     /// The function outputs.
     outputs: Vec<Value<N>>,
-    /// Whether or not the response is dynamic.
-    is_dynamic: bool,
 }
 
-impl<N: Network> From<(Vec<OutputID<N>>, Vec<Value<N>>, bool)> for Response<N> {
+impl<N: Network> From<(Vec<OutputID<N>>, Vec<Value<N>>)> for Response<N> {
     /// Note: This method is used to eject from a circuit.
-    fn from((output_ids, outputs, is_dynamic): (Vec<OutputID<N>>, Vec<Value<N>>, bool)) -> Self {
-        Self { output_ids, outputs, is_dynamic }
+    fn from((output_ids, outputs): (Vec<OutputID<N>>, Vec<Value<N>>)) -> Self {
+        Self { output_ids, outputs }
     }
 }
 
@@ -236,7 +234,6 @@ impl<N: Network> Response<N> {
                         Ok(OutputID::Future(output_hash))
                     }
                     // For a dynamic record, compute the hash (using `tvk`) of the output.
-                    // TODO (@d0cd) verify correctness
                     ValueType::DynamicRecord => {
                         // Ensure the output is a record.
                         ensure!(matches!(output, Value::DynamicRecord(..)), "Expected a dynamic record output");
@@ -282,34 +279,7 @@ impl<N: Network> Response<N> {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        Ok(Self { output_ids, outputs, is_dynamic: false })
-    }
-
-    /// Converts a response outputs into the expected output types for a dynamic call by:
-    /// - converting all record outputs to dynamic record outputs
-    /// - converting all future outputs to dynamic future outputs.
-    /// - leaving all other outputs unchanged.
-    pub fn dynamic_call_outputs(&self, caller_output_types: &[ValueType<N>]) -> Result<Vec<Value<N>>> {
-        ensure!(
-            self.outputs.len() == caller_output_types.len(),
-            "Expected {} outputs, but {} were provided.",
-            caller_output_types.len(),
-            self.outputs.len()
-        );
-        self.outputs
-            .iter()
-            .zip(caller_output_types)
-            .map(|(output, output_type)| match (output, output_type) {
-                (Value::Record(record), ValueType::DynamicRecord) => {
-                    // This covers both the non-External and External record cases.
-                    Ok(Value::DynamicRecord(DynamicRecord::from_record(record)?))
-                }
-                (Value::Future(future), ValueType::DynamicFuture) => {
-                    Ok(Value::DynamicFuture(DynamicFuture::from_future(future)?))
-                }
-                _ => Ok(output.clone()),
-            })
-            .collect::<Result<Vec<_>>>()
+        Ok(Self { output_ids, outputs })
     }
 
     /// Returns the output ID for the transition.
@@ -322,8 +292,93 @@ impl<N: Network> Response<N> {
         &self.outputs
     }
 
-    /// Returns whether or not the response is dynamic.
-    pub fn is_dynamic(&self) -> bool {
-        self.is_dynamic
+    /// Returns the expected caller outputs for a dynamic call by:
+    /// - converting all record outputs to dynamic record outputs
+    /// - converting all future outputs to dynamic future outputs.
+    /// - leaving all other outputs unchanged.
+    pub fn caller_outputs(&self) -> Result<Vec<Value<N>>> {
+        self.outputs
+            .iter()
+            .map(|output| match output {
+                Value::Record(record) => {
+                    // This covers both the non-external and external record cases.
+                    Ok(Value::DynamicRecord(DynamicRecord::from_record(record)?))
+                }
+                Value::Future(future) => Ok(Value::DynamicFuture(DynamicFuture::from_future(future)?)),
+                Value::DynamicFuture(_) => bail!("A dynamic future cannot be a response output"),
+                _ => Ok(output.clone()),
+            })
+            .collect::<Result<Vec<_>>>()
+    }
+
+    /// Returns the expected caller output IDs for a dynamic call by:
+    /// - converting all record output IDs to dynamic record output IDs
+    /// - converting all future output IDs to dynamic future output IDs.
+    /// - leaving all other output IDs unchanged.
+    pub fn caller_output_ids(
+        &self,
+        network_id: &U16<N>,
+        program_id: &ProgramID<N>,
+        function_name: &Identifier<N>,
+        num_inputs: usize,
+        tvk: &Field<N>,
+        tcm: &Field<N>,
+    ) -> Result<Vec<OutputID<N>>> {
+        // Compute the function ID.
+        let function_id = compute_function_id(network_id, program_id, function_name)?;
+        // Get the caller outputs.
+        let caller_outputs = self.caller_outputs()?;
+        // Compute the caller output IDs for the caller outputs.
+        caller_outputs
+            .iter()
+            .zip_eq(self.output_ids.iter())
+            .enumerate()
+            .map(|(index, (output, callee_output_id))| {
+                match callee_output_id {
+                    OutputID::Record(_, _, _) | OutputID::ExternalRecord(_) => {
+                        // Ensure the caller output is a dynamic record.
+                        ensure!(matches!(output, Value::DynamicRecord(..)), "Expected a dynamic record output");
+
+                        // Construct the (console) output index as a field element.
+                        let index = Field::from_u16(
+                            u16::try_from(num_inputs + index).or_halt_with::<N>("Output index exceeds u16"),
+                        );
+                        // Construct the preimage as `(function ID || output || tvk || index)`.
+                        let mut preimage = Vec::new();
+                        preimage.push(function_id);
+                        preimage.extend(output.to_fields()?);
+                        preimage.push(*tvk);
+                        preimage.push(index);
+                        // Hash the output to a field element.
+                        let output_hash = N::hash_psd8(&preimage)?;
+
+                        // Return the output ID.
+                        Ok(OutputID::DynamicRecord(output_hash))
+                    }
+                    OutputID::Future(_) => {
+                        // Ensure the caller output is a dynamic future.
+                        ensure!(matches!(output, Value::DynamicFuture(..)), "Expected a dynamic future output");
+
+                        // Construct the (console) output index as a field element.
+                        let index = Field::from_u16(
+                            u16::try_from(num_inputs + index).or_halt_with::<N>("Output index exceeds u16"),
+                        );
+                        // Construct the preimage as `(function ID || output || tcm || index)`.
+                        let mut preimage = Vec::new();
+                        preimage.push(function_id);
+                        preimage.extend(output.to_fields()?);
+                        preimage.push(*tcm);
+                        preimage.push(index);
+                        // Hash the output to a field element.
+                        let output_hash = N::hash_psd8(&preimage)?;
+
+                        // Return the output ID.
+                        Ok(OutputID::DynamicFuture(output_hash))
+                    }
+                    // Otherwise, return the output ID unchanged.
+                    _ => Ok(callee_output_id.clone()),
+                }
+            })
+            .collect::<Result<Vec<_>>>()
     }
 }

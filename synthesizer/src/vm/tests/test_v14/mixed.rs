@@ -17,7 +17,7 @@ use console::types::Scalar;
 
 use super::*;
 
-// These tests mix translation, casting to dynamic.record and get.dynamic.record.
+// These tests mix translation, casting to dynamic.record and get.record.dynamic.
 
 // This test checks that execution_cost_for_authorization() computes the correct
 // cost in transactions involving inclusion and translation proofs. This is in
@@ -45,7 +45,7 @@ fn test_execution_cost_for_authorization() {
     let check_tossed_coin_field =
         Identifier::<CurrentNetwork>::from_str(check_tossed_coin_str).unwrap().to_field().unwrap();
 
-    let program_a_string = format!(
+    let program_a_source = format!(
         r"
         program {program_a_str}.aleo;
 
@@ -136,7 +136,7 @@ fn test_execution_cost_for_authorization() {
             call.dynamic {program_b_field} {network_field} {check_tossed_coin_field}
                 with r1 (as dynamic.record);
 
-            get.dynamic.record r4.grams into r5 as u32;
+            get.record.dynamic r4.grams into r5 as u32;
 
             output r5 as u32.public;
         
@@ -145,7 +145,7 @@ fn test_execution_cost_for_authorization() {
         "
     );
 
-    let program_b_string = format!(
+    let program_b_source = format!(
         r"
         import {program_a_str}.aleo;
 
@@ -161,8 +161,8 @@ fn test_execution_cost_for_authorization() {
         "
     );
 
-    let program_a = Program::<CurrentNetwork>::from_str(&program_a_string).unwrap();
-    let program_b = Program::<CurrentNetwork>::from_str(&program_b_string).unwrap();
+    let program_a = Program::<CurrentNetwork>::from_str(&program_a_source).unwrap();
+    let program_b = Program::<CurrentNetwork>::from_str(&program_b_source).unwrap();
 
     // Initialize the VM.
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
@@ -224,6 +224,8 @@ fn test_execution_cost_for_authorization() {
 
     println!("Executing {program_a_str}.aleo/weld_dynamically...");
 
+    let count_before_weld_dynamically = vm.transition_store().records().count();
+
     let transaction = vm
         .execute(
             &caller_private_key,
@@ -271,6 +273,10 @@ fn test_execution_cost_for_authorization() {
 
     // Ensuring transaction verification passes
     add_and_test(&vm, &caller_private_key, &[transaction], rng);
+
+    // We check exactly one static record has been produced, even though it was
+    // translated to a dynamic one when output
+    assert_eq!(vm.transition_store().records().count(), count_before_weld_dynamically + 1);
 }
 
 #[test]
@@ -297,10 +303,6 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
     let function_verify_signature_field = function_verify_signature_name.to_field().unwrap();
 
     let generator = CurrentNetwork::g_scalar_multiply(&Scalar::one());
-
-    // TODO (dynamic_dispatch) discuss; It seems generator != generator2 is expected behaviour
-    // let generator2 = Group::<CurrentNetwork>::new(<CurrentNetwork as Environment>::Affine::prime_subgroup_generator());
-    // assert_eq!(generator, generator2);
 
     // Signatures for products operate as follows:
     // 1. The factory receives a request for a toy/ladder from a client and
@@ -331,7 +333,7 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
             
             // Right-hand side
             cast r0.owner into r3 as group;
-            get.dynamic.record r0.product_id into r4 as scalar;
+            get.record.dynamic r0.product_id into r4 as scalar;
             mul r4 {generator} into r5;
             add r3 r5 into r6;
 
@@ -426,10 +428,6 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
 
             output r1 as ladder.record;
 
-        // TODO (dynamic_dispatch) remove
-        // function test_generator:
-        //    assert.eq group::GEN {generator};
-
         constructor:
             assert.eq true true;
         "
@@ -517,6 +515,10 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
     let decomission_toy_inputs =
         [Value::from_str(&toy_1_record.to_string()).unwrap(), Value::from_str(&toy_1_signature.to_string()).unwrap()];
 
+    let number_of_consumed_records_before = vm.transition_store().serial_numbers().count();
+
+    println!("Executing {program_b_name}.aleo/decomission_toy...");
+
     let transaction_decomission_toy_1 = vm
         .execute(
             &client_1_private_key,
@@ -531,20 +533,23 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
 
     add_and_test(&vm, &client_1_private_key, &[transaction_decomission_toy_1], rng);
 
+    // Check exactly one record has been consumed (despite the cast to dynamic +
+    // dynamic call)
+    assert_eq!(vm.transition_store().serial_numbers().count(), number_of_consumed_records_before + 1);
+
     // ********** Case 2: Ladder painting, failed and successful decomissioning **********
 
-    // TODO (dynamic_dispatch) change to client 2 once we have can access .owner in dynamic records and the function is updated
-    // Manufacture a ladder for client 1
+    // Manufacture a ladder for client 2
     let ladder_1_id: Scalar<CurrentNetwork> = Uniform::rand(rng);
 
     let ladder_1_inputs =
-        [Value::from_str(&client_1_address.to_string()).unwrap(), Value::from_str(&ladder_1_id.to_string()).unwrap()];
+        [Value::from_str(&client_2_address.to_string()).unwrap(), Value::from_str(&ladder_1_id.to_string()).unwrap()];
 
     println!("Executing {program_b_name}.aleo/manufacture_ladder...");
 
     let transaction_mint_ladder_1 = vm
         .execute(
-            &client_1_private_key,
+            &factory_private_key,
             ("factory.aleo", "manufacture_ladder"),
             ladder_1_inputs.into_iter(),
             None,
@@ -556,12 +561,12 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
 
     let unpainted_ladder_1_record = match &transaction_mint_ladder_1.transitions().next().unwrap().outputs()[0] {
         Output::Record(_, _, record_ciphertext, _) => {
-            record_ciphertext.as_ref().unwrap().decrypt(&client_1_view_key).unwrap()
+            record_ciphertext.as_ref().unwrap().decrypt(&client_2_view_key).unwrap()
         }
         _ => panic!("Expected output record is not a record"),
     };
 
-    let painted_entry_1 = match unpainted_ladder_1_record
+    let unpainted_entry_1 = match unpainted_ladder_1_record
         .data()
         .get(&Identifier::<CurrentNetwork>::from_str("painted").unwrap())
         .unwrap()
@@ -570,7 +575,7 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
         _ => panic!("Expected painted entry to be public"),
     };
 
-    assert_eq!(painted_entry_1, &Plaintext::from_str("false").unwrap());
+    assert_eq!(unpainted_entry_1, &Plaintext::from_str("false").unwrap());
 
     add_and_test(&vm, &client_1_private_key, &[transaction_mint_ladder_1], rng);
 
@@ -579,7 +584,7 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
     // Paint the ladder
     let transaction_paint_ladder_1 = vm
         .execute(
-            &client_1_private_key,
+            &client_2_private_key,
             ("factory.aleo", "paint_ladder"),
             [Value::Record(unpainted_ladder_1_record)].into_iter(),
             None,
@@ -591,12 +596,12 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
 
     let painted_ladder_1_record = match &transaction_paint_ladder_1.transitions().next().unwrap().outputs()[0] {
         Output::Record(_, _, record_ciphertext, _) => {
-            record_ciphertext.as_ref().unwrap().decrypt(&client_1_view_key).unwrap()
+            record_ciphertext.as_ref().unwrap().decrypt(&client_2_view_key).unwrap()
         }
         _ => panic!("Expected output record is not a record"),
     };
 
-    let painted_entry_2 = match painted_ladder_1_record
+    let painted_entry_1 = match painted_ladder_1_record
         .data()
         .get(&Identifier::<CurrentNetwork>::from_str("painted").unwrap())
         .unwrap()
@@ -605,13 +610,12 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
         _ => panic!("Expected painted entry to be public"),
     };
 
-    assert_eq!(painted_entry_2, &Plaintext::from_str("true").unwrap());
+    assert_eq!(painted_entry_1, &Plaintext::from_str("true").unwrap());
 
     add_and_test(&vm, &client_1_private_key, &[transaction_paint_ladder_1], rng);
 
-    // TODO (dynamic_dispatch) change to client 1 once get.owner is available.
-    // Computing an incorrect signature (uses client 2's view key)
-    let ladder_1_incorrect_signature = ladder_1_id + *client_2_view_key;
+    // Computing an incorrect signature (uses client 1's view key)
+    let ladder_1_incorrect_signature = ladder_1_id + *client_1_view_key;
 
     let decomission_toy_inputs = [
         Value::from_str(&painted_ladder_1_record.to_string()).unwrap(),
@@ -622,7 +626,10 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
 
     assert!(
         vm.execute(
-            &client_1_private_key,
+            // We still execute with client 2's private key so that record
+            // consumption can proceed - it is the product-signature we would
+            // like to fail.
+            &client_2_private_key,
             ("factory.aleo", "decomission_ladder"),
             decomission_toy_inputs.into_iter(),
             None,
@@ -633,8 +640,8 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
         .is_err()
     );
 
-    // Correctly decomission the ladder (uses client 1's view key)
-    let ladder_1_correct_signature = ladder_1_id + *client_1_view_key;
+    // Correctly decomission the ladder (uses client 2's view key)
+    let ladder_1_correct_signature = ladder_1_id + *client_2_view_key;
 
     let decomission_ladder_inputs = [
         Value::from_str(&painted_ladder_1_record.to_string()).unwrap(),
@@ -645,7 +652,7 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
 
     let transaction_correct_decomission_ladder_1 = vm
         .execute(
-            &client_1_private_key,
+            &client_2_private_key,
             ("factory.aleo", "decomission_ladder"),
             decomission_ladder_inputs.iter(),
             None,
@@ -660,7 +667,7 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
     // Attemtping to decomission the ladder again should fail (the record has already been nullified)
     let transaction_decomission_ladder_1_again = vm
         .execute(
-            &client_1_private_key,
+            &client_2_private_key,
             ("factory.aleo", "decomission_ladder"),
             decomission_ladder_inputs.into_iter(),
             None,
@@ -669,9 +676,6 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
             rng,
         )
         .unwrap();
-
-    // TODO (Antonio) why is this okay?
-    vm.check_transaction(&transaction_decomission_ladder_1_again, None, rng).unwrap();
 
     let decomission_ladder_1_again_id = transaction_decomission_ladder_1_again.id();
 
@@ -682,6 +686,4 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
     assert_eq!(block.aborted_transaction_ids(), &[decomission_ladder_1_again_id]);
-
-    // TEST the toy cannot be decomissioned twice
 }

@@ -15,17 +15,29 @@
 
 use super::*;
 
+/// Computes the ID of a record (dynamic or external) given its field representation.
+/// The ID is computed as `hash_psd8(function_id || record_fields || tvk || index)`.
+/// This is shared by dynamic record IDs and external record IDs.
+pub fn compute_record_id<A: Aleo>(
+    function_id: Field<A>,
+    record_fields: Vec<Field<A>>,
+    tvk: Field<A>,
+    index: Field<A>,
+) -> Field<A> {
+    // Construct the preimage as `(function ID || record_fields || tvk || index)`.
+    let mut preimage = Vec::new();
+    preimage.push(function_id);
+    preimage.extend(record_fields);
+    preimage.push(tvk);
+    preimage.push(index);
+
+    A::hash_psd8(&preimage)
+}
+
 impl<A: Aleo> DynamicRecord<A> {
     /// Returns the ID of the dynamic record.
     pub fn to_id(&self, function_id: Field<A>, tvk: Field<A>, index: U16<A>) -> Field<A> {
-        // Construct the preimage as `(function ID || self || tvk || index)`.
-        let mut preimage = Vec::new();
-        preimage.push(function_id);
-        preimage.extend(self.to_fields());
-        preimage.push(tvk);
-        preimage.push(index.to_field());
-
-        A::hash_psd8(&preimage)
+        compute_record_id(function_id, self.to_fields(), tvk, index.to_field())
     }
 }
 
@@ -53,7 +65,7 @@ mod tests {
             let version = console::U8::<CurrentNetwork>::rand(&mut rng);
 
             let console_record =
-                console::DynamicRecord::<CurrentNetwork>::new_unchecked(*owner, root, nonce, version, None, None);
+                console::DynamicRecord::<CurrentNetwork>::new_unchecked(*owner, root, nonce, version, None);
 
             // Extra fields when computing a Dynamic record's ID
             let function_id = console::Field::<CurrentNetwork>::rand(&mut rng);
@@ -68,11 +80,18 @@ mod tests {
             let circuit_tvk = Field::<CurrentAleo>::new(mode, tvk);
             let circuit_index = U16::<CurrentAleo>::new(mode, index);
 
-            let circuit_id = circuit_record.to_id(circuit_function_id, circuit_tvk, circuit_index);
+            let circuit_id = circuit_record.to_id(circuit_function_id.clone(), circuit_tvk.clone(), circuit_index);
 
             // Comparing IDs
             let console_id = console_record.to_id(function_id, tvk, index).unwrap();
             assert_eq!(circuit_id.eject_value(), console_id);
+
+            // Test compute_record_id produces the same result.
+            let index_field = console::Field::<CurrentNetwork>::from_u16(*index);
+            let circuit_index_field = Field::<CurrentAleo>::new(mode, index_field);
+            let circuit_id_field =
+                compute_record_id(circuit_function_id, circuit_record.to_fields(), circuit_tvk, circuit_index_field);
+            assert_eq!(circuit_id_field.eject_value(), console_id);
         }
     }
 

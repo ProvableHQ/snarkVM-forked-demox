@@ -109,10 +109,6 @@ pub struct DeploymentMemory<N: Network> {
     verifying_key_map: MemoryMap<(ProgramID<N>, Identifier<N>, u16), VerifyingKey<N>>,
     /// The certificate map.
     certificate_map: MemoryMap<(ProgramID<N>, Identifier<N>, u16), Certificate<N>>,
-    /// The translation verifying key map.
-    translation_verifying_key_map: MemoryMap<(ProgramID<N>, Identifier<N>, u16), VerifyingKey<N>>,
-    /// The translation certificate map.
-    translation_certificate_map: MemoryMap<(ProgramID<N>, Identifier<N>, u16), Certificate<N>>,
     /// The fee store.
     fee_store: FeeStore<N, FeeMemory<N>>,
 }
@@ -142,8 +138,6 @@ impl<N: Network> DeploymentStorage<N> for DeploymentMemory<N> {
             checksum_map: MemoryMap::default(),
             verifying_key_map: MemoryMap::default(),
             certificate_map: MemoryMap::default(),
-            translation_verifying_key_map: MemoryMap::default(),
-            translation_certificate_map: MemoryMap::default(),
             fee_store,
         })
     }
@@ -191,16 +185,6 @@ impl<N: Network> DeploymentStorage<N> for DeploymentMemory<N> {
     /// Returns the certificate map.
     fn certificate_map(&self) -> &Self::CertificateMap {
         &self.certificate_map
-    }
-
-    /// Returns the translation verifying key map.
-    fn translation_verifying_key_map(&self) -> &Self::VerifyingKeyMap {
-        &self.translation_verifying_key_map
-    }
-
-    /// Returns the translation certificate map.
-    fn translation_certificate_map(&self) -> &Self::CertificateMap {
-        &self.translation_certificate_map
     }
 
     /// Returns the fee store.

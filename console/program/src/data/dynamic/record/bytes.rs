@@ -18,11 +18,11 @@ use super::*;
 impl<N: Network> FromBytes for DynamicRecord<N> {
     /// Reads the dynamic record from a buffer.
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
-        // Read and validate the variant.
+        // Read and validate the version.
         match u8::read_le(&mut reader) {
-            Ok(1) => {} // Valid variant for a dynamic record.
+            Ok(0) => {} // The only valid version for a dynamic record.
             _ => {
-                return Err(error("Failed to deserialize dynamic record - invalid variant"));
+                return Err(error("Failed to deserialize dynamic record - invalid version"));
             }
         }
 
@@ -30,7 +30,6 @@ impl<N: Network> FromBytes for DynamicRecord<N> {
         let owner = Address::read_le(&mut reader)?;
 
         // Read the root.
-        // TODO (@d0cd) check that this encoding is differentiated from static records.
         let root = Field::read_le(&mut reader)?;
 
         // Read the nonce.
@@ -39,15 +38,15 @@ impl<N: Network> FromBytes for DynamicRecord<N> {
         // Read the version.
         let version = U8::read_le(&mut reader)?;
 
-        Ok(Self::new_unchecked(owner, root, nonce, version, None, None))
+        Ok(Self::new_unchecked(owner, root, nonce, version, None))
     }
 }
 
 impl<N: Network> ToBytes for DynamicRecord<N> {
     /// Writes the record to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
-        // Write the variant.
-        1u8.write_le(&mut writer)?;
+        // Write the version.
+        0u8.write_le(&mut writer)?;
 
         // Write the owner.
         self.owner.write_le(&mut writer)?;

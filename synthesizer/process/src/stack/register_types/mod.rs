@@ -215,7 +215,7 @@ impl<N: Network> RegisterTypes<N> {
                     RegisterAccessType::Plaintext(literal_address_type)
                 } else {
                     bail!(
-                        "Only the 'owner' of a dynamic record can be accessed directly, use 'get.dynamic.record' instead."
+                        "Only the 'owner' of a dynamic record can be accessed directly, use 'get.record.dynamic' instead."
                     )
                 }
             }

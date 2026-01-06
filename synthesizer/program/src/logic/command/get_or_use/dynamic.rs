@@ -362,7 +362,7 @@ mod tests {
     #[test]
     fn test_from_bytes() {
         let (string, get) =
-            GetOrUseDynamic::<CurrentNetwork>::parse("get.or_use.dynamic r0.r1/r2[r3] r4 into r5 as Foo;").unwrap();
+            GetOrUseDynamic::<CurrentNetwork>::parse("get.or_use.dynamic r0 r1 r2[r3] r4 into r5 as Foo;").unwrap();
         assert!(string.is_empty());
         let bytes_le = get.to_bytes_le().unwrap();
         let result = GetOrUseDynamic::<CurrentNetwork>::from_bytes_le(&bytes_le[..]);

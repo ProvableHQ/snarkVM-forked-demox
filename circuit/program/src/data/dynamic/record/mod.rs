@@ -18,60 +18,74 @@ mod find;
 mod to_bits;
 mod to_fields;
 mod to_id;
+pub use to_id::compute_record_id;
 
-use crate::{Access, Aleo, Equal, Identifier, Literal, Plaintext, Record, ToBits, ToFields, Value};
+use crate::{Access, Aleo, Entry, Equal, Identifier, Literal, Plaintext, Record, ToBits, ToFields, Value};
 
-use console::{RECORD_DATA_TREE_DEPTH, ToField as ConsoleToField, ToFields as ConsoleToFields};
+use console::RECORD_DATA_TREE_DEPTH;
 use snarkvm_circuit_algorithms::{Poseidon2, Poseidon8};
 use snarkvm_circuit_collections::merkle_tree::MerkleTree;
 use snarkvm_circuit_types::{Address, Boolean, Field, Group, U8, U16, environment::prelude::*};
-use snarkvm_console_algorithms::{Poseidon2 as ConsolePoseidon2, Poseidon8 as ConsolePoseidon8};
 
 type CircuitLH<A> = Poseidon8<A>;
 type CircuitPH<A> = Poseidon2<A>;
-type ConsoleLH<N> = ConsolePoseidon8<N>;
-type ConsolePH<N> = ConsolePoseidon2<N>;
 
 /// The record data tree.
 pub type RecordDataTree<A> = MerkleTree<A, CircuitLH<A>, CircuitPH<A>, RECORD_DATA_TREE_DEPTH>;
 
-// TODO (dynamic dispatch) correct this and other instances of the specification: that is not the correct structure of the tree (odd-size layers are not filled with a single zero)
-/// A dynamic record is a fixed-size representation of a record.
-/// Like static `Record`s, a dynamic record contains an owner, nonce, and a version.
-/// However, instead of storing the full data, it only stores the Merkle root of the data.
-/// This ensures that all dynamic records have a constant size, regardless of the amount of data they contain.
+/// A dynamic record is a fixed-size representation of a record. Like static
+/// `Record`s, a dynamic record contains an owner, nonce, and a version.
+/// However, instead of storing the full data, it only stores the Merkle root of
+/// the data. This ensures that all dynamic records have a constant size,
+/// regardless of the amount of data they contain.
 ///
-/// Suppose we have the following record:
+/// Suppose we have the following record with two data entries:
 ///
+/// ```text
 /// record foo:
 ///     owner as address.private;
 ///     microcredits as u64.private;
 ///     memo as [u8; 32u32].public;
+/// ```
 ///
-/// It's merkle-ization is as follows:
+/// Its merkleization is as follows:
 ///
-///        R
-///        |
-///       P_0
-///        |
-///       P_1
-///        |
-///       P_2
-///        |
-///       P_3
-///      /  \
-///   L_0    L_1
+/// ```text
+///   L_0    L_1    (leaves: hashed entries)
+///     \    /
+///      P_0        (internal node)
+///       |
+///      P_1        (padding level 1)
+///       |
+///      P_2        (padding level 2)
+///       |
+///      P_3        (padding level 3)
+///       |
+///       R         (root, padding level 4)
 ///
 /// L_0 := HashPSD8(microcredits || ToFields(entry_0))
 /// L_1 := HashPSD8(memo || ToFields(entry_1))
 /// P_0 := HashPSD2(L_0, L_1)
-/// P_1 := HashPSD2(P_0, ZERO)
-/// P_2 := HashPSD2(P_1, ZERO)
-/// P_3 := HashPSD2(P_2, ZERO)
-///   R := HashPSD2(P_3, ZERO)
+/// P_1 := HashPSD2(P_0, empty_hash)
+/// P_2 := HashPSD2(P_1, empty_hash)
+/// P_3 := HashPSD2(P_2, empty_hash)
+///   R := HashPSD2(P_3, empty_hash)
+/// ```
+///
+/// For records with a different number of entries, leaves are first padded to
+/// the next power of 2 using `empty_hash` hashes, then a balanced binary tree
+/// is built. Note that, in concrete terms, at most one `empty_hash` leaf is
+/// added: the rest are only virtual in that instead nodes with the value
+/// `HashPSD2(empty_hash, empty_hash)` are added to the next level, which is
+/// indeed full of size equal to a power of 2.
+///
+/// Padding levels are then added as needed to reach the full tree depth
+/// `RECORD_DATA_TREE_DEPTH` (5), each of which is constructed by hashing the
+/// root of the previous level together with `empty_hash`.
 ///
 /// Note that:
-///  - `ZERO` is defined by the `PathHash` implementation for `HashPSD2`.
+///  - `empty_hash` is the value returned by the `hash_empty` function the
+///    `PathHash` implementation for `HashPSD2`.
 ///  - `ToFields` encodes the entry's mode and plaintext variant.
 #[derive(Clone)]
 pub struct DynamicRecord<A: Aleo> {
@@ -83,9 +97,6 @@ pub struct DynamicRecord<A: Aleo> {
     nonce: Group<A>,
     /// The version of the record.
     version: U8<A>,
-    /// The optional console Merkle tree of the record data.
-    /// Note: This is NOT part of the circuit representation.
-    tree: Option<console::RecordDataTree<A::Network>>,
     /// The optional console program data.
     /// Note: This is NOT part of the circuit representation.
     data: Option<console::RecordData<A::Network>>,
@@ -101,7 +112,6 @@ impl<A: Aleo> Inject for DynamicRecord<A> {
             root: Inject::new(Mode::Private, *record.root()),
             nonce: Inject::new(Mode::Private, *record.nonce()),
             version: Inject::new(Mode::Private, *record.version()),
-            tree: record.tree().clone(),
             data: record.data().clone(),
         }
     }
@@ -126,11 +136,6 @@ impl<A: Aleo> DynamicRecord<A> {
     /// Returns the version of the record.
     pub const fn version(&self) -> &U8<A> {
         &self.version
-    }
-
-    /// Returns the console Merkle tree of the record data.
-    pub const fn tree(&self) -> &Option<console::RecordDataTree<A::Network>> {
-        &self.tree
     }
 
     /// Returns console the record data.
@@ -159,14 +164,13 @@ impl<A: Aleo> Eject for DynamicRecord<A> {
             self.root.eject_value(),
             self.nonce.eject_value(),
             self.version.eject_value(),
-            self.tree.clone(),
             self.data.clone(),
         )
     }
 }
 
 impl<A: Aleo> DynamicRecord<A> {
-    /// Creates a dynamic record from a static record.
+    /// Creates a dynamic record from a static one.
     pub fn from_record(record: &Record<A, Plaintext<A>>) -> Result<Self> {
         // This mimics the console::DynamicRecord::from_record function.
 
@@ -176,64 +180,42 @@ impl<A: Aleo> DynamicRecord<A> {
 
         // Get the owner.
         let owner = (**record.owner()).clone();
+        // Get the record's data (not part of the circuit representation)
+        let data = record.data();
         // Get the nonce.
         let nonce = record.nonce().clone();
         // Get the version.
         let version = record.version().clone();
 
-        // Get the record's data (not part of the circuit representation)
-        let data = record.data().clone();
-
-        // Initalize the hashers.
-        let console_leaf_hasher = ConsoleLH::<A::Network>::setup("DynamicRecordLeafHasher").unwrap();
-        let console_path_hasher = ConsolePH::<A::Network>::setup("DynamicRecordPathHasher").unwrap();
-        let circuit_leaf_hasher = CircuitLH::<A>::constant(console_leaf_hasher.clone());
-        let circuit_path_hasher = CircuitPH::<A>::constant(console_path_hasher.clone());
-
-        let leaves = data
-            .iter()
-            .map(|(identifier, entry)| {
-                let mut leaf = vec![identifier.to_field()];
-                // By using ehtry.to_fields (as in the translation circuit), we
-                // inject the visibility marker of each entry as a constant,
-                // rather than as a witness variable (as in the
-                // get.dynamic.record instruction). as
-                // entry.to_fields_with_visibility_mode(Mode::Private) would
-                leaf.extend(entry.to_fields());
-                leaf
-            })
-            .collect::<Vec<Vec<Field<A>>>>();
-
-        let tree = RecordDataTree::<A>::new(circuit_leaf_hasher, circuit_path_hasher, &leaves).unwrap();
+        let tree = Self::merkleize_data(data)?;
         let root = tree.root().clone();
 
         let console_data =
             data.iter().map(|(identifier, entry)| (identifier, entry).eject_value()).collect::<IndexMap<_, _>>();
 
-        let console_tree = {
-            // TODO (dynamic_dispatch): decide whether we want to compute and set the optional console tree. In principle, it isn't used anywhere.
-            let console_leaves = console_data
-                .iter()
-                .map(|(name, entry)| {
-                    let mut leaf = vec![];
-                    leaf.push(name.to_field()?);
-                    leaf.extend(entry.to_fields()?);
+        Ok(Self { owner, root, nonce, version, data: Some(console_data) })
+    }
 
-                    Ok(leaf)
-                })
-                .collect::<Result<Vec<_>>>()?;
+    /// Injects the given (ordered) entries into the circuit and computes the
+    /// Merkle tree containing those entires as leaves. More details on the
+    /// structure of the tree can be found in [`DynamicRecord`].
+    pub fn merkleize_data(data: &IndexMap<Identifier<A>, Entry<A, Plaintext<A>>>) -> Result<RecordDataTree<A>> {
+        // Initalize the circuit hashers.
+        let (console_leaf_hasher, console_path_hasher) = console::DynamicRecord::initialize_hashers()?;
+        let circuit_leaf_hasher = CircuitLH::<A>::constant(console_leaf_hasher);
+        let circuit_path_hasher = CircuitPH::<A>::constant(console_path_hasher);
 
-            let console_tree =
-                console::RecordDataTree::new(&console_leaf_hasher, &console_path_hasher, &console_leaves)?;
+        // Inject the leaves
+        let leaves = data
+            .iter()
+            .map(|(identifier, entry)| {
+                let mut leaf = vec![identifier.to_field()];
+                leaf.extend(entry.to_fields());
+                leaf
+            })
+            .collect::<Vec<Vec<Field<A>>>>();
 
-            ensure!(
-                root.eject_value() == *console_tree.root(),
-                "The root of the Merkle tree computed inside the circuit differs from that computed on the console objects."
-            );
-
-            console_tree
-        };
-
-        Ok(Self { owner, root, nonce, version, tree: Some(console_tree), data: Some(console_data) })
+        // Construct the merkle tree
+        RecordDataTree::<A>::new(circuit_leaf_hasher, circuit_path_hasher, &leaves)
     }
 }

@@ -13,20 +13,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use circuit::{
-    Aleo,
-    Poseidon2,
-    Poseidon8,
-    RecordDataTree,
-    traits::{ToField, ToFields},
-};
+use circuit::{Aleo, traits::ToFields};
 
 use super::*;
-
-type CircuitLH<A> = Poseidon8<A>;
-type CircuitPH<A> = Poseidon2<A>;
-type ConsoleLH<N> = console::algorithms::Poseidon8<N>;
-type ConsolePH<N> = console::algorithms::Poseidon2<N>;
 
 /// An assignment for the record translation circuit.
 #[derive(Clone, Debug)]
@@ -131,16 +120,20 @@ impl<N: Network> TranslationAssignment<N> {
         let circuit_function_id = circuit::Field::<A>::new(circuit::Mode::Public, self.function_id);
 
         // Inject the translation count as `Mode::Public`.
-        // TODO (@d0cd) This can be optimized by just injecting a field element.
-        let _circuit_translation_count =
-            circuit::U16::<A>::new(circuit::Mode::Public, console::types::U16::<N>::new(self.translation_count));
+        let _circuit_translation_count = circuit::Field::<A>::new(
+            circuit::Mode::Public,
+            console::types::Field::<N>::from_u16(self.translation_count),
+        );
 
         // Inject the register index as `Mode::Public`.
-        // TODO (@d0cd) This can be optimized by just injecting a field element.
-        let circuit_input_output_index =
-            circuit::U16::<A>::new(circuit::Mode::Public, console::types::U16::<N>::new(self.input_output_index));
+        let circuit_input_output_index = circuit::Field::<A>::new(
+            circuit::Mode::Public,
+            console::types::Field::<N>::from_u16(self.input_output_index),
+        );
 
-        // Inject the commitment or serial number of the non-external record (if `static_is_external`) or the input/output ID of the external record (if not `static_is_external`) as `Mode::Public`.
+        // Inject the commitment or serial number of the non-external record (if
+        // `static_is_external`) or the input/output ID of the external record
+        // (if not `static_is_external`) as `Mode::Public`.
         let circuit_id_static = circuit::Field::<A>::new(circuit::Mode::Public, self.id_static);
 
         // Inject the ID of the dynamic record as `Mode::Public`.
@@ -159,6 +152,7 @@ impl<N: Network> TranslationAssignment<N> {
         // Inject the transition view key as `Mode::Private`.
         let circuit_tvk = circuit::Field::<A>::new(circuit::Mode::Private, self.tvk);
 
+        // TODO (Compute the circuit RVK using the TVK)
         // Inject the record view key of the static record as `Mode::Private`.
         let circuit_record_view_key = circuit::Field::<A>::new(circuit::Mode::Private, self.record_view_key);
 
@@ -167,8 +161,10 @@ impl<N: Network> TranslationAssignment<N> {
 
         // ******** Computing the IDs of the dynamic and static records
 
-        let actual_id_dynamic = circuit_record_dynamic.to_id(
+        // Compute the ID of the dynamic record.
+        let actual_id_dynamic = circuit::compute_record_id(
             circuit_function_id.clone(),
+            circuit_record_dynamic.to_fields(),
             circuit_tvk.clone(),
             circuit_input_output_index.clone(),
         );
@@ -181,27 +177,18 @@ impl<N: Network> TranslationAssignment<N> {
             circuit_static_commitment.clone(),
         );
 
-        // Input/output ID of the static record if it is not external (serial number of or commitment)
+        // Input/output ID of the static record if it is not external (serial number or commitment).
         let actual_id_static_non_external =
             circuit::Field::<A>::ternary(&circuit_is_input, &circuit_static_serial_number, &circuit_static_commitment);
 
-        // Input/output ID of the static record if it is external
-        // TODO All instances of this code should point to a single place
-        // instead of being duplicated; and the fact that the InputID and
-        // OutputID cases are the same for ExternalRecords could/should be
-        // enforced by the code.
-        let actual_id_static_external = {
-            let mut preimage = Vec::new();
-            preimage.push(circuit_function_id);
-            preimage.extend(circuit_record_static.to_fields());
-            preimage.push(circuit_tvk);
-            // TODO (dynamic_dispatch): This conversion will go away if we
-            // implement the optimisation in one of the previous TODOs to treat
-            // input_output_index as a Field.
-            preimage.push(circuit_input_output_index.to_field());
-
-            A::hash_psd8(&preimage)
-        };
+        // Input/output ID of the static record if it is external.
+        // Note: External records have the same InputID and OutputID formula.
+        let actual_id_static_external = circuit::compute_record_id(
+            circuit_function_id,
+            circuit_record_static.to_fields(),
+            circuit_tvk,
+            circuit_input_output_index,
+        );
 
         let actual_id_static = circuit::Field::<A>::ternary(
             &circuit_static_is_external,
@@ -211,22 +198,7 @@ impl<N: Network> TranslationAssignment<N> {
 
         // ******** Merkelizing the static-record data
 
-        let console_leaf_hasher = ConsoleLH::<A::Network>::setup("DynamicRecordLeafHasher").unwrap();
-        let console_path_hasher = ConsolePH::<A::Network>::setup("DynamicRecordPathHasher").unwrap();
-        let circuit_leaf_hasher = CircuitLH::<A>::constant(console_leaf_hasher.clone());
-        let circuit_path_hasher = CircuitPH::<A>::constant(console_path_hasher.clone());
-
-        let circuit_leaves = circuit_record_static
-            .data()
-            .iter()
-            .map(|(identifier, entry)| {
-                let mut leaf = vec![identifier.to_field()];
-                leaf.extend(entry.to_fields());
-                leaf
-            })
-            .collect::<Vec<Vec<circuit::Field<A>>>>();
-
-        let circuit_tree = RecordDataTree::<A>::new(circuit_leaf_hasher, circuit_path_hasher, &circuit_leaves).unwrap();
+        let circuit_tree = circuit::DynamicRecord::<A>::merkleize_data(circuit_record_static.data())?;
         let circuit_data_root = circuit_tree.root();
 
         // ******** Assertions

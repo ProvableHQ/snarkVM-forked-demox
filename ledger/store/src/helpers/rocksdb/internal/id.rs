@@ -194,8 +194,9 @@ pub enum TransitionMap {
     TCM = DataID::TransitionTCMMap as u16,
     ReverseTCM = DataID::TransitionReverseTCMMap as u16,
     SCM = DataID::TransitionSCMMap as u16,
-    CallerInput = DataID::TransitionCallerInputMap as u16,
-    CallerOutput = DataID::TransitionCallerOutputMap as u16,
+    IsDynamic = DataID::IsDynamicMap as u16,
+    CallerInputs = DataID::TransitionCallerInputMap as u16,
+    CallerOutputs = DataID::TransitionCallerOutputMap as u16,
 }
 
 /// The RocksDB map prefix for program-related entries.
@@ -308,10 +309,12 @@ enum DataID {
     // Track deployments that contain an optional checksum
     DeploymentChecksumMap,
 
-    // Track dynmaic record inputs.
+    // Track dynamic record inputs.
     InputDynamicRecordMap,
     // Track dynamic record outputs.
     OutputDynamicRecordMap,
+    // Track whether a transition is dynamic.
+    IsDynamicMap,
     // Track caller inputs.
     TransitionCallerInputMap,
     // Track caller outputs.

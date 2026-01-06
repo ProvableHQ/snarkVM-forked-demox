@@ -282,7 +282,7 @@ impl<N: Network> RegisterTypes<N> {
                 }
             }
             RegisterType::Future(..) => bail!("Input '{register}' cannot be a future."),
-            // TODO (@d0cd) Verify that we don't need any other checks.
+            // Note. Checks for dynamic records are enforced at runtime.
             RegisterType::DynamicRecord => (),
             RegisterType::DynamicFuture => bail!("Input '{register}' cannot be a dynamic future."),
         };
@@ -344,17 +344,15 @@ impl<N: Network> RegisterTypes<N> {
                     }
                 };
             }
-            // TODO (@d0cd) Verify that this is correct.
-            RegisterType::DynamicRecord => (),
+            RegisterType::DynamicRecord => {} // Dynamic records are valid outputs.
             RegisterType::DynamicFuture => bail!("Output '{operand}' cannot be a dynamic future."),
         };
 
         // Ensure the operand type and the output type match.
-        if *register_type != self.get_type_from_operand(stack, operand)? {
+        let type_ = self.get_type_from_operand(stack, operand)?;
+        if register_type != &type_ {
             bail!(
-                "Output '{operand}' does not match the expected output operand type: expected '{}', found '{}'",
-                self.get_type_from_operand(stack, operand)?,
-                register_type
+                "Output '{operand}' does not match the expected output operand type: expected '{type_}', found '{register_type}'",
             )
         }
         Ok(())
@@ -506,7 +504,6 @@ impl<N: Network> RegisterTypes<N> {
                             }
                         }
                     }
-                    // TODO (@d0cd) Verify.
                     Instruction::CallDynamic(_) => {} // We do not validate the targets of dynamic calls before hand.
                     _ => bail!("Instruction '{instruction}' is not a call operation."),
                 }
@@ -617,15 +614,15 @@ impl<N: Network> RegisterTypes<N> {
             }
             Opcode::Serialize(opcode) => Self::check_serialize_opcode(opcode, instruction)?,
             Opcode::Deserialize(opcode) => Self::check_deserialize_opcode(opcode, instruction)?,
-            Opcode::GetDynamicRecord(_) => {
+            Opcode::GetRecordDynamic(_) => {
                 ensure!(instruction.operands().len() == 1, "Expected 1 operand.");
                 ensure!(
                     instruction.destinations().len() == 1,
                     "Instruction '{instruction}' has multiple destinations."
                 );
                 ensure!(
-                    matches!(instruction, Instruction::GetDynamicRecord(..)),
-                    "Instruction '{instruction}' is not a get.dynamic.record operation."
+                    matches!(instruction, Instruction::GetRecordDynamic(..)),
+                    "Instruction '{instruction}' is not a get.record.dynamic operation."
                 );
             }
         }
@@ -634,53 +631,6 @@ impl<N: Network> RegisterTypes<N> {
 }
 
 impl<N: Network> RegisterTypes<N> {
-    // TODO (howardwu & d0cd): Reimplement this for cast and cast.lossy.
-    // /// Checks the cast operation is well-formed.
-    // fn check_cast_operation<const VARIANT: u8>(
-    //     &self,
-    //     stack: &impl StackTrait<N>,
-    //     operation: &CastOperation<N, VARIANT>,
-    // ) -> Result<()> {
-    //     // Ensure the operation has one destination register.
-    //     ensure!(operation.destinations().len() == 1, "Instruction '{operation}' has multiple destinations.");
-    //     // Ensure the casted register type is defined.
-    //     match operation.register_type() {
-    //         RegisterType::Plaintext(PlaintextType::Literal(..)) => {
-    //             ensure!(operation.operands().len() == 1, "Expected 1 operand.");
-    //         }
-    //         RegisterType::Plaintext(PlaintextType::Struct(struct_name)) => {
-    //             // Ensure the struct name exists in the program.
-    //             if !stack.program().contains_struct(struct_name) {
-    //                 bail!("Struct '{struct_name}' is not defined.")
-    //             }
-    //             // Retrieve the struct.
-    //             let struct_ = stack.program().get_struct(struct_name)?;
-    //             // Ensure the operand types match the struct.
-    //             self.matches_struct(stack, operation.operands(), struct_)?;
-    //         }
-    //         RegisterType::Plaintext(PlaintextType::Array(array_type)) => {
-    //             // Ensure that the array type is valid.
-    //             RegisterTypes::check_array(stack, array_type)?;
-    //             // Ensure the operand types match the element type.
-    //             self.matches_array(stack, operation.operands(), array_type)?;
-    //         }
-    //         RegisterType::Record(record_name) => {
-    //             // Ensure the record type is defined in the program.
-    //             if !stack.program().contains_record(record_name) {
-    //                 bail!("Record '{record_name}' is not defined.")
-    //             }
-    //             // Retrieve the record type.
-    //             let record_type = stack.program().get_record(record_name)?;
-    //             // Ensure the operand types match the record type.
-    //             self.matches_record(stack, operation.operands(), record_type)?;
-    //         }
-    //         RegisterType::ExternalRecord(_locator) => {
-    //             bail!("Illegal operation: Cannot cast to an external record.")
-    //         }
-    //     }
-    //     Ok(())
-    // }
-
     /// Ensures the struct exists in the program, and recursively-checks for array members.
     pub(crate) fn check_struct(stack: &Stack<N>, struct_name: &Identifier<N>) -> Result<()> {
         // Retrieve the struct from the program.

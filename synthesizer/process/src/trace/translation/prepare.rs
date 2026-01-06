@@ -45,7 +45,7 @@ impl<N: Network> Translation<N> {
         // traversal order.
         //
         // At the end of the process, we verify that all translation tasks have been consumed. In order to avoid consuming or
-        // modifying `self`, we keep a separate dictionary to track the next unconsumed translation task for each (caller)
+        // modifying `self`, we keep a separate map to track the next unconsumed translation task for each (caller)
         // transition ID.
         let mut caller_id_to_next_task: HashMap<N::TransitionID, usize> =
             self.translation_tasks.keys().map(|transition_id| (*transition_id, 0)).collect();
@@ -176,15 +176,15 @@ impl<N: Network> Translation<N> {
                 "Not all (callee) translation tasks have been consumed for transition ID {}: there are {}, but only {} have been consumed",
                 transition_id,
                 self.translation_tasks.get(transition_id).unwrap().len(),
-                *next_task - 1
+                *next_task
             );
         }
 
         Ok(batched_assignments.into_iter().collect())
     }
 
-    // TODO (dynamic_dispatch) should this really be the same as prepare?
     /// Returns the inclusion assignments for the given transitions.
+    // Note that the `Translation::prepare` is already async-compatibile because it does not do any blocking operations.
     #[cfg(feature = "async")]
     pub async fn prepare_async(
         &self,

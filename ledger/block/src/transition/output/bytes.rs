@@ -91,7 +91,11 @@ impl<N: Network> FromBytes for Output<N> {
                 };
                 Self::Future(future_hash, future)
             }
-            6.. => return Err(error(format!("Failed to decode output variant {index}"))),
+            6 => {
+                let commitment = FromBytes::read_le(&mut reader)?;
+                Self::DynamicRecord(commitment)
+            }
+            7.. => return Err(error(format!("Failed to decode output variant {index}"))),
         };
         Ok(literal)
     }

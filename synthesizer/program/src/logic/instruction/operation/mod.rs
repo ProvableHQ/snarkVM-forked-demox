@@ -34,8 +34,8 @@ pub use deserialize::*;
 mod ecdsa_verify;
 pub use ecdsa_verify::*;
 
-mod get_dynamic_record;
-pub use get_dynamic_record::*;
+mod get_record_dynamic;
+pub use get_record_dynamic::*;
 
 mod hash;
 pub use hash::*;

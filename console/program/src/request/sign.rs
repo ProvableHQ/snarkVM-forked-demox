@@ -16,59 +16,30 @@
 use super::*;
 
 impl<N: Network> Request<N> {
-    /// Returns the request for a given private key, program ID, function name, inputs, input types, and RNG, where:
-    ///     challenge := HashToScalar(r * G, pk_sig, pr_sig, signer, \[tvk, tcm, function ID, is_root, program checksum?, input IDs, dynamic input IDs?\])
+    /// Returns the request for a given private key, program ID, function name, inputs, input types, is_dynamic and RNG, where:
+    ///     challenge := HashToScalar(r * G, pk_sig, pr_sig, signer, \[tvk, tcm, function ID, is_root, program checksum?, input IDs\])
     ///     response := r - challenge * sk_sig
     /// The program checksum must be provided if the program has a constructor and should not be provided otherwise.
-    pub fn sign_dynamic<R: Rng + CryptoRng>(
+    pub fn sign<R: Rng + CryptoRng>(
         private_key: &PrivateKey<N>,
         program_id: ProgramID<N>,
         function_name: Identifier<N>,
         inputs: impl ExactSizeIterator<Item = impl TryInto<Value<N>>>,
         input_types: &[ValueType<N>],
-        caller_inputs: impl ExactSizeIterator<Item = impl TryInto<Value<N>>>,
-        caller_input_types: &[ValueType<N>],
-        caller_output_types: &[ValueType<N>],
-        caller_request: &Request<N>,
         root_tvk: Option<Field<N>>,
         is_root: bool,
         program_checksum: Option<Field<N>>,
+        dynamic: Option<bool>,
         rng: &mut R,
     ) -> Result<Self> {
         // Ensure the number of inputs matches the number of input types.
         if input_types.len() != inputs.len() {
-            bail!("Expected {} inputs, but {} were provided.", input_types.len(), inputs.len())
-        }
-
-        // Ensure the number of inputs matches the number of input types.
-        if caller_input_types.len() != caller_inputs.len() {
-            bail!("Expected {} caller inputs, but {} were provided.", caller_input_types.len(), caller_inputs.len())
-        }
-
-        // Ensure the number of caller and callee inputs match.
-        if caller_inputs.len() != inputs.len() {
             bail!(
-                "Number of caller inputs ({}) doesn't match that of callee ones ({}).",
-                caller_inputs.len(),
+                "'{program_id}/{function_name}' expects {} inputs, but {} were provided.",
+                input_types.len(),
                 inputs.len()
             )
         }
-
-        // Parse the inputs.
-        let mut parsed_inputs = Vec::with_capacity(inputs.len());
-        for (i, input) in inputs.enumerate() {
-            let input = input.try_into().map_err(|_| anyhow!("Failed to parse input #{i}"))?;
-            parsed_inputs.push(input);
-        }
-        let inputs = parsed_inputs;
-
-        // Parse the caller inputs.
-        let mut parsed_caller_inputs = Vec::with_capacity(caller_inputs.len());
-        for (i, input) in caller_inputs.into_iter().enumerate() {
-            let input = input.try_into().map_err(|_| anyhow!("Failed to parse caller input #{i}"))?;
-            parsed_caller_inputs.push(input);
-        }
-        let caller_inputs = parsed_caller_inputs;
 
         // Retrieve `sk_sig`.
         let sk_sig = private_key.sk_sig();
@@ -118,48 +89,59 @@ impl<N: Network> Request<N> {
             message.push(program_checksum);
         }
 
+        // Initialize a vector to store the prepared inputs.
+        let mut prepared_inputs = Vec::with_capacity(inputs.len());
         // Initialize a vector to store the input IDs.
         let mut input_ids = Vec::with_capacity(inputs.len());
-        // Initialize a vector to store the caller input IDs.
-        let mut caller_input_ids = Vec::with_capacity(inputs.len());
 
         // Prepare the inputs.
-        ensure!(
-            inputs.len() == input_types.len(),
-            "Expected {} inputs, but {} were provided.",
-            input_types.len(),
-            inputs.len()
-        );
-        for (index, (input, input_type)) in inputs.iter().zip(input_types).enumerate() {
+        for (index, (input, input_type)) in inputs.zip_eq(input_types).enumerate() {
+            // Prepare the input.
+            let input = input.try_into().map_err(|_| {
+                anyhow!("Failed to parse input #{index} ('{input_type}') for '{program_id}/{function_name}'")
+            })?;
+            // Store the prepared input.
+            prepared_inputs.push(input.clone());
+
             // Convert index to u16.
             let index = u16::try_from(index).or_halt_with::<N>("Input index exceeds u16");
 
             // A helper function that computes the input ID.
-            let compute_input_id = |input: &Value<N>, input_type: &ValueType<N>| -> Result<InputID<N>> {
-                match input_type {
+            let compute_input_id = |input_type: &ValueType<N>, input: &Value<N>| -> Result<InputID<N>> {
+                match (input_type, input) {
                     // A constant input is hashed (using `tcm`) to a field element.
-                    ValueType::Constant(..) => InputID::constant(function_id, input, tcm, index),
+                    (ValueType::Constant(..), Value::Plaintext(..)) => {
+                        InputID::constant(function_id, input, tcm, index)
+                    }
                     // A public input is hashed (using `tcm`) to a field element.
-                    ValueType::Public(..) => InputID::public(function_id, input, tcm, index),
+                    (ValueType::Public(..), Value::Plaintext(..)) => InputID::public(function_id, input, tcm, index),
                     // A private input is encrypted (using `tvk`) and hashed to a field element.
-                    ValueType::Private(..) => InputID::private(function_id, input, tvk, index),
+                    (ValueType::Private(..), Value::Plaintext(..)) => InputID::private(function_id, input, tvk, index),
                     // A record input is computed to its serial number.
-                    ValueType::Record(record_name) => {
+                    (ValueType::Record(record_name), Value::Record(..)) => {
                         InputID::record(&program_id, record_name, input, &signer, &view_key, &sk_sig, sk_tag)
                     }
                     // An external record input is hashed (using `tvk`) to a field element.
-                    ValueType::ExternalRecord(..) => InputID::external_record(function_id, input, tvk, index),
+                    (ValueType::ExternalRecord(..), Value::Record(..)) => {
+                        InputID::external_record(function_id, input, tvk, index)
+                    }
                     // A future is not a valid input.
-                    ValueType::Future(..) => bail!("A future is not a valid input"),
+                    (ValueType::Future(..), Value::Future(..)) => bail!("A future is not a valid input"),
                     // A dynamic record input is hashed (using `tvk`) to a field element.
-                    ValueType::DynamicRecord => InputID::dynamic_record(function_id, input, tvk, index),
+                    (ValueType::DynamicRecord, Value::DynamicRecord(..)) => {
+                        InputID::dynamic_record(function_id, input, tvk, index)
+                    }
                     // A dynamic future is not a valid input.
-                    ValueType::DynamicFuture => bail!("A dynamic future is not a valid input"),
+                    (ValueType::DynamicFuture, Value::DynamicFuture(..)) => {
+                        bail!("A dynamic future is not a valid input")
+                    }
+                    // Mismatched input and input type.
+                    _ => bail!("Mismatched input '{input}' and input type '{input_type}'"),
                 }
             };
 
             // Compute the input ID.
-            let input_id = compute_input_id(input, input_type)?;
+            let input_id = compute_input_id(input_type, &input)?;
             // Add the appropriate data to the message.
             if let InputID::Record(commitment, gamma, _, _, tag) = input_id {
                 // Compute the generator `H` as `HashToGroup(commitment)`.
@@ -176,17 +158,6 @@ impl<N: Network> Request<N> {
             }
             // Update the input IDs.
             input_ids.push(input_id);
-
-            // Retrieve the caller input type.
-            // Note: This indexing is safe because we have already ensured that the lengths match.
-            let caller_input_type = &caller_input_types[index as usize];
-            // Retrieve the caller input.
-            // Note: This indexing is safe because we have already ensured that the lengths match.
-            let caller_input = &caller_inputs[index as usize];
-            // Compute the caller input ID.
-            let caller_input_id = compute_input_id(caller_input, caller_input_type)?;
-            // Update the caller input IDs
-            caller_input_ids.push(caller_input_id);
         }
 
         // Compute `challenge` as `HashToScalar(r * G, pk_sig, pr_sig, signer, [tvk, tcm, function ID, is_root, program checksum?, input IDs])`.
@@ -200,16 +171,92 @@ impl<N: Network> Request<N> {
             program_id,
             function_name,
             input_ids,
-            inputs,
+            inputs: prepared_inputs,
             signature: Signature::from((challenge, response, compute_key)),
             sk_tag,
             tvk,
             tcm,
             scm,
-            caller_input_ids: Some(caller_input_ids),
-            caller_inputs: Some(caller_inputs),
-            caller_output_types: Some(caller_output_types.to_vec()),
-            caller_request: Some(Box::new(caller_request.clone())),
+            dynamic,
         })
+    }
+
+    /// Returns a static request.
+    /// Note: Static requests do not include the `dynamic` field, resulting in V1 transitions.
+    pub fn sign_static<R: Rng + CryptoRng>(
+        private_key: &PrivateKey<N>,
+        program_id: ProgramID<N>,
+        function_name: Identifier<N>,
+        inputs: impl ExactSizeIterator<Item = impl TryInto<Value<N>>>,
+        input_types: &[ValueType<N>],
+        root_tvk: Option<Field<N>>,
+        is_root: bool,
+        program_checksum: Option<Field<N>>,
+        rng: &mut R,
+    ) -> Result<Self> {
+        Self::sign(
+            private_key,
+            program_id,
+            function_name,
+            inputs,
+            input_types,
+            root_tvk,
+            is_root,
+            program_checksum,
+            None,
+            rng,
+        )
+    }
+
+    /// Returns a dynamic request.
+    pub fn sign_dynamic<R: Rng + CryptoRng>(
+        private_key: &PrivateKey<N>,
+        program_id: ProgramID<N>,
+        function_name: Identifier<N>,
+        inputs: impl ExactSizeIterator<Item = impl TryInto<Value<N>>>,
+        input_types: &[ValueType<N>],
+        root_tvk: Option<Field<N>>,
+        is_root: bool,
+        program_checksum: Option<Field<N>>,
+        rng: &mut R,
+    ) -> Result<Self> {
+        Self::sign(
+            private_key,
+            program_id,
+            function_name,
+            inputs,
+            input_types,
+            root_tvk,
+            is_root,
+            program_checksum,
+            Some(true),
+            rng,
+        )
+    }
+
+    /// Returns a V1 request.
+    pub fn sign_v1<R: Rng + CryptoRng>(
+        private_key: &PrivateKey<N>,
+        program_id: ProgramID<N>,
+        function_name: Identifier<N>,
+        inputs: impl ExactSizeIterator<Item = impl TryInto<Value<N>>>,
+        input_types: &[ValueType<N>],
+        root_tvk: Option<Field<N>>,
+        is_root: bool,
+        program_checksum: Option<Field<N>>,
+        rng: &mut R,
+    ) -> Result<Self> {
+        Self::sign(
+            private_key,
+            program_id,
+            function_name,
+            inputs,
+            input_types,
+            root_tvk,
+            is_root,
+            program_checksum,
+            None,
+            rng,
+        )
     }
 }

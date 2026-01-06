@@ -15,6 +15,9 @@
 
 use super::*;
 
+use itertools::izip;
+use snarkvm_utilities::dev_eprintln;
+
 impl<N: Network> Request<N> {
     /// Returns `true` if the request is valid, and `false` otherwise.
     ///
@@ -63,13 +66,24 @@ impl<N: Network> Request<N> {
         message.push(self.tcm);
         message.push(function_id);
         message.push(is_root);
+
         // Add the program checksum to the signature message if it was provided.
         if let Some(program_checksum) = program_checksum {
             message.push(program_checksum);
         }
 
-        if let Err(error) = self.input_ids.iter().zip_eq(&self.inputs).zip_eq(input_types).enumerate().try_for_each(
-            |(index, ((input_id, input), input_type))| {
+        if self.input_ids.len() != self.inputs.len() || self.input_ids.len() != input_types.len() {
+            dev_eprintln!(
+                "Mismatched number of input IDs, inputs, and input types: {} vs. {} vs. {}",
+                self.input_ids.len(),
+                self.inputs.len(),
+                input_types.len(),
+            );
+            return false;
+        }
+
+        if let Err(error) = izip!(&self.input_ids, &self.inputs, input_types).enumerate().try_for_each(
+            |(index, (input_id, input, input_type))| {
                 // Convert index to u16.
                 let index = u16::try_from(index).or_halt_with::<N>("Input index exceeds u16");
 
@@ -270,7 +284,7 @@ mod tests {
 
             // Compute the signed request.
             let request = if bool::rand(rng) {
-                Request::sign(
+                Request::sign_static(
                     &private_key,
                     program_id,
                     function_name,
@@ -283,30 +297,13 @@ mod tests {
                 )
                 .unwrap()
             } else {
-                // Sample the caller request.
-                let caller_request = Request::sign(
-                    &private_key,
-                    program_id,
-                    function_name,
-                    inputs.clone().into_iter(),
-                    &input_types,
-                    root_tvk,
-                    is_root,
-                    program_checksum,
-                    rng,
-                )
-                .unwrap();
                 // Compute the request.
                 Request::sign_dynamic(
                     &private_key,
                     program_id,
                     function_name,
-                    inputs.clone().into_iter(),
-                    &input_types,
                     inputs.into_iter(),
                     &input_types,
-                    &input_types,
-                    &caller_request,
                     root_tvk,
                     is_root,
                     program_checksum,

@@ -13,25 +13,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{CallStack, Registers, Stack, compute_function_id, stack::Address};
+use crate::{CallStack, Registers, Stack, compute_function_id, stack::Address, trace::RecordTranslationData};
 use aleo_std::prelude::{finish, lap, timer};
 use console::{
     account::Field,
     network::prelude::*,
-    program::{
-        DynamicFuture,
-        Identifier,
-        InputID,
-        Literal,
-        OutputID,
-        Plaintext,
-        ProgramID,
-        Register,
-        Request,
-        Response,
-        Value,
-        ValueType,
-    },
+    program::{Identifier, InputID, Literal, OutputID, Plaintext, ProgramID, Register, Request, Value, ValueType},
     types::{Group, U16},
 };
 use snarkvm_synthesizer_program::{
@@ -39,7 +26,6 @@ use snarkvm_synthesizer_program::{
     CallDynamic,
     CallOperator,
     Operand,
-    RecordTranslationData,
     RegistersCircuit as _,
     RegistersSigner as _,
     RegistersTrait as _,

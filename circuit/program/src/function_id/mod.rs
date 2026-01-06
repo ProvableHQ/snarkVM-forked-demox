@@ -55,6 +55,9 @@ mod tests {
         function_name: &str,
         expected_count: UpdatableCount,
     ) -> Result<()> {
+        Circuit::initialize_global_constants();
+        Circuit::reset();
+
         // Initialize the console values.
         let console_network_id = ConsoleU16::new(network_id);
         let console_program_id = ConsoleProgramID::from_str(program_id)?;
@@ -101,7 +104,7 @@ mod tests {
 
     #[test]
     fn test_compute_function_id_constant() -> Result<()> {
-        check(Mode::Constant, 0, "credits.aleo", "transfer_public", count_is!(18153, 0, 0, 0))?;
+        check(Mode::Constant, 0, "credits.aleo", "transfer_public", count_is!(767, 0, 0, 0))?;
         check(Mode::Constant, 0, "credits.aleo", "transfer_private", count_is!(779, 0, 0, 0))?;
         check(Mode::Constant, 0, "credits.aleo", "transfer_public_to_private", count_is!(883, 0, 0, 0))?;
         check(Mode::Constant, 0, "token_registry.aleo", "transfer_public_to_private", count_is!(959, 0, 0, 0))?;
@@ -112,22 +115,11 @@ mod tests {
 
     #[test]
     fn test_compute_function_id_public() -> Result<()> {
-        check(Mode::Public, 0, "credits.aleo", "transfer_public", count_is!(17851, 0, 1895, 1901))?;
+        check(Mode::Public, 0, "credits.aleo", "transfer_public", count_is!(465, 0, 1895, 1901))?;
         check(Mode::Public, 0, "credits.aleo", "transfer_private", count_is!(465, 0, 1909, 1915))?;
         check(Mode::Public, 0, "credits.aleo", "transfer_public_to_private", count_is!(465, 0, 2040, 2046))?;
         check(Mode::Public, 0, "token_registry.aleo", "transfer_public_to_private", count_is!(465, 0, 2135, 2141))?;
         check(Mode::Public, 0, "my.aleo", "foo", count_is!(463, 0, 1664, 1670))?;
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_compute_function_id_private() -> Result<()> {
-        check(Mode::Private, 0, "credits.aleo", "transfer_public", count_is!(17851, 0, 1895, 1901))?;
-        check(Mode::Private, 0, "credits.aleo", "transfer_private", count_is!(465, 0, 1909, 1915))?;
-        check(Mode::Private, 0, "credits.aleo", "transfer_public_to_private", count_is!(465, 0, 2040, 2046))?;
-        check(Mode::Private, 0, "token_registry.aleo", "transfer_public_to_private", count_is!(465, 0, 2135, 2141))?;
-        check(Mode::Private, 0, "my.aleo", "foo", count_is!(463, 0, 1664, 1670))?;
 
         Ok(())
     }

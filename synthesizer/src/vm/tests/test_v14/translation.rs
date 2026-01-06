@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use snarkvm_ledger_block::{Input, Transition};
+use snarkvm_ledger_block::{Input, Transition, TransitionCallerMetadata};
 
 use super::*;
 
@@ -59,7 +59,7 @@ fn test_translation(
     let static_gas_leak_function_field = static_gas_leak_function_name.to_field().unwrap();
     let get_dynamic_liters_from_gas_function_field = get_dynamic_liters_from_gas_function_name.to_field().unwrap();
 
-    let program_a_string = format!(
+    let program_a_str = format!(
         r"
     import {program_b_name_str}.aleo;
 
@@ -143,7 +143,7 @@ fn test_translation(
         (caller_address.to_string(), "100u64".to_string(), "false".to_string())
     };
 
-    let program_b_string = format!(
+    let program_b_str = format!(
         r"
     program {program_b_name_str}.aleo;
 
@@ -209,8 +209,8 @@ fn test_translation(
     );
 
     // Initialize a new program.
-    let program_a = Program::<CurrentNetwork>::from_str(&program_a_string).unwrap();
-    let program_b = Program::<CurrentNetwork>::from_str(&program_b_string).unwrap();
+    let program_a = Program::<CurrentNetwork>::from_str(&program_a_str).unwrap();
+    let program_b = Program::<CurrentNetwork>::from_str(&program_b_str).unwrap();
 
     // Initialize the VM.
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
@@ -304,32 +304,6 @@ fn test_translation(
         assert_eq!(public_outputs.into_iter().cloned().collect_vec(), expected_public_outputs);
     }
 }
-
-/************************** Translation test cases ***************************/
-
-// TODO (dynamic_dispatch) remove the legend once working
-// Clean up but keep around.
-//
-// Single-translation test cases (O: coded, P: passing)
-// P input dynamic -> static external
-// P input dynamic -> static non-external
-// P output static non-external -> dynamic
-// P output static external -> dynamic
-// Double-translation test cases (non-exhaustive)
-// - input static-external -> dynamic subsequently passed as input dynamic -> static
-// - output static -> dynamic subsequently passed as output dynamic -> static
-// Polimorphy
-// - input static-type-1 -> dynamic, then static-type-2 -> dynamic (e. g. controlled by a boolean private input)
-// - input static-type-1 + static-type2 -> dynamic, dynamic
-// Other chained cases (non-exhaustive)
-// - input static -> dynamic passed as static -> dynamic, output as dynamic -> static
-// - input static -> dynamic passed as static -> dynamic, output as dynamic (check dynamic-record OutputID changes as expected)
-// Key-fetching
-// - input static -> dynamic, input dynamic -> static, output static -> dynamic, output dynamic -> static all witht he same static definition: only one translation proving key should be fetched
-// - static {program_1 - record_name_1, program_1 - record_name_1, program_1 - record_name_2, program_2 - record_name_1, program_2 - record_name_2}: 4 translation proving keys should be fetched
-// Signature consistency
-// - test involve translation of the output of a call from a preexisting program to ensure signature-verification circuit hasn't changed
-// More
 
 #[test]
 fn test_translation_input_dynamic_non_external() {
@@ -442,7 +416,7 @@ fn test_translation_triple() {
     //    - Receive as input a dynamic record corresponding to the above static one
     //    - Pass it to static_gas_leak, which consumes a static gas_container.record (first translation) and produces a new one with 10 fewer liters.
     //    - Receive as output the new static record as dynamic (second translation)
-    //    - Call get_dynamic_liters_from_gas, which receives a dynamic record (no translation) and calls get_gas_liters, which in turn expects an static record (third translation)
+    //    - Call get_dynamic_liters_from_gas, which receives a dynamic record (no translation) and calls get_gas_liters, which in turn expects a static record (third translation)
     //
     // This also checks consistency in the traversal order of translation tasks for the prover and verifier.
 
@@ -533,7 +507,7 @@ fn test_translation_traversal_consistency() {
     let processed_hamlet_quote = process_quote(hamlet_quote);
     let processed_lotr_quote = process_quote(lotr_quote);
 
-    let program_string = format!(
+    let program_str = format!(
         r"
     program {program_name_str}.aleo;
 
@@ -649,7 +623,7 @@ fn test_translation_traversal_consistency() {
     "
     );
 
-    let program = Program::<CurrentNetwork>::from_str(&program_string).unwrap();
+    let program = Program::<CurrentNetwork>::from_str(&program_str).unwrap();
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
@@ -731,7 +705,7 @@ fn test_malicious_caller_inputs_outputs() {
     let network_field = network_str.to_field().unwrap();
     let decolor_glass_statically_function_field = decolor_glass_statically_function_str.to_field().unwrap();
 
-    let program_string = format!(
+    let program_str = format!(
         r"
         program {glass_pane_program_str}.aleo;
 
@@ -771,7 +745,7 @@ fn test_malicious_caller_inputs_outputs() {
     "
     );
 
-    let program = Program::<CurrentNetwork>::from_str(&program_string).unwrap();
+    let program = Program::<CurrentNetwork>::from_str(&program_str).unwrap();
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
@@ -834,7 +808,7 @@ fn test_malicious_caller_inputs_outputs() {
     // Here a malicious prover removes caller_inputs from a dynamic-call transition
     // and the verifier detects it.
 
-    // We tamper with the transition by removing the caller inputs and outputs:
+    // We tamper with the transition by removing the caller metadata:
     let tampered_child_transition = Transition::new(
         *child_transition.program_id(),
         *child_transition.function_name(),
@@ -843,7 +817,6 @@ fn test_malicious_caller_inputs_outputs() {
         *child_transition.tpk(),
         *child_transition.tcm(),
         *child_transition.scm(),
-        None,
         None,
     )
     .unwrap();
@@ -902,8 +875,13 @@ fn test_malicious_caller_inputs_outputs() {
         *child_transition.tpk(),
         *child_transition.tcm(),
         *child_transition.scm(),
-        Some(dishonest_caller_inputs),
-        Some(child_transition.caller_outputs().unwrap().to_vec()),
+        Some(
+            TransitionCallerMetadata::new_dynamic(
+                dishonest_caller_inputs,
+                child_transition.caller_outputs().unwrap().to_vec(),
+            )
+            .unwrap(),
+        ),
     )
     .unwrap();
 
@@ -922,7 +900,7 @@ fn test_malicious_caller_inputs_outputs() {
     .unwrap();
 
     // Extra funds need to be added to the fee to account for the
-    // increased size of the modifiedexecution: using the previously constructed
+    // increased size of the modified execution: using the previously constructed
     // transaction_consume.fee_transition() causes an earlier error than the one
     // we want to test due to the fee being insufficient.
     let fee_authorization = vm
@@ -974,8 +952,13 @@ fn test_malicious_caller_inputs_outputs() {
         *child_transition.tpk(),
         *child_transition.tcm(),
         *child_transition.scm(),
-        Some(child_transition.caller_inputs().unwrap().to_vec()),
-        Some(dishonest_caller_outputs),
+        Some(
+            TransitionCallerMetadata::new_dynamic(
+                child_transition.caller_inputs().unwrap().to_vec(),
+                dishonest_caller_outputs,
+            )
+            .unwrap(),
+        ),
     )
     .unwrap();
 
@@ -994,7 +977,7 @@ fn test_malicious_caller_inputs_outputs() {
     .unwrap();
 
     // Extra funds need to be added to the fee to account for the
-    // increased size of the modifiedexecution: using the previously constructed
+    // increased size of the modified execution: using the previously constructed
     // transaction_consume.fee_transition() causes an earlier error than the one
     // we want to test due to the fee being insufficient.
     let fee_authorization = vm
@@ -1023,4 +1006,125 @@ fn test_malicious_caller_inputs_outputs() {
             .to_string()
             .contains("Caller output 0 in dynamic call to decolor_glass_statically should be of type")
     );
+}
+
+// Checks that translation keys for the same record name but differrent programs
+// are different and vice. Run with the snark-print feature to explore Varuna
+// batch sizes and locate the translation keys displayed by the test among the
+// verification batches in the last transaction.
+#[test]
+fn test_differing_keys() {
+    // Parameters for dynamic calls
+    let program_a_name = Identifier::<CurrentNetwork>::from_str("program_a").unwrap();
+    let program_b_name = Identifier::<CurrentNetwork>::from_str("program_b").unwrap();
+    let network_name = Identifier::<CurrentNetwork>::from_str("aleo").unwrap();
+    let mint_record_a_function_name = Identifier::<CurrentNetwork>::from_str("mint_record_a").unwrap();
+    let mint_record_b_function_name = Identifier::<CurrentNetwork>::from_str("mint_record_b").unwrap();
+    let program_a_field = program_a_name.to_field().unwrap();
+    let program_b_field = program_b_name.to_field().unwrap();
+    let network_field = network_name.to_field().unwrap();
+    let mint_record_a_function_field = mint_record_a_function_name.to_field().unwrap();
+    let mint_record_b_function_field = mint_record_b_function_name.to_field().unwrap();
+
+    let program_a_str = r"
+        program program_a.aleo;
+
+        record record_a:
+            owner as address.private;
+
+        record record_b:
+            owner as address.private;
+        
+        function mint_record_a:
+            cast self.signer into r0 as record_a.record;
+            output r0 as record_a.record;
+
+        function mint_record_b:
+            cast self.signer into r0 as record_b.record;
+            output r0 as record_b.record;
+
+        constructor:
+            assert.eq true true;";
+
+    let program_b_str = format!(
+        r"
+        import program_a.aleo;
+
+        program program_b.aleo;
+
+        record record_a:
+            owner as address.private;
+
+        record record_b:
+            owner as address.private;
+        
+        function mint_record_a:
+            cast self.signer into r0 as record_a.record;
+            output r0 as record_a.record;
+
+        function mint_record_b:
+            cast self.signer into r0 as record_b.record;
+            output r0 as record_b.record;
+
+        function mint_all:
+            call.dynamic {program_a_field} {network_field} {mint_record_a_function_field}
+                into r0 (as dynamic.record);
+
+            call.dynamic {program_a_field} {network_field} {mint_record_b_function_field}
+                into r1 (as dynamic.record);
+
+            call.dynamic {program_b_field} {network_field} {mint_record_a_function_field}
+                into r2 (as dynamic.record);
+
+            call.dynamic {program_b_field} {network_field} {mint_record_b_function_field}
+                into r3 (as dynamic.record);
+
+        constructor:
+            assert.eq true true;
+    "
+    );
+
+    let program_a = Program::<CurrentNetwork>::from_str(program_a_str).unwrap();
+    let program_b = Program::<CurrentNetwork>::from_str(&program_b_str).unwrap();
+
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    // Deploy the programs.
+    let transaction_a = vm.deploy(&caller_private_key, &program_a, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[transaction_a], rng);
+
+    let transaction_b = vm.deploy(&caller_private_key, &program_b, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[transaction_b], rng);
+
+    // Displaying the keys associated to each translation circuit for easier
+    // identification with snark-print
+    for program_name in ["program_a.aleo", "program_b.aleo"] {
+        let stack = vm.process().read().get_stack(program_name).unwrap();
+        println!("{program_name} translation keys:");
+        for record_name in ["record_a", "record_b"] {
+            let record_identifier = Identifier::<CurrentNetwork>::from_str(record_name).unwrap();
+            let verifying_key = stack.get_translation_verifying_key(&record_identifier).unwrap();
+            println!(" - {record_name}: {}", verifying_key.id);
+        }
+    }
+
+    // Executing one translation task for each of the four record definitions
+    println!("Minting and translating all records...");
+
+    let transaction_mint_all = vm
+        .execute(
+            &caller_private_key,
+            ("program_b.aleo", "mint_all"),
+            Vec::<Value<CurrentNetwork>>::new().into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[transaction_mint_all], rng);
 }

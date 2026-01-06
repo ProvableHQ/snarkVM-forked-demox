@@ -170,6 +170,13 @@ impl<N: Network> Stack<N> {
         // Retrieve the next request.
         let console_request = call_stack.pop()?;
 
+        // If in Execute mode, push a new translation bucket for this execution level.
+        // Translations from dynamic calls made at this level will be pushed to this bucket,
+        // and the bucket will be popped when the transition is inserted.
+        if let CallStack::Execute(_, _, translations) = &call_stack {
+            translations.write().push(Vec::new());
+        }
+
         // Ensure the network ID matches.
         ensure!(
             **console_request.network_id() == N::ID,
@@ -288,7 +295,7 @@ impl<N: Network> Stack<N> {
         let num_request_constraints = A::num_constraints();
 
         // Retrieve the number of public variables in the circuit.
-        let mut num_public = A::num_public();
+        let num_public = A::num_public();
 
         // Store the inputs.
         function.inputs().iter().map(|i| i.register()).zip_eq(request.inputs()).try_for_each(|(register, input)| {
@@ -333,9 +340,6 @@ impl<N: Network> Stack<N> {
                 Instruction::Call(call) => CallTrait::execute(call, self, &mut registers, rng),
                 // If the instruction is a `call.dynamic` instruction, we need to handle it separately.
                 Instruction::CallDynamic(call_dynamic) => {
-                    // Increment the number of public variables.
-                    // TODO (@d0cd): Explain this count.
-                    num_public += 7;
                     // Execute the dynamic call.
                     CallTrait::execute(call_dynamic, self, &mut registers, rng)
                 }
@@ -522,7 +526,7 @@ impl<N: Network> Stack<N> {
             lap!(timer, "Save the circuit assignment");
         }
         // If the circuit is in `Execute` mode, then execute the circuit into a transition.
-        else if let CallStack::Execute(_, trace) = registers.call_stack_ref() {
+        else if let CallStack::Execute(_, trace, translations) = registers.call_stack_ref() {
             registers.ensure_console_and_circuit_registers_match()?;
 
             // Construct the transition.
@@ -541,12 +545,17 @@ impl<N: Network> Stack<N> {
                 num_response_constraints,
             };
 
+            // Pop the translation bucket for this execution level.
+            // This bucket contains translations from dynamic calls made at this level.
+            let translation_bucket =
+                translations.write().pop().ok_or_else(|| anyhow!("Translation stack underflow: no bucket to pop"))?;
+
             // Add the transition to the trace.
             trace.write().insert_transition(
                 console_request.input_ids(),
                 &transition,
                 (proving_key, assignment),
-                registers.record_translation_data(),
+                &translation_bucket,
                 metrics,
             )?;
         }

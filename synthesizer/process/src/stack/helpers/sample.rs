@@ -40,7 +40,6 @@ impl<N: Network> Stack<N> {
         Ok(future)
     }
 
-    // TODO (@d0cd) verify that this is sound wrt `get.future.dynamic`.
     /// Samples a dynamic future value.
     pub fn sample_dynamic_future<R: Rng + CryptoRng>(&self, rng: &mut R) -> Result<DynamicFuture<N>> {
         // Sample a random program name.
@@ -52,10 +51,9 @@ impl<N: Network> Stack<N> {
         // Sample a random argument root.
         let argument_root = Field::rand(rng);
 
-        Ok(DynamicFuture::new_unchecked(program_name, program_network, function_name, argument_root, None, None))
+        Ok(DynamicFuture::new_unchecked(program_name, program_network, function_name, argument_root, None))
     }
 
-    // TODO (@d0cd) verify that this is sound wrt `get.record.dynamic`.
     // Samples a dynamic record value.
     pub fn sample_dynamic_record<R: Rng + CryptoRng>(&self, rng: &mut R) -> Result<DynamicRecord<N>> {
         // Sample a random address.
@@ -67,7 +65,7 @@ impl<N: Network> Stack<N> {
         // Sample a random version.
         let version = U8::<N>::rand(rng);
 
-        Ok(DynamicRecord::new_unchecked(owner, root, nonce, version, None, None))
+        Ok(DynamicRecord::new_unchecked(owner, root, nonce, version, None))
     }
 
     /// Returns a record for the given record name.

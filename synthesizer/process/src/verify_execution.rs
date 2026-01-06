@@ -43,15 +43,24 @@ impl<N: Network> Process<N> {
             let transition = execution.peek()?;
             // Retrieve the stack.
             let stack = self.get_stack(transition.program_id())?;
-            // Ensure the number of calls matches the number of transitions.
-            let _number_of_calls = stack.get_number_of_calls(transition.function_name())?;
-
-            // TODO (dynamic_dispatch) re-introduce or redesign, fails to account for dynamic calls
-            // ensure!(
-            //     number_of_calls == execution.len(),
-            //     "The number of transitions in the execution is incorrect. Expected {number_of_calls}, but found {}",
-            //     execution.len()
-            // );
+            // If the root transition contains a dynamic call,
+            // - ensure that the number of calls is less than or equal to the number of transitions.
+            // - otherwise, ensure that the number of calls matches the number of transitions.
+            if stack.contains_dynamic_call(transition.function_name())? {
+                ensure!(
+                    stack.get_minimum_number_of_calls(transition.function_name())? <= execution.len(),
+                    "The number of transitions in the execution is incorrect. Expected at least {}, but found {}",
+                    stack.get_minimum_number_of_calls(transition.function_name())?,
+                    execution.len()
+                );
+            } else {
+                ensure!(
+                    stack.get_minimum_number_of_calls(transition.function_name())? == execution.len(),
+                    "The number of transitions in the execution is incorrect. Expected {}, but found {}",
+                    stack.get_minimum_number_of_calls(transition.function_name())?,
+                    execution.len()
+                );
+            }
 
             // Output the locator of the main function.
             Locator::new(*transition.program_id(), *transition.function_name()).to_string()
@@ -69,9 +78,6 @@ impl<N: Network> Process<N> {
 
         // Initialize a map of transition IDs to references of the transition.
         let mut transition_map = HashMap::new();
-
-        // Initialize a map of (program ID, record identifier) to translation verifying keys.
-        let mut translation_verifying_keys: HashMap<(ProgramID<N>, Identifier<N>), VerifyingKey<N>> = HashMap::new();
 
         // Verify each transition.
         for transition in execution.transitions() {
@@ -142,34 +148,6 @@ impl<N: Network> Process<N> {
                 true => Some(stack.program_checksum_as_field()?),
                 false => None,
             };
-            // Retrieve the translation verifying keys for the transition's program.
-            for record_name in stack.program().records().keys() {
-                let key = (*transition.program_id(), *record_name);
-
-                // TODO (dynamic_dispatch) do better (e.g with .entry)
-                if let std::collections::hash_map::Entry::Vacant(e) = translation_verifying_keys.entry(key) {
-                    if key
-                        == (
-                            ProgramID::<N>::from_str("credits.aleo").unwrap(),
-                            Identifier::<N>::from_str("credits").unwrap(),
-                        )
-                    {
-                        let verifying_key = N::translation_credits_verifying_key().clone();
-
-                        // Retrieve the number of public and private variables.
-                        // Note: This number does *NOT* include the number of constants. This is safe because
-                        // this program is never deployed, as it is a first-class citizen of the protocol.
-                        let num_variables = verifying_key.circuit_info.num_public_and_private_variables as u64;
-                        // Insert the translation verifying key.
-                        e.insert(VerifyingKey::<N>::new(verifying_key, num_variables));
-                    } else {
-                        let translation_verifying_key = stack
-                            .get_translation_verifying_key(record_name)
-                            .map_err(|_| anyhow!("Translation verifying key not found for {}/{}", key.0, key.1))?;
-                        e.insert(translation_verifying_key);
-                    }
-                }
-            }
 
             // Ensure the number of inputs and outputs match the expected number in the function.
             ensure!(function.inputs().len() == num_inputs, "The number of transition inputs is incorrect");
@@ -243,16 +221,18 @@ impl<N: Network> Process<N> {
         let batch_translation_inputs = Translation::prepare_verifier_inputs(
             execution.transitions(),
             &transition_map,
-            &translation_verifying_keys,
+            &|(program_id, record_name)| {
+                self.get_stack(program_id).and_then(|stack| stack.get_translation_verifying_key(record_name))
+            },
         )?;
 
-        // TODO(dynamic_dispatch): bring appropriate new measurement functions from execution_cost_for_authorization to here.
+        // TODO (@vicsn): bring appropriate new measurement functions from execution_cost_for_authorization to here.
 
         for (verifying_key, batch_translation_inputs_for_record) in batch_translation_inputs.into_iter() {
             // Retrieve the number of public and private variables.
             // Note: This number does *NOT* include the number of constants. This is safe because
             // this program is never deployed, as it is a first-class citizen of the protocol.
-            // TODO (dynamic_dispatch) should this be used?
+            // TODO (@vicsn) should this be used?
             let _num_variables = verifying_key.circuit_info.num_public_and_private_variables as u64;
             // Insert the inclusion verifier inputs.
             verifier_inputs.push((verifying_key.clone(), batch_translation_inputs_for_record));
@@ -326,7 +306,15 @@ impl<N: Network> Process<N> {
                 .iter()
                 .filter_map(|instruction| match instruction {
                     Instruction::CallDynamic(..) => Some((true, instruction.clone())),
-                    Instruction::Call(..) => Some((false, instruction.clone())),
+                    Instruction::Call(call) => {
+                        match self
+                            .get_stack(transition.program_id())
+                            .and_then(|stack| call.is_function_call(stack.as_ref()))
+                        {
+                            Ok(true) => Some((false, instruction.clone())),
+                            Ok(false) | Err(_) => None,
+                        }
+                    }
                     _ => None,
                 })
                 .collect_vec(),
@@ -339,7 +327,9 @@ impl<N: Network> Process<N> {
 
         ensure!(
             parent_function_calls.len() == child_transition_ids.len(),
-            "The number of parent function calls and child transition IDs do not match"
+            "The number of parent function calls ({}) and child transition IDs ({}) do not match",
+            parent_function_calls.len(),
+            child_transition_ids.len()
         );
 
         // TODO(@vicsn): in case we stick to encoding and using *all* of the caller_{inputs, outputs} instead of just the dynamic ones,
@@ -383,7 +373,8 @@ impl<N: Network> Process<N> {
             // [Inputs] Extend the verifier inputs with the input IDs of the external call.
             let child_inputs = if is_dynamic {
                 // Since is_dynamic has been checked to match child_transition.is_dynamic(),
-                // which guarantees caller_inputs.is_some() when true, this ? should always unwrap successfully.
+                // which guarantees caller_inputs.is_some() when true, this ? always
+                // unwraps successfully.
                 let caller_inputs = child_transition.caller_inputs().ok_or_else(|| {
                     anyhow!(
                         "Dynamic-call transition {} (function: {}) has no caller_inputs",
@@ -392,7 +383,8 @@ impl<N: Network> Process<N> {
                     )
                 })?;
 
-                // Note call_dynamic_instruction.unwrap().operand_types() cannot panic by construction (is_dynamic is true)
+                // Note call_dynamic_instruction_opt.unwrap().operand_types() cannot
+                // panic by construction as is_dynamic is true
                 for (i, (input, input_type)) in caller_inputs
                     .iter()
                     .zip(call_dynamic_instruction_opt.clone().unwrap().operand_types().iter())
@@ -439,7 +431,7 @@ impl<N: Network> Process<N> {
                     caller_outputs.iter().zip(call_dynamic_instruction.destination_types().iter()).enumerate()
                 {
                     match (caller_output, caller_destination_type) {
-                        // In the case of a DynamicFuture, the verifier computes the hash of the dynamic future directly.
+                        // In the case of a `DynamicFuture`, the verifier computes the hash of the dynamic future directly.
                         (Output::Future(_id, future), ValueType::DynamicFuture) => {
                             let Some(future) = future else {
                                 bail!("Future is not present for child transition {}", child_transition.id());

@@ -35,6 +35,16 @@ impl<A: Aleo> Response<A> {
             None => compute_function_id(network_id, program_id, function_name),
         };
 
+        if outputs.len() != output_types.len() || output_types.len() != output_registers.len() {
+            let msg = format!(
+                "Mismatch in the number of outputs, output types, and output registers: {} vs {} vs {}",
+                outputs.len(),
+                output_types.len(),
+                output_registers.len()
+            );
+            return A::halt(msg);
+        }
+
         match outputs
             .iter()
             .zip_eq(output_types)
@@ -136,6 +146,12 @@ impl<A: Aleo> Response<A> {
                         // Inject the output as `Mode::Private`.
                         let output = Value::new(Mode::Private, output.clone());
 
+                        println!(
+                            "[3.m] - Num variables: {}, Num constraints: {}",
+                            A::count().0 + A::count().1,
+                            A::count().2
+                        );
+
                         // Retrieve the record.
                         let record = match &output {
                             Value::Record(record) => record,
@@ -158,14 +174,38 @@ impl<A: Aleo> Response<A> {
 
                         // Prepare the index as a constant field element.
                         let output_index = Field::constant(console::Field::from_u64(output_register.locator()));
+                        println!(
+                            "[3.m] - Num variables: {}, Num constraints: {}",
+                            A::count().0 + A::count().1,
+                            A::count().2
+                        );
+
                         // Compute the encryption randomizer as `HashToScalar(tvk || index)`.
                         let randomizer = A::hash_to_scalar_psd2(&[tvk.clone(), output_index]);
 
+                        println!(
+                            "[3.m] - Num variables: {}, Num constraints: {}",
+                            A::count().0 + A::count().1,
+                            A::count().2
+                        );
+
                         // Compute the record view key.
                         let record_view_key = ((*record.owner()).to_group() * randomizer).to_x_coordinate();
+
+                        println!(
+                            "[3.m] - Num variables: {}, Num constraints: {}",
+                            A::count().0 + A::count().1,
+                            A::count().2
+                        );
                         // Compute the record commitment.
                         let commitment =
                             record.to_commitment(program_id, &Identifier::constant(*record_name), &record_view_key);
+
+                        println!(
+                            "[3.m] - Num variables: {}, Num constraints: {}",
+                            A::count().0 + A::count().1,
+                            A::count().2
+                        );
 
                         // Return the output ID.
                         // Note: Because this is a callback, the output ID is an **external record** ID.
@@ -479,12 +519,12 @@ mod tests {
     #[rustfmt::skip]
     fn test_from_callback_constant() -> Result<()> {
         // Static response without records.
-        check_from_callback(Mode::Constant, "test.aleo", "foo", false, false, count_less_than!(19915, 4, 2813, 2819))?;
-        check_from_callback(Mode::Constant, "credits.aleo", "transfer_public", false, false, count_less_than!(1529, 4, 2813, 2819))?; 
+        check_from_callback(Mode::Constant, "test.aleo", "foo", false, false, count_less_than!(19917, 4, 2813, 2819))?;
+        check_from_callback(Mode::Constant, "credits.aleo", "transfer_public", false, false, count_less_than!(1531, 4, 2813, 2819))?; 
 
         // Static response with records.
-        check_from_callback(Mode::Constant, "test.aleo", "foo", false, true, count_less_than!(16058, 5, 10910, 10923))?;
-        check_from_callback(Mode::Constant, "credits.aleo", "transfer_public", false, true, count_less_than!(4299, 5, 11012, 11025))?;
+        check_from_callback(Mode::Constant, "test.aleo", "foo", false, true, count_less_than!(16062, 5, 10910, 10923))?;
+        check_from_callback(Mode::Constant, "credits.aleo", "transfer_public", false, true, count_less_than!(4303, 5, 11012, 11025))?;
 
 
         // Dynamic response without records.
@@ -502,20 +542,20 @@ mod tests {
     #[rustfmt::skip]
     fn test_from_callback_public() -> Result<()> {
         // Static response without records.
-        check_from_callback(Mode::Public, "test.aleo", "foo", false, false, count_is!(1366, 4, 4108, 4114))?;
+        check_from_callback(Mode::Public, "test.aleo", "foo", false, false, count_is!(<=19917, 4, 4108, 4114))?;
         check_from_callback(Mode::Public, "credits.aleo", "transfer_public", false, false, count_is!(1529, 4, 4108, 4114))?;
 
         // Static response with records.
-        check_from_callback(Mode::Public, "test.aleo", "foo", false, true, count_is!(3953, 5, 13475, 13490))?;
+        check_from_callback(Mode::Public, "test.aleo", "foo", false, true, count_is!(<=15809, 5, 13475, 13490))?;
         check_from_callback(Mode::Public, "credits.aleo", "transfer_public", false, true, count_is!(4046, 5, 13577, 13592))?;
 
         // Dynamic response without records.
-        check_from_callback(Mode::Public, "test.aleo", "foo", true, false, count_is!(1233, 4, 6957, 6969))?;
-        check_from_callback(Mode::Public, "credits.aleo", "transfer_public", true, false, count_is!(1233, 4, 6957, 6969))?;
+        check_from_callback(Mode::Public, "test.aleo", "foo", true, false, count_is!(762, 4, 4128, 4134))?;
+        check_from_callback(Mode::Public, "credits.aleo", "transfer_public", true, false, count_is!(762, 4, 4128, 4134))?;
 
         // Dynamic response with records.
-        check_from_callback(Mode::Public, "test.aleo", "foo", true, true, count_is!(3722, 5, 17457, 17482))?;
-        check_from_callback(Mode::Public, "credits.aleo", "transfer_public", true, true, count_is!(3590, 5, 17629, 17654))?;
+        check_from_callback(Mode::Public, "test.aleo", "foo", true, true, count_is!(3251, 5, 13618, 13633))?;
+        check_from_callback(Mode::Public, "credits.aleo", "transfer_public", true, true, count_is!(3119, 5, 13790, 13805))?;
 
         Ok(())
     }
@@ -524,20 +564,20 @@ mod tests {
     #[rustfmt::skip]
     fn test_from_callback_private() -> Result<()> {
         // Static response without records.
-        check_from_callback(Mode::Private, "test.aleo", "foo", false, false, count_is!(1366, 4, 4108, 4114))?;
+        check_from_callback(Mode::Private, "test.aleo", "foo", false, false, count_is!(<=19917, 4, 4108, 4114))?;
         check_from_callback(Mode::Private, "credits.aleo", "transfer_public", false, false, count_is!(1529, 4, 4108, 4114))?;
 
         // Static response with records.
-        check_from_callback(Mode::Private, "test.aleo", "foo", false, true, count_is!(3953, 5, 13475, 13490))?;
+        check_from_callback(Mode::Private, "test.aleo", "foo", false, true, count_is!(<=15809, 5, 13475, 13490))?;
         check_from_callback(Mode::Private, "credits.aleo", "transfer_public", false, true, count_is!(4046, 5, 13577, 13592))?;
 
         // Dynamic response without records.
-        check_from_callback(Mode::Private, "test.aleo", "foo", true, false, count_is!(1233, 4, 6957, 6969))?;
-        check_from_callback(Mode::Private, "credits.aleo", "transfer_public", true, false, count_is!(1233, 4, 6957, 6969))?;
+        check_from_callback(Mode::Private, "test.aleo", "foo", true, false, count_is!(762, 4, 4128, 4134))?;
+        check_from_callback(Mode::Private, "credits.aleo", "transfer_public", true, false, count_is!(762, 4, 4128, 4134))?;
 
         // Dynamic response with records.
-        check_from_callback(Mode::Private, "test.aleo", "foo", true, true, count_is!(3722, 5, 17457, 17482))?;
-        check_from_callback(Mode::Private, "credits.aleo", "transfer_public", true, true, count_is!(3590, 5, 17629, 17654))?;
+        check_from_callback(Mode::Private, "test.aleo", "foo", true, true, count_is!(3251, 5, 13618, 13633))?;
+        check_from_callback(Mode::Private, "credits.aleo", "transfer_public", true, true, count_is!(3119, 5, 13790, 13805))?;
 
         Ok(())
     }

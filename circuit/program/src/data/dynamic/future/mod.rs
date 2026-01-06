@@ -20,42 +20,54 @@ mod to_fields;
 use snarkvm_circuit_network::Aleo;
 use snarkvm_circuit_types::{Boolean, Field, environment::prelude::*};
 
-/// A dynamic future is a fixed-size representation of a future.
-/// Like static `Future`s, a dynamic future contains a program ID and function name.
-/// These are however represented as `Field` elements as opposed to `Identifier`s to ensure a fixed size.
-/// Dynamic futures also store a Merkle root of the arguments to the future instead of the arguments themselves.
-/// This ensures that all dynamic futures have a constant size, regardless of the amount of data they contain.
+/// A dynamic future is a fixed-size representation of a future. Like static
+/// `Future`s, a dynamic future contains a program ID and function name. These
+/// are however represented as `Field` elements as opposed to `Identifier`s to
+/// ensure a fixed size. Dynamic futures also store a Merkle root of the
+/// arguments to the future instead of the arguments themselves. This ensures
+/// that all dynamic futures have a constant size, regardless of the amount of
+/// data they contain.
 ///
 /// Suppose we have the following `finalize` scope:
 ///
-/// finalize foo:
-///     input r0 as address.public;
-///     input r1 as u64.public;
+/// ```text
+/// finalize foo: input r0 as address.public; input r1 as u64.public;
+/// ```
 ///
-/// It's merkle-ization is as follows:
-///
-///        R
-///        |
-///       P_0
-///        |
-///       P_1
-///        |
-///       P_2
-///        |
-///       P_3
-///      /  \
-///   L_0    L_1
+/// It's merkleization is as follows:
+/// ```text
+///   L_0    L_1    (leaves: hashed entries)
+///     \    /
+///      P_0        (internal node)
+///       |
+///      P_1        (padding level 1)
+///       |
+///      P_2        (padding level 2)
+///       |
+///       R         (root, padding level 3)
 ///
 /// L_0 := HashPSD8(ToFields(arg_0))
 /// L_1 := HashPSD8(ToFields(arg_1))
 /// P_0 := HashPSD2(L_0, L_1)
-/// P_1 := HashPSD2(P_0, ZERO)
-/// P_2 := HashPSD2(P_1, ZERO)
-/// P_3 := HashPSD2(P_2, ZERO)
-///   R := HashPSD2(P_3, ZERO)
+/// P_1 := HashPSD2(P_0, empty_hash)
+/// P_2 := HashPSD2(P_1, empty_hash)
+///   R := HashPSD2(P_2, empty_hash)
+/// ```
+///
+/// For finalize scopes with a different number of arguments, leaves are first
+/// padded to the next power of 2 using `empty_hash` hashes, then a balanced
+/// binary tree is built. Note that, in concrete terms, at most one `empty_hash`
+/// leaf is added: the rest are only virtual in that instead nodes with the
+/// value `HashPSD2(empty_hash, empty_hash)` are added to the next level, which
+/// is indeed full of size equal to a power of 2.
+///
+/// Padding levels are then added as needed to reach the full tree depth
+/// `FUTURE_ARGUMENT_TREE_DEPTH` (4), each of which is constructed by hashing the
+/// root of the previous level together with `empty_hash`.
 ///
 /// Note that:
-///  - `ZERO` is defined by the `PathHash` implementation for `HashPSD2`.
+///  - `empty_hash` is the value returned by the `hash_empty` function the
+///    `PathHash` implementation for `HashPSD2`.
 ///  - `ToFields` encodes the arguments's variant.
 #[derive(Clone)]
 pub struct DynamicFuture<A: Aleo> {
@@ -67,9 +79,6 @@ pub struct DynamicFuture<A: Aleo> {
     function_name: Field<A>,
     /// The Merkle root of the arguments.
     root: Field<A>,
-    /// The optional console Merkle tree of the arguments.
-    /// Note: This is NOT part of the circuit representation.
-    tree: Option<console::FutureArgumentTree<A::Network>>,
     /// The optional console arguments.
     /// Note: This is NOT part of the circuit representation.
     arguments: Option<Vec<console::Argument<A::Network>>>,
@@ -85,7 +94,6 @@ impl<A: Aleo> Inject for DynamicFuture<A> {
             program_network: Inject::new(mode, *value.program_network()),
             function_name: Inject::new(mode, *value.function_name()),
             root: Inject::new(mode, *value.root()),
-            tree: value.tree().clone(),
             arguments: value.arguments().clone(),
         }
     }
@@ -112,11 +120,6 @@ impl<A: Aleo> DynamicFuture<A> {
         &self.root
     }
 
-    /// Returns the optional console Merkle tree of the arguments.
-    pub const fn tree(&self) -> &Option<console::FutureArgumentTree<A::Network>> {
-        &self.tree
-    }
-
     /// Returns the console arguments.
     pub const fn arguments(&self) -> &Option<Vec<console::Argument<A::Network>>> {
         &self.arguments
@@ -126,7 +129,7 @@ impl<A: Aleo> DynamicFuture<A> {
 impl<A: Aleo> Eject for DynamicFuture<A> {
     type Primitive = console::DynamicFuture<A::Network>;
 
-    /// Ejects the mode of the dynmaic future.
+    /// Ejects the mode of the dynamic future.
     fn eject_mode(&self) -> Mode {
         let program_name_mode = Eject::eject_mode(self.program_name());
         let program_network_mode = Eject::eject_mode(self.program_network());
@@ -142,7 +145,6 @@ impl<A: Aleo> Eject for DynamicFuture<A> {
             Eject::eject_value(self.program_network()),
             Eject::eject_value(self.function_name()),
             Eject::eject_value(self.root()),
-            self.tree.clone(),
             self.arguments.clone(),
         )
     }

@@ -200,6 +200,26 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
     pub const fn cast_type(&self) -> &CastType<N> {
         &self.cast_type
     }
+
+    /// Validates the operands and destination for a DynamicRecord cast.
+    /// Returns an error if the cast type is DynamicRecord and the operands/destination are invalid.
+    fn validate_dynamic_record_cast(
+        cast_type: &CastType<N>,
+        operands: &[Operand<N>],
+        destination: &Register<N>,
+    ) -> Result<()> {
+        if *cast_type == CastType::DynamicRecord {
+            // Casting to a dynamic record requires exactly one operand of the form r<i>.
+            if operands.len() != 1 || !matches!(operands[0], Operand::Register(Register::Locator(_))) {
+                bail!("Casting to a dynamic record requires a single operand of the form r<i>");
+            }
+            // Casting to a dynamic record requires a destination of the form r<i>.
+            if !matches!(destination, Register::Locator(_)) {
+                bail!("Casting to a dynamic record requires a destination of the form r<i>");
+            }
+        }
+        Ok(())
+    }
 }
 
 impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
@@ -336,17 +356,14 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                 bail!("Illegal operation: Cannot cast to an external record.")
             }
             CastType::DynamicRecord => {
+                // Check that there is exactly one input.
                 ensure!(inputs.len() == 1, "Casting to a dynamic record requires exactly 1 operand");
-
-                // TODO (dynamic dispatch) do we have access to the type of the register self.operands[0]? I would like to add the sanity check
-                //     matches!(register_type, RegisterType::Record(..) | RegisterType::ExternalRecord(..))
-                // but cannot find the type in the stack or registers objects
-
-                let record = match &inputs[0] {
-                    Value::Record(record) => record,
+                // Retrieve and convert the record into a dynamic record.
+                let dynamic_record = match &inputs[0] {
+                    Value::Record(record) => DynamicRecord::from_record(record)?,
                     _ => bail!("Casting to a dynamic record requires the operand value to be a record"),
                 };
-                registers.store(stack, &self.destination, Value::DynamicRecord(DynamicRecord::from_record(record)?))
+                registers.store(stack, &self.destination, Value::DynamicRecord(dynamic_record))
             }
         }
     }
@@ -632,22 +649,15 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                 bail!("Illegal operation: Cannot cast to an external record.")
             }
             CastType::DynamicRecord => {
+                // Check that there is exactly one input.
                 ensure!(inputs.len() == 1, "Casting to a dynamic record requires exactly 1 operand");
-
-                // TODO (dynamic dispatch) do we have access to the type of the register self.operands[0]? I would like to add the sanity check
-                //     matches!(register_type, RegisterType::Record(..) | RegisterType::ExternalRecord(..))
-                // but cannot find the type in the stack or registers objects
-
-                let record = match &inputs[0] {
-                    circuit::Value::Record(record) => record,
+                // Retrieve and convert the record into a dynamic record.
+                let dynamic_record = match &inputs[0] {
+                    circuit::Value::Record(record) => circuit::DynamicRecord::from_record(record)?,
                     _ => bail!("Casting to a dynamic record requires the operand value to be a record"),
                 };
-
-                registers.store_circuit(
-                    stack,
-                    &self.destination,
-                    circuit::Value::DynamicRecord(circuit::DynamicRecord::from_record(record)?),
-                )
+                // Store the dynamic record.
+                registers.store_circuit(stack, &self.destination, circuit::Value::DynamicRecord(dynamic_record))
             }
         }
     }
@@ -1111,18 +1121,9 @@ impl<N: Network, const VARIANT: u8> Parser for CastOperation<N, VARIANT> {
             CastType::DynamicRecord => 1,
         };
 
-        // TODO (dynamic_dispatch) improve modularity; perhaps add a constructor that unifies checks across parse(), from_byts(), etc.
-        if cast_type == CastType::DynamicRecord {
-            if operands.len() != 1 || !matches!(operands[0], Operand::Register(Register::Locator(_))) {
-                return map_res(fail, |_: ParserResult<Self>| {
-                    Err(error("Casting to a dynamic record requires a single operand of the form r<i>"))
-                })(string);
-            }
-            if !matches!(destination, Register::Locator(_)) {
-                return map_res(fail, |_: ParserResult<Self>| {
-                    Err(error("Casting to a dynamic record requires a destination of the form r<i>"))
-                })(string);
-            }
+        // Validate DynamicRecord cast constraints.
+        if let Err(e) = Self::validate_dynamic_record_cast(&cast_type, &operands, &destination) {
+            return map_res(fail, move |_: ParserResult<Self>| Err(error(e.to_string())))(string);
         }
 
         match !operands.is_empty() && (operands.len() <= max_operands) {
@@ -1227,6 +1228,9 @@ impl<N: Network, const VARIANT: u8> FromBytes for CastOperation<N, VARIANT> {
         if num_operands.is_zero() || num_operands > max_operands {
             return Err(error(format!("The number of operands must be nonzero and <= {max_operands}")));
         }
+
+        // Validate DynamicRecord cast constraints.
+        Self::validate_dynamic_record_cast(&cast_type, &operands, &destination).map_err(|e| error(e.to_string()))?;
 
         // Return the operation.
         Ok(Self { operands, destination, cast_type })

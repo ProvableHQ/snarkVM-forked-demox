@@ -100,7 +100,11 @@ fn test_circuit_dynamic_record_from_record() {
     }
 }
 
-// TODO (Antonio) add description
+// Tests that casting external and non-external records to dynamic ones works
+// correctly, using get.dynamic.record to access dynamic-record entries. Also
+// checks that casting to dynamic records still causes an error if the static
+// record is consumed both by the caller and the callee (the latter of which
+// involves a translation).
 #[test]
 fn test_cast_simple() {
     let mut rng = TestRng::default();
@@ -118,7 +122,7 @@ fn test_cast_simple() {
     let network_field = network_name.to_field().unwrap();
     let function_get_age_in_years_stat_callee_field = function_get_age_in_years_stat_callee_name.to_field().unwrap();
 
-    let program_a_string = r"
+    let program_a_str = r"
         program garden_center.aleo;
 
         record plant:
@@ -140,7 +144,7 @@ fn test_cast_simple() {
             assert.eq true true;
         ";
 
-    let program_b_string = format!(
+    let program_b_str = format!(
         r"
         import garden_center.aleo;
 
@@ -164,7 +168,7 @@ fn test_cast_simple() {
             input r0 as fish.record;
             
             cast r0 into r1 as dynamic.record;
-            get.dynamic.record r1.age_in_years into r2 as u16;
+            get.record.dynamic r1.age_in_years into r2 as u16;
 
             output r2 as u16.public;
 
@@ -188,7 +192,7 @@ fn test_cast_simple() {
             input r0 as garden_center.aleo/plant.record;
             
             cast r0 into r1 as dynamic.record;
-            get.dynamic.record r1.age_in_years into r2 as u16;
+            get.record.dynamic r1.age_in_years into r2 as u16;
 
             output r2 as u16.public;
 
@@ -198,8 +202,8 @@ fn test_cast_simple() {
     );
 
     // Initialize a new program.
-    let program_a = Program::<CurrentNetwork>::from_str(program_a_string).unwrap();
-    let program_b = Program::<CurrentNetwork>::from_str(&program_b_string).unwrap();
+    let program_a = Program::<CurrentNetwork>::from_str(program_a_str).unwrap();
+    let program_b = Program::<CurrentNetwork>::from_str(&program_b_str).unwrap();
 
     // Initialize the VM.
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), &mut rng);

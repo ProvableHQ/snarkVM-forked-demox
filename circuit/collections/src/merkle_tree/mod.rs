@@ -20,10 +20,10 @@ mod leaf_index;
 
 mod verify;
 
+use snarkvm_circuit_types::{Boolean, Field, U64, environment::prelude::*};
+
 #[cfg(test)]
 use snarkvm_circuit_types::environment::assert_scope;
-
-use snarkvm_circuit_types::{Boolean, Field, U64, environment::prelude::*};
 
 pub struct MerklePath<E: Environment, const DEPTH: u8> {
     /// The leaf index for the path.
@@ -238,6 +238,7 @@ mod tests {
     use console::Rng;
     use snarkvm_circuit_algorithms::{Poseidon2, Poseidon8};
     use snarkvm_circuit_network::AleoV0 as Circuit;
+    use snarkvm_circuit_types::environment::UpdatableCount;
     use snarkvm_console_collections::merkle_tree::MerkleTree as ConsoleMerkleTree;
     use snarkvm_utilities::{TestRng, Uniform};
 
@@ -313,7 +314,7 @@ mod tests {
         check_new::<32>(Mode::Private, 0, 0, 96, 64)
     }
 
-    fn test_compatibility<const DEPTH: u8>(mode: Mode, rng: &mut TestRng) {
+    fn test_compatibility<const DEPTH: u8>(mode: Mode, rng: &mut TestRng, expected_count: UpdatableCount) {
         for num_leaves in 1..=1 << DEPTH {
             Circuit::reset();
 
@@ -351,30 +352,33 @@ mod tests {
             )
             .unwrap();
 
-            // Check the count
-            // TODO (dynamic_dispatch) re-introduce if necessary
-            // - Resolve by unrolling the loop.
-            // - Resolve by doing single iteration first.
-            // - Resolve by investigaing constant/variable creation.
-            // count.assert_matches(
-            //     Circuit::num_constants(),
-            //     Circuit::num_public(),
-            //     Circuit::num_private(),
-            //     Circuit::num_constraints(),
-            // );
-
             assert_eq!(*console_tree.root(), circuit_tree.root().eject_value());
         }
+
+        // Check the circuit metrics. Since they are matched against hardcoded
+        // values, this check can only be peformerd for one iteration of the
+        // loop, which we choose to be the last one (which has the largest
+        // circuit)./*  */
+        expected_count.assert_matches(
+            Circuit::num_constants_in_scope(),
+            Circuit::num_public_in_scope(),
+            Circuit::num_private_in_scope(),
+            Circuit::num_constraints_in_scope(),
+        );
     }
 
     #[test]
     fn test_merkle_tree_compatibility_circuit_console() {
-        let mut rng = TestRng::default();
-        test_compatibility::<1>(Mode::Constant, &mut rng);
-        test_compatibility::<2>(Mode::Public, &mut rng);
-        test_compatibility::<3>(Mode::Private, &mut rng);
-        test_compatibility::<4>(Mode::Constant, &mut rng);
-        test_compatibility::<5>(Mode::Public, &mut rng);
-        test_compatibility::<6>(Mode::Private, &mut rng);
+        // It is necessary to seed the ring in order to get consistent circuit
+        // metrics, since leaves contain random field elements which get
+        // injected as vectors of bits of varying length.
+        let rng = &mut TestRng::from_seed(1234567);
+
+        test_compatibility::<1>(Mode::Constant, rng, count_is!(1085, 0, 0, 0));
+        test_compatibility::<2>(Mode::Public, rng, count_is!(1076, 15, 3575, 3575));
+        test_compatibility::<3>(Mode::Private, rng, count_is!(1084, 0, 9877, 9825));
+        test_compatibility::<4>(Mode::Constant, rng, count_is!(1194, 0, 0, 0));
+        test_compatibility::<5>(Mode::Public, rng, count_is!(1132, 160, 37145, 37145));
+        test_compatibility::<6>(Mode::Private, rng, count_is!(1196, 0, 73607, 73280));
     }
 }

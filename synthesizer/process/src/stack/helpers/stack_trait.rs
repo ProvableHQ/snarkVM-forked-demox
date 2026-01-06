@@ -30,8 +30,9 @@ impl<N: Network> StackTrait<N> for Stack<N> {
                 self.matches_external_record(record, locator)
             }
             (Value::Future(future), ValueType::Future(locator)) => self.matches_future(future, locator),
-            // TODO (@d0cd): Verify these semantics.
+            // Note. There is nothing to further check for a dynamic record, since its definition is fixed.
             (Value::DynamicRecord(_), ValueType::DynamicRecord) => Ok(()),
+            // Note. There is nothing to further check for a dynamic future, since its definition is fixed.
             (Value::DynamicFuture(_), ValueType::DynamicFuture) => Ok(()),
             (value, _) => bail!("A value '{value}' does not match its declared value type '{value_type}'"),
         }
@@ -48,8 +49,9 @@ impl<N: Network> StackTrait<N> for Stack<N> {
                 self.matches_external_record(record, locator)
             }
             (Value::Future(future), RegisterType::Future(locator)) => self.matches_future(future, locator),
-            // TODO (@d0cd): Verify these semantics.
+            // Note. There is nothing to further check for a dynamic record, since its definition is fixed.
             (Value::DynamicRecord(_), RegisterType::DynamicRecord) => Ok(()),
+            // Note. There is nothing to further check for a dynamic future, since its definition is fixed.
             (Value::DynamicFuture(_), RegisterType::DynamicFuture) => Ok(()),
             (value, _) => bail!("A value '{value}' does not match its declared register type '{register_type}'"),
         }
@@ -339,8 +341,62 @@ impl<N: Network> StackTrait<N> for Stack<N> {
         self.program.get_function_ref(function_name)
     }
 
-    /// Returns the expected number of calls for the given function name.
-    fn get_number_of_calls(&self, function_name: &Identifier<N>) -> Result<usize> {
+    /// Returns the minimum number of calls for the given function name.
+    /// In the case where there are no dynamic calls, this is equivalent to the total number of calls.
+    fn get_minimum_number_of_calls(&self, function_name: &Identifier<N>) -> Result<usize> {
+        // Initialize the base number of calls.
+        let mut num_calls = 1;
+        // Initialize a queue of functions to check.
+        let mut queue = vec![(StackRef::Internal(self), *function_name)];
+        // Iterate over the queue.
+        while let Some((stack_ref, function_name)) = queue.pop() {
+            // Ensure that the number of calls does not exceed the maximum.
+            // Note that one transition is reserved for the fee.
+            ensure!(
+                num_calls < Transaction::<N>::MAX_TRANSITIONS,
+                "Number of calls must be less than '{}'",
+                Transaction::<N>::MAX_TRANSITIONS
+            );
+            // Determine the number of calls for the function.
+            for instruction in stack_ref.get_function_ref(&function_name)?.instructions() {
+                match instruction {
+                    Instruction::Call(call) => {
+                        // Determine if this is a function call.
+                        if call.is_function_call(&*stack_ref)? {
+                            // Increment the number of calls.
+                            num_calls += 1;
+                            // Add the function to the queue.
+                            match call.operator() {
+                                CallOperator::Locator(locator) => {
+                                    // If the locator matches the program ID of the provided stack, use it directly.
+                                    // Otherwise, retrieve the external stack.
+                                    let stack = if locator.program_id() == self.program().id() {
+                                        StackRef::Internal(self)
+                                    } else {
+                                        StackRef::External(stack_ref.get_external_stack(locator.program_id())?)
+                                    };
+                                    queue.push((stack, *locator.resource()));
+                                }
+                                CallOperator::Resource(resource) => {
+                                    queue.push((stack_ref.clone(), *resource));
+                                }
+                            }
+                        }
+                    }
+                    Instruction::CallDynamic(_) => {
+                        // Increment the number of calls.
+                        num_calls += 1
+                    }
+                    _ => (),
+                }
+            }
+        }
+        // Return the number of calls.
+        Ok(num_calls)
+    }
+
+    /// Returns whether or not a function has a dynamic call in its execution.
+    fn contains_dynamic_call(&self, function_name: &Identifier<N>) -> Result<bool> {
         // Initialize the base number of calls.
         let mut num_calls = 1;
         // Initialize a queue of functions to check.
@@ -380,16 +436,13 @@ impl<N: Network> StackTrait<N> for Stack<N> {
                             }
                         }
                     }
-                    Instruction::CallDynamic(_) => {
-                        // TODO (dynamic_dispatch) redesign or complete - it is execution-specific
-                        // TODO (@d0cd)
-                    }
+                    Instruction::CallDynamic(_) => return Ok(true),
                     _ => (),
                 }
             }
         }
-        // Return the number of calls.
-        Ok(num_calls)
+        // No dynamic calls have been found.
+        Ok(false)
     }
 
     /// Returns a value for the given register type.
@@ -679,7 +732,7 @@ impl<N: Network> Stack<N> {
                 (Argument::Future(future), FinalizeType::Future(locator)) => {
                     self.matches_future_internal(future, locator, depth + 1)?
                 }
-                // TODO (@d0cd): Verify these semantics.
+                // Note. There is nothing to futher check for a dynamic future, since its definition is fixed.
                 (Argument::DynamicFuture(_), FinalizeType::DynamicFuture) => {}
                 (_, input_type) => {
                     bail!("Argument type does not match input type: expected '{input_type}'")

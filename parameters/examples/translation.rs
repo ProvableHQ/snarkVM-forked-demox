@@ -13,18 +13,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use snarkvm_algorithms::crypto_hash::sha256::sha256;
-use snarkvm_circuit::Aleo;
+#![allow(clippy::type_complexity)]
+
+use snarkvm_algorithms::{crypto_hash::sha256::sha256, snark::varuna::VarunaVersion};
+use snarkvm_circuit::{Aleo, Assignment};
 use snarkvm_console::{
+    account::PrivateKey,
     network::{CanaryV0, MainnetV0, Network, TestnetV0},
     prelude::ToBytes,
-    program::{Identifier, ProgramID},
+    program::{DynamicRecord, Identifier, One, ProgramID, Zero, compute_function_id},
+    types::{Address, Field, Group, U16},
 };
-use snarkvm_synthesizer::{Process, program::StackTrait};
+use snarkvm_synthesizer::{Process, Stack, process::TranslationAssignment, program::StackTrait};
 
 use anyhow::Result;
-use rand::thread_rng;
+use rand::{CryptoRng, Rng, thread_rng};
 use serde_json::{Value, json};
+use snarkvm_utilities::Uniform;
 use std::{
     fs::File,
     io::{BufWriter, Write},
@@ -64,16 +69,98 @@ fn write_metadata(filename: &str, metadata: &Value) -> Result<()> {
     Ok(())
 }
 
+/// Returns a sample assignment for the translation circuit.
+pub fn sample_assignment<N: Network, A: Aleo<Network = N>>(
+    stack: &Stack<N>,
+    credits_program_id: &ProgramID<N>,
+    transfer_public_function_name: &Identifier<N>,
+    credits_record_name: &Identifier<N>,
+    rng: &mut (impl CryptoRng + Rng),
+) -> Result<(Assignment<N::Field>, Vec<N::Field>)> {
+    // Auxiliary data for the `TranslationAssignment`.
+    let private_key = PrivateKey::<N>::new(rng)?;
+    let address = Address::try_from(&private_key)?;
+    let nonce: Group<N> = Uniform::rand(rng);
+    let function_id = compute_function_id(&U16::new(N::ID), credits_program_id, transfer_public_function_name)?;
+
+    // Construct the random `TranslationAssignment`. We model the case
+    // [Output static (at callee) -> dynamic (at caller)]
+    let record_static = stack.sample_record(&address, credits_record_name, nonce, rng)?;
+    let record_dynamic = DynamicRecord::<N>::from_record(&record_static)?;
+    let translation_count = Uniform::rand(rng);
+    let tvk = Uniform::rand(rng);
+    let input_output_index = Uniform::rand(rng);
+    let record_view_key: Field<N> = Uniform::rand(rng);
+    let gamma = None;
+    let id_dynamic = record_dynamic.to_id(function_id, tvk, U16::new(input_output_index)).unwrap();
+    let is_input = false;
+    let static_is_external = false;
+    let id_static = record_static.to_commitment(credits_program_id, credits_record_name, &record_view_key).unwrap();
+
+    let translation_assignment = TranslationAssignment::new(
+        record_static,
+        record_dynamic,
+        *credits_program_id,
+        function_id,
+        *credits_record_name,
+        is_input,
+        static_is_external,
+        translation_count,
+        tvk,
+        input_output_index,
+        id_dynamic,
+        id_static,
+        Some(record_view_key),
+        gamma,
+    );
+
+    let verifier_inputs = vec![
+        // constant 1
+        *Field::<N>::one(),
+        // is_input
+        *Field::<N>::zero(),
+        // static_is_external
+        *Field::<N>::zero(),
+        *function_id,
+        *Field::<N>::from_u128(translation_count as u128),
+        *Field::<N>::from_u128(input_output_index as u128),
+        *id_static,
+        *id_dynamic,
+    ];
+
+    Ok((translation_assignment.to_circuit_assignment::<A>()?, verifier_inputs))
+}
+
 /// Synthesizes the circuit keys for the credits.aleo credits record translation circuit. (cargo run --release --example translation [network])
 pub fn translation<N: Network, A: Aleo<Network = N>>() -> Result<()> {
     let rng = &mut thread_rng();
     let process = Process::<N>::setup::<A, _>(rng)?;
     let credits_stack = process.get_stack(ProgramID::<N>::from_str("credits.aleo").unwrap())?;
+    let transfer_private_function_name = Identifier::<N>::from_str("transfer_private").unwrap();
     let credits_record_name = Identifier::<N>::from_str("credits").unwrap();
     let proving_key = credits_stack.get_translation_proving_key(&credits_record_name)?;
     let verifying_key = credits_stack.get_translation_verifying_key(&credits_record_name)?;
 
-    // TODO(dynamic_dispatch): similar to the inclusion circuit, prove and verify the verifying key as a sanity check.
+    // Sample a translation assignment for the credits record for the proving-
+    // and verifying-key sanity check.
+    let (assignment, verifier_inputs) = sample_assignment::<N, A>(
+        &credits_stack,
+        credits_stack.program_id(),
+        &transfer_private_function_name,
+        &credits_record_name,
+        rng,
+    )?;
+
+    let debug_info_str = "credits_record_translation";
+
+    for varuna_version in [VarunaVersion::V1, VarunaVersion::V2] {
+        // Ensure the proving key and verifying keys are valid.
+        let proof = proving_key.prove(debug_info_str, varuna_version, &assignment, rng)?;
+        assert!(verifying_key.verify(debug_info_str, varuna_version, &verifier_inputs, &proof));
+        // Ensure using the wrong varuna version is not valid.
+        let wrong_varuna_version = if varuna_version == VarunaVersion::V1 { VarunaVersion::V2 } else { VarunaVersion::V1 };
+        assert!(!verifying_key.verify(debug_info_str, wrong_varuna_version, &verifier_inputs, &proof));
+    }
 
     // Initialize a vector for the commands.
     let mut commands = vec![];

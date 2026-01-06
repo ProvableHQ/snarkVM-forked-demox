@@ -124,6 +124,8 @@ mod tests {
             crate::transaction::test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), false, rng),
             crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), true, rng),
             crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(3, Uniform::rand(rng), true, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(3, Uniform::rand(rng), false, rng),
             crate::transaction::test_helpers::sample_execution_transaction_with_fee(true, rng, 0),
             crate::transaction::test_helpers::sample_execution_transaction_with_fee(false, rng, 0),
         ]
@@ -149,6 +151,8 @@ mod tests {
             crate::transaction::test_helpers::sample_deployment_transaction(1, Uniform::rand(rng), false, rng),
             crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), true, rng),
             crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(3, Uniform::rand(rng), true, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(3, Uniform::rand(rng), false, rng),
             crate::transaction::test_helpers::sample_execution_transaction_with_fee(true, rng, 0),
             crate::transaction::test_helpers::sample_execution_transaction_with_fee(false, rng, 0),
         ]

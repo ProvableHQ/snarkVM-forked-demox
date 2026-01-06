@@ -74,6 +74,6 @@ mod tests {
 
     #[test]
     fn test_to_address_public() -> Result<()> {
-        check_to_address(Mode::Public, 1059, 0, 0, 0)
+        check_to_address(Mode::Public, 529, 0, 2096, 2106)
     }
 }

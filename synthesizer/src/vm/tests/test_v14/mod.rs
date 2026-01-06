@@ -15,13 +15,15 @@
 
 mod cast;
 
-mod get_dynamic_record;
+mod get_record_dynamic;
 
 mod dynamic_mapping_operations;
 
 mod mixed;
 
 mod call_dynamic;
+
+mod dynamic_futures;
 
 mod recursion;
 
@@ -44,25 +46,101 @@ use snarkvm_synthesizer_process::execution_cost_for_authorization;
 use snarkvm_synthesizer_program::Program;
 use snarkvm_utilities::TestRng;
 
-// TODO (dynamic_dispatch)
-// - Test the case with the interface of a dynamic call doesn't match the mode
-// - Conditional execution with finalize scopes
-// - Make tests more realistic (and comprehensive) by minting records with different owners than the genesis address
+/************************* Dynamic-record test cases *************************/
+//
+// The following list contains some translation- and dynamic-record-related
+// situations tested in this module. Note it is non-exhaustive in that it does
+// not detail all tested aspects of the functionality. Each situation is
+// followed by a test case (of several, in some instances) where it arises.
+//
+// Single-translation test cases
+// - input dynamic -> static external
+//   In: translation.rs::test_translation_input_dynamic_external
+// - input dynamic -> static non-external
+//   In: translation.rs::test_translation_input_dynamic_non_external
+// - output static non-external -> dynamic
+//   In: translation.rs::test_translation_output_non_external_dynamic
+// - output static external -> dynamic
+//   In: translation.rs::test_translation_output_external_dynamic
+//
+// Chained cases
+// - Static record minted in previous transaction converted to dynamic one outside the ledger and VM, then:
+//       passed as input dynamic -> static
+//       modify it (= mint new one)
+//       output static -> dynamic
+//       input dynamic -> dynamic (no translation)
+//       input dynamic -> static
+//   In: translation.rs::test_translation_triple
+// - Input (dynamic, dynamic, dynamic) -> (static, static, static), output as static -> dynamic
+//   In: mixed.rs: test_execution_cost_for_authorization
+//
+// get.record.dynamic
+// - Record entries with different visibility but coinciding identifiers can be read with the same get.record.dynamic instruction
+//   In: mixed.rs::test_translation_get_dynamic_cast_to_dynamic
+//       note product_id is private in toy.record and public in ladder.record and both are read in manager.aleo/verify_signature
+// - Dynamic records coming from different static records can be read with the same get.record.dynamic instruction
+//   In: mixed.rs::test_translation_get_dynamic_cast_to_dynamic (e. g. manager.aleo/verify_signature)
+//
+// Consumption/production
+// - Casting a static record into a dynamic one and passing the latter to a function expecting a dynamic record does not consume it
+//   In: mixed.rs::test_translation_get_dynamic_cast_to_dynamic Case 1
+//       (the call to function_verify_signature_field does not cause a double spend, as expected)
+// - Casting a static record into a dynamic one and passing the latter to a function expecting a static record (translation involved) consumes it
+//   In: cast.rs::test_cast_simple Case 2 (fails due to double spend)
+// - A record is only produced once even if it is subsequently output as a dynamic record by the caller
+//   In: mixed.rs::test_execution_cost_for_authorization
+// - A record is only consumed once even if it is subsequently passed as a dynamic record to a callee
+//   In: mixed.rs::test_translation_get_dynamic_cast_to_dynamic
+//
+// Key-fetching
+// - Translations for the same record across different transitions are proved/verified with the same key (in the same Varuna batch)
+//   In: translation.rs::test_translation_triple
+//       three translations for gas.record:
+//        - input dynamic -> static non-external
+//        - output static non-external -> dynamic
+//        - input dynamic -> static external
+//       Run with the snark-print feature and observe the batch with 3 instances at the end
+// - output static {program_a/record_name_a, program_a/record_name_b, program_b/record_name_a, program_b/ record_name_b} -> dynamic: four differeny keys should be fetched
+//   In: translation.rs::test_differing_keys
+//       Run with the snark-print feature and observe the batch sizes [1, 1, 1, 1, 1, 1, 1, 1, 1] (translation key IDs are also displayed for convenience)
+//
+// Signature consistency
+// - Translate an output record fom a call to a preexisting program to ensure signature-verification circuit has not changed
+//   In: get_record_dynamic.rs::translate_transfer_public_to_private
 
+// Adds the given transactions to a new block and asserts all of them were
+// accepted
 fn add_and_test(
     vm: &VM<CurrentNetwork, LedgerType>,
     caller_private_key: &PrivateKey<CurrentNetwork>,
     transactions: &[Transaction<CurrentNetwork>],
     rng: &mut TestRng,
 ) {
-    for (index, transaction) in transactions.iter().enumerate() {
-        vm.check_transaction(transaction, None, rng)
-            .map_err(|e| anyhow!("Transaction {index} check failed: {e}"))
-            .unwrap();
-    }
-    let block = sample_next_block(vm, caller_private_key, transactions, rng).unwrap();
+    // Check the transactions.
+    let transactions: Vec<_> = transactions
+        .iter()
+        .map(|tx_0| {
+            // Serialize and deserialize the transaction to ensure consistency.
+            let tx_bytes_0 = tx_0.to_bytes_le().unwrap();
+            let tx_1 = Transaction::<CurrentNetwork>::from_bytes_le(&tx_bytes_0).unwrap();
+            assert_eq!(tx_0, &tx_1);
+            assert_eq!(tx_bytes_0, tx_1.to_bytes_le().unwrap());
+            // Stringify and parse the transaction to ensure consistency.
+            let tx_1_string = tx_1.to_string();
+            let tx = Transaction::<CurrentNetwork>::from_str(&tx_1_string).unwrap();
+            assert_eq!(tx_0, &tx);
+            assert_eq!(tx_1_string, tx.to_string());
+            // Check the transaction.
+            vm.check_transaction(&tx, None, rng).map_err(|e| anyhow!("Transaction check failed: {e}")).unwrap();
+            tx
+        })
+        .collect();
+    // Sample the next block.
+    let block = sample_next_block(vm, caller_private_key, &transactions, rng).unwrap();
+    // Assert all transactions were accepted.
     assert_eq!(block.transactions().num_accepted(), transactions.len());
     assert_eq!(block.transactions().num_rejected(), 0);
     assert_eq!(block.aborted_transaction_ids().len(), 0);
+    // Add the next block to the VM.
     vm.add_next_block(&block).unwrap();
 }

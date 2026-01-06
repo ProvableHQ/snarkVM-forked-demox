@@ -20,7 +20,7 @@ use console::{
     types::Boolean,
 };
 
-/// A dynamic contains command, e.g. `contains.dynamic r0.r1/r2[r3] into r4;`.
+/// A dynamic contains command, e.g. `contains.dynamic r0 r1 r2[r3] into r4;`.
 /// Resolves the `program` and `mapping` operands, returns true if the `key` operand is present in the `mapping`, and stores the result into `destination`.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct ContainsDynamic<N: Network> {
@@ -151,6 +151,8 @@ impl<N: Network> Parser for ContainsDynamic<N> {
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
         // Parse the mapping name operand from the string.
         let (string, mapping_name) = Operand::parse(string)?;
+        // Parse the whitespace from the string.
+        let (string, _) = Sanitizer::parse_whitespaces(string)?;
 
         // Parse the "[" from the string.
         let (string, _) = tag("[")(string)?;

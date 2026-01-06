@@ -467,8 +467,13 @@ pub mod test_helpers {
             1 => crate::transaction::deployment::test_helpers::sample_deployment_v1(edition, rng),
             2 => {
                 let mut deployment = crate::transaction::deployment::test_helpers::sample_deployment_v2(edition, rng);
-                // Set the program checksum.
-                deployment.set_program_checksum_raw(Some(deployment.program().to_checksum()));
+                // Set the program owner to the address of the private key.
+                deployment.set_program_owner_raw(Some(Address::try_from(&private_key).unwrap()));
+                // Return the deployment.
+                deployment
+            }
+            3 => {
+                let mut deployment = crate::transaction::deployment::test_helpers::sample_deployment_v3(edition, rng);
                 // Set the program owner to the address of the private key.
                 deployment.set_program_owner_raw(Some(Address::try_from(&private_key).unwrap()));
                 // Return the deployment.
@@ -548,6 +553,10 @@ mod tests {
             crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), true, rng),
             crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, rng),
             crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(3, Uniform::rand(rng), true, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(3, Uniform::rand(rng), true, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(3, Uniform::rand(rng), false, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(3, Uniform::rand(rng), false, rng),
             crate::transaction::test_helpers::sample_execution_transaction_with_fee(true, rng, 0),
             crate::transaction::test_helpers::sample_execution_transaction_with_fee(false, rng, 0),
         ]
