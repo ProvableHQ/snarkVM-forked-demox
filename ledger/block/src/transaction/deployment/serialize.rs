@@ -20,10 +20,11 @@ impl<N: Network> Serialize for Deployment<N> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match serializer.is_human_readable() {
             true => {
-                // Note: `Deployment::version` checks that either both or neither of the program checksum and program owner are present.
+                // Note that `Deployment::version` checks that the optional fields are well-formed.
                 let len = match self.version().map_err(ser::Error::custom)? {
                     DeploymentVersion::V1 => 3,
                     DeploymentVersion::V2 => 5,
+                    DeploymentVersion::V3 => 4,
                 };
                 let mut deployment = serializer.serialize_struct("Deployment", len)?;
                 deployment.serialize_field("edition", &self.edition)?;

@@ -44,7 +44,7 @@ pub struct Deployment<N: Network> {
     /// An optional owner for the program.
     /// This field creates a backwards-compatible implicit versioning mechanism for deployments.
     /// Before the migration height where this feature is enabled, the owner will **not** be allowed.
-    /// After the migration height where this feature is enabled, the owner will be required.
+    /// After the migration height where this feature is enabled, the owner will be required, except for ammendment (V3) deployments.
     program_owner: Option<Address<N>>,
 }
 
@@ -77,9 +77,15 @@ impl<N: Network> Deployment<N> {
     pub fn check_is_ordered(&self) -> Result<()> {
         let program_id = self.program.id();
 
-        // Ensure that either the both the program checksum and owner are present, or both are absent.
-        // The call to `Deployment::version` implicitly performs this check.
-        self.version()?;
+        // Get the deployment version.
+        // Note that the call to `Deployment::version` implicitly checks that the deployment checksum and owner is well-formed.
+        let version = self.version()?;
+
+        // If the version is V3, ensure the edition is 0.
+        if version == DeploymentVersion::V3 {
+            ensure!(self.edition == 0, "The edition for an amendment deployment must be '0', got '{}'", self.edition);
+        }
+
         // Validate the deployment based on the program checksum.
         if let Some(program_checksum) = self.program_checksum {
             ensure!(
@@ -225,16 +231,13 @@ impl<N: Network> Deployment<N> {
         self.program_owner = program_owner;
     }
 
-    /// An internal function to return the implicit deployment version.
-    /// This function implicitly checks that the deployment checksum and owner is well-formed.
-    #[doc(hidden)]
-    pub(super) fn version(&self) -> Result<DeploymentVersion> {
+    /// Returns the deployment version.
+    /// This function checks that the deployment checksum and owner is well-formed.
+    pub fn version(&self) -> Result<DeploymentVersion> {
         match (self.program_checksum.is_some(), self.program_owner.is_some()) {
             (false, false) => Ok(DeploymentVersion::V1),
             (true, true) => Ok(DeploymentVersion::V2),
-            (true, false) => {
-                bail!("The program checksum is present, but the program owner is absent.")
-            }
+            (true, false) => Ok(DeploymentVersion::V3),
             (false, true) => {
                 bail!("The program owner is present, but the program checksum is absent.")
             }
@@ -242,11 +245,15 @@ impl<N: Network> Deployment<N> {
     }
 }
 
-// An internal enum to represent the deployment version.
+/// The deployment version.
 #[derive(Copy, Clone, Eq, PartialEq)]
-pub(super) enum DeploymentVersion {
+pub enum DeploymentVersion {
+    /// A deployment without a program checksum or program owner.
     V1 = 1,
+    /// A deployment with both a program checksum and program owner.
     V2 = 2,
+    /// A deployment with a program checksum but without a program owner (for amendments).
+    V3 = 3,
 }
 
 #[cfg(test)]

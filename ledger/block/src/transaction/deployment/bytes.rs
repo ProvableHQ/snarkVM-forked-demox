@@ -22,6 +22,7 @@ impl<N: Network> FromBytes for Deployment<N> {
         let version = match u8::read_le(&mut reader)? {
             1 => DeploymentVersion::V1,
             2 => DeploymentVersion::V2,
+            3 => DeploymentVersion::V3,
             version => return Err(error(format!("Invalid deployment version: {version}"))),
         };
 
@@ -56,7 +57,7 @@ impl<N: Network> FromBytes for Deployment<N> {
         // If the deployment version is 2, read the program checksum and verify it.
         let program_checksum = match version {
             DeploymentVersion::V1 => None,
-            DeploymentVersion::V2 => {
+            DeploymentVersion::V2 | DeploymentVersion::V3 => {
                 // Read the program checksum.
                 let bytes: [u8; 32] = FromBytes::read_le(&mut reader)?;
                 let checksum = bytes.map(U8::new);
@@ -73,7 +74,7 @@ impl<N: Network> FromBytes for Deployment<N> {
         };
         // If the deployment version is 2, read the program owner.
         let program_owner = match version {
-            DeploymentVersion::V1 => None,
+            DeploymentVersion::V1 | DeploymentVersion::V3 => None,
             DeploymentVersion::V2 => {
                 // Read the program owner.
                 let owner = Address::<N>::read_le(&mut reader)?;
