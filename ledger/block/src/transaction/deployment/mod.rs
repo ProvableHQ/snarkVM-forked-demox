@@ -77,14 +77,8 @@ impl<N: Network> Deployment<N> {
     pub fn check_is_ordered(&self) -> Result<()> {
         let program_id = self.program.id();
 
-        // Get the deployment version.
-        // Note that the call to `Deployment::version` implicitly checks that the deployment checksum and owner is well-formed.
-        let version = self.version()?;
-
-        // If the version is V3, ensure the edition is 0.
-        if version == DeploymentVersion::V3 {
-            ensure!(self.edition == 0, "The edition for an amendment deployment must be '0', got '{}'", self.edition);
-        }
+        // Verify the deployment version is well-formed (checksum and owner consistency).
+        self.version()?;
 
         // Validate the deployment based on the program checksum.
         if let Some(program_checksum) = self.program_checksum {

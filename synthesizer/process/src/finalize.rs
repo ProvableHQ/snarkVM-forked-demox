@@ -124,7 +124,7 @@ impl<N: Network> Process<N> {
 
                 // Compute a new stack with the same program and edition.
                 let mut stack = Stack::new_raw(self, deployment.program(), *existing_stack.program_edition())?;
-                stack.initialize_and_check(&self)?;
+                stack.initialize_and_check(self)?;
                 lap!(timer, "Compute the stack");
 
                 // Set the program owner to the existing owner.

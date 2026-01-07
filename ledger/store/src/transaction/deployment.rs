@@ -24,7 +24,7 @@ use console::{
     program::{Identifier, ProgramID, ProgramOwner},
     types::U8,
 };
-use snarkvm_ledger_block::{Deployment, Fee, Transaction};
+use snarkvm_ledger_block::{Deployment, DeploymentVersion, Fee, Transaction};
 use snarkvm_synthesizer_program::Program;
 use snarkvm_synthesizer_snark::{Certificate, VerifyingKey};
 
@@ -65,6 +65,18 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     type CertificateMap: for<'a> Map<'a, (ProgramID<N>, Identifier<N>, u16), Certificate<N>>;
     /// The fee storage.
     type FeeStorage: FeeStorage<N>;
+    /// The mapping of `(program ID, edition)` to the number of amendments.
+    type AmendmentCountMap: for<'a> Map<'a, (ProgramID<N>, u16), u64>;
+    /// The mapping of `(program ID, edition, amendment index)` to `transaction ID`.
+    type AmendmentIDMap: for<'a> Map<'a, (ProgramID<N>, u16, u64), N::TransactionID>;
+    /// The mapping of `transaction ID` to `(program ID, edition, amendment index)`.
+    type ReverseAmendmentIDMap: for<'a> Map<'a, N::TransactionID, (ProgramID<N>, u16, u64)>;
+    /// The mapping of `(program ID, function name, edition, amendment index)` to `verifying key`.
+    type AmendmentVerifyingKeyMap: for<'a> Map<'a, (ProgramID<N>, Identifier<N>, u16, u64), VerifyingKey<N>>;
+    /// The mapping of `(program ID, function name, edition, amendment index)` to `certificate`.
+    type AmendmentCertificateMap: for<'a> Map<'a, (ProgramID<N>, Identifier<N>, u16, u64), Certificate<N>>;
+    /// The mapping of `(program ID, edition, amendment index)` to `ProgramOwner`.
+    type AmendmentOwnerMap: for<'a> Map<'a, (ProgramID<N>, u16, u64), ProgramOwner<N>>;
 
     /// Initializes the deployment storage.
     fn open(fee_store: FeeStore<N, Self::FeeStorage>) -> Result<Self>;
@@ -89,6 +101,18 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     fn certificate_map(&self) -> &Self::CertificateMap;
     /// Returns the fee storage.
     fn fee_store(&self) -> &FeeStore<N, Self::FeeStorage>;
+    /// Returns the amendment count map.
+    fn amendment_count_map(&self) -> &Self::AmendmentCountMap;
+    /// Returns the amendment ID map.
+    fn amendment_id_map(&self) -> &Self::AmendmentIDMap;
+    /// Returns the reverse amendment ID map.
+    fn reverse_amendment_id_map(&self) -> &Self::ReverseAmendmentIDMap;
+    /// Returns the amendment verifying key map.
+    fn amendment_verifying_key_map(&self) -> &Self::AmendmentVerifyingKeyMap;
+    /// Returns the amendment certificate map.
+    fn amendment_certificate_map(&self) -> &Self::AmendmentCertificateMap;
+    /// Returns the amendment owner map.
+    fn amendment_owner_map(&self) -> &Self::AmendmentOwnerMap;
 
     /// Returns the storage mode.
     fn storage_mode(&self) -> &StorageMode {
@@ -107,6 +131,12 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.verifying_key_map().start_atomic();
         self.certificate_map().start_atomic();
         self.fee_store().start_atomic();
+        self.amendment_count_map().start_atomic();
+        self.amendment_id_map().start_atomic();
+        self.reverse_amendment_id_map().start_atomic();
+        self.amendment_verifying_key_map().start_atomic();
+        self.amendment_certificate_map().start_atomic();
+        self.amendment_owner_map().start_atomic();
     }
 
     /// Checks if an atomic batch is in progress.
@@ -121,6 +151,12 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             || self.verifying_key_map().is_atomic_in_progress()
             || self.certificate_map().is_atomic_in_progress()
             || self.fee_store().is_atomic_in_progress()
+            || self.amendment_count_map().is_atomic_in_progress()
+            || self.amendment_id_map().is_atomic_in_progress()
+            || self.reverse_amendment_id_map().is_atomic_in_progress()
+            || self.amendment_verifying_key_map().is_atomic_in_progress()
+            || self.amendment_certificate_map().is_atomic_in_progress()
+            || self.amendment_owner_map().is_atomic_in_progress()
     }
 
     /// Checkpoints the atomic batch.
@@ -135,6 +171,12 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.verifying_key_map().atomic_checkpoint();
         self.certificate_map().atomic_checkpoint();
         self.fee_store().atomic_checkpoint();
+        self.amendment_count_map().atomic_checkpoint();
+        self.amendment_id_map().atomic_checkpoint();
+        self.reverse_amendment_id_map().atomic_checkpoint();
+        self.amendment_verifying_key_map().atomic_checkpoint();
+        self.amendment_certificate_map().atomic_checkpoint();
+        self.amendment_owner_map().atomic_checkpoint();
     }
 
     /// Clears the latest atomic batch checkpoint.
@@ -149,6 +191,12 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.verifying_key_map().clear_latest_checkpoint();
         self.certificate_map().clear_latest_checkpoint();
         self.fee_store().clear_latest_checkpoint();
+        self.amendment_count_map().clear_latest_checkpoint();
+        self.amendment_id_map().clear_latest_checkpoint();
+        self.reverse_amendment_id_map().clear_latest_checkpoint();
+        self.amendment_verifying_key_map().clear_latest_checkpoint();
+        self.amendment_certificate_map().clear_latest_checkpoint();
+        self.amendment_owner_map().clear_latest_checkpoint();
     }
 
     /// Rewinds the atomic batch to the previous checkpoint.
@@ -163,6 +211,12 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.verifying_key_map().atomic_rewind();
         self.certificate_map().atomic_rewind();
         self.fee_store().atomic_rewind();
+        self.amendment_count_map().atomic_rewind();
+        self.amendment_id_map().atomic_rewind();
+        self.reverse_amendment_id_map().atomic_rewind();
+        self.amendment_verifying_key_map().atomic_rewind();
+        self.amendment_certificate_map().atomic_rewind();
+        self.amendment_owner_map().atomic_rewind();
     }
 
     /// Aborts an atomic batch write operation.
@@ -177,6 +231,12 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.verifying_key_map().abort_atomic();
         self.certificate_map().abort_atomic();
         self.fee_store().abort_atomic();
+        self.amendment_count_map().abort_atomic();
+        self.amendment_id_map().abort_atomic();
+        self.reverse_amendment_id_map().abort_atomic();
+        self.amendment_verifying_key_map().abort_atomic();
+        self.amendment_certificate_map().abort_atomic();
+        self.amendment_owner_map().abort_atomic();
     }
 
     /// Finishes an atomic batch write operation.
@@ -190,10 +250,16 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.checksum_map().finish_atomic()?;
         self.verifying_key_map().finish_atomic()?;
         self.certificate_map().finish_atomic()?;
-        self.fee_store().finish_atomic()
+        self.fee_store().finish_atomic()?;
+        self.amendment_count_map().finish_atomic()?;
+        self.amendment_id_map().finish_atomic()?;
+        self.reverse_amendment_id_map().finish_atomic()?;
+        self.amendment_verifying_key_map().finish_atomic()?;
+        self.amendment_certificate_map().finish_atomic()?;
+        self.amendment_owner_map().finish_atomic()
     }
 
-    /// Stores the given `deployment transaction` pair into storage.
+    /// Stores the given `deployment transaction` into storage.
     fn insert(&self, transaction: &Transaction<N>) -> Result<()> {
         // Ensure the transaction is a deployment.
         let (transaction_id, owner, deployment, fee) = match transaction {
@@ -208,7 +274,6 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         }
 
         // Retrieve the edition.
-        // Note: The VM enforces that the edition is always 0 for the first deployment of a program and that subsequent upgrades increment the edition.
         let edition = deployment.edition();
         // Retrieve the program.
         let program = deployment.program();
@@ -216,122 +281,224 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         let program_id = *program.id();
         // Retrieve the checksum.
         let checksum = deployment.program_checksum();
+        // Check if this is an amendment.
+        let is_amendment = deployment.version()? == DeploymentVersion::V3;
 
-        // If the deployment edition is greater than zero, then ensure that it increments the latest edition for the program ID.
-        let expected_edition = match self.get_latest_edition_for_program(&program_id)? {
-            Some(latest_edition) => latest_edition.saturating_add(1),
-            None => 0,
-        };
-        ensure!(
-            edition == expected_edition,
-            "Failed to insert deployment transaction '{transaction_id}' for program '{program_id}', expected edition {expected_edition}, found edition {edition}"
-        );
+        // Handle amendments separately from regular deployments.
+        if is_amendment {
+            // Amendments must target the latest edition of the program.
+            let Some(latest_edition) = self.edition_map().get_confirmed(&program_id)?.map(|e| *e) else {
+                bail!(
+                    "Failed to insert amendment transaction '{transaction_id}' for program '{program_id}': program does not exist"
+                );
+            };
+            ensure!(
+                edition == latest_edition,
+                "Failed to insert amendment transaction '{transaction_id}' for program '{program_id}': expected edition {latest_edition}, found edition {edition}"
+            );
 
-        atomic_batch_scope!(self, {
-            // Store the program ID.
-            self.id_map().insert(*transaction_id, program_id)?;
-            // Store the latest edition for the program ID.
-            self.edition_map().insert(program_id, edition)?;
+            // Get the current amendment count, or initialize to 0 if this is the first amendment.
+            let amendment_index =
+                self.amendment_count_map().get_confirmed(&(program_id, edition))?.map(|c| *c).unwrap_or(0);
 
-            // Store the reverse program ID.
-            self.reverse_id_map().insert((program_id, edition), *transaction_id)?;
-            // Store the owner.
-            self.owner_map().insert((program_id, edition), *owner)?;
-            // Store the program.
-            self.program_map().insert((program_id, edition), program.clone())?;
+            atomic_batch_scope!(self, {
+                // Store the program ID and edition for faster lookups.
+                self.id_map().insert(*transaction_id, program_id)?;
+                self.id_edition_map().insert(*transaction_id, edition)?;
 
-            // Store the edition in the ID edition map.
-            // Note: Prior to `ConsensusVersion::V8`, the edition is always zero.
-            //  `ConsensusVersion::V8` allows the edition to be one via a one-time redeployment.
-            //  `ConsensusVersion::V9` introduces upgradability which allows editions to be incremented up to `u16::MAX`
-            self.id_edition_map().insert(*transaction_id, edition)?;
+                // Store the amendment ID mapping.
+                self.amendment_id_map().insert((program_id, edition, amendment_index), *transaction_id)?;
+                // Store the reverse mapping.
+                self.reverse_amendment_id_map().insert(*transaction_id, (program_id, edition, amendment_index))?;
+                // Store the amendment owner.
+                self.amendment_owner_map().insert((program_id, edition, amendment_index), *owner)?;
 
-            // If the checksum exists, then store it into the `ChecksumMap`.
-            if let Some(checksum) = checksum {
-                self.checksum_map().insert((program_id, edition), checksum)?;
-            }
+                // Store the verifying keys and certificates.
+                for (function_name, (verifying_key, certificate)) in deployment.verifying_keys() {
+                    // Store the verifying key.
+                    self.amendment_verifying_key_map()
+                        .insert((program_id, *function_name, edition, amendment_index), verifying_key.clone())?;
+                    // Store the certificate.
+                    self.amendment_certificate_map()
+                        .insert((program_id, *function_name, edition, amendment_index), certificate.clone())?;
+                }
 
-            // Store the verifying keys and certificates.
-            for (function_name, (verifying_key, certificate)) in deployment.verifying_keys() {
-                // Store the verifying key.
-                self.verifying_key_map().insert((program_id, *function_name, edition), verifying_key.clone())?;
-                // Store the certificate.
-                self.certificate_map().insert((program_id, *function_name, edition), certificate.clone())?;
-            }
+                // Increment the amendment count.
+                self.amendment_count_map().insert((program_id, edition), amendment_index.saturating_add(1))?;
 
-            // Store the fee transition.
-            self.fee_store().insert(*transaction_id, fee)?;
+                // Store the fee transition.
+                self.fee_store().insert(*transaction_id, fee)?;
 
-            Ok(())
-        })
+                Ok(())
+            })
+        } else {
+            // Ensure the edition is incremented correctly.
+            let expected_edition = match self.get_latest_edition_for_program(&program_id)? {
+                Some(latest_edition) => latest_edition.saturating_add(1),
+                None => 0,
+            };
+            ensure!(
+                edition == expected_edition,
+                "Failed to insert deployment transaction '{transaction_id}' for program '{program_id}', expected edition {expected_edition}, found edition {edition}"
+            );
+
+            atomic_batch_scope!(self, {
+                // Store the program ID.
+                self.id_map().insert(*transaction_id, program_id)?;
+                // Store the latest edition for the program ID.
+                self.edition_map().insert(program_id, edition)?;
+
+                // Store the reverse program ID.
+                self.reverse_id_map().insert((program_id, edition), *transaction_id)?;
+                // Store the owner.
+                self.owner_map().insert((program_id, edition), *owner)?;
+                // Store the program.
+                self.program_map().insert((program_id, edition), program.clone())?;
+
+                // Store the edition in the ID edition map.
+                self.id_edition_map().insert(*transaction_id, edition)?;
+
+                // If the checksum exists, then store it into the `ChecksumMap`.
+                if let Some(checksum) = checksum {
+                    self.checksum_map().insert((program_id, edition), checksum)?;
+                }
+
+                // Store the verifying keys and certificates.
+                for (function_name, (verifying_key, certificate)) in deployment.verifying_keys() {
+                    // Store the verifying key.
+                    self.verifying_key_map().insert((program_id, *function_name, edition), verifying_key.clone())?;
+                    // Store the certificate.
+                    self.certificate_map().insert((program_id, *function_name, edition), certificate.clone())?;
+                }
+
+                // Store the fee transition.
+                self.fee_store().insert(*transaction_id, fee)?;
+
+                Ok(())
+            })
+        }
     }
 
     /// Removes the deployment transaction for the given `transaction ID`.
     fn remove(&self, transaction_id: &N::TransactionID) -> Result<()> {
-        // Retrieve the program ID for the transaction ID.
-        let Some(program_id) = self.get_program_id(transaction_id)? else {
-            bail!("Failed to get the program ID for transaction '{transaction_id}'");
-        };
-        // Retrieve the edition for the transaction ID.
-        let Some(edition) = self.get_edition_for_transaction(transaction_id)? else {
-            bail!("Failed to locate the edition for transaction '{transaction_id}'");
-        };
-        // Retrieve the latest edition for the program ID.
-        let Some(latest_edition) = self.get_latest_edition_for_program(&program_id)? else {
-            bail!("Failed to locate the latest edition for program '{program_id}'");
-        };
-        // Verify that the removed edition is latest edition.
-        // Note: This is condition should always hold true because:
-        //  - The VM enforces that exactly one deployment or upgrade is allowed per program per block.
-        //  - The only time a transaction is removed is when `remove_last_n` is invoked.
-        //  - `remove_last_n` is only invoked when finalization for the latest block fails.
-        //  - `remove_last_n` is only invoked with the parameter `1`.
-        // If any of these conditions are changed, then this check is no longer valid.
-        ensure!(
-            edition == latest_edition,
-            "Failed to remove the deployment for transaction '{transaction_id}' because it is not the latest edition"
-        );
-        // Retrieve the program.
-        let Some(program) = self.program_map().get_confirmed(&(program_id, edition))?.map(|x| x.into_owned()) else {
-            bail!("Failed to locate program '{program_id}' for transaction '{transaction_id}'");
-        };
+        // Check if this is an amendment.
+        if let Some(amendment_info) = self.reverse_amendment_id_map().get_confirmed(transaction_id)? {
+            let (program_id, edition, amendment_index) = *amendment_info;
 
-        atomic_batch_scope!(self, {
-            // Remove the program ID.
-            self.id_map().remove(transaction_id)?;
-            // Remove the edition for the transaction ID.
-            self.id_edition_map().remove(transaction_id)?;
-            // Update the latest edition.
-            match edition.is_zero() {
-                // If the removed edition is 0, then remove the program ID from the latest edition map.
-                true => self.edition_map().remove(&program_id)?,
-                // Otherwise, decrement the edition.
-                // Note: This is safe because the VM enforces that the edition is always incremented.
-                false => self.edition_map().insert(program_id, edition.saturating_sub(1))?,
-            }
+            // Retrieve the current amendment count.
+            let Some(current_count) = self.amendment_count_map().get_confirmed(&(program_id, edition))? else {
+                bail!("Failed to locate amendment count for program '{program_id}' (edition {edition})");
+            };
+            let count = *current_count;
 
-            // Remove the reverse program ID.
-            self.reverse_id_map().remove(&(program_id, edition))?;
-            // Remove the owner.
-            self.owner_map().remove(&(program_id, edition))?;
-            // Remove the program.
-            self.program_map().remove(&(program_id, edition))?;
-            // Remove the checksum.
-            self.checksum_map().remove(&(program_id, edition))?;
+            // Verify that we're removing the latest amendment.
+            ensure!(
+                amendment_index == count.saturating_sub(1),
+                "Failed to remove amendment for transaction '{transaction_id}' because it is not the latest amendment"
+            );
 
-            // Remove the verifying keys and certificates.
-            for function_name in program.functions().keys() {
-                // Remove the verifying key.
-                self.verifying_key_map().remove(&(program_id, *function_name, edition))?;
-                // Remove the certificate.
-                self.certificate_map().remove(&(program_id, *function_name, edition))?;
-            }
+            // Retrieve the program to get function names.
+            let Some(program) = self.program_map().get_confirmed(&(program_id, edition))?.map(|x| x.into_owned())
+            else {
+                bail!("Failed to locate program '{program_id}' for transaction '{transaction_id}'");
+            };
 
-            // Remove the fee transition.
-            self.fee_store().remove(transaction_id)?;
+            atomic_batch_scope!(self, {
+                // Remove from id_map and id_edition_map.
+                self.id_map().remove(transaction_id)?;
+                self.id_edition_map().remove(transaction_id)?;
 
-            Ok(())
-        })
+                // Remove the amendment ID mapping.
+                self.amendment_id_map().remove(&(program_id, edition, amendment_index))?;
+                // Remove the amendment reverse ID mapping.
+                self.reverse_amendment_id_map().remove(transaction_id)?;
+                // Remove the amendment owner.
+                self.amendment_owner_map().remove(&(program_id, edition, amendment_index))?;
+
+                // Remove the verifying keys and certificates.
+                for function_name in program.functions().keys() {
+                    self.amendment_verifying_key_map().remove(&(
+                        program_id,
+                        *function_name,
+                        edition,
+                        amendment_index,
+                    ))?;
+                    self.amendment_certificate_map().remove(&(program_id, *function_name, edition, amendment_index))?;
+                }
+
+                // Update the amendment count.
+                match count == 1 {
+                    // If this was the only amendment, remove the count entry.
+                    true => self.amendment_count_map().remove(&(program_id, edition))?,
+                    // Otherwise, decrement the count.
+                    false => self.amendment_count_map().insert((program_id, edition), count.saturating_sub(1))?,
+                }
+
+                // Remove the fee transition.
+                self.fee_store().remove(transaction_id)?;
+
+                Ok(())
+            })
+        } else {
+            // Retrieve the program ID.
+            let Some(program_id) = self.get_program_id(transaction_id)? else {
+                bail!("Failed to get the program ID for transaction '{transaction_id}'");
+            };
+            // Retrieve the edition for the transaction ID.
+            let Some(edition) = self.get_edition_for_transaction(transaction_id)? else {
+                bail!("Failed to locate the edition for transaction '{transaction_id}'");
+            };
+            // Retrieve the latest edition for the program ID.
+            let Some(latest_edition) = self.get_latest_edition_for_program(&program_id)? else {
+                bail!("Failed to locate the latest edition for program '{program_id}'");
+            };
+            // Verify that the removed edition is latest edition.
+            ensure!(
+                edition == latest_edition,
+                "Failed to remove the deployment for transaction '{transaction_id}' because it is not the latest edition"
+            );
+            // Retrieve the program.
+            let Some(program) = self.program_map().get_confirmed(&(program_id, edition))?.map(|x| x.into_owned())
+            else {
+                bail!("Failed to locate program '{program_id}' for transaction '{transaction_id}'");
+            };
+
+            atomic_batch_scope!(self, {
+                // Remove the program ID.
+                self.id_map().remove(transaction_id)?;
+                // Remove the edition for the transaction ID.
+                self.id_edition_map().remove(transaction_id)?;
+                // Update the latest edition.
+                match edition.is_zero() {
+                    // If the removed edition is 0, then remove the program ID from the latest edition map.
+                    true => self.edition_map().remove(&program_id)?,
+                    // Otherwise, decrement the edition.
+                    false => self.edition_map().insert(program_id, edition.saturating_sub(1))?,
+                }
+
+                // Remove the reverse program ID.
+                self.reverse_id_map().remove(&(program_id, edition))?;
+                // Remove the owner.
+                self.owner_map().remove(&(program_id, edition))?;
+                // Remove the program.
+                self.program_map().remove(&(program_id, edition))?;
+                // Remove the checksum.
+                self.checksum_map().remove(&(program_id, edition))?;
+
+                // Remove the verifying keys and certificates.
+                for function_name in program.functions().keys() {
+                    // Remove the verifying key.
+                    self.verifying_key_map().remove(&(program_id, *function_name, edition))?;
+                    // Remove the certificate.
+                    self.certificate_map().remove(&(program_id, *function_name, edition))?;
+                }
+
+                // Remove the fee transition.
+                self.fee_store().remove(transaction_id)?;
+
+                Ok(())
+            })
+        }
     }
 
     /// Returns the latest transaction ID that contains the given `program ID`.
@@ -386,7 +553,6 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
 
     /// Returns the program ID for the given `transaction ID`.
     fn get_program_id(&self, transaction_id: &N::TransactionID) -> Result<Option<ProgramID<N>>> {
-        // Retrieve the program ID.
         Ok(self.id_map().get_confirmed(transaction_id)?.map(|x| *x))
     }
 
@@ -397,12 +563,11 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
 
     /// Returns the edition for the given `transaction ID`.
     fn get_edition_for_transaction(&self, transaction_id: &N::TransactionID) -> Result<Option<u16>> {
-        // Retrieve the edition.
         match self.id_edition_map().get_confirmed(transaction_id)? {
             Some(edition) => Ok(Some(*edition)),
             None => {
                 // Check if the program exists in the store.
-                match self.get_program_id(transaction_id)?.is_none() {
+                match self.id_map().get_confirmed(transaction_id)?.is_none() {
                     true => Ok(None),
                     // If a program is not in the `IDEditionMap` but exists in the store,
                     // then it must have been deployed prior to `ConsensusVersion::V8` when editions were exclusively zero.
@@ -432,6 +597,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     }
 
     /// Returns the latest verifying key for the given `program ID` and `function name`.
+    /// If amendments exist, returns the verifying key from the latest amendment.
     fn get_latest_verifying_key(
         &self,
         program_id: &ProgramID<N>,
@@ -455,7 +621,29 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         let Some(edition) = self.get_latest_edition_for_program(program_id)? else {
             return Ok(None);
         };
-        // Retrieve the verifying key.
+
+        // Check if there are amendments for this program/edition.
+        if let Some(amendment_count) = self.amendment_count_map().get_confirmed(&(*program_id, edition))? {
+            let count = *amendment_count;
+            if count > 0 {
+                // Return the verifying key from the latest amendment.
+                let latest_index = count.saturating_sub(1);
+                let Some(verifying_key) = self.amendment_verifying_key_map().get_confirmed(&(
+                    *program_id,
+                    *function_name,
+                    edition,
+                    latest_index,
+                ))?
+                else {
+                    bail!(
+                        "Failed to get the amendment verifying key for '{program_id}/{function_name}' (edition {edition}, amendment {latest_index})"
+                    );
+                };
+                return Ok(Some(verifying_key.into_owned()));
+            }
+        }
+
+        // No amendments, retrieve from regular verifying key map.
         let Some(verifying_key) = self.verifying_key_map().get_confirmed(&(*program_id, *function_name, edition))?
         else {
             bail!("Failed to get the verifying key for '{program_id}/{function_name}' (edition {edition})");
@@ -464,6 +652,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     }
 
     /// Returns the verifying key for the given `program ID`, `function name` and `edition`.
+    /// If amendments exist for the given edition, returns the verifying key from the latest amendment.
     fn get_verifying_key_with_edition(
         &self,
         program_id: &ProgramID<N>,
@@ -484,7 +673,28 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             return Ok(Some(VerifyingKey::new(verifying_key.clone(), num_variables)));
         }
 
-        // Retrieve the verifying key.
+        // Check if there are amendments for this program/edition.
+        if let Some(amendment_count) = self.amendment_count_map().get_confirmed(&(*program_id, edition))? {
+            let count = *amendment_count;
+            if count > 0 {
+                // Return the verifying key from the latest amendment.
+                let latest_index = count.saturating_sub(1);
+                let Some(verifying_key) = self.amendment_verifying_key_map().get_confirmed(&(
+                    *program_id,
+                    *function_name,
+                    edition,
+                    latest_index,
+                ))?
+                else {
+                    bail!(
+                        "Failed to get the amendment verifying key for '{program_id}/{function_name}' (edition {edition}, amendment {latest_index})"
+                    );
+                };
+                return Ok(Some(verifying_key.into_owned()));
+            }
+        }
+
+        // No amendments, retrieve from regular verifying key map.
         match self.verifying_key_map().get_confirmed(&(*program_id, *function_name, edition))? {
             Some(verifying_key) => Ok(Some(verifying_key.into_owned())),
             None => bail!("Failed to get the verifying key for '{program_id}/{function_name}' (edition {edition})"),
@@ -492,6 +702,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     }
 
     /// Returns the latest certificate for the given `program ID` and `function name`.
+    /// If amendments exist, returns the certificate from the latest amendment.
     fn get_latest_certificate(
         &self,
         program_id: &ProgramID<N>,
@@ -508,7 +719,29 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         let Some(edition) = self.get_latest_edition_for_program(program_id)? else {
             return Ok(None);
         };
-        // Retrieve the certificate.
+
+        // Check if there are amendments for this program/edition.
+        if let Some(amendment_count) = self.amendment_count_map().get_confirmed(&(*program_id, edition))? {
+            let count = *amendment_count;
+            if count > 0 {
+                // Return the certificate from the latest amendment.
+                let latest_index = count.saturating_sub(1);
+                let Some(certificate) = self.amendment_certificate_map().get_confirmed(&(
+                    *program_id,
+                    *function_name,
+                    edition,
+                    latest_index,
+                ))?
+                else {
+                    bail!(
+                        "Failed to get the amendment certificate for '{program_id}/{function_name}' (edition {edition}, amendment {latest_index})"
+                    );
+                };
+                return Ok(Some(certificate.into_owned()));
+            }
+        }
+
+        // No amendments, retrieve from regular certificate map.
         let Some(certificate) = self.certificate_map().get_confirmed(&(*program_id, *function_name, edition))? else {
             bail!("Failed to get the certificate for '{program_id}/{function_name}' (edition {edition})");
         };
@@ -516,6 +749,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     }
 
     /// Returns the certificate for the given `program ID`, `function name`, and `edition`.
+    /// If amendments exist for the given edition, returns the certificate from the latest amendment.
     fn get_certificate_with_edition(
         &self,
         program_id: &ProgramID<N>,
@@ -529,7 +763,28 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             return Ok(None);
         }
 
-        // Retrieve the certificate.
+        // Check if there are amendments for this program/edition.
+        if let Some(amendment_count) = self.amendment_count_map().get_confirmed(&(*program_id, edition))? {
+            let count = *amendment_count;
+            if count > 0 {
+                // Return the certificate from the latest amendment.
+                let latest_index = count.saturating_sub(1);
+                let Some(certificate) = self.amendment_certificate_map().get_confirmed(&(
+                    *program_id,
+                    *function_name,
+                    edition,
+                    latest_index,
+                ))?
+                else {
+                    bail!(
+                        "Failed to get the amendment certificate for '{program_id}/{function_name}' (edition {edition}, amendment {latest_index})"
+                    );
+                };
+                return Ok(Some(certificate.into_owned()));
+            }
+        }
+
+        // No amendments, retrieve from regular certificate map.
         match self.certificate_map().get_confirmed(&(*program_id, *function_name, edition))? {
             Some(certificate) => Ok(Some(certificate.into_owned())),
             None => bail!("Failed to get the certificate for '{program_id}/{function_name}' (edition {edition})"),
@@ -538,6 +793,51 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
 
     /// Returns the deployment for the given `transaction ID`.
     fn get_deployment(&self, transaction_id: &N::TransactionID) -> Result<Option<Deployment<N>>> {
+        // Check if this is an amendment.
+        if let Some(amendment_info) = self.reverse_amendment_id_map().get_confirmed(transaction_id)? {
+            let (program_id, edition, amendment_index) = *amendment_info;
+
+            // Retrieve the program.
+            let Some(program) = self.program_map().get_confirmed(&(program_id, edition))?.map(|x| x.into_owned())
+            else {
+                bail!("Failed to get the deployed program '{program_id}' (edition {edition})");
+            };
+
+            // Initialize a vector for the verifying keys and certificates.
+            let mut verifying_keys = Vec::with_capacity(program.functions().len());
+
+            // Amendments derive the checksum from the program.
+            let program_checksum = Some(program.to_checksum());
+
+            // Amendments have no owner in the Deployment struct.
+            let program_owner = None;
+
+            // Retrieve the verifying keys and certificates.
+            for function_name in program.functions().keys() {
+                let Some(verifying_key) = self
+                    .amendment_verifying_key_map()
+                    .get_confirmed(&(program_id, *function_name, edition, amendment_index))?
+                    .map(|x| x.into_owned())
+                else {
+                    bail!(
+                        "Failed to get the verifying key for '{program_id}/{function_name}' (edition {edition}, amendment {amendment_index})"
+                    );
+                };
+                let Some(certificate) = self
+                    .amendment_certificate_map()
+                    .get_confirmed(&(program_id, *function_name, edition, amendment_index))?
+                    .map(|x| x.into_owned())
+                else {
+                    bail!(
+                        "Failed to get the certificate for '{program_id}/{function_name}' (edition {edition}, amendment {amendment_index})"
+                    );
+                };
+                verifying_keys.push((*function_name, (verifying_key, certificate)));
+            }
+
+            return Ok(Some(Deployment::new(edition, program, verifying_keys, program_checksum, program_owner)?));
+        }
+
         // Retrieve the program ID.
         let Some(program_id) = self.get_program_id(transaction_id)? else {
             return Ok(None);
@@ -546,16 +846,19 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         let Some(edition) = self.get_edition_for_transaction(transaction_id)? else {
             bail!("Failed to get the edition for program '{program_id}'");
         };
+
         // Retrieve the program.
         let Some(program) = self.program_map().get_confirmed(&(program_id, edition))?.map(|x| x.into_owned()) else {
             bail!("Failed to get the deployed program '{program_id}' (edition {edition})");
         };
+
+        // Initialize a vector for the verifying keys and certificates.
+        let mut verifying_keys = Vec::with_capacity(program.functions().len());
+
         // Retrieve the checksum.
         let program_checksum =
             self.checksum_map().get_confirmed(&(program_id, edition))?.map(|checksum| checksum.into_owned());
-        // If the checksum is present, then retrieve the owner address.
-        // Note: This is done to ensure that `Deployment` is consistent. Both the checksum and owner must be present or absent.
-        // This invariant is also enforced in `check_transaction`.
+        // If the checksum is present, retrieve the owner address (both must be present or absent).
         let program_owner = match program_checksum.is_some() {
             false => None,
             true => match self.owner_map().get_confirmed(&(program_id, edition))? {
@@ -564,10 +867,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             },
         };
 
-        // Initialize a vector for the verifying keys and certificates.
-        let mut verifying_keys = Vec::with_capacity(program.functions().len());
-
-        // Retrieve the verifying keys and certificates.
+        // Retrieve the verifying keys and certificates from regular maps.
         for function_name in program.functions().keys() {
             // Retrieve the verifying key.
             let Some(verifying_key) =
@@ -634,6 +934,36 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
 
     /// Returns the transaction for the given `transaction ID`.
     fn get_transaction(&self, transaction_id: &N::TransactionID) -> Result<Option<Transaction<N>>> {
+        // Check if this is an amendment.
+        if let Some(amendment_info) = self.reverse_amendment_id_map().get_confirmed(transaction_id)? {
+            let (program_id, edition, amendment_index) = *amendment_info;
+
+            // Retrieve the deployment.
+            let Some(deployment) = self.get_deployment(transaction_id)? else {
+                bail!("Failed to get the deployment for transaction '{transaction_id}'");
+            };
+            // Retrieve the fee.
+            let Some(fee) = self.get_fee(transaction_id)? else {
+                bail!("Failed to get the fee for transaction '{transaction_id}'");
+            };
+            // Retrieve the owner.
+            let Some(owner) = self
+                .amendment_owner_map()
+                .get_confirmed(&(program_id, edition, amendment_index))?
+                .map(|o| o.into_owned())
+            else {
+                bail!("Failed to get the owner for transaction '{transaction_id}'");
+            };
+
+            // Construct the deployment transaction.
+            let deployment_transaction = Transaction::from_deployment(owner, deployment, fee)?;
+            // Ensure the transaction ID matches.
+            return match *transaction_id == deployment_transaction.id() {
+                true => Ok(Some(deployment_transaction)),
+                false => bail!("The deployment transaction ID does not match '{transaction_id}'"),
+            };
+        }
+
         // Retrieve the deployment.
         let Some(deployment) = self.get_deployment(transaction_id)? else {
             return Ok(None);
@@ -642,7 +972,6 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         let Some(fee) = self.get_fee(transaction_id)? else {
             bail!("Failed to get the fee for transaction '{transaction_id}'");
         };
-
         // Retrieve the owner.
         let Some(owner) = self.get_owner_with_edition(deployment.program_id(), deployment.edition())? else {
             bail!("Failed to get the owner for transaction '{transaction_id}'");
@@ -655,6 +984,110 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             true => Ok(Some(deployment_transaction)),
             false => bail!("The deployment transaction ID does not match '{transaction_id}'"),
         }
+    }
+
+    /// Returns the number of amendments for the given `program ID` and `edition`.
+    fn get_amendment_count(&self, program_id: &ProgramID<N>, edition: u16) -> Result<Option<u64>> {
+        Ok(self.amendment_count_map().get_confirmed(&(*program_id, edition))?.map(|c| *c))
+    }
+
+    /// Returns `true` if the given `transaction ID` is an amendment.
+    fn is_amendment(&self, transaction_id: &N::TransactionID) -> Result<bool> {
+        self.reverse_amendment_id_map().contains_key_confirmed(transaction_id)
+    }
+
+    /// Returns the amendment info `(program ID, edition, amendment index)` for the given `transaction ID`.
+    /// Returns `None` if the transaction is not an amendment.
+    fn get_amendment_info(&self, transaction_id: &N::TransactionID) -> Result<Option<(ProgramID<N>, u16, u64)>> {
+        Ok(self.reverse_amendment_id_map().get_confirmed(transaction_id)?.map(|info| *info))
+    }
+
+    /// Returns the verifying key for a specific amendment.
+    fn get_verifying_key_for_amendment(
+        &self,
+        program_id: &ProgramID<N>,
+        function_name: &Identifier<N>,
+        edition: u16,
+        amendment_index: u64,
+    ) -> Result<Option<VerifyingKey<N>>> {
+        Ok(self
+            .amendment_verifying_key_map()
+            .get_confirmed(&(*program_id, *function_name, edition, amendment_index))?
+            .map(|vk| vk.into_owned()))
+    }
+
+    /// Returns the certificate for a specific amendment.
+    fn get_certificate_for_amendment(
+        &self,
+        program_id: &ProgramID<N>,
+        function_name: &Identifier<N>,
+        edition: u16,
+        amendment_index: u64,
+    ) -> Result<Option<Certificate<N>>> {
+        Ok(self
+            .amendment_certificate_map()
+            .get_confirmed(&(*program_id, *function_name, edition, amendment_index))?
+            .map(|cert| cert.into_owned()))
+    }
+
+    /// Returns the deployment for a specific amendment.
+    /// This reconstructs the deployment using the amendment's verifying keys and certificates.
+    fn get_deployment_for_amendment(
+        &self,
+        program_id: &ProgramID<N>,
+        edition: u16,
+        amendment_index: u64,
+    ) -> Result<Option<Deployment<N>>> {
+        // Check if this amendment exists.
+        let Some(count) = self.amendment_count_map().get_confirmed(&(*program_id, edition))? else {
+            return Ok(None);
+        };
+        if amendment_index >= *count {
+            return Ok(None);
+        }
+
+        // Retrieve the program.
+        let Some(program) = self.program_map().get_confirmed(&(*program_id, edition))?.map(|x| x.into_owned()) else {
+            bail!("Failed to get the deployed program '{program_id}' (edition {edition})");
+        };
+
+        // Initialize a vector for the verifying keys and certificates.
+        let mut verifying_keys = Vec::with_capacity(program.functions().len());
+
+        // Amendments derive the checksum from the program.
+        let program_checksum = Some(program.to_checksum());
+
+        // Amendments have no owner in the Deployment struct.
+        let program_owner = None;
+
+        // Retrieve the verifying keys and certificates from amendment maps.
+        for function_name in program.functions().keys() {
+            // Retrieve the verifying key from amendment map.
+            let Some(verifying_key) = self
+                .amendment_verifying_key_map()
+                .get_confirmed(&(*program_id, *function_name, edition, amendment_index))?
+                .map(|x| x.into_owned())
+            else {
+                bail!(
+                    "Failed to get the amendment verifying key for '{program_id}/{function_name}' (edition {edition}, amendment {amendment_index})"
+                );
+            };
+            // Retrieve the certificate from amendment map.
+            let Some(certificate) = self
+                .amendment_certificate_map()
+                .get_confirmed(&(*program_id, *function_name, edition, amendment_index))?
+                .map(|x| x.into_owned())
+            else {
+                bail!(
+                    "Failed to get the amendment certificate for '{program_id}/{function_name}' (edition {edition}, amendment {amendment_index})"
+                );
+            };
+            // Add the verifying key and certificate to the deployment.
+            verifying_keys.push((*function_name, (verifying_key, certificate)));
+        }
+
+        // Return the deployment.
+        Ok(Some(Deployment::new(edition, program, verifying_keys, program_checksum, program_owner)?))
     }
 }
 
@@ -914,6 +1347,83 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
     /// Returns an iterator over the `((program ID, function name, edition), certificate)`, for all deployments.
     pub fn certificates(&self) -> impl '_ + Iterator<Item = (Cow<'_, ProgramTriplet<N>>, Cow<'_, Certificate<N>>)> {
         self.storage.certificate_map().iter_confirmed()
+    }
+}
+
+impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
+    /// Returns the number of amendments for the given `program ID` and `edition`.
+    pub fn get_amendment_count(&self, program_id: &ProgramID<N>, edition: u16) -> Result<Option<u64>> {
+        self.storage.get_amendment_count(program_id, edition)
+    }
+
+    /// Returns `true` if the given `transaction ID` is an amendment.
+    pub fn is_amendment(&self, transaction_id: &N::TransactionID) -> Result<bool> {
+        self.storage.is_amendment(transaction_id)
+    }
+
+    /// Returns the amendment info `(program ID, edition, amendment index)` for the given `transaction ID`.
+    /// Returns `None` if the transaction is not an amendment.
+    pub fn get_amendment_info(&self, transaction_id: &N::TransactionID) -> Result<Option<(ProgramID<N>, u16, u64)>> {
+        self.storage.get_amendment_info(transaction_id)
+    }
+
+    /// Returns the verifying key for a specific amendment.
+    pub fn get_verifying_key_for_amendment(
+        &self,
+        program_id: &ProgramID<N>,
+        function_name: &Identifier<N>,
+        edition: u16,
+        amendment_index: u64,
+    ) -> Result<Option<VerifyingKey<N>>> {
+        self.storage.get_verifying_key_for_amendment(program_id, function_name, edition, amendment_index)
+    }
+
+    /// Returns the certificate for a specific amendment.
+    pub fn get_certificate_for_amendment(
+        &self,
+        program_id: &ProgramID<N>,
+        function_name: &Identifier<N>,
+        edition: u16,
+        amendment_index: u64,
+    ) -> Result<Option<Certificate<N>>> {
+        self.storage.get_certificate_for_amendment(program_id, function_name, edition, amendment_index)
+    }
+
+    /// Returns the deployment for a specific amendment.
+    /// This reconstructs the deployment using the amendment's verifying keys and certificates.
+    pub fn get_deployment_for_amendment(
+        &self,
+        program_id: &ProgramID<N>,
+        edition: u16,
+        amendment_index: u64,
+    ) -> Result<Option<Deployment<N>>> {
+        self.storage.get_deployment_for_amendment(program_id, edition, amendment_index)
+    }
+}
+
+type AmendmentKey<N> = (ProgramID<N>, u16, u64);
+type AmendmentVKKey<N> = (ProgramID<N>, Identifier<N>, u16, u64);
+
+impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
+    /// Returns an iterator over the amendment transaction IDs.
+    pub fn amendment_transaction_ids(
+        &self,
+    ) -> impl '_ + Iterator<Item = (Cow<'_, AmendmentKey<N>>, Cow<'_, N::TransactionID>)> {
+        self.storage.amendment_id_map().iter_confirmed()
+    }
+
+    /// Returns an iterator over the amendment verifying keys.
+    pub fn amendment_verifying_keys(
+        &self,
+    ) -> impl '_ + Iterator<Item = (Cow<'_, AmendmentVKKey<N>>, Cow<'_, VerifyingKey<N>>)> {
+        self.storage.amendment_verifying_key_map().iter_confirmed()
+    }
+
+    /// Returns an iterator over the amendment certificates.
+    pub fn amendment_certificates(
+        &self,
+    ) -> impl '_ + Iterator<Item = (Cow<'_, AmendmentVKKey<N>>, Cow<'_, Certificate<N>>)> {
+        self.storage.amendment_certificate_map().iter_confirmed()
     }
 }
 

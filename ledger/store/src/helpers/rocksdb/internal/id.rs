@@ -114,6 +114,12 @@ pub enum DeploymentMap {
     Checksum = DataID::DeploymentChecksumMap as u16,
     VerifyingKey = DataID::DeploymentVerifyingKeyMap as u16,
     Certificate = DataID::DeploymentCertificateMap as u16,
+    AmendmentCount = DataID::DeploymentAmendmentCountMap as u16,
+    AmendmentID = DataID::DeploymentAmendmentIDMap as u16,
+    ReverseAmendmentID = DataID::DeploymentReverseAmendmentIDMap as u16,
+    AmendmentVerifyingKey = DataID::DeploymentAmendmentVerifyingKeyMap as u16,
+    AmendmentCertificate = DataID::DeploymentAmendmentCertificateMap as u16,
+    AmendmentOwner = DataID::DeploymentAmendmentOwnerMap as u16,
 }
 
 /// The RocksDB map prefix for execution-related entries.
@@ -303,6 +309,14 @@ enum DataID {
     IDEditionMap,
     // Track deployments that contain an optional checksum
     DeploymentChecksumMap,
+
+    // Amendment maps
+    DeploymentAmendmentCountMap,
+    DeploymentAmendmentIDMap,
+    DeploymentReverseAmendmentIDMap,
+    DeploymentAmendmentVerifyingKeyMap,
+    DeploymentAmendmentCertificateMap,
+    DeploymentAmendmentOwnerMap,
 
     // Testing
     #[cfg(test)]

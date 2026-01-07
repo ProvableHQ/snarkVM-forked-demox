@@ -397,18 +397,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     DeploymentVersion::V3 => {
                         // For `V3` (ammendment) deployments, check that:
                         // - The program is not `credits.aleo`.
-                        // - The edition is zero.
                         // - The program already exists in the store and process.
-                        // - The existing program and checksum matches the one in the deployment.
+                        // - The existing program, checksum, and edition matches the one in the deployment.
 
                         // Check that the program is not `credits.aleo`.
                         ensure!(deployment.program_id() != &ProgramID::credits(), "Cannot deploy 'credits.aleo'");
-
-                        // Check that the edition is zero.
-                        ensure!(
-                            deployment.edition().is_zero(),
-                            "Invalid deployment transaction '{id}' - edition should be zero for `DeploymentVersion::V3`",
-                        );
 
                         // Check that the program exists.
                         ensure!(
@@ -429,12 +422,16 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             existing_program == deployment.program(),
                             "Invalid deployment transaction '{id}' - new program does not match the existing program"
                         );
-
                         // Ensure the existing program checksum matches the deployment checksum.
                         // Note that this unwrap is safe since `V3` deployments always have a program checksum.
                         ensure!(
                             existing_program.to_checksum() == deployment.program_checksum().unwrap(),
                             "Invalid deployment transaction '{id}' - program checksum does not match the existing program checksum"
+                        );
+                        // Ensure the existing program edition matches the deployment edition.
+                        ensure!(
+                            *stack.program_edition() == deployment.edition(),
+                            "Invalid deployment transaction '{id}' - program edition does not match the existing program edition"
                         );
                     }
                 }
