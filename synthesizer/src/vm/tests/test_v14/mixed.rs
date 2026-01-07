@@ -17,12 +17,10 @@ use console::types::Scalar;
 
 use super::*;
 
-// These tests mix translation, casting to dynamic.record and get.record.dynamic.
+// These tests mix translation, casting to `dynamic.record`, and `get.record.dynamic`.
 
-// This test checks that execution_cost_for_authorization() computes the correct
-// cost in transactions involving inclusion and translation proofs. This is in
-// addition to all test cases in synthesizer/tests/test_vm_execute_and_finalize.rs,
-// which also assert the correctness of cost estimation.
+// Tests that `execution_cost_for_authorization()` computes correct costs for transactions with inclusion and translation proofs.
+// Complements test cases in `synthesizer/tests/test_vm_execute_and_finalize.rs` which also verify cost estimation correctness.
 #[test]
 fn test_execution_cost_for_authorization() {
     let rng = &mut TestRng::default();
@@ -279,6 +277,7 @@ fn test_execution_cost_for_authorization() {
     assert_eq!(vm.transition_store().records().count(), count_before_weld_dynamically + 1);
 }
 
+// Tests an integration scenario combining translation, `get.record.dynamic`, and cast to `dynamic.record` with signature verification.
 #[test]
 fn test_translation_get_dynamic_cast_to_dynamic() {
     let rng = &mut TestRng::default();

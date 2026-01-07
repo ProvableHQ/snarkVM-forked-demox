@@ -51,10 +51,10 @@ constructor:
 }
 
 // This test verifies that `contains.dynamic`:
-// - returns a result when called on an external program and mapping.
-// - returns a result when called on a mapping in the current program.
-// - fails when the program or mapping does not exist.
-// - fails when the key is of the wrong type.
+// - Returns a result when called on an external program and mapping.
+// - Returns a result when called on a mapping in the current program.
+// - Fails when the program or mapping does not exist.
+// - Fails when the key is of the wrong type.
 #[test]
 fn test_dynamic_contains() {
     // Initialize an RNG.
@@ -96,7 +96,6 @@ finalize test_dynamic_contains:
     input r4 as boolean.public;
     contains.dynamic r0 r1 r2[r3] into r5;
     assert.eq r5 r4;
-
 
 function set_mapping:
     input r0 as u32.public;
@@ -342,13 +341,13 @@ constructor:
 }
 
 // This test verifies that `get.dynamic`:
-// - returns a value when called on an external program and mapping.
-// - returns a value when called on a mapping in the current program.
-// - fails when the key does not exist in the mapping.
-// - fails when the program or mapping does not exist.
-// - fails when the key is of the wrong type.
-// - fails when the destination type does not match the mapping value type.
-// - works with struct value types.
+// - Returns a value when called on an external program and mapping.
+// - Returns a value when called on a mapping in the current program.
+// - Fails when the key does not exist in the mapping.
+// - Fails when the program or mapping does not exist.
+// - Fails when the key is of the wrong type.
+// - Fails when the destination type does not match the mapping value type.
+// - Works with struct value types.
 #[test]
 fn test_dynamic_get() {
     // Initialize an RNG.
@@ -861,14 +860,14 @@ constructor:
 }
 
 // This test verifies that `get.or_use.dynamic`:
-// - returns the stored value when the key exists in the mapping.
-// - returns the default value when the key does not exist in the mapping.
-// - works with external programs and mappings.
-// - works with the current program's mapping.
-// - fails when the program or mapping does not exist.
-// - works with struct value types.
+// - Returns the stored value when the key exists in the mapping.
+// - Returns the default value when the key does not exist in the mapping.
+// - Works with external programs and mappings.
+// - Works with the current program's mapping.
+// - Fails when the program or mapping does not exist.
+// - Works with struct value types.
 // Note: destination type mismatches and default value type mismatches are caught at
-// deployment time (static type check in check_get_or_use_dynamic), not at runtime.
+// deployment time (static type check in `check_get_or_use_dynamic`), not at runtime.
 #[test]
 fn test_dynamic_get_or_use() {
     // Initialize an RNG.
@@ -1338,4 +1337,359 @@ constructor:
     // Check that get.or_use.dynamic returns default after struct removal.
     test_dynamic_get_or_use_struct(&vm, "main_program", "aleo", "struct_data_main", 10, (5, 6), Some((5, 6)), rng);
     test_dynamic_get_or_use_struct(&vm, "struct_program0", "aleo", "struct_data0", 20, (7, 8), Some((7, 8)), rng);
+}
+
+// Tests that `get.dynamic` fails when accessing a key in an empty mapping while `contains.dynamic` returns false.
+#[test]
+fn test_get_dynamic_empty_mapping() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+
+    let vm = crate::vm::test_helpers::sample_vm_at_height(
+        CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(),
+        rng,
+    );
+
+    // Create a program with an empty mapping (no entries ever set)
+    let empty_mapping_program = Program::<CurrentNetwork>::from_str(
+        r"
+        program empty_mapping.aleo;
+
+        mapping empty_data:
+            key as u32.public;
+            value as u64.public;
+
+        function test_get_empty:
+            input r0 as field.public;
+            input r1 as field.public;
+            input r2 as field.public;
+            input r3 as u32.public;
+            async test_get_empty r0 r1 r2 r3 into r4;
+            output r4 as empty_mapping.aleo/test_get_empty.future;
+
+        finalize test_get_empty:
+            input r0 as field.public;
+            input r1 as field.public;
+            input r2 as field.public;
+            input r3 as u32.public;
+            get.dynamic r0 r1 r2[r3] into r4 as u64;
+
+        function test_contains_empty:
+            input r0 as field.public;
+            input r1 as field.public;
+            input r2 as field.public;
+            input r3 as u32.public;
+            async test_contains_empty r0 r1 r2 r3 into r4;
+            output r4 as empty_mapping.aleo/test_contains_empty.future;
+
+        finalize test_contains_empty:
+            input r0 as field.public;
+            input r1 as field.public;
+            input r2 as field.public;
+            input r3 as u32.public;
+            contains.dynamic r0 r1 r2[r3] into r4;
+            assert.eq r4 false;
+
+        constructor:
+            assert.eq true true;
+        ",
+    )
+    .unwrap();
+
+    // Deploy the program
+    println!("Deploying empty_mapping.aleo...");
+    let deployment = vm.deploy(&caller_private_key, &empty_mapping_program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deployment], rng);
+
+    // Create field values for the program, network, and mapping names
+    let program_name_field =
+        Identifier::<CurrentNetwork>::from_str("empty_mapping").unwrap().to_field().unwrap().to_string();
+    let network_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap().to_string();
+    let mapping_name_field =
+        Identifier::<CurrentNetwork>::from_str("empty_data").unwrap().to_field().unwrap().to_string();
+
+    // First verify that contains.dynamic returns false for any key in the empty mapping
+    println!("Testing contains.dynamic on empty mapping...");
+    let contains_tx = vm
+        .execute(
+            &caller_private_key,
+            ("empty_mapping.aleo", "test_contains_empty"),
+            vec![
+                Value::from_str(&program_name_field).unwrap(),
+                Value::from_str(&network_field).unwrap(),
+                Value::from_str(&mapping_name_field).unwrap(),
+                Value::from_str("42u32").unwrap(),
+            ]
+            .into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    // contains.dynamic should succeed and return false
+    add_and_test(&vm, &caller_private_key, &[contains_tx], rng);
+
+    // Now test that get.dynamic fails on the empty mapping
+    println!("Testing get.dynamic on empty mapping (should fail)...");
+    let get_tx = vm
+        .execute(
+            &caller_private_key,
+            ("empty_mapping.aleo", "test_get_empty"),
+            vec![
+                Value::from_str(&program_name_field).unwrap(),
+                Value::from_str(&network_field).unwrap(),
+                Value::from_str(&mapping_name_field).unwrap(),
+                Value::from_str("42u32").unwrap(),
+            ]
+            .into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    // get.dynamic should fail because the key doesn't exist
+    let block = sample_next_block(&vm, &caller_private_key, &[get_tx], rng).unwrap();
+    assert_eq!(block.transactions().num_rejected(), 1, "get.dynamic on empty mapping should be rejected");
+    vm.add_next_block(&block).unwrap();
+}
+
+// Tests contains.dynamic with array keys to verify composite key type handling.
+#[test]
+fn test_contains_dynamic_with_array_keys() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+
+    let vm = crate::vm::test_helpers::sample_vm_at_height(
+        CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(),
+        rng,
+    );
+
+    // Create a program with an array-keyed mapping
+    let array_key_program = Program::<CurrentNetwork>::from_str(
+        r"
+        program array_key_mapping.aleo;
+
+        mapping array_data:
+            key as [u8; 4u32].public;
+            value as u64.public;
+
+        function set_array_mapping:
+            input r0 as [u8; 4u32].public;
+            input r1 as u64.public;
+            async set_array_mapping r0 r1 into r2;
+            output r2 as array_key_mapping.aleo/set_array_mapping.future;
+
+        finalize set_array_mapping:
+            input r0 as [u8; 4u32].public;
+            input r1 as u64.public;
+            set r1 into array_data[r0];
+
+        function test_contains_array:
+            input r0 as field.public;
+            input r1 as field.public;
+            input r2 as field.public;
+            input r3 as [u8; 4u32].public;
+            input r4 as boolean.public;
+            async test_contains_array r0 r1 r2 r3 r4 into r5;
+            output r5 as array_key_mapping.aleo/test_contains_array.future;
+
+        finalize test_contains_array:
+            input r0 as field.public;
+            input r1 as field.public;
+            input r2 as field.public;
+            input r3 as [u8; 4u32].public;
+            input r4 as boolean.public;
+            contains.dynamic r0 r1 r2[r3] into r5;
+            assert.eq r5 r4;
+
+        function test_get_array:
+            input r0 as field.public;
+            input r1 as field.public;
+            input r2 as field.public;
+            input r3 as [u8; 4u32].public;
+            input r4 as u64.public;
+            async test_get_array r0 r1 r2 r3 r4 into r5;
+            output r5 as array_key_mapping.aleo/test_get_array.future;
+
+        finalize test_get_array:
+            input r0 as field.public;
+            input r1 as field.public;
+            input r2 as field.public;
+            input r3 as [u8; 4u32].public;
+            input r4 as u64.public;
+            get.dynamic r0 r1 r2[r3] into r5 as u64;
+            assert.eq r5 r4;
+
+        function remove_array_mapping:
+            input r0 as [u8; 4u32].public;
+            async remove_array_mapping r0 into r1;
+            output r1 as array_key_mapping.aleo/remove_array_mapping.future;
+
+        finalize remove_array_mapping:
+            input r0 as [u8; 4u32].public;
+            remove array_data[r0];
+
+        constructor:
+            assert.eq true true;
+        ",
+    )
+    .unwrap();
+
+    // Deploy the program
+    println!("Deploying array_key_mapping.aleo...");
+    let deployment = vm.deploy(&caller_private_key, &array_key_program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deployment], rng);
+
+    // Create field values for dynamic operations
+    let program_name_field =
+        Identifier::<CurrentNetwork>::from_str("array_key_mapping").unwrap().to_field().unwrap().to_string();
+    let network_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap().to_string();
+    let mapping_name_field =
+        Identifier::<CurrentNetwork>::from_str("array_data").unwrap().to_field().unwrap().to_string();
+
+    // Test that contains.dynamic returns false for non-existent array key
+    println!("Testing contains.dynamic with array key (should be false)...");
+    let contains_tx = vm
+        .execute(
+            &caller_private_key,
+            ("array_key_mapping.aleo", "test_contains_array"),
+            vec![
+                Value::from_str(&program_name_field).unwrap(),
+                Value::from_str(&network_field).unwrap(),
+                Value::from_str(&mapping_name_field).unwrap(),
+                Value::from_str("[1u8, 2u8, 3u8, 4u8]").unwrap(),
+                Value::from_str("false").unwrap(),
+            ]
+            .into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[contains_tx], rng);
+
+    // Set a value with an array key
+    println!("Setting value with array key...");
+    let set_tx = vm
+        .execute(
+            &caller_private_key,
+            ("array_key_mapping.aleo", "set_array_mapping"),
+            vec![Value::from_str("[1u8, 2u8, 3u8, 4u8]").unwrap(), Value::from_str("12345u64").unwrap()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[set_tx], rng);
+
+    // Test that contains.dynamic returns true for existing array key
+    println!("Testing contains.dynamic with array key (should be true)...");
+    let contains_tx2 = vm
+        .execute(
+            &caller_private_key,
+            ("array_key_mapping.aleo", "test_contains_array"),
+            vec![
+                Value::from_str(&program_name_field).unwrap(),
+                Value::from_str(&network_field).unwrap(),
+                Value::from_str(&mapping_name_field).unwrap(),
+                Value::from_str("[1u8, 2u8, 3u8, 4u8]").unwrap(),
+                Value::from_str("true").unwrap(),
+            ]
+            .into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[contains_tx2], rng);
+
+    // Test that get.dynamic returns the correct value for the array key
+    println!("Testing get.dynamic with array key...");
+    let get_tx = vm
+        .execute(
+            &caller_private_key,
+            ("array_key_mapping.aleo", "test_get_array"),
+            vec![
+                Value::from_str(&program_name_field).unwrap(),
+                Value::from_str(&network_field).unwrap(),
+                Value::from_str(&mapping_name_field).unwrap(),
+                Value::from_str("[1u8, 2u8, 3u8, 4u8]").unwrap(),
+                Value::from_str("12345u64").unwrap(),
+            ]
+            .into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[get_tx], rng);
+
+    // Test that a different array key still returns false
+    println!("Testing contains.dynamic with different array key (should be false)...");
+    let contains_tx3 = vm
+        .execute(
+            &caller_private_key,
+            ("array_key_mapping.aleo", "test_contains_array"),
+            vec![
+                Value::from_str(&program_name_field).unwrap(),
+                Value::from_str(&network_field).unwrap(),
+                Value::from_str(&mapping_name_field).unwrap(),
+                Value::from_str("[5u8, 6u8, 7u8, 8u8]").unwrap(), // Different key
+                Value::from_str("false").unwrap(),
+            ]
+            .into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[contains_tx3], rng);
+
+    // Remove the array key and verify contains returns false again
+    println!("Removing array key...");
+    let remove_tx = vm
+        .execute(
+            &caller_private_key,
+            ("array_key_mapping.aleo", "remove_array_mapping"),
+            vec![Value::from_str("[1u8, 2u8, 3u8, 4u8]").unwrap()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[remove_tx], rng);
+
+    // Verify contains returns false after removal
+    println!("Testing contains.dynamic after removal (should be false)...");
+    let contains_tx4 = vm
+        .execute(
+            &caller_private_key,
+            ("array_key_mapping.aleo", "test_contains_array"),
+            vec![
+                Value::from_str(&program_name_field).unwrap(),
+                Value::from_str(&network_field).unwrap(),
+                Value::from_str(&mapping_name_field).unwrap(),
+                Value::from_str("[1u8, 2u8, 3u8, 4u8]").unwrap(),
+                Value::from_str("false").unwrap(),
+            ]
+            .into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[contains_tx4], rng);
 }

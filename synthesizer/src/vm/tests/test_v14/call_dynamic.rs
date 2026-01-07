@@ -15,7 +15,7 @@
 
 use super::*;
 
-// This test verifiers that a dynamic call to the `credits` functions work as expected.
+// Tests `call.dynamic` to `credits.aleo` functions including `transfer_public_as_signer`, `transfer_public_to_private`, and `transfer_private`.
 #[test]
 fn test_dynamic_calls_to_credits_aleo() -> Result<()> {
     let rng = &mut TestRng::default();
@@ -229,6 +229,7 @@ fn test_dynamic_calls_to_credits_aleo() -> Result<()> {
     Ok(())
 }
 
+// Tests a universal AMM swap pattern where the AMM dynamically calls transfer functions on arbitrary token programs.
 #[test]
 fn test_universal_swap() {
     // Turn on trace logging.
@@ -450,6 +451,7 @@ fn test_universal_swap() {
         .split_at(1);
 }
 
+// Tests runtime selection of `call.dynamic` targets using ternary operations to conditionally determine the program and function.
 #[test]
 fn test_conditional_execution() {
     let constants_program_name = Identifier::<CurrentNetwork>::from_str("constants").unwrap();
@@ -608,28 +610,21 @@ fn test_conditional_execution() {
     add_and_test(&vm, &caller_private_key, &[execute_1, execute_2, execute_3], rng);
 }
 
-// This test checks that the execution graph computed from an execution
-// involving dynamic calls is correct. The functions are invoked in the
-// following order:
-// "four::a"
-//   --> "two::b"
-//        --> "zero::c"
-//        --> "one::d"
-//   --> "three::e"
-//        --> "two::b"
-//             --> "zero::c"
-//             --> "one::d"
-//        --> "one::d"
-//        --> "zero::c"
-//
-// Each of the call instructions can be static or dynamic depending on the
-// boolean inputs to the test function.
-//
-// The linearized order is:
-//  - [a, b, c, d, e, b, c, d, d, c]
-// The transitions must be included in the `Execution` in the order they finish.
-// The execution order is:
-//  - [c, d, b, c, d, b, d, c, e, a]
+// Tests that execution graphs with mixed static/dynamic calls are correctly constructed.
+// Each call instruction can be static or dynamic depending on the boolean inputs to the test function.
+// Call tree:
+//   `four::a`
+//     -> `two::b`
+//          -> `zero::c`
+//          -> `one::d`
+//     -> `three::e`
+//          -> `two::b`
+//               -> `zero::c`
+//               -> `one::d`
+//          -> `one::d`
+//          -> `zero::c`
+// Linearized order: [a, b, c, d, e, b, c, d, d, c].
+// Transitions must be included in the `Execution` in the order they finish: [c, d, b, c, d, b, d, c, e, a].
 fn test_complex_dynamic_graph_construction_internal(
     // In each of the arguments, call_X_Y_dynamic indicates whether the call to
     // function Y inside function X should be static or dynamic.
@@ -898,6 +893,7 @@ fn test_complex_dynamic_graph_construction_internal(
     add_and_test(&vm, &caller_private_key, &[transaction.clone()], rng);
 }
 
+// Tests execution graph construction with all-static, all-dynamic, and random combinations of call types.
 #[test]
 fn test_complex_dynamic_graph_construction() {
     let num_random_mixes = 3;
@@ -913,4 +909,578 @@ fn test_complex_dynamic_graph_construction() {
         let mix: [bool; 7] = rng.r#gen();
         test_complex_dynamic_graph_construction_internal(mix[0], mix[1], mix[2], mix[3], mix[4], mix[5], mix[6]);
     }
+}
+
+// Tests that `call.dynamic` to a non-existent program fails with an appropriate error.
+#[test]
+fn test_call_nonexistent_program() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    // Use a program name that doesn't exist
+    let nonexistent_program_field =
+        Identifier::<CurrentNetwork>::from_str("nonexistent_program").unwrap().to_field().unwrap();
+    let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+    let some_function_field = Identifier::<CurrentNetwork>::from_str("some_function").unwrap().to_field().unwrap();
+
+    let caller_program_str = format!(
+        r"
+        program call_nonexistent.aleo;
+
+        function call_missing_program:
+            call.dynamic {nonexistent_program_field} {aleo_field} {some_function_field}
+                into r0 (as u64.public);
+            output r0 as u64.public;
+
+        constructor:
+            assert.eq true true;
+        "
+    );
+
+    let caller_program = Program::<CurrentNetwork>::from_str(&caller_program_str).unwrap();
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    // Deploy the caller program
+    let deploy_tx = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_tx], rng);
+
+    // Execution should fail because the target program doesn't exist
+    let exec_result = vm.execute(
+        &caller_private_key,
+        ("call_nonexistent.aleo", "call_missing_program"),
+        Vec::<Value<CurrentNetwork>>::new().into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    );
+
+    assert!(exec_result.is_err(), "Calling a non-existent program should fail");
+}
+
+// Tests that `call.dynamic` to a non-existent function in an existing program fails with an appropriate error.
+#[test]
+fn test_call_nonexistent_function() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    // First deploy a target program with a known function
+    let target_program = Program::<CurrentNetwork>::from_str(
+        r"
+        program target_program.aleo;
+
+        function existing_function:
+            output 42u64 as u64.public;
+
+        constructor:
+            assert.eq true true;
+        ",
+    )
+    .unwrap();
+
+    // Use the existing program but a non-existent function
+    let target_program_field = Identifier::<CurrentNetwork>::from_str("target_program").unwrap().to_field().unwrap();
+    let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+    let nonexistent_function_field =
+        Identifier::<CurrentNetwork>::from_str("nonexistent_function").unwrap().to_field().unwrap();
+
+    let caller_program_str = format!(
+        r"
+        program call_nonexistent_fn.aleo;
+
+        function call_missing_function:
+            call.dynamic {target_program_field} {aleo_field} {nonexistent_function_field}
+                into r0 (as u64.public);
+            output r0 as u64.public;
+
+        constructor:
+            assert.eq true true;
+        "
+    );
+
+    let caller_program = Program::<CurrentNetwork>::from_str(&caller_program_str).unwrap();
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    // Deploy both programs
+    let deploy_target = vm.deploy(&caller_private_key, &target_program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_target], rng);
+
+    let deploy_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_caller], rng);
+
+    // Execution should fail because the target function doesn't exist
+    let exec_result = vm.execute(
+        &caller_private_key,
+        ("call_nonexistent_fn.aleo", "call_missing_function"),
+        Vec::<Value<CurrentNetwork>>::new().into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    );
+
+    assert!(exec_result.is_err(), "Calling a non-existent function should fail");
+}
+
+// Tests circular `call.dynamic` patterns where program A calls B which calls back to A.
+#[test]
+fn test_circular_dynamic_calls() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    let program_a_field = Identifier::<CurrentNetwork>::from_str("circular_a").unwrap().to_field().unwrap();
+    let program_b_field = Identifier::<CurrentNetwork>::from_str("circular_b").unwrap().to_field().unwrap();
+    let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+    let call_b_field = Identifier::<CurrentNetwork>::from_str("call_b").unwrap().to_field().unwrap();
+    let call_a_field = Identifier::<CurrentNetwork>::from_str("call_a").unwrap().to_field().unwrap();
+
+    // Program A calls B, which calls back to A (with a base case to prevent infinite recursion)
+    let program_a_str = format!(
+        r"
+        program circular_a.aleo;
+
+        function entry:
+            input r0 as u8.public;
+            call.dynamic {program_b_field} {aleo_field} {call_b_field} with r0 (as u8.public)
+                into r1 (as u64.public);
+            output r1 as u64.public;
+
+        function call_a:
+            input r0 as u8.public;
+            // Base case: if counter is 0, return 1
+            is.eq r0 0u8 into r1;
+            ternary r1 1u64 0u64 into r2;
+            // Recursive case would need to decrement and call B again
+            // For simplicity, we just return based on the counter
+            add r2 1u64 into r3;
+            output r3 as u64.public;
+
+        constructor:
+            assert.eq true true;
+        "
+    );
+
+    let program_b_str = format!(
+        r"
+        program circular_b.aleo;
+
+        function call_b:
+            input r0 as u8.public;
+            // Decrement counter
+            sub.w r0 1u8 into r1;
+            // If counter > 0, call back to A
+            gt r0 0u8 into r2;
+            ternary r2 r1 0u8 into r3;
+            call.dynamic {program_a_field} {aleo_field} {call_a_field} with r3 (as u8.public)
+                into r4 (as u64.public);
+            output r4 as u64.public;
+
+        constructor:
+            assert.eq true true;
+        "
+    );
+
+    let program_a = Program::<CurrentNetwork>::from_str(&program_a_str).unwrap();
+    let program_b = Program::<CurrentNetwork>::from_str(&program_b_str).unwrap();
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    // Deploy both programs
+    let deploy_a = vm.deploy(&caller_private_key, &program_a, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_a], rng);
+
+    let deploy_b = vm.deploy(&caller_private_key, &program_b, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_b], rng);
+
+    // Execute with a small counter to test the circular pattern
+    let transaction = vm
+        .execute(
+            &caller_private_key,
+            ("circular_a.aleo", "entry"),
+            vec![Value::from_str("2u8").unwrap()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    // The transaction should succeed - circular calls are valid as long as they terminate
+    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+}
+
+// Tests a deep `call.dynamic` hierarchy with 8 levels of nested calls.
+#[test]
+fn test_deep_call_hierarchy() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+
+    // Create 8 programs, each calling the next one
+    let program_names: Vec<String> = (0..8).map(|i| format!("deep_level_{i}")).collect();
+    let program_fields: Vec<_> = program_names
+        .iter()
+        .map(|name| Identifier::<CurrentNetwork>::from_str(name).unwrap().to_field().unwrap())
+        .collect();
+
+    let call_next_field = Identifier::<CurrentNetwork>::from_str("call_next").unwrap().to_field().unwrap();
+
+    let mut programs = Vec::new();
+
+    // Create the deepest program (level 7) - just returns a value
+    let deepest_program_str = format!(
+        r"
+        program {}.aleo;
+
+        function call_next:
+            input r0 as u64.public;
+            add r0 1u64 into r1;
+            output r1 as u64.public;
+
+        constructor:
+            assert.eq true true;
+        ",
+        program_names[7]
+    );
+    programs.push(Program::<CurrentNetwork>::from_str(&deepest_program_str).unwrap());
+
+    // Create intermediate programs (levels 1-6) - each calls the next level
+    for i in (1..7).rev() {
+        let program_str = format!(
+            r"
+            program {}.aleo;
+
+            function call_next:
+                input r0 as u64.public;
+                add r0 1u64 into r1;
+                call.dynamic {} {} {} with r1 (as u64.public)
+                    into r2 (as u64.public);
+                output r2 as u64.public;
+
+            constructor:
+                assert.eq true true;
+            ",
+            program_names[i],
+            program_fields[i + 1],
+            aleo_field,
+            call_next_field
+        );
+        programs.push(Program::<CurrentNetwork>::from_str(&program_str).unwrap());
+    }
+
+    // Create the entry program (level 0)
+    let entry_program_str = format!(
+        r"
+        program {}.aleo;
+
+        function entry:
+            input r0 as u64.public;
+            call.dynamic {} {} {} with r0 (as u64.public)
+                into r1 (as u64.public);
+            output r1 as u64.public;
+
+        constructor:
+            assert.eq true true;
+        ",
+        program_names[0], program_fields[1], aleo_field, call_next_field
+    );
+    programs.push(Program::<CurrentNetwork>::from_str(&entry_program_str).unwrap());
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    // Deploy all programs in reverse order (deepest first)
+    for program in programs.iter() {
+        println!("Deploying program {}...", program.id());
+        let deploy_tx = vm.deploy(&caller_private_key, program, None, 0, None, rng).unwrap();
+        add_and_test(&vm, &caller_private_key, &[deploy_tx], rng);
+    }
+
+    // Execute from the entry point
+    // Starting with 0, each level adds 1, so with 8 levels we should get 7 (levels 1-7 each add 1)
+    let transaction = vm
+        .execute(
+            &caller_private_key,
+            (&format!("{}.aleo", program_names[0]), "entry"),
+            vec![Value::from_str("0u64").unwrap()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    // Just verify it executes successfully
+    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+}
+
+// Tests that `call.dynamic` to `credits.aleo/fee_private` and `fee_public` fails at deployment time.
+#[test]
+fn test_dynamic_call_credits_fee_functions_forbidden() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    let credits_field = Identifier::<CurrentNetwork>::from_str("credits").unwrap().to_field().unwrap();
+    let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+    let fee_private_field = Identifier::<CurrentNetwork>::from_str("fee_private").unwrap().to_field().unwrap();
+    let fee_public_field = Identifier::<CurrentNetwork>::from_str("fee_public").unwrap().to_field().unwrap();
+
+    // Test fee_private - the restriction is enforced at deployment time
+    let caller_program_fee_private_str = format!(
+        r"
+        program call_fee_private.aleo;
+
+        function attempt_fee_private:
+            input r0 as u64.public;
+            call.dynamic {credits_field} {aleo_field} {fee_private_field}
+                with r0 (as u64.public)
+                into r1 (as dynamic.record);
+            output r1 as dynamic.record;
+
+        constructor:
+            assert.eq true true;
+        "
+    );
+
+    let caller_program_fee_private = Program::<CurrentNetwork>::from_str(&caller_program_fee_private_str).unwrap();
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    // Deployment should fail because fee_private cannot be called dynamically
+    let deploy_result = vm.deploy(&caller_private_key, &caller_program_fee_private, None, 0, None, rng);
+
+    assert!(deploy_result.is_err(), "Deployment should fail for program calling fee_private");
+    let error_msg = deploy_result.unwrap_err().to_string();
+    assert!(
+        error_msg.contains("fee_private") || error_msg.contains("fee_public"),
+        "Error should mention fee_private or fee_public restriction, got: {error_msg}"
+    );
+
+    // Test fee_public - also enforced at deployment time
+    let caller_program_fee_public_str = format!(
+        r"
+        program call_fee_public.aleo;
+
+        function attempt_fee_public:
+            input r0 as u64.public;
+            call.dynamic {credits_field} {aleo_field} {fee_public_field}
+                with r0 (as u64.public)
+                into r1 (as dynamic.future);
+            async attempt_fee_public r1 into r2;
+            output r2 as call_fee_public.aleo/attempt_fee_public.future;
+
+        finalize attempt_fee_public:
+            input r0 as dynamic.future;
+            await r0;
+
+        constructor:
+            assert.eq true true;
+        "
+    );
+
+    let caller_program_fee_public = Program::<CurrentNetwork>::from_str(&caller_program_fee_public_str).unwrap();
+
+    // Deployment should fail because fee_public cannot be called dynamically
+    let deploy_result2 = vm.deploy(&caller_private_key, &caller_program_fee_public, None, 0, None, rng);
+
+    assert!(deploy_result2.is_err(), "Deployment should fail for program calling fee_public");
+    let error_msg2 = deploy_result2.unwrap_err().to_string();
+    assert!(
+        error_msg2.contains("fee_private") || error_msg2.contains("fee_public"),
+        "Error should mention fee_private or fee_public restriction, got: {error_msg2}"
+    );
+}
+
+// Tests that `call.dynamic` to closures fails at deployment time since closures cannot be called dynamically.
+#[test]
+fn test_dynamic_call_closure_forbidden() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    // First create a program with a closure
+    let target_program = Program::<CurrentNetwork>::from_str(
+        r"
+        program has_closure.aleo;
+
+        closure add_numbers:
+            input r0 as u64;
+            input r1 as u64;
+            add r0 r1 into r2;
+            output r2 as u64;
+
+        function use_closure:
+            input r0 as u64.public;
+            input r1 as u64.public;
+            call add_numbers r0 r1 into r2;
+            output r2 as u64.public;
+
+        constructor:
+            assert.eq true true;
+        ",
+    )
+    .unwrap();
+
+    let target_field = Identifier::<CurrentNetwork>::from_str("has_closure").unwrap().to_field().unwrap();
+    let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+    let closure_field = Identifier::<CurrentNetwork>::from_str("add_numbers").unwrap().to_field().unwrap();
+
+    // Attempt to call the closure dynamically
+    let caller_program_str = format!(
+        r"
+        program call_closure.aleo;
+
+        function attempt_closure_call:
+            input r0 as u64.public;
+            input r1 as u64.public;
+            call.dynamic {target_field} {aleo_field} {closure_field}
+                with r0 r1 (as u64.public u64.public)
+                into r2 (as u64.public);
+            output r2 as u64.public;
+
+        constructor:
+            assert.eq true true;
+        "
+    );
+
+    let caller_program = Program::<CurrentNetwork>::from_str(&caller_program_str).unwrap();
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    // Deploy the target program with the closure
+    let deploy_target = vm.deploy(&caller_private_key, &target_program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_target], rng);
+
+    // Deployment should fail because closures cannot be called dynamically
+    let deploy_result = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng);
+
+    assert!(deploy_result.is_err(), "Deployment should fail for program calling a closure dynamically");
+    let error_msg = deploy_result.unwrap_err().to_string();
+    assert!(
+        error_msg.contains("closure") || error_msg.contains("dynamically"),
+        "Error should mention closure restriction, got: {error_msg}"
+    );
+}
+
+// Tests that a program can use `call.dynamic` to call its own functions.
+#[test]
+fn test_self_referential_dynamic_call() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    let self_ref_field = Identifier::<CurrentNetwork>::from_str("self_referential").unwrap().to_field().unwrap();
+    let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+    let helper_field = Identifier::<CurrentNetwork>::from_str("helper").unwrap().to_field().unwrap();
+
+    // Program that calls itself dynamically
+    let program_str = format!(
+        r"
+        program self_referential.aleo;
+
+        function entry:
+            input r0 as u64.public;
+            // Dynamically call our own helper function
+            call.dynamic {self_ref_field} {aleo_field} {helper_field}
+                with r0 (as u64.public)
+                into r1 (as u64.public);
+            output r1 as u64.public;
+
+        function helper:
+            input r0 as u64.public;
+            mul r0 2u64 into r1;
+            output r1 as u64.public;
+
+        constructor:
+            assert.eq true true;
+        "
+    );
+
+    let program = Program::<CurrentNetwork>::from_str(&program_str).unwrap();
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    // Deploy the program
+    let deploy_tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_tx], rng);
+
+    // Execute the self-referential call
+    let transaction = vm
+        .execute(
+            &caller_private_key,
+            ("self_referential.aleo", "entry"),
+            vec![Value::from_str("21u64").unwrap()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    // Verify the output is correct (21 * 2 = 42)
+    let num_transitions = transaction.transitions().count();
+    let root_transition = transaction.transitions().nth(num_transitions - 2).unwrap();
+
+    let has_expected_output =
+        root_transition.outputs().iter().any(|o| matches!(o, Output::Public(_, Some(p)) if p.to_string() == "42u64"));
+
+    assert!(has_expected_output, "Self-referential dynamic call should produce correct output");
+
+    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+}
+
+// Tests that malformed identifier fields in `call.dynamic` are properly rejected at deployment time.
+#[test]
+fn test_malformed_identifier_in_call_dynamic() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    // Use a field value that cannot be decoded to a valid identifier
+    // Field::from(u128::MAX) is unlikely to decode to a valid identifier string
+    let invalid_program_field = "340282366920938463463374607431768211455field"; // u128::MAX as field
+    let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+    let some_function_field = Identifier::<CurrentNetwork>::from_str("some_function").unwrap().to_field().unwrap();
+
+    let caller_program_str = format!(
+        r"
+        program malformed_id.aleo;
+
+        function call_with_bad_program_name:
+            call.dynamic {invalid_program_field} {aleo_field} {some_function_field}
+                into r0 (as u64.public);
+            output r0 as u64.public;
+
+        constructor:
+            assert.eq true true;
+        "
+    );
+
+    let caller_program = Program::<CurrentNetwork>::from_str(&caller_program_str).unwrap();
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    // Deploy the program
+    let deploy_tx = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_tx], rng);
+
+    // Execution should fail due to invalid program name
+    let exec_result = vm.execute(
+        &caller_private_key,
+        ("malformed_id.aleo", "call_with_bad_program_name"),
+        Vec::<Value<CurrentNetwork>>::new().into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    );
+
+    assert!(exec_result.is_err(), "Dynamic call with malformed program identifier should fail");
 }

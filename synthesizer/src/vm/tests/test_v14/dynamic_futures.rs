@@ -13,24 +13,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Tests for dynamic futures behavior in V14.
-//!
-//! This module tests:
-//! - Await ordering (correct order, reverse order, missing awaits)
-//! - Conditional future handling (ternary selection of futures, branch-based execution)
-//! - Nested dynamic futures across call hierarchies
-//! - Interface mismatches (caller/callee type and mode expectations)
-//! - Error propagation in finalize blocks
-//! - State mutation ordering with dynamic futures
-//! - Skipped future await detection
-
 use super::*;
 
-// =============================================================================
-// Test: Await Ordering - Basic Sequential Awaits
-// =============================================================================
-
-/// Tests that awaiting dynamic futures in the same order they were created works correctly.
+// Tests that awaiting `DynamicFuture` instances in the same order they were created works correctly.
 #[test]
 fn test_await_in_order() {
     let rng = &mut TestRng::default();
@@ -133,11 +118,7 @@ fn test_await_in_order() {
     assert_eq!(count, Value::from_str("8u64").unwrap());
 }
 
-// =============================================================================
-// Test: Await Ordering - Reverse Order Awaits
-// =============================================================================
-
-/// Tests that awaiting dynamic futures in reverse order works correctly.
+// Tests that awaiting `DynamicFuture` instances in reverse order works correctly.
 #[test]
 fn test_await_reverse_order() {
     let rng = &mut TestRng::default();
@@ -244,12 +225,7 @@ fn test_await_reverse_order() {
     assert_eq!(value2, Value::from_str("200u64").unwrap());
 }
 
-// =============================================================================
-// Test: Nested Dynamic Futures
-// =============================================================================
-
-/// Tests nested dynamic calls where each level returns a future.
-/// A -> B -> C, each with finalize that modifies state.
+// Tests nested `call.dynamic` where A -> B -> C, each with finalize that modifies state.
 #[test]
 fn test_nested_dynamic_futures() {
     let rng = &mut TestRng::default();
@@ -409,12 +385,7 @@ fn test_nested_dynamic_futures() {
     assert_eq!(root_value, Value::from_str("105u64").unwrap());
 }
 
-// =============================================================================
-// Test: Dynamic Future with Finalize Failure
-// =============================================================================
-
-/// Tests that when a dynamically-called function's finalize fails,
-/// the transaction is properly rejected.
+// Tests that when a `DynamicFuture`'s finalize fails, the transaction is properly rejected.
 #[test]
 fn test_dynamic_future_finalize_failure() {
     let rng = &mut TestRng::default();
@@ -514,11 +485,7 @@ fn test_dynamic_future_finalize_failure() {
     assert_eq!(block.transactions().num_rejected(), 1);
 }
 
-// =============================================================================
-// Test: Multiple Futures from Same Program
-// =============================================================================
-
-/// Tests calling the same dynamic function multiple times and awaiting all futures.
+// Tests calling the same `call.dynamic` function multiple times and awaiting all `DynamicFuture` instances.
 #[test]
 fn test_multiple_futures_same_function() {
     let rng = &mut TestRng::default();
@@ -624,12 +591,7 @@ fn test_multiple_futures_same_function() {
     assert_eq!(total, Value::from_str("60u64").unwrap());
 }
 
-// =============================================================================
-// Test: Dynamic Future with State Read After Await
-// =============================================================================
-
-/// Tests reading state that was modified by a dynamically-called function's finalize.
-/// After awaiting the dynamic future, the caller reads the updated state using get.dynamic.
+// Tests reading state modified by a `DynamicFuture`'s finalize using `get.dynamic` after await.
 #[test]
 fn test_read_state_after_dynamic_await() {
     let rng = &mut TestRng::default();
@@ -745,11 +707,7 @@ fn test_read_state_after_dynamic_await() {
     assert_eq!(read_result, Value::from_str("42u64").unwrap());
 }
 
-// =============================================================================
-// Test: Dynamic Future Combined with Dynamic Record
-// =============================================================================
-
-/// Tests a dynamic call that returns both a dynamic record and a dynamic future.
+// Tests a `call.dynamic` that returns both a `dynamic.record` and a `DynamicFuture`.
 #[test]
 fn test_dynamic_future_with_dynamic_record() {
     let rng = &mut TestRng::default();
@@ -856,11 +814,7 @@ fn test_dynamic_future_with_dynamic_record() {
     assert_eq!(supply, Value::from_str("100u64").unwrap());
 }
 
-// =============================================================================
-// Test: Interleaved Awaits from Different Programs
-// =============================================================================
-
-/// Tests awaiting futures from different programs in an interleaved order.
+// Tests awaiting `DynamicFuture` instances from different programs in an interleaved order.
 #[test]
 fn test_interleaved_awaits_different_programs() {
     let rng = &mut TestRng::default();
@@ -1003,12 +957,7 @@ fn test_interleaved_awaits_different_programs() {
     assert_eq!(beta_value, Value::from_str("4u64").unwrap());
 }
 
-// =============================================================================
-// Test: Dynamic Future with Complex Finalize Logic
-// =============================================================================
-
-/// Tests a dynamic future where the finalize has complex logic including
-/// multiple mapping operations and conditionals.
+// Tests a `DynamicFuture` with complex finalize logic including multiple mapping operations and conditionals.
 #[test]
 fn test_dynamic_future_complex_finalize() {
     let rng = &mut TestRng::default();
@@ -1144,13 +1093,7 @@ fn test_dynamic_future_complex_finalize() {
     assert_eq!(tx_count, Value::from_str("1u64").unwrap());
 }
 
-// =============================================================================
-// Test: Conditional Future Selection via Branch Selection
-// =============================================================================
-
-/// Tests that we can achieve conditional future behavior by selecting which
-/// dynamic call to make based on a condition, then awaiting both futures
-/// (one of which will be from a no-op function).
+// Tests conditional future behavior by selecting `call.dynamic` targets based on conditions and awaiting both futures.
 #[test]
 fn test_conditional_future_via_branch() {
     let rng = &mut TestRng::default();
@@ -1271,11 +1214,7 @@ fn test_conditional_future_via_branch() {
     assert_eq!(result_false, Value::from_str("200u64").unwrap());
 }
 
-// =============================================================================
-// Test: Interface Mismatch - Wrong Input Type
-// =============================================================================
-
-/// Tests that a dynamic call that passes wrong input type fails at execution time.
+// Tests that a `call.dynamic` that passes the wrong input type fails at execution time.
 #[test]
 fn test_interface_mismatch_wrong_input_type() {
     let rng = &mut TestRng::default();
@@ -1370,11 +1309,7 @@ fn test_interface_mismatch_wrong_input_type() {
     // If parsing fails, the test passes (mismatch detected at parse time)
 }
 
-// =============================================================================
-// Test: Multiple Awaits of Same Future (Should Fail)
-// =============================================================================
-
-/// Tests that attempting to await the same future twice fails.
+// Tests that attempting to await the same `DynamicFuture` twice fails.
 #[test]
 fn test_double_await_fails() {
     let rng = &mut TestRng::default();
@@ -1470,11 +1405,7 @@ fn test_double_await_fails() {
     // Test passes if any stage rejects the double await
 }
 
-// =============================================================================
-// Test: Deep Nesting of Dynamic Futures
-// =============================================================================
-
-/// Tests a deeply nested chain of dynamic calls (4 levels), each with finalize.
+// Tests a deeply nested chain of `call.dynamic` (4 levels), each with finalize.
 #[test]
 fn test_deep_nested_futures() {
     let rng = &mut TestRng::default();
@@ -1680,12 +1611,7 @@ fn test_deep_nested_futures() {
     assert_eq!(depth1, Value::from_str("1005u64").unwrap());
 }
 
-// =============================================================================
-// Test: Interface Mismatch - Wrong Mode (Public -> Private)
-// =============================================================================
-
-/// Tests that a dynamic call that passes a public value when callee expects private
-/// fails at execution time with an abort.
+// Tests that `call.dynamic` passing a public value when callee expects private fails at execution time.
 #[test]
 fn test_interface_mismatch_public_to_private() {
     let rng = &mut TestRng::default();
@@ -1780,12 +1706,7 @@ fn test_interface_mismatch_public_to_private() {
     // If parsing fails, the test passes (mismatch detected at parse time)
 }
 
-// =============================================================================
-// Test: Interface Mismatch - Wrong Mode (Private -> Public)
-// =============================================================================
-
-/// Tests that a dynamic call that passes a private value when callee expects public
-/// fails at execution time with an abort.
+// Tests that `call.dynamic` passing a private value when callee expects public fails at execution time.
 #[test]
 fn test_interface_mismatch_private_to_public() {
     let rng = &mut TestRng::default();
@@ -1880,12 +1801,7 @@ fn test_interface_mismatch_private_to_public() {
     // If parsing fails, the test passes (mismatch detected at parse time)
 }
 
-// =============================================================================
-// Test: Conditional Future Execution with Branch Instructions
-// =============================================================================
-
-/// Tests that dynamic futures can be conditionally executed in different orders
-/// using branch.eq/branch.neq, and that skipping awaits is correctly caught.
+// Tests conditional `DynamicFuture` execution with `branch.eq`/`branch.neq` and verifies skipped awaits are caught.
 #[test]
 fn test_conditional_future_execution_with_branches() {
     let rng = &mut TestRng::default();
@@ -2077,12 +1993,7 @@ fn test_conditional_future_execution_with_branches() {
     assert_eq!(result_b, Value::from_str("400u64").unwrap());
 }
 
-// =============================================================================
-// Test: Skipping Future Await is Caught
-// =============================================================================
-
-/// Tests that skipping a future await (not awaiting all created futures) is caught
-/// and results in transaction abort.
+// Tests that skipping a `DynamicFuture` await (not awaiting all created futures) is caught and results in transaction abort.
 #[test]
 fn test_skipped_future_await_is_caught() {
     let rng = &mut TestRng::default();
@@ -2182,4 +2093,434 @@ fn test_skipped_future_await_is_caught() {
         // If deployment fails, the test passes (skipped await detected early)
     }
     // If parsing fails, the test passes (skipped await detected at parse time)
+}
+
+// Tests that when one `DynamicFuture` fails during finalize, the entire transaction is rejected and no state changes are committed.
+#[test]
+fn test_finalize_partial_failure_rollback() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    // First program - always succeeds
+    let success_program = Program::<CurrentNetwork>::from_str(
+        r"
+        program always_succeeds.aleo;
+
+        mapping success_data:
+            key as u8.public;
+            value as u64.public;
+
+        function succeed:
+            input r0 as u64.public;
+            async succeed r0 into r1;
+            output r1 as always_succeeds.aleo/succeed.future;
+
+        finalize succeed:
+            input r0 as u64.public;
+            set r0 into success_data[0u8];
+
+        constructor:
+            assert.eq true true;
+        ",
+    )
+    .unwrap();
+
+    // Second program - fails based on input
+    let conditional_program = Program::<CurrentNetwork>::from_str(
+        r"
+        program conditional_fail.aleo;
+
+        mapping conditional_data:
+            key as u8.public;
+            value as u64.public;
+
+        function maybe_fail:
+            input r0 as boolean.public;
+            input r1 as u64.public;
+            async maybe_fail r0 r1 into r2;
+            output r2 as conditional_fail.aleo/maybe_fail.future;
+
+        finalize maybe_fail:
+            input r0 as boolean.public;
+            input r1 as u64.public;
+            // Fail if r0 is false
+            assert.eq r0 true;
+            set r1 into conditional_data[0u8];
+
+        constructor:
+            assert.eq true true;
+        ",
+    )
+    .unwrap();
+
+    let success_field = Identifier::<CurrentNetwork>::from_str("always_succeeds").unwrap().to_field().unwrap();
+    let conditional_field = Identifier::<CurrentNetwork>::from_str("conditional_fail").unwrap().to_field().unwrap();
+    let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+    let succeed_field = Identifier::<CurrentNetwork>::from_str("succeed").unwrap().to_field().unwrap();
+    let maybe_fail_field = Identifier::<CurrentNetwork>::from_str("maybe_fail").unwrap().to_field().unwrap();
+
+    // Caller that invokes both: first succeeds, second fails
+    let caller_program_str = format!(
+        r"
+        program partial_fail_caller.aleo;
+
+        function call_both:
+            input r0 as boolean.public;
+            // First call always succeeds
+            call.dynamic {success_field} {aleo_field} {succeed_field} with 100u64 (as u64.public) into r1 (as dynamic.future);
+            // Second call conditionally fails
+            call.dynamic {conditional_field} {aleo_field} {maybe_fail_field} with r0 200u64 (as boolean.public u64.public) into r2 (as dynamic.future);
+            async call_both r1 r2 into r3;
+            output r3 as partial_fail_caller.aleo/call_both.future;
+
+        finalize call_both:
+            input r0 as dynamic.future;
+            input r1 as dynamic.future;
+            await r0;
+            await r1;
+
+        constructor:
+            assert.eq true true;
+        "
+    );
+
+    let caller_program = Program::<CurrentNetwork>::from_str(&caller_program_str).unwrap();
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    // Deploy all programs
+    let deploy_success = vm.deploy(&caller_private_key, &success_program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_success], rng);
+
+    let deploy_conditional = vm.deploy(&caller_private_key, &conditional_program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_conditional], rng);
+
+    let deploy_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_caller], rng);
+
+    // First test: both succeed (input = true)
+    let tx_success = vm
+        .execute(
+            &caller_private_key,
+            ("partial_fail_caller.aleo", "call_both"),
+            vec![Value::from_str("true").unwrap()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    add_and_test(&vm, &caller_private_key, &[tx_success], rng);
+
+    // Verify both values were written
+    let success_value = vm
+        .finalize_store()
+        .get_value_confirmed(
+            ProgramID::from_str("always_succeeds.aleo").unwrap(),
+            Identifier::from_str("success_data").unwrap(),
+            &Plaintext::from_str("0u8").unwrap(),
+        )
+        .unwrap()
+        .unwrap();
+
+    let conditional_value = vm
+        .finalize_store()
+        .get_value_confirmed(
+            ProgramID::from_str("conditional_fail.aleo").unwrap(),
+            Identifier::from_str("conditional_data").unwrap(),
+            &Plaintext::from_str("0u8").unwrap(),
+        )
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(success_value, Value::from_str("100u64").unwrap());
+    assert_eq!(conditional_value, Value::from_str("200u64").unwrap());
+
+    // Second test: first succeeds, second fails (input = false)
+    // This should cause the entire transaction to be rejected
+    let tx_partial_fail = vm
+        .execute(
+            &caller_private_key,
+            ("partial_fail_caller.aleo", "call_both"),
+            vec![Value::from_str("false").unwrap()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    let block = sample_next_block(&vm, &caller_private_key, &[tx_partial_fail], rng).unwrap();
+
+    // The transaction should be rejected due to the second future's finalize failing
+    assert_eq!(block.transactions().num_rejected(), 1, "Transaction with partial failure should be rejected");
+
+    // Verify the original values are still intact (no partial state change)
+    let success_value_after = vm
+        .finalize_store()
+        .get_value_confirmed(
+            ProgramID::from_str("always_succeeds.aleo").unwrap(),
+            Identifier::from_str("success_data").unwrap(),
+            &Plaintext::from_str("0u8").unwrap(),
+        )
+        .unwrap()
+        .unwrap();
+
+    let conditional_value_after = vm
+        .finalize_store()
+        .get_value_confirmed(
+            ProgramID::from_str("conditional_fail.aleo").unwrap(),
+            Identifier::from_str("conditional_data").unwrap(),
+            &Plaintext::from_str("0u8").unwrap(),
+        )
+        .unwrap()
+        .unwrap();
+
+    // Values should remain unchanged from the successful transaction
+    assert_eq!(success_value_after, Value::from_str("100u64").unwrap());
+    assert_eq!(conditional_value_after, Value::from_str("200u64").unwrap());
+}
+
+// Tests that multiple sequential `call.dynamic` invocations create distinct `DynamicFuture` instances that can be awaited independently.
+#[test]
+fn test_future_isolation_sequential_calls() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    // Worker program that increments a counter
+    let worker_program = Program::<CurrentNetwork>::from_str(
+        r"
+        program isolation_worker.aleo;
+
+        mapping counter:
+            key as u8.public;
+            value as u64.public;
+
+        function increment:
+            input r0 as u8.public;
+            input r1 as u64.public;
+            async increment r0 r1 into r2;
+            output r2 as isolation_worker.aleo/increment.future;
+
+        finalize increment:
+            input r0 as u8.public;
+            input r1 as u64.public;
+            get.or_use counter[r0] 0u64 into r2;
+            add r2 r1 into r3;
+            set r3 into counter[r0];
+
+        constructor:
+            assert.eq true true;
+        ",
+    )
+    .unwrap();
+
+    let worker_field = Identifier::<CurrentNetwork>::from_str("isolation_worker").unwrap().to_field().unwrap();
+    let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+    let increment_field = Identifier::<CurrentNetwork>::from_str("increment").unwrap().to_field().unwrap();
+
+    // Caller that makes 5 sequential calls to the same function with different keys
+    let caller_program_str = format!(
+        r"
+        program isolation_caller.aleo;
+
+        function call_five_times:
+            // Each call increments a different key
+            call.dynamic {worker_field} {aleo_field} {increment_field} with 0u8 10u64 (as u8.public u64.public) into r0 (as dynamic.future);
+            call.dynamic {worker_field} {aleo_field} {increment_field} with 1u8 20u64 (as u8.public u64.public) into r1 (as dynamic.future);
+            call.dynamic {worker_field} {aleo_field} {increment_field} with 2u8 30u64 (as u8.public u64.public) into r2 (as dynamic.future);
+            call.dynamic {worker_field} {aleo_field} {increment_field} with 3u8 40u64 (as u8.public u64.public) into r3 (as dynamic.future);
+            call.dynamic {worker_field} {aleo_field} {increment_field} with 4u8 50u64 (as u8.public u64.public) into r4 (as dynamic.future);
+            async call_five_times r0 r1 r2 r3 r4 into r5;
+            output r5 as isolation_caller.aleo/call_five_times.future;
+
+        finalize call_five_times:
+            input r0 as dynamic.future;
+            input r1 as dynamic.future;
+            input r2 as dynamic.future;
+            input r3 as dynamic.future;
+            input r4 as dynamic.future;
+            // Await in a different order than creation to test isolation
+            await r4;
+            await r2;
+            await r0;
+            await r3;
+            await r1;
+
+        constructor:
+            assert.eq true true;
+        "
+    );
+
+    let caller_program = Program::<CurrentNetwork>::from_str(&caller_program_str).unwrap();
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    let deploy_worker = vm.deploy(&caller_private_key, &worker_program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_worker], rng);
+
+    let deploy_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_caller], rng);
+
+    // Execute the function
+    let transaction = vm
+        .execute(
+            &caller_private_key,
+            ("isolation_caller.aleo", "call_five_times"),
+            Vec::<Value<CurrentNetwork>>::new().into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+
+    // Verify all 5 counters were incremented correctly (each future wrote to its own key)
+    for (key, expected_value) in [(0u8, 10u64), (1u8, 20u64), (2u8, 30u64), (3u8, 40u64), (4u8, 50u64)] {
+        let value = vm
+            .finalize_store()
+            .get_value_confirmed(
+                ProgramID::from_str("isolation_worker.aleo").unwrap(),
+                Identifier::from_str("counter").unwrap(),
+                &Plaintext::from_str(&format!("{key}u8")).unwrap(),
+            )
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            value,
+            Value::from_str(&format!("{expected_value}u64")).unwrap(),
+            "Counter {key} should be {expected_value}"
+        );
+    }
+}
+
+// Tests that 10 `DynamicFuture` instances in a single transaction are handled correctly.
+#[test]
+fn test_many_futures_in_single_transaction() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    // Worker program
+    let worker_program = Program::<CurrentNetwork>::from_str(
+        r"
+        program many_futures_worker.aleo;
+
+        mapping values:
+            key as u8.public;
+            value as u64.public;
+
+        function store:
+            input r0 as u8.public;
+            input r1 as u64.public;
+            async store r0 r1 into r2;
+            output r2 as many_futures_worker.aleo/store.future;
+
+        finalize store:
+            input r0 as u8.public;
+            input r1 as u64.public;
+            set r1 into values[r0];
+
+        constructor:
+            assert.eq true true;
+        ",
+    )
+    .unwrap();
+
+    let worker_field = Identifier::<CurrentNetwork>::from_str("many_futures_worker").unwrap().to_field().unwrap();
+    let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+    let store_field = Identifier::<CurrentNetwork>::from_str("store").unwrap().to_field().unwrap();
+
+    // Caller that creates 10 futures
+    let caller_program_str = format!(
+        r"
+        program many_futures_caller.aleo;
+
+        function store_ten_values:
+            call.dynamic {worker_field} {aleo_field} {store_field} with 0u8 100u64 (as u8.public u64.public) into r0 (as dynamic.future);
+            call.dynamic {worker_field} {aleo_field} {store_field} with 1u8 101u64 (as u8.public u64.public) into r1 (as dynamic.future);
+            call.dynamic {worker_field} {aleo_field} {store_field} with 2u8 102u64 (as u8.public u64.public) into r2 (as dynamic.future);
+            call.dynamic {worker_field} {aleo_field} {store_field} with 3u8 103u64 (as u8.public u64.public) into r3 (as dynamic.future);
+            call.dynamic {worker_field} {aleo_field} {store_field} with 4u8 104u64 (as u8.public u64.public) into r4 (as dynamic.future);
+            call.dynamic {worker_field} {aleo_field} {store_field} with 5u8 105u64 (as u8.public u64.public) into r5 (as dynamic.future);
+            call.dynamic {worker_field} {aleo_field} {store_field} with 6u8 106u64 (as u8.public u64.public) into r6 (as dynamic.future);
+            call.dynamic {worker_field} {aleo_field} {store_field} with 7u8 107u64 (as u8.public u64.public) into r7 (as dynamic.future);
+            call.dynamic {worker_field} {aleo_field} {store_field} with 8u8 108u64 (as u8.public u64.public) into r8 (as dynamic.future);
+            call.dynamic {worker_field} {aleo_field} {store_field} with 9u8 109u64 (as u8.public u64.public) into r9 (as dynamic.future);
+            async store_ten_values r0 r1 r2 r3 r4 r5 r6 r7 r8 r9 into r10;
+            output r10 as many_futures_caller.aleo/store_ten_values.future;
+
+        finalize store_ten_values:
+            input r0 as dynamic.future;
+            input r1 as dynamic.future;
+            input r2 as dynamic.future;
+            input r3 as dynamic.future;
+            input r4 as dynamic.future;
+            input r5 as dynamic.future;
+            input r6 as dynamic.future;
+            input r7 as dynamic.future;
+            input r8 as dynamic.future;
+            input r9 as dynamic.future;
+            await r0;
+            await r1;
+            await r2;
+            await r3;
+            await r4;
+            await r5;
+            await r6;
+            await r7;
+            await r8;
+            await r9;
+
+        constructor:
+            assert.eq true true;
+        "
+    );
+
+    let caller_program = Program::<CurrentNetwork>::from_str(&caller_program_str).unwrap();
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    let deploy_worker = vm.deploy(&caller_private_key, &worker_program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_worker], rng);
+
+    let deploy_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_caller], rng);
+
+    // Execute
+    let transaction = vm
+        .execute(
+            &caller_private_key,
+            ("many_futures_caller.aleo", "store_ten_values"),
+            Vec::<Value<CurrentNetwork>>::new().into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+
+    // Verify all 10 values were stored
+    for i in 0..10u8 {
+        let value = vm
+            .finalize_store()
+            .get_value_confirmed(
+                ProgramID::from_str("many_futures_worker.aleo").unwrap(),
+                Identifier::from_str("values").unwrap(),
+                &Plaintext::from_str(&format!("{i}u8")).unwrap(),
+            )
+            .unwrap()
+            .unwrap();
+
+        let expected = 100u64 + i as u64;
+        assert_eq!(value, Value::from_str(&format!("{expected}u64")).unwrap());
+    }
 }

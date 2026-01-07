@@ -133,18 +133,20 @@ fn test_fibonacci() {
     }
 }
 
-// This test verifies that recursive double-spends fail as expected.
-// In this test, we have:
-// - a function `one` that takes in a static record, re-casts the record, and outputs the static record.
-// - a function `two` that takes in a static record and returns nothing.
-// - a function `three` that takes in a dynamic record and outputs the dynamic record.
-// - a function `four` that takes in a dynamic record and returns nothing.
-// - a function `five` that takes in a dynamic record and calls `two` twice. This should fail due to double-spend.
-// - a function `six` that takes in a dynamic record and calls `four` twice. This should pass because the record is dynamic.
-// - a function `seven` that takes in a dynamic record and index. If the index is zero it calls `two`, else it calls itself recursively with index - 1. This should pass until the index exceeds the maximum call depth.
-// - a function `eight` that takes in a dynamic record and index. The function first calls `two`, then either calls `four` if index is zero, or calls itself recursively with index - 1. This should pass if the index is zero and fail otherwise due to double-spend.
+// Tests recursive double-spend detection with static/dynamic records across various call patterns.
+//
+// This test defines the following functions:
+// - `one`: Takes a static record, re-casts it, and outputs the static record.
+// - `two`: Takes a static record and returns nothing.
+// - `three`: Takes a dynamic record and outputs the dynamic record.
+// - `four`: Takes a dynamic record and returns nothing.
+// - `five`: Takes a dynamic record and calls `two` twice. This should fail due to double-spend.
+// - `six`: Takes a dynamic record and calls `four` twice. This should pass because the record is dynamic.
+// - `seven`: Takes a dynamic record and index. If index is zero it calls `two`, else it calls itself recursively with index - 1. This should pass until the index exceeds the maximum call depth.
+// - `eight`: Takes a dynamic record and index. First calls `two`, then either calls `four` if index is zero, or calls itself recursively with index - 1. This should pass if index is zero and fail otherwise due to double-spend.
+// - `nine`: Takes a dynamic record and index. First calls `one`, then either calls `three` if index is zero, or calls itself recursively with index - 1 and the new record. This should pass as long as transitions do not exceed the maximum allowed.
+//
 // TODO (@reviewers): Verify that consumption of local records is expected behavior in recursive calls.
-// - a function `nine` that takes in a dynamic record and index. The function first calls `one`, then either calls `three` if the index is zero, or calls itself recursively with index - 1 and the new record. This should pass as long as the number of transitions does not exceed the maximum allowed.
 #[test]
 fn test_recursive_dynamic_record_calls() {
     // Initialize an RNG.

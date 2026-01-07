@@ -305,6 +305,7 @@ fn test_translation(
     }
 }
 
+// Tests translation of a dynamic record input to a non-external static record.
 #[test]
 fn test_translation_input_dynamic_non_external() {
     let rng = &mut TestRng::default();
@@ -337,6 +338,7 @@ fn test_translation_input_dynamic_non_external() {
     );
 }
 
+// Tests translation of a non-external static record output to a dynamic record.
 #[test]
 fn test_translation_output_non_external_dynamic() {
     let rng = &mut TestRng::default();
@@ -346,6 +348,7 @@ fn test_translation_output_non_external_dynamic() {
     test_translation(&caller_private_key, "flow.aleo", "dynamic_pump", Some(vec![]), None, None, rng);
 }
 
+// Tests translation of a dynamic record input to an external static record.
 #[test]
 fn test_translation_input_dynamic_external() {
     let rng = &mut TestRng::default();
@@ -378,6 +381,7 @@ fn test_translation_input_dynamic_external() {
     );
 }
 
+// Tests translation of an external static record output to a dynamic record.
 #[test]
 fn test_translation_output_external_dynamic() {
     let rng = &mut TestRng::default();
@@ -409,6 +413,7 @@ fn test_translation_output_external_dynamic() {
     );
 }
 
+// Tests three consecutive translations in a single execution path with consistent prover/verifier traversal order.
 #[test]
 fn test_translation_triple() {
     // Before root call: pump a gas_container.record
@@ -452,6 +457,7 @@ fn test_translation_triple() {
     );
 }
 
+// Tests that prover and verifier traverse translation tasks in the same order using a complex execution graph.
 #[test]
 fn test_translation_traversal_consistency() {
     // This tests checks the prover and verifier order all translation tasks associated to a
@@ -688,6 +694,7 @@ fn test_translation_traversal_consistency() {
     add_and_test(&vm, &caller_private_key, &[transaction], rng);
 }
 
+// Tests that malicious tampering with `caller_inputs` and `caller_outputs` (stripping, replacing dynamic with static) is detected.
 #[test]
 fn test_malicious_caller_inputs_outputs() {
     let rng = &mut TestRng::default();
@@ -1008,10 +1015,8 @@ fn test_malicious_caller_inputs_outputs() {
     );
 }
 
-// Checks that translation keys for the same record name but differrent programs
-// are different and vice. Run with the snark-print feature to explore Varuna
-// batch sizes and locate the translation keys displayed by the test among the
-// verification batches in the last transaction.
+// Checks that translation keys for the same record name but different programs are different and vice versa.
+// Run with `snark-print` feature to explore Varuna batch sizes and locate translation keys in verification batches.
 #[test]
 fn test_differing_keys() {
     // Parameters for dynamic calls

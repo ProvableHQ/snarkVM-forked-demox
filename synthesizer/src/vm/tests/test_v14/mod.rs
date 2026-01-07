@@ -13,20 +13,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Tests for casting static records to `dynamic.record`.
 mod cast;
 
+// Tests for the `get.record.dynamic` instruction.
 mod get_record_dynamic;
 
+// Tests for `contains.dynamic`, `get.dynamic`, and `get.or_use.dynamic` in finalize blocks.
 mod dynamic_mapping_operations;
 
+// Integration tests combining translation, casting, and dynamic record operations.
 mod mixed;
 
+// Tests for the `call.dynamic` instruction with various call patterns.
 mod call_dynamic;
 
+// Tests for `DynamicFuture` behavior including await ordering and conditional execution.
 mod dynamic_futures;
 
+// Tests for recursive dynamic function calls and double-spend detection.
 mod recursion;
 
+// Tests for record translation between static and dynamic representations.
 mod translation;
 
 use super::*;

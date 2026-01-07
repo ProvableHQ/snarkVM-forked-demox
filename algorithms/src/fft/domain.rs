@@ -254,6 +254,8 @@ impl<F: FftField> EvaluationDomain<F> {
     /// Evaluate all the lagrange polynomials defined by this domain at the
     /// point `tau`.
     pub fn evaluate_all_lagrange_coefficients(&self, tau: F) -> Vec<F> {
+        use itertools::Itertools as _;
+
         // Evaluate all Lagrange polynomials
         let size = self.size as usize;
         let t_size = tau.pow([self.size]);
@@ -348,6 +350,7 @@ impl<F: FftField> EvaluationDomain<F> {
     /// their evaluations in the domain.
     /// Returns the evaluations of the product over the domain.
     pub fn mul_polynomials_in_evaluation_domain(&self, self_evals: Vec<F>, other_evals: &[F]) -> Result<Vec<F>> {
+        use itertools::Itertools as _;
         let mut result = self_evals;
 
         ensure!(result.len() == other_evals.len());

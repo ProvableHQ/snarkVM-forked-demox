@@ -15,6 +15,7 @@
 
 use super::*;
 
+// Tests `get.record.dynamic` for extracting entries from dynamic records including polymorphic reads and failure modes.
 #[test]
 fn test_get_record_dynamic() {
     // Parameters for dynamic function calls
@@ -299,9 +300,8 @@ fn test_get_record_dynamic() {
     );
 }
 
-// Translates the output of a call to credits.aleo/transfer_public_to_private
-// into a dynamic record to ensure signature verification has not been broken by
-// the new caller metadata
+// Translates the output of a call to `credits.aleo/transfer_public_to_private` into a dynamic record.
+// This ensures signature verification has not been broken by the new caller metadata.
 #[test]
 fn translate_transfer_public_to_private() {
     let credits_program_str = Identifier::<CurrentNetwork>::from_str("credits").unwrap();
@@ -407,4 +407,510 @@ fn translate_transfer_public_to_private() {
         )
         .unwrap();
     add_and_test(&vm, &caller_private_key, &[transaction_transfer], rng);
+}
+
+// Tests `dynamic.record` with 10 fields to verify the depth-5 Merkle tree handles larger records correctly.
+#[test]
+fn test_dynamic_record_with_many_fields() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
+
+    // Program with a record containing many fields
+    let program_str = format!(
+        r"
+        program many_fields.aleo;
+
+        record large_record:
+            owner as address.private;
+            field1 as u64.public;
+            field2 as u64.public;
+            field3 as u64.public;
+            field4 as u64.public;
+            field5 as u64.public;
+            field6 as u64.private;
+            field7 as u64.private;
+            field8 as u64.private;
+            field9 as u64.private;
+            field10 as u64.private;
+
+        function mint_large:
+            cast {caller_address} 1u64 2u64 3u64 4u64 5u64 6u64 7u64 8u64 9u64 10u64 into r0 as large_record.record;
+            output r0 as large_record.record;
+
+        function read_field5:
+            input r0 as dynamic.record;
+            get.record.dynamic r0.field5 into r1 as u64;
+            output r1 as u64.public;
+
+        function read_field10:
+            input r0 as dynamic.record;
+            get.record.dynamic r0.field10 into r1 as u64;
+            output r1 as u64.public;
+
+        constructor:
+            assert.eq true true;
+        "
+    );
+
+    let program = Program::<CurrentNetwork>::from_str(&program_str).unwrap();
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    // Deploy the program
+    println!("Deploying program many_fields.aleo...");
+    let transaction_deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[transaction_deploy], rng);
+
+    // Mint a large record
+    println!("Minting large record...");
+    let transaction_mint = vm
+        .execute(
+            &caller_private_key,
+            ("many_fields.aleo", "mint_large"),
+            Vec::<Value<CurrentNetwork>>::new().into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    // Get the record from the transaction
+    let mint_output = transaction_mint.transitions().next().unwrap().outputs().iter().next().unwrap();
+    let view_key = ViewKey::try_from(&caller_private_key).unwrap();
+
+    let output_record = match mint_output {
+        Output::Record(_, _, record_ciphertext, _) => record_ciphertext.as_ref().unwrap().decrypt(&view_key).unwrap(),
+        _ => panic!("Expected record output"),
+    };
+
+    add_and_test(&vm, &caller_private_key, &[transaction_mint], rng);
+
+    // Convert to dynamic record and read fields
+    let dynamic_record = DynamicRecord::<CurrentNetwork>::from_record(&output_record).unwrap();
+
+    // Read field5 (public field in the middle)
+    println!("Reading field5 from dynamic record...");
+    let transaction_read5 = vm
+        .execute(
+            &caller_private_key,
+            ("many_fields.aleo", "read_field5"),
+            vec![Value::<CurrentNetwork>::DynamicRecord(dynamic_record.clone())].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    let expected_output5 = Plaintext::<CurrentNetwork>::from_str("5u64").unwrap();
+    assert!(
+        matches!(transaction_read5.transitions().next().unwrap().outputs(), [Output::Public(_, Some(plaintext))] if *plaintext == expected_output5),
+        "Expected field5 = 5u64"
+    );
+
+    add_and_test(&vm, &caller_private_key, &[transaction_read5], rng);
+
+    // Read field10 (last private field)
+    println!("Reading field10 from dynamic record...");
+    let transaction_read10 = vm
+        .execute(
+            &caller_private_key,
+            ("many_fields.aleo", "read_field10"),
+            vec![Value::<CurrentNetwork>::DynamicRecord(dynamic_record)].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    let expected_output10 = Plaintext::<CurrentNetwork>::from_str("10u64").unwrap();
+    assert!(
+        matches!(transaction_read10.transitions().next().unwrap().outputs(), [Output::Public(_, Some(plaintext))] if *plaintext == expected_output10),
+        "Expected field10 = 10u64"
+    );
+
+    add_and_test(&vm, &caller_private_key, &[transaction_read10], rng);
+}
+
+// Tests dynamic records with nested struct fields to verify complex data structures work correctly.
+#[test]
+fn test_dynamic_record_with_nested_structs() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
+
+    // Program with nested structures in records
+    let program_str = format!(
+        r"
+        program nested_structs.aleo;
+
+        struct inner_struct:
+            value_a as u64;
+            value_b as u64;
+
+        struct outer_struct:
+            inner as inner_struct;
+            extra as field;
+
+        record complex_record:
+            owner as address.private;
+            simple_field as u64.public;
+            nested as outer_struct.public;
+
+        function mint_complex:
+            cast 100u64 200u64 into r0 as inner_struct;
+            cast r0 999field into r1 as outer_struct;
+            cast {caller_address} 42u64 r1 into r2 as complex_record.record;
+            output r2 as complex_record.record;
+
+        function read_nested:
+            input r0 as dynamic.record;
+            get.record.dynamic r0.nested into r1 as outer_struct;
+            output r1.extra as field.public;
+
+        function read_simple:
+            input r0 as dynamic.record;
+            get.record.dynamic r0.simple_field into r1 as u64;
+            output r1 as u64.public;
+
+        constructor:
+            assert.eq true true;
+        "
+    );
+
+    let program = Program::<CurrentNetwork>::from_str(&program_str).unwrap();
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    // Deploy the program
+    println!("Deploying program nested_structs.aleo...");
+    let transaction_deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[transaction_deploy], rng);
+
+    // Mint a complex record
+    println!("Minting complex record with nested structs...");
+    let transaction_mint = vm
+        .execute(
+            &caller_private_key,
+            ("nested_structs.aleo", "mint_complex"),
+            Vec::<Value<CurrentNetwork>>::new().into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    // Get the record from the transaction
+    let mint_output = transaction_mint.transitions().next().unwrap().outputs().iter().next().unwrap();
+    let view_key = ViewKey::try_from(&caller_private_key).unwrap();
+
+    let output_record = match mint_output {
+        Output::Record(_, _, record_ciphertext, _) => record_ciphertext.as_ref().unwrap().decrypt(&view_key).unwrap(),
+        _ => panic!("Expected record output"),
+    };
+
+    add_and_test(&vm, &caller_private_key, &[transaction_mint], rng);
+
+    // Convert to dynamic record
+    let dynamic_record = DynamicRecord::<CurrentNetwork>::from_record(&output_record).unwrap();
+
+    // Read the nested struct field
+    println!("Reading nested struct from dynamic record...");
+    let transaction_read_nested = vm
+        .execute(
+            &caller_private_key,
+            ("nested_structs.aleo", "read_nested"),
+            vec![Value::<CurrentNetwork>::DynamicRecord(dynamic_record.clone())].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    let expected_extra = Plaintext::<CurrentNetwork>::from_str("999field").unwrap();
+    assert!(
+        matches!(transaction_read_nested.transitions().next().unwrap().outputs(), [Output::Public(_, Some(plaintext))] if *plaintext == expected_extra),
+        "Expected nested.extra = 999field"
+    );
+
+    add_and_test(&vm, &caller_private_key, &[transaction_read_nested], rng);
+
+    // Read the simple field
+    println!("Reading simple field from dynamic record...");
+    let transaction_read_simple = vm
+        .execute(
+            &caller_private_key,
+            ("nested_structs.aleo", "read_simple"),
+            vec![Value::<CurrentNetwork>::DynamicRecord(dynamic_record)].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    let expected_simple = Plaintext::<CurrentNetwork>::from_str("42u64").unwrap();
+    assert!(
+        matches!(transaction_read_simple.transitions().next().unwrap().outputs(), [Output::Public(_, Some(plaintext))] if *plaintext == expected_simple),
+        "Expected simple_field = 42u64"
+    );
+
+    add_and_test(&vm, &caller_private_key, &[transaction_read_simple], rng);
+}
+
+// Tests `dynamic.record` with minimal fields (owner only) to verify the smallest possible record structure works.
+#[test]
+fn test_dynamic_record_minimal_fields() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
+
+    // Program with a minimal record (only owner field)
+    let program_str = format!(
+        r"
+        program minimal_record.aleo;
+
+        record empty_record:
+            owner as address.private;
+
+        function mint_minimal:
+            cast {caller_address} into r0 as empty_record.record;
+            output r0 as empty_record.record;
+
+        function consume_minimal:
+            input r0 as dynamic.record;
+            // Just verify we can receive the dynamic record
+            output true as boolean.public;
+
+        constructor:
+            assert.eq true true;
+        "
+    );
+
+    let program = Program::<CurrentNetwork>::from_str(&program_str).unwrap();
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    // Deploy the program
+    println!("Deploying program minimal_record.aleo...");
+    let transaction_deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[transaction_deploy], rng);
+
+    // Mint a minimal record
+    println!("Minting minimal record...");
+    let transaction_mint = vm
+        .execute(
+            &caller_private_key,
+            ("minimal_record.aleo", "mint_minimal"),
+            Vec::<Value<CurrentNetwork>>::new().into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    // Get the record from the transaction
+    let mint_output = transaction_mint.transitions().next().unwrap().outputs().iter().next().unwrap();
+    let view_key = ViewKey::try_from(&caller_private_key).unwrap();
+
+    let output_record = match mint_output {
+        Output::Record(_, _, record_ciphertext, _) => record_ciphertext.as_ref().unwrap().decrypt(&view_key).unwrap(),
+        _ => panic!("Expected record output"),
+    };
+
+    add_and_test(&vm, &caller_private_key, &[transaction_mint], rng);
+
+    // Convert to dynamic record
+    let dynamic_record = DynamicRecord::<CurrentNetwork>::from_record(&output_record).unwrap();
+
+    // Consume the minimal dynamic record
+    println!("Consuming minimal dynamic record...");
+    let transaction_consume = vm
+        .execute(
+            &caller_private_key,
+            ("minimal_record.aleo", "consume_minimal"),
+            vec![Value::<CurrentNetwork>::DynamicRecord(dynamic_record)].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    let expected_output = Plaintext::<CurrentNetwork>::from_str("true").unwrap();
+    assert!(
+        matches!(transaction_consume.transitions().next().unwrap().outputs(), [Output::Public(_, Some(plaintext))] if *plaintext == expected_output),
+        "Minimal record should be consumable as dynamic record"
+    );
+
+    add_and_test(&vm, &caller_private_key, &[transaction_consume], rng);
+}
+
+// Tests `dynamic.record` with 20 fields to verify near-maximum capacity for the depth-5 Merkle tree (max 32 entries).
+#[test]
+fn test_dynamic_record_near_maximum_fields() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
+
+    // Program with a record containing 20 fields (testing near but not at limit)
+    // Note: Each field plus owner, nonce, version takes slots
+    let program_str = format!(
+        r"
+        program max_fields.aleo;
+
+        record large_record:
+            owner as address.private;
+            f1 as u64.public;
+            f2 as u64.public;
+            f3 as u64.public;
+            f4 as u64.public;
+            f5 as u64.public;
+            f6 as u64.public;
+            f7 as u64.public;
+            f8 as u64.public;
+            f9 as u64.public;
+            f10 as u64.public;
+            f11 as u64.private;
+            f12 as u64.private;
+            f13 as u64.private;
+            f14 as u64.private;
+            f15 as u64.private;
+            f16 as u64.private;
+            f17 as u64.private;
+            f18 as u64.private;
+            f19 as u64.private;
+            f20 as u64.private;
+
+        function mint_max:
+            cast {caller_address} 1u64 2u64 3u64 4u64 5u64 6u64 7u64 8u64 9u64 10u64 11u64 12u64 13u64 14u64 15u64 16u64 17u64 18u64 19u64 20u64 into r0 as large_record.record;
+            output r0 as large_record.record;
+
+        function read_first:
+            input r0 as dynamic.record;
+            get.record.dynamic r0.f1 into r1 as u64;
+            output r1 as u64.public;
+
+        function read_middle:
+            input r0 as dynamic.record;
+            get.record.dynamic r0.f10 into r1 as u64;
+            output r1 as u64.public;
+
+        function read_last:
+            input r0 as dynamic.record;
+            get.record.dynamic r0.f20 into r1 as u64;
+            output r1 as u64.public;
+
+        constructor:
+            assert.eq true true;
+        "
+    );
+
+    let program = Program::<CurrentNetwork>::from_str(&program_str).unwrap();
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    // Deploy the program
+    println!("Deploying program max_fields.aleo...");
+    let transaction_deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[transaction_deploy], rng);
+
+    // Mint the large record
+    println!("Minting record with 20 fields...");
+    let transaction_mint = vm
+        .execute(
+            &caller_private_key,
+            ("max_fields.aleo", "mint_max"),
+            Vec::<Value<CurrentNetwork>>::new().into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    let mint_output = transaction_mint.transitions().next().unwrap().outputs().iter().next().unwrap();
+    let view_key = ViewKey::try_from(&caller_private_key).unwrap();
+
+    let output_record = match mint_output {
+        Output::Record(_, _, record_ciphertext, _) => record_ciphertext.as_ref().unwrap().decrypt(&view_key).unwrap(),
+        _ => panic!("Expected record output"),
+    };
+
+    add_and_test(&vm, &caller_private_key, &[transaction_mint], rng);
+
+    let dynamic_record = DynamicRecord::<CurrentNetwork>::from_record(&output_record).unwrap();
+
+    // Read the first field
+    println!("Reading f1 from large record...");
+    let tx_read_first = vm
+        .execute(
+            &caller_private_key,
+            ("max_fields.aleo", "read_first"),
+            vec![Value::<CurrentNetwork>::DynamicRecord(dynamic_record.clone())].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    let expected_f1 = Plaintext::<CurrentNetwork>::from_str("1u64").unwrap();
+    assert!(
+        matches!(tx_read_first.transitions().next().unwrap().outputs(), [Output::Public(_, Some(plaintext))] if *plaintext == expected_f1),
+        "Expected f1 = 1u64"
+    );
+    add_and_test(&vm, &caller_private_key, &[tx_read_first], rng);
+
+    // Read a middle field
+    println!("Reading f10 from large record...");
+    let tx_read_middle = vm
+        .execute(
+            &caller_private_key,
+            ("max_fields.aleo", "read_middle"),
+            vec![Value::<CurrentNetwork>::DynamicRecord(dynamic_record.clone())].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    let expected_f10 = Plaintext::<CurrentNetwork>::from_str("10u64").unwrap();
+    assert!(
+        matches!(tx_read_middle.transitions().next().unwrap().outputs(), [Output::Public(_, Some(plaintext))] if *plaintext == expected_f10),
+        "Expected f10 = 10u64"
+    );
+    add_and_test(&vm, &caller_private_key, &[tx_read_middle], rng);
+
+    // Read the last field
+    println!("Reading f20 from large record...");
+    let tx_read_last = vm
+        .execute(
+            &caller_private_key,
+            ("max_fields.aleo", "read_last"),
+            vec![Value::<CurrentNetwork>::DynamicRecord(dynamic_record)].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    let expected_f20 = Plaintext::<CurrentNetwork>::from_str("20u64").unwrap();
+    assert!(
+        matches!(tx_read_last.transitions().next().unwrap().outputs(), [Output::Public(_, Some(plaintext))] if *plaintext == expected_f20),
+        "Expected f20 = 20u64"
+    );
+    add_and_test(&vm, &caller_private_key, &[tx_read_last], rng);
 }
