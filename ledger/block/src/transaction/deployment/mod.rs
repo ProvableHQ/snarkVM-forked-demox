@@ -349,4 +349,49 @@ function compute:
         )
         .unwrap()
     }
+
+    /// Samples a V3 deployment (amendment) for the same program as V2.
+    pub(crate) fn sample_deployment_v3(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
+        static INSTANCE: OnceLock<Deployment<CurrentNetwork>> = OnceLock::new();
+        let deployment = INSTANCE
+            .get_or_init(|| {
+                // Use the same program as V2.
+                let (string, program) = Program::<CurrentNetwork>::parse(
+                    r"
+program testing_four.aleo;
+
+mapping store:
+    key as u32.public;
+    value as u32.public;
+
+function compute:
+    input r0 as u32.private;
+    add r0 r0 into r1;
+    output r1 as u32.public;",
+                )
+                .unwrap();
+                assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
+                // Construct the process.
+                let process = Process::load().unwrap();
+                // Compute the deployment (regenerates VKs).
+                let mut deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
+                // Set the program checksum.
+                deployment.set_program_checksum_raw(Some(deployment.program().to_checksum()));
+                // V3 amendments have no program owner.
+                deployment.set_program_owner_raw(None);
+                // Return the deployment.
+                // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
+                Deployment::from_str(&deployment.to_string()).unwrap()
+            })
+            .clone();
+        // Create a new deployment with the desired edition.
+        Deployment::<CurrentNetwork>::new(
+            edition,
+            deployment.program().clone(),
+            deployment.verifying_keys().clone(),
+            deployment.program_checksum(),
+            deployment.program_owner(),
+        )
+        .unwrap()
+    }
 }

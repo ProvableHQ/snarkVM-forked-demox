@@ -91,6 +91,7 @@ mod tests {
         for expected in [
             test_helpers::sample_deployment_v1(Uniform::rand(rng), rng),
             test_helpers::sample_deployment_v2(Uniform::rand(rng), rng),
+            test_helpers::sample_deployment_v3(Uniform::rand(rng), rng),
         ] {
             // Serialize
             let expected_string = &expected.to_string();
@@ -113,6 +114,7 @@ mod tests {
         for expected in [
             test_helpers::sample_deployment_v1(Uniform::rand(rng), rng),
             test_helpers::sample_deployment_v2(Uniform::rand(rng), rng),
+            test_helpers::sample_deployment_v3(Uniform::rand(rng), rng),
         ] {
             // Serialize
             let expected_bytes = expected.to_bytes_le()?;

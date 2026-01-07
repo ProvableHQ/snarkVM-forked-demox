@@ -1449,7 +1449,17 @@ mod tests {
         let transaction_2 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, rng);
         let transaction_3 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, false, rng);
         let transaction_4 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, true, rng);
-        let transactions = vec![transaction_0, transaction_1, transaction_2, transaction_3, transaction_4];
+        let transaction_5 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 0, true, rng);
+        let transaction_6 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 1, false, rng);
+        let transactions = vec![
+            transaction_0,
+            transaction_1,
+            transaction_2,
+            transaction_3,
+            transaction_4,
+            transaction_5,
+            transaction_6,
+        ];
 
         for transaction in transactions {
             let transaction_id = transaction.id();
@@ -1539,7 +1549,17 @@ mod tests {
         let transaction_2 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, rng);
         let transaction_3 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, false, rng);
         let transaction_4 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, true, rng);
-        let transactions = vec![transaction_0, transaction_1, transaction_2, transaction_3, transaction_4];
+        let transaction_5 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 0, true, rng);
+        let transaction_6 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 1, false, rng);
+        let transactions = vec![
+            transaction_0,
+            transaction_1,
+            transaction_2,
+            transaction_3,
+            transaction_4,
+            transaction_5,
+            transaction_6,
+        ];
 
         for transaction in transactions {
             let transaction_id = transaction.id();
@@ -1602,5 +1622,82 @@ mod tests {
             // Insert the deployment again.
             deployment_store.insert(&transaction).unwrap();
         }
+    }
+
+    #[test]
+    fn test_amendment_insert_get_remove() {
+        let rng = &mut TestRng::default();
+
+        // Initialize a new transition store.
+        let transition_store = TransitionStore::open(StorageMode::Test(None)).unwrap();
+        // Initialize a new fee store.
+        let fee_store = FeeStore::open(transition_store).unwrap();
+        // Initialize a new deployment store.
+        let deployment_store = DeploymentMemory::open(fee_store).unwrap();
+
+        // First, insert a V2 deployment (the base deployment that the amendment will target).
+        let base_transaction = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, rng);
+        let base_transaction_id = base_transaction.id();
+        let base_program_id = *base_transaction.deployment().unwrap().program_id();
+        deployment_store.insert(&base_transaction).unwrap();
+
+        // Verify the base deployment was inserted.
+        assert_eq!(Some(0), deployment_store.get_latest_edition_for_program(&base_program_id).unwrap());
+        // No amendments yet, so count is None.
+        assert_eq!(None, deployment_store.get_amendment_count(&base_program_id, 0).unwrap());
+
+        // Verify the base is not an amendment.
+        assert!(!deployment_store.is_amendment(&base_transaction_id).unwrap());
+
+        // Now insert a V3 amendment for the same program.
+        let amendment_transaction = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 0, false, rng);
+        let amendment_id = amendment_transaction.id();
+        let amendment_deployment = amendment_transaction.deployment().unwrap();
+        assert_eq!(base_program_id, *amendment_deployment.program_id());
+
+        // Insert the amendment.
+        deployment_store.insert(&amendment_transaction).unwrap();
+
+        // Verify the amendment was inserted.
+        assert!(deployment_store.is_amendment(&amendment_id).unwrap());
+        assert_eq!(Some((base_program_id, 0, 0)), deployment_store.get_amendment_info(&amendment_id).unwrap());
+        assert_eq!(Some(1), deployment_store.get_amendment_count(&base_program_id, 0).unwrap());
+
+        // Verify we can retrieve the amendment deployment.
+        let retrieved_deployment = deployment_store.get_deployment(&amendment_id).unwrap();
+        assert_eq!(Some(amendment_deployment.clone()), retrieved_deployment);
+
+        // Verify the amendment VKs are stored correctly.
+        for (function_name, (vk, cert)) in amendment_deployment.verifying_keys() {
+            let retrieved_vk =
+                deployment_store.get_verifying_key_for_amendment(&base_program_id, function_name, 0, 0).unwrap();
+            assert_eq!(Some(vk.clone()), retrieved_vk);
+            let retrieved_cert =
+                deployment_store.get_certificate_for_amendment(&base_program_id, function_name, 0, 0).unwrap();
+            assert_eq!(Some(cert.clone()), retrieved_cert);
+        }
+
+        // Verify the latest VK returns the amendment's VK (not the base VK).
+        for (function_name, (vk, _)) in amendment_deployment.verifying_keys() {
+            let latest_vk = deployment_store.get_latest_verifying_key(&base_program_id, function_name).unwrap();
+            assert_eq!(Some(vk.clone()), latest_vk);
+        }
+
+        // Verify the base deployment is still accessible.
+        assert_eq!(Some(base_program_id), deployment_store.get_program_id(&base_transaction_id).unwrap());
+
+        // Remove the amendment.
+        deployment_store.remove(&amendment_id).unwrap();
+        assert!(!deployment_store.is_amendment(&amendment_id).unwrap());
+        // No amendments left, so count is None.
+        assert_eq!(None, deployment_store.get_amendment_count(&base_program_id, 0).unwrap());
+
+        // The base deployment should still exist.
+        assert_eq!(Some(base_program_id), deployment_store.get_program_id(&base_transaction_id).unwrap());
+        assert_eq!(Some(0), deployment_store.get_latest_edition_for_program(&base_program_id).unwrap());
+
+        // Remove the base deployment.
+        deployment_store.remove(&base_transaction_id).unwrap();
+        assert_eq!(None, deployment_store.get_latest_edition_for_program(&base_program_id).unwrap());
     }
 }

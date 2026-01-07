@@ -111,14 +111,14 @@ impl<N: Network> ToBytes for Deployment<N> {
             // Write the certificate.
             certificate.write_le(&mut writer)?;
         }
-        // If the deployment version is 2, write the program checksum and program owner.
-        // Note: The unwraps are safe because `Deployment::version` only returns `V2` if both the checksum and owner is present.
-        if version == DeploymentVersion::V2 {
-            // Write the bytes of the checksum.
+        // Write the program checksum for V2 and V3 deployments.
+        if version == DeploymentVersion::V2 || version == DeploymentVersion::V3 {
             for byte in &self.program_checksum.unwrap() {
                 byte.write_le(&mut writer)?;
             }
-            // Write the bytes of the owner.
+        }
+        // Write the program owner for V2 deployments only.
+        if version == DeploymentVersion::V2 {
             self.program_owner.unwrap().write_le(&mut writer)?;
         }
         Ok(())
@@ -137,6 +137,7 @@ mod tests {
         for expected in [
             test_helpers::sample_deployment_v1(Uniform::rand(rng), rng),
             test_helpers::sample_deployment_v2(Uniform::rand(rng), rng),
+            test_helpers::sample_deployment_v3(Uniform::rand(rng), rng),
         ] {
             // Check the byte representation.
             let expected_bytes = expected.to_bytes_le()?;

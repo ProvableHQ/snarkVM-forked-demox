@@ -474,12 +474,22 @@ pub mod test_helpers {
                 // Return the deployment.
                 deployment
             }
+            3 => {
+                // V3 is an amendment - uses the same program as V2 but with new VKs and no program_owner.
+                let mut deployment = crate::transaction::deployment::test_helpers::sample_deployment_v3(edition, rng);
+                // Ensure the checksum is set.
+                deployment.set_program_checksum_raw(Some(deployment.program().to_checksum()));
+                // V3 amendments have no program owner in the Deployment struct.
+                deployment.set_program_owner_raw(None);
+                // Return the deployment.
+                deployment
+            }
             _ => panic!("Invalid deployment version."),
         };
 
         // Compute the deployment ID.
         let deployment_id = deployment.to_deployment_id().unwrap();
-        // Construct a program owner.
+        // Construct a program owner (the transaction signer).
         let owner = ProgramOwner::new(&private_key, deployment_id, rng).unwrap();
 
         // Sample the fee.
@@ -548,6 +558,10 @@ mod tests {
             crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), true, rng),
             crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, rng),
             crate::transaction::test_helpers::sample_deployment_transaction(2, Uniform::rand(rng), false, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(3, Uniform::rand(rng), true, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(3, Uniform::rand(rng), true, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(3, Uniform::rand(rng), false, rng),
+            crate::transaction::test_helpers::sample_deployment_transaction(3, Uniform::rand(rng), false, rng),
             crate::transaction::test_helpers::sample_execution_transaction_with_fee(true, rng, 0),
             crate::transaction::test_helpers::sample_execution_transaction_with_fee(false, rng, 0),
         ]
