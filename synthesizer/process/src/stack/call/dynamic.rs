@@ -503,7 +503,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             callee_request.program_id(),
                             callee_console_function_id,
                             *callee_request.tvk(),
-                        );
+                        )?;
 
                         // Synthesize translation proving keys and store input translations.
                         // Push to the top bucket of the translation stack (the caller's level).
@@ -903,10 +903,10 @@ fn resolve_dynamic_target<'a, N: Network>(
         Err(e) => bail!("Failed to construct the program ID in a dynamic call: {e}"),
     };
 
-    // Verify that the call is not to 'credits.aleo/fee_private' or 'credits.aleo/fee_public'.
-    let is_credits_program = &program_id.to_string() == "credits.aleo";
+    // Verify that the call is not to `credits.aleo/fee_private` or `credits.aleo/fee_public`.
+    let is_credits_program = program_id.to_string() == "credits.aleo";
     let is_fee_private = function_name.to_string() == "fee_private";
-    let is_fee_public = &function_name.to_string() == "fee_public";
+    let is_fee_public = function_name.to_string() == "fee_public";
     if is_credits_program && (is_fee_private || is_fee_public) {
         bail!("Cannot perform an external call to 'credits.aleo/fee_private' or 'credits.aleo/fee_public'.")
     }
@@ -941,7 +941,7 @@ fn resolve_dynamic_target<'a, N: Network>(
     }
 }
 
-/// Validates that all translation arrays have the same length.
+// Validates that all translation arrays have the same length.
 fn validate_translation_array_lengths(
     context: &str,
     caller_values_len: usize,
@@ -950,36 +950,37 @@ fn validate_translation_array_lengths(
     callee_values_len: usize,
     callee_ids_len: usize,
     callee_types_len: usize,
-) {
+) -> Result<()> {
     // Ensure caller and callee have the same number of values.
-    assert_eq!(
-        caller_values_len, callee_values_len,
+    ensure!(
+        caller_values_len == callee_values_len,
         "{context}: caller and callee values should have the same length ({caller_values_len} vs. {callee_values_len})"
     );
     // Ensure caller values and IDs have the same length.
-    assert_eq!(
-        caller_values_len, caller_ids_len,
+    ensure!(
+        caller_values_len == caller_ids_len,
         "{context}: caller values and IDs should have the same length ({caller_values_len} vs. {caller_ids_len})"
     );
     // Ensure caller values and types have the same length.
-    assert_eq!(
-        caller_values_len, caller_types_len,
+    ensure!(
+        caller_values_len == caller_types_len,
         "{context}: caller values and types should have the same length ({caller_values_len} vs. {caller_types_len})"
     );
     // Ensure callee values and IDs have the same length.
-    assert_eq!(
-        callee_values_len, callee_ids_len,
+    ensure!(
+        callee_values_len == callee_ids_len,
         "{context}: callee values and IDs should have the same length ({callee_values_len} vs. {callee_ids_len})"
     );
     // Ensure callee values and types have the same length.
-    assert_eq!(
-        callee_values_len, callee_types_len,
+    ensure!(
+        callee_values_len == callee_types_len,
         "{context}: callee values and types should have the same length ({callee_values_len} vs. {callee_types_len})"
     );
+    Ok(())
 }
 
-/// Collects input record translations from dynamic to static records.
-/// The caller is responsible for synthesizing translation proving keys.
+// Collects input record translations from dynamic to static records.
+// The caller is responsible for synthesizing translation proving keys.
 fn collect_input_translations<N: Network>(
     caller_values: &[Value<N>],
     caller_ids: &[InputID<N>],
@@ -990,7 +991,7 @@ fn collect_input_translations<N: Network>(
     callee_program_id: &ProgramID<N>,
     function_id: Field<N>,
     tvk: Field<N>,
-) -> Vec<RecordTranslationData<N>> {
+) -> Result<Vec<RecordTranslationData<N>>> {
     // Validate that all arrays have the same length.
     validate_translation_array_lengths(
         "Inputs",
@@ -1000,7 +1001,7 @@ fn collect_input_translations<N: Network>(
         callee_values.len(),
         callee_ids.len(),
         callee_types.len(),
-    );
+    )?;
 
     // Initialize the translations vector.
     let mut translations = Vec::new();
@@ -1067,11 +1068,11 @@ fn collect_input_translations<N: Network>(
         }
     }
 
-    translations
+    Ok(translations)
 }
 
-/// Collects output record translations from static to dynamic records.
-/// The `compute_record_view_key` closure computes the record view key for non-external records.
+// Collects output record translations from static to dynamic records.
+// The `compute_record_view_key` closure computes the record view key for non-external records.
 fn collect_output_translations<N: Network>(
     caller_values: &[Value<N>],
     caller_ids: &[OutputID<N>],
@@ -1094,7 +1095,7 @@ fn collect_output_translations<N: Network>(
         callee_values.len(),
         callee_ids.len(),
         callee_types.len(),
-    );
+    )?;
 
     // Initialize the translations vector.
     let mut translations = Vec::new();

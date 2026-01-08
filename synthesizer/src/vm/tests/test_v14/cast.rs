@@ -17,11 +17,9 @@ use super::*;
 
 use super::add_and_test;
 
-// Tests related to the cast variant that casts a static record (whether external or not)
-// into a dynamic one.
+// Tests related to the cast variant that casts a static record (whether external or not) into a dynamic one.
 
-// Tests that circuit::DynamicRecord::from_record(circuit::Record) is consistent with
-// console::DynamicRecord::from_record(console::Record).
+// Tests that `circuit::DynamicRecord::from_record` is consistent with `console::DynamicRecord::from_record`.
 #[test]
 fn test_circuit_dynamic_record_from_record() {
     let mut rng = TestRng::default();
@@ -100,11 +98,8 @@ fn test_circuit_dynamic_record_from_record() {
     }
 }
 
-// Tests that casting external and non-external records to dynamic ones works
-// correctly, using get.dynamic.record to access dynamic-record entries. Also
-// checks that casting to dynamic records still causes an error if the static
-// record is consumed both by the caller and the callee (the latter of which
-// involves a translation).
+// Tests casting external and non-external records to `dynamic.record` using `get.record.dynamic` to access entries.
+// Also verifies that double-spend errors occur when the static record is consumed by both caller and callee (via translation).
 #[test]
 fn test_cast_simple() {
     let mut rng = TestRng::default();
