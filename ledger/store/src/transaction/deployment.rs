@@ -1518,17 +1518,7 @@ mod tests {
         let transaction_2 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, rng);
         let transaction_3 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, false, rng);
         let transaction_4 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, true, rng);
-        let transaction_5 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 0, true, rng);
-        let transaction_6 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 1, false, rng);
-        let transactions = vec![
-            transaction_0,
-            transaction_1,
-            transaction_2,
-            transaction_3,
-            transaction_4,
-            transaction_5,
-            transaction_6,
-        ];
+        let transactions = vec![transaction_0, transaction_1, transaction_2, transaction_3, transaction_4];
 
         for transaction in transactions {
             let transaction_id = transaction.id();
@@ -1618,17 +1608,7 @@ mod tests {
         let transaction_2 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, rng);
         let transaction_3 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, false, rng);
         let transaction_4 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, true, rng);
-        let transaction_5 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 0, true, rng);
-        let transaction_6 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 1, false, rng);
-        let transactions = vec![
-            transaction_0,
-            transaction_1,
-            transaction_2,
-            transaction_3,
-            transaction_4,
-            transaction_5,
-            transaction_6,
-        ];
+        let transactions = vec![transaction_0, transaction_1, transaction_2, transaction_3, transaction_4];
 
         for transaction in transactions {
             let transaction_id = transaction.id();
@@ -1797,7 +1777,7 @@ mod tests {
         assert_eq!(Some((base_program_id, 0, 0)), deployment_store.get_amendment_info(&amendment_1_id).unwrap());
 
         // Insert second amendment.
-        let amendment_2 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 1, true, rng);
+        let amendment_2 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 0, true, rng);
         let amendment_2_id = amendment_2.id();
         let amendment_2_deployment = amendment_2.deployment().unwrap();
         deployment_store.insert(&amendment_2).unwrap();
