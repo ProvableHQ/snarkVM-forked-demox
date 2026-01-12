@@ -149,6 +149,9 @@ optional = true
 workspace = true
 features = [ "preserve_order" ]
 
+[dependencies.thiserror]
+workspace = true
+
 [dependencies.tokio]
 version = "1"
 features = [ "sync" ]

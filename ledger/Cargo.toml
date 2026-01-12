@@ -168,15 +168,14 @@ workspace = true
 [dependencies.rayon]
 workspace = true
 
+[dependencies.thiserror]
+workspace = true
+
 [dependencies.time]
 workspace = true
 
 [dependencies.tracing]
 workspace = true
-
-[dependencies.thiserror]
-workspace = true
-features = [ "std" ]
 
 [dev-dependencies.bincode]
 workspace = true

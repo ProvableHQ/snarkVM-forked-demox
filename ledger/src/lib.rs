@@ -32,6 +32,9 @@ pub use snarkvm_ledger_store as store;
 #[cfg(any(test, feature = "test-helpers"))]
 pub mod test_helpers;
 
+mod error;
+pub use error::*;
+
 mod helpers;
 pub use helpers::*;
 
@@ -477,17 +480,19 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         priority_fee_in_microcredits: u64,
         query: Option<&dyn QueryTrait<N>>,
         rng: &mut R,
-    ) -> Result<Transaction<N>> {
+    ) -> Result<Transaction<N>, CreateDeployError> {
         // Fetch the unspent records.
         let records = self.find_unspent_credits_records(&ViewKey::try_from(private_key)?)?;
-        ensure!(!records.len().is_zero(), "The Aleo account has no records to spend.");
+        if records.len().is_zero() {
+            return Err(anyhow!("The Aleo account has no records to spend.").into());
+        }
         let mut records = records.values();
 
         // Prepare the fee record.
         let fee_record = Some(records.next().unwrap().clone());
 
         // Create a new deploy transaction.
-        self.vm.deploy(private_key, program, fee_record, priority_fee_in_microcredits, query, rng)
+        Ok(self.vm.deploy(private_key, program, fee_record, priority_fee_in_microcredits, query, rng)?)
     }
 
     /// Creates a transfer transaction.
@@ -501,10 +506,12 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         priority_fee_in_microcredits: u64,
         query: Option<&dyn QueryTrait<N>>,
         rng: &mut R,
-    ) -> Result<Transaction<N>> {
+    ) -> Result<Transaction<N>, CreateTransferError> {
         // Fetch the unspent records.
         let records = self.find_unspent_credits_records(&ViewKey::try_from(private_key)?)?;
-        ensure!(records.len() >= 2, "The Aleo account does not have enough records to spend.");
+        if records.len() < 2 {
+            return Err(anyhow!("The Aleo account does not have enough records to spend.").into());
+        }
         let mut records = records.values();
 
         // Prepare the inputs.
@@ -518,7 +525,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         let fee_record = Some(records.next().unwrap().clone());
 
         // Create a new execute transaction.
-        self.vm.execute(
+        Ok(self.vm.execute(
             private_key,
             ("credits.aleo", "transfer_private"),
             inputs.iter(),
@@ -526,7 +533,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             priority_fee_in_microcredits,
             query,
             rng,
-        )
+        )?)
     }
 }
 

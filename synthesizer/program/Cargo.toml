@@ -66,6 +66,9 @@ features = [ "preserve_order" ]
 [dependencies.snarkvm-synthesizer-snark]
 workspace = true
 
+[dependencies.thiserror]
+workspace = true
+
 [dependencies.tiny-keccak]
 version = "2"
 features = [ "sha3" ]

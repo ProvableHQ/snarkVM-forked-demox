@@ -26,6 +26,9 @@ mod test_v10;
 mod test_v11;
 
 #[cfg(feature = "test")]
+mod test_v13;
+
+#[cfg(feature = "test")]
 mod test_v14;
 
 #[cfg(feature = "test")]
