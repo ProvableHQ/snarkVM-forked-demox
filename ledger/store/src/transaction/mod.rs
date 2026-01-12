@@ -223,6 +223,21 @@ pub trait TransactionStorage<N: Network>: Clone + Send + Sync {
         self.deployment_store().find_latest_transaction_id_from_program_id_and_edition(program_id, edition)
     }
 
+    /// Returns the transaction ID for the given `program ID`, `edition`, and `amendment_index`.
+    /// Returns `None` if no such amendment exists.
+    fn find_transaction_id_from_program_id_edition_and_amendment(
+        &self,
+        program_id: &ProgramID<N>,
+        edition: u16,
+        amendment_index: u64,
+    ) -> Result<Option<N::TransactionID>> {
+        self.deployment_store().find_transaction_id_from_program_id_edition_and_amendment(
+            program_id,
+            edition,
+            amendment_index,
+        )
+    }
+
     /// Returns the transaction ID that contains the given `transition ID`.
     fn find_transaction_id_from_transition_id(
         &self,
@@ -502,6 +517,21 @@ impl<N: Network, T: TransactionStorage<N>> TransactionStore<N, T> {
         edition: u16,
     ) -> Result<Option<N::TransactionID>> {
         self.storage.deployment_store().find_latest_transaction_id_from_program_id_and_edition(program_id, edition)
+    }
+
+    /// Returns the transaction ID for the given `program ID`, `edition`, and `amendment_index`.
+    /// Returns `None` if no such amendment exists.
+    pub fn find_transaction_id_from_program_id_edition_and_amendment(
+        &self,
+        program_id: &ProgramID<N>,
+        edition: u16,
+        amendment_index: u64,
+    ) -> Result<Option<N::TransactionID>> {
+        self.storage.deployment_store().find_transaction_id_from_program_id_edition_and_amendment(
+            program_id,
+            edition,
+            amendment_index,
+        )
     }
 
     /// Returns the transaction ID that contains the given `transition ID`.

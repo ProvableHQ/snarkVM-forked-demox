@@ -587,6 +587,28 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         }
     }
 
+    /// Returns the transaction ID for the given `program ID`, `edition`, and `amendment_index`.
+    /// Returns `None` if no such amendment exists.
+    fn find_transaction_id_from_program_id_edition_and_amendment(
+        &self,
+        program_id: &ProgramID<N>,
+        edition: u16,
+        amendment_index: u64,
+    ) -> Result<Option<N::TransactionID>> {
+        // Check if the program ID is for 'credits.aleo'.
+        // This case is handled separately, as it is a default program of the VM.
+        // TODO (howardwu): After we update 'fee' rules and 'Ratify' in genesis, we can remove this.
+        if program_id == &ProgramID::from_str("credits.aleo")? {
+            return Ok(None);
+        }
+
+        // Retrieve the amendment transaction ID.
+        match self.amendment_id_map().get_confirmed(&(*program_id, edition, amendment_index))? {
+            Some(transaction_id) => Ok(Some(*transaction_id)),
+            None => Ok(None),
+        }
+    }
+
     /// Returns the transaction ID that contains the given `transition ID`.
     fn find_transaction_id_from_transition_id(
         &self,
@@ -1402,6 +1424,17 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
         edition: u16,
     ) -> Result<Option<N::TransactionID>> {
         self.storage.find_latest_transaction_id_from_program_id_and_edition(program_id, edition)
+    }
+
+    /// Returns the transaction ID for the given `program ID`, `edition`, and `amendment_index`.
+    /// Returns `None` if no such amendment exists.
+    pub fn find_transaction_id_from_program_id_edition_and_amendment(
+        &self,
+        program_id: &ProgramID<N>,
+        edition: u16,
+        amendment_index: u64,
+    ) -> Result<Option<N::TransactionID>> {
+        self.storage.find_transaction_id_from_program_id_edition_and_amendment(program_id, edition, amendment_index)
     }
 
     /// Returns the transaction ID that deployed the given `transition ID`.

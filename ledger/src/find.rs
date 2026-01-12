@@ -62,6 +62,21 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         self.vm.transaction_store().find_latest_transaction_id_from_program_id_and_edition(program_id, edition)
     }
 
+    /// Returns the transaction ID for the given `program ID`, `edition`, and `amendment_index`.
+    /// Returns `None` if no such amendment exists.
+    pub fn find_transaction_id_from_program_id_edition_and_amendment(
+        &self,
+        program_id: &ProgramID<N>,
+        edition: u16,
+        amendment_index: u64,
+    ) -> Result<Option<N::TransactionID>> {
+        self.vm.transaction_store().find_transaction_id_from_program_id_edition_and_amendment(
+            program_id,
+            edition,
+            amendment_index,
+        )
+    }
+
     /// Returns the transaction ID that contains the given `transition ID`.
     pub fn find_transaction_id_from_transition_id(
         &self,
