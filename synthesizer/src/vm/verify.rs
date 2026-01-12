@@ -227,10 +227,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V9`"
                     );
                 }
-                if consensus_version >= ConsensusVersion::V9 {
+                if consensus_version >= ConsensusVersion::V9 && consensus_version < ConsensusVersion::V14 {
                     ensure!(
                         version == DeploymentVersion::V2,
-                        "Invalid deployment transaction '{id}' - the deployment version should be `V2` (which should contain a program owner and checksum) for `ConsensusVersion::V9` or greater"
+                        "Invalid deployment transaction '{id}' - the deployment version should be `V2` (which should contain a program owner and checksum) for `ConsensusVersion::V9` up to `ConsensusVersion::V14`"
                     );
                 }
                 if consensus_version < ConsensusVersion::V11 {
@@ -395,7 +395,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         deployment.program().check_external_calls_to_credits_upgrade()?;
                     }
                     DeploymentVersion::V3 => {
-                        // For `V3` (ammendment) deployments, check that:
+                        // For `V3` (amendment) deployments, check that:
                         // - The program is not `credits.aleo`.
                         // - The program already exists in the store and process.
                         // - The existing program, checksum, and edition matches the one in the deployment.

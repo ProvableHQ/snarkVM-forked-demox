@@ -420,6 +420,17 @@ impl<N: Network, T: TransactionStorage<N>> TransactionStore<N, T> {
         self.storage.deployment_store().get_verifying_key_with_edition(program_id, function_name, edition)
     }
 
+    /// Returns the base (original) verifying key for the given `(program ID, function name, edition)`.
+    /// This method ignores any amendments and always returns the VK from the original deployment.
+    pub fn get_base_verifying_key(
+        &self,
+        program_id: &ProgramID<N>,
+        function_name: &Identifier<N>,
+        edition: u16,
+    ) -> Result<Option<VerifyingKey<N>>> {
+        self.storage.deployment_store().get_base_verifying_key(program_id, function_name, edition)
+    }
+
     /// Returns the latest certificate for the given `(program ID, function name)`.
     pub fn get_latest_certificate(
         &self,
@@ -437,6 +448,17 @@ impl<N: Network, T: TransactionStorage<N>> TransactionStore<N, T> {
         edition: u16,
     ) -> Result<Option<Certificate<N>>> {
         self.storage.deployment_store().get_certificate_with_edition(program_id, function_name, edition)
+    }
+
+    /// Returns the base (original) certificate for the given `(program ID, function name, edition)`.
+    /// This method ignores any amendments and always returns the certificate from the original deployment.
+    pub fn get_base_certificate(
+        &self,
+        program_id: &ProgramID<N>,
+        function_name: &Identifier<N>,
+        edition: u16,
+    ) -> Result<Option<Certificate<N>>> {
+        self.storage.deployment_store().get_base_certificate(program_id, function_name, edition)
     }
 }
 

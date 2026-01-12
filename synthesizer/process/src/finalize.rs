@@ -136,7 +136,21 @@ impl<N: Network> Process<N> {
                 }
                 lap!(timer, "Insert the verifying keys");
 
-                Ok((stack, Vec::new()))
+                // Finalize the fee.
+                atomic_batch_scope!(store, {
+                    // Initialize a list for the finalize operations.
+                    let mut finalize_operations = Vec::new();
+
+                    // Retrieve the fee stack.
+                    let fee_stack = self.get_stack(fee.program_id())?;
+                    // Finalize the fee transition.
+                    finalize_operations.extend(finalize_fee_transition(state, store, &fee_stack, fee)?);
+                    lap!(timer, "Finalize transition for '{}/{}'", fee.program_id(), fee.function_name());
+
+                    finish!(timer, "Finished finalizing the V3 deployment");
+                    // Return the stack and finalize operations.
+                    Ok((stack, finalize_operations))
+                })
             }
         }
     }

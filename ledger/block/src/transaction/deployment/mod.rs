@@ -44,7 +44,7 @@ pub struct Deployment<N: Network> {
     /// An optional owner for the program.
     /// This field creates a backwards-compatible implicit versioning mechanism for deployments.
     /// Before the migration height where this feature is enabled, the owner will **not** be allowed.
-    /// After the migration height where this feature is enabled, the owner will be required, except for ammendment (V3) deployments.
+    /// After the migration height where this feature is enabled, the owner will be required, except for amendment (V3) deployments.
     program_owner: Option<Address<N>>,
 }
 

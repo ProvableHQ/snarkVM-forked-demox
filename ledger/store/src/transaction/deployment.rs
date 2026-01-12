@@ -701,6 +701,32 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         }
     }
 
+    /// Returns the base (original) verifying key for the given `program ID`, `function name` and `edition`.
+    /// This method ignores any amendments and always returns the VK from the original deployment.
+    fn get_base_verifying_key(
+        &self,
+        program_id: &ProgramID<N>,
+        function_name: &Identifier<N>,
+        edition: u16,
+    ) -> Result<Option<VerifyingKey<N>>> {
+        // Check if the program ID is for 'credits.aleo'.
+        // This case is handled separately, as it is a default program of the VM.
+        if program_id == &ProgramID::from_str("credits.aleo")? {
+            // Load the verifying key.
+            let verifying_key = N::get_credits_verifying_key(function_name.to_string())?;
+            // Retrieve the number of public and private variables.
+            let num_variables = verifying_key.circuit_info.num_public_and_private_variables as u64;
+            // Return the verifying key.
+            return Ok(Some(VerifyingKey::new(verifying_key.clone(), num_variables)));
+        }
+
+        // Retrieve from the base verifying key map, ignoring any amendments.
+        match self.verifying_key_map().get_confirmed(&(*program_id, *function_name, edition))? {
+            Some(verifying_key) => Ok(Some(verifying_key.into_owned())),
+            None => Ok(None),
+        }
+    }
+
     /// Returns the latest certificate for the given `program ID` and `function name`.
     /// If amendments exist, returns the certificate from the latest amendment.
     fn get_latest_certificate(
@@ -788,6 +814,27 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         match self.certificate_map().get_confirmed(&(*program_id, *function_name, edition))? {
             Some(certificate) => Ok(Some(certificate.into_owned())),
             None => bail!("Failed to get the certificate for '{program_id}/{function_name}' (edition {edition})"),
+        }
+    }
+
+    /// Returns the base (original) certificate for the given `program ID`, `function name` and `edition`.
+    /// This method ignores any amendments and always returns the certificate from the original deployment.
+    fn get_base_certificate(
+        &self,
+        program_id: &ProgramID<N>,
+        function_name: &Identifier<N>,
+        edition: u16,
+    ) -> Result<Option<Certificate<N>>> {
+        // Check if the program ID is for 'credits.aleo'.
+        // This case is handled separately, as it is a default program of the VM.
+        if program_id == &ProgramID::from_str("credits.aleo")? {
+            return Ok(None);
+        }
+
+        // Retrieve from the base certificate map, ignoring any amendments.
+        match self.certificate_map().get_confirmed(&(*program_id, *function_name, edition))? {
+            Some(certificate) => Ok(Some(certificate.into_owned())),
+            None => Ok(None),
         }
     }
 
@@ -1226,6 +1273,17 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
         self.storage.get_verifying_key_with_edition(program_id, function_name, edition)
     }
 
+    /// Returns the base (original) verifying key for the given `(program ID, function name, edition)`.
+    /// This method ignores any amendments and always returns the VK from the original deployment.
+    pub fn get_base_verifying_key(
+        &self,
+        program_id: &ProgramID<N>,
+        function_name: &Identifier<N>,
+        edition: u16,
+    ) -> Result<Option<VerifyingKey<N>>> {
+        self.storage.get_base_verifying_key(program_id, function_name, edition)
+    }
+
     /// Returns the latest certificate for the given `(program ID, function name)`.
     pub fn get_latest_certificate(
         &self,
@@ -1243,6 +1301,17 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
         edition: u16,
     ) -> Result<Option<Certificate<N>>> {
         self.storage.get_certificate_with_edition(program_id, function_name, edition)
+    }
+
+    /// Returns the base (original) certificate for the given `(program ID, function name, edition)`.
+    /// This method ignores any amendments and always returns the certificate from the original deployment.
+    pub fn get_base_certificate(
+        &self,
+        program_id: &ProgramID<N>,
+        function_name: &Identifier<N>,
+        edition: u16,
+    ) -> Result<Option<Certificate<N>>> {
+        self.storage.get_base_certificate(program_id, function_name, edition)
     }
 
     /// Returns the fee for the given `transaction ID`.
@@ -1699,5 +1768,122 @@ mod tests {
         // Remove the base deployment.
         deployment_store.remove(&base_transaction_id).unwrap();
         assert_eq!(None, deployment_store.get_latest_edition_for_program(&base_program_id).unwrap());
+    }
+
+    #[test]
+    fn test_multiple_sequential_amendments() {
+        let rng = &mut TestRng::default();
+
+        // Initialize a new transition store.
+        let transition_store = TransitionStore::open(StorageMode::Test(None)).unwrap();
+        // Initialize a new fee store.
+        let fee_store = FeeStore::open(transition_store).unwrap();
+        // Initialize a new deployment store.
+        let deployment_store = DeploymentMemory::open(fee_store).unwrap();
+
+        // Insert a V2 deployment (the base deployment).
+        let base_transaction = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, rng);
+        let base_program_id = *base_transaction.deployment().unwrap().program_id();
+        deployment_store.insert(&base_transaction).unwrap();
+
+        // Insert multiple amendments sequentially.
+        let amendment_1 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 0, false, rng);
+        let amendment_1_id = amendment_1.id();
+        let amendment_1_deployment = amendment_1.deployment().unwrap();
+        deployment_store.insert(&amendment_1).unwrap();
+
+        // Verify first amendment.
+        assert_eq!(Some(1), deployment_store.get_amendment_count(&base_program_id, 0).unwrap());
+        assert_eq!(Some((base_program_id, 0, 0)), deployment_store.get_amendment_info(&amendment_1_id).unwrap());
+
+        // Insert second amendment.
+        let amendment_2 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 1, true, rng);
+        let amendment_2_id = amendment_2.id();
+        let amendment_2_deployment = amendment_2.deployment().unwrap();
+        deployment_store.insert(&amendment_2).unwrap();
+
+        // Verify second amendment.
+        assert_eq!(Some(2), deployment_store.get_amendment_count(&base_program_id, 0).unwrap());
+        assert_eq!(Some((base_program_id, 0, 1)), deployment_store.get_amendment_info(&amendment_2_id).unwrap());
+
+        // Verify the latest VK returns the second amendment's VK.
+        for (function_name, (vk, _)) in amendment_2_deployment.verifying_keys() {
+            let latest_vk = deployment_store.get_latest_verifying_key(&base_program_id, function_name).unwrap();
+            assert_eq!(Some(vk.clone()), latest_vk);
+        }
+
+        // Verify we can still retrieve both amendments.
+        assert_eq!(Some(amendment_1_deployment.clone()), deployment_store.get_deployment(&amendment_1_id).unwrap());
+        assert_eq!(Some(amendment_2_deployment.clone()), deployment_store.get_deployment(&amendment_2_id).unwrap());
+
+        // Remove amendments in LIFO order (latest first).
+        deployment_store.remove(&amendment_2_id).unwrap();
+        assert_eq!(Some(1), deployment_store.get_amendment_count(&base_program_id, 0).unwrap());
+
+        // After removing amendment 2, the latest VK should be from amendment 1.
+        for (function_name, (vk, _)) in amendment_1_deployment.verifying_keys() {
+            let latest_vk = deployment_store.get_latest_verifying_key(&base_program_id, function_name).unwrap();
+            assert_eq!(Some(vk.clone()), latest_vk);
+        }
+
+        // Remove the last amendment.
+        deployment_store.remove(&amendment_1_id).unwrap();
+        assert_eq!(None, deployment_store.get_amendment_count(&base_program_id, 0).unwrap());
+    }
+
+    #[test]
+    fn test_get_latest_vk_with_amendments() {
+        let rng = &mut TestRng::default();
+
+        // Initialize stores.
+        let transition_store = TransitionStore::open(StorageMode::Test(None)).unwrap();
+        let fee_store = FeeStore::open(transition_store).unwrap();
+        let deployment_store = DeploymentMemory::open(fee_store).unwrap();
+
+        // Insert a V2 base deployment.
+        let base_transaction = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, rng);
+        let base_program_id = *base_transaction.deployment().unwrap().program_id();
+        let base_deployment = base_transaction.deployment().unwrap();
+        deployment_store.insert(&base_transaction).unwrap();
+
+        // Verify we can get the base VKs.
+        for (function_name, (vk, _)) in base_deployment.verifying_keys() {
+            let latest_vk = deployment_store.get_latest_verifying_key(&base_program_id, function_name).unwrap();
+            assert_eq!(Some(vk.clone()), latest_vk, "Base VK should be retrievable");
+        }
+
+        // Insert a V3 amendment.
+        let amendment_transaction = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 0, false, rng);
+        let amendment_deployment = amendment_transaction.deployment().unwrap();
+        deployment_store.insert(&amendment_transaction).unwrap();
+
+        // Verify that get_latest_verifying_key now returns the amendment's VK (not the base's).
+        for (function_name, (vk, _)) in amendment_deployment.verifying_keys() {
+            let latest_vk = deployment_store.get_latest_verifying_key(&base_program_id, function_name).unwrap();
+            assert_eq!(Some(vk.clone()), latest_vk, "Amendment VK should be returned as latest");
+        }
+
+        // Also verify we can still get the base VK using the base-specific method.
+        for (function_name, (vk, _)) in base_deployment.verifying_keys() {
+            let base_vk = deployment_store.get_base_verifying_key(&base_program_id, function_name, 0).unwrap();
+            assert_eq!(Some(vk.clone()), base_vk, "Base VK should still be retrievable");
+        }
+
+        // Also verify we can still get the base certificate using the base-specific method.
+        for (function_name, (_, cert)) in base_deployment.verifying_keys() {
+            let base_cert = deployment_store.get_base_certificate(&base_program_id, function_name, 0).unwrap();
+            assert_eq!(Some(cert.clone()), base_cert, "Base certificate should still be retrievable");
+        }
+
+        // Simulate a "reload" by creating a new store pointing to the same data.
+        // Since we're using in-memory storage, we verify that the data structure is correct.
+        // The key test here is that get_latest_verifying_key correctly accounts for amendments.
+        let amendment_count = deployment_store.get_amendment_count(&base_program_id, 0).unwrap();
+        assert_eq!(Some(1), amendment_count, "Amendment count should be 1");
+
+        // Verify the amendment info is correct.
+        let amendment_id = amendment_transaction.id();
+        let info = deployment_store.get_amendment_info(&amendment_id).unwrap();
+        assert_eq!(Some((base_program_id, 0, 0)), info, "Amendment info should be (program_id, edition=0, index=0)");
     }
 }
