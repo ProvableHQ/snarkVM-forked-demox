@@ -28,23 +28,41 @@ impl<N: Network> Process<N> {
 
         // Retrieve the program ID.
         let program_id = deployment.program().id();
-        // If the edition is zero, then verify that the program does not exist.
+        // Check if this is a V3 amendment.
+        let is_amendment = deployment.version()? == DeploymentVersion::V3;
+        // If this is an amendment, verify that the program exists.
+        // If the edition is zero (and not an amendment), verify that the program does not exist.
         // Otherwise, verify that the program exists.
-        match deployment.edition().is_zero() {
-            true => ensure!(
-                !self.contains_program(program_id),
-                "Program '{program_id}' already exists, but the deployment edition is zero"
-            ),
-            false => ensure!(
+        if is_amendment {
+            ensure!(
                 self.contains_program(program_id),
-                "Program '{program_id}' does not exist, but the deployment edition is non-zero"
-            ),
+                "Program '{program_id}' does not exist, but deployment is an amendment (V3)"
+            );
+        } else {
+            match deployment.edition().is_zero() {
+                true => ensure!(
+                    !self.contains_program(program_id),
+                    "Program '{program_id}' already exists, but the deployment edition is zero"
+                ),
+                false => ensure!(
+                    self.contains_program(program_id),
+                    "Program '{program_id}' does not exist, but the deployment edition is non-zero"
+                ),
+            }
         }
 
         // Ensure the program is well-formed, by computing the stack.
         // Note: The program owner is intentionally not set, since `program_owner` is an operand
         //   that is only available in a finalize scope.
-        let stack = Stack::new(self, deployment.program())?;
+        let stack = if is_amendment {
+            // For V3 amendments, use the existing edition instead of incrementing.
+            let existing_stack = self.get_stack(program_id)?;
+            let stack = Stack::new_raw(self, deployment.program(), *existing_stack.program_edition())?;
+            stack.initialize_and_check(self)?;
+            stack
+        } else {
+            Stack::new(self, deployment.program())?
+        };
         lap!(timer, "Compute the stack");
 
         // Ensure the verifying keys are well-formed and the certificates are valid.

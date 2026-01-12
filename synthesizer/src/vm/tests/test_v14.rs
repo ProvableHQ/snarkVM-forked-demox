@@ -24,8 +24,43 @@ use console::{
     types::U8,
 };
 use snarkvm_ledger_block::Transaction;
+use snarkvm_synthesizer_process::deployment_cost;
 use snarkvm_synthesizer_program::{Program, StackTrait};
 use snarkvm_utilities::TestRng;
+
+/// Helper to create a V3 deployment transaction with a properly connected fee.
+fn create_v3_deployment_transaction<C: ConsensusStorage<CurrentNetwork>, R: Rng + CryptoRng>(
+    vm: &VM<CurrentNetwork, C>,
+    private_key: &PrivateKey<CurrentNetwork>,
+    program: &Program<CurrentNetwork>,
+    edition: u16,
+    rng: &mut R,
+) -> Result<Transaction<CurrentNetwork>> {
+    // Create a deployment for the program.
+    let mut v3_deployment = vm.process().read().deploy::<CurrentAleo, _>(program, rng)?;
+
+    // Set the V3 deployment fields.
+    v3_deployment.set_edition_raw(edition);
+    v3_deployment.set_program_checksum_raw(Some(program.to_checksum()));
+    v3_deployment.set_program_owner_raw(None);
+
+    // Compute the deployment ID.
+    let deployment_id = v3_deployment.to_deployment_id()?;
+
+    // Create the owner signature.
+    let owner = ProgramOwner::new(private_key, deployment_id, rng)?;
+
+    // Compute the deployment cost.
+    let consensus_version = CurrentNetwork::CONSENSUS_VERSION(vm.block_store().current_block_height())?;
+    let (minimum_cost, _) = deployment_cost(&vm.process().read(), &v3_deployment, consensus_version)?;
+
+    // Authorize and execute the fee.
+    let fee_authorization = vm.authorize_fee_public(private_key, minimum_cost, 0, deployment_id, rng)?;
+    let fee = vm.execute_fee_authorization(fee_authorization, None, rng)?;
+
+    // Return the V3 deployment transaction.
+    Transaction::from_deployment(owner, v3_deployment, fee)
+}
 
 // This test verifies that:
 // - V3 (amendment) deployments are rejected before ConsensusVersion::V14
@@ -73,18 +108,9 @@ constructor:
 
     // Create a V3 amendment deployment.
     let deployed_program = stack.program().clone();
-    let checksum = deployed_program.to_checksum();
 
-    // Generate new VKs by deploying again.
-    let mut v3_deployment = vm.process().read().deploy::<CurrentAleo, _>(&deployed_program, rng)?;
-    v3_deployment.set_program_checksum_raw(Some(checksum));
-    v3_deployment.set_program_owner_raw(None); // V3 has no owner in the deployment struct
-
-    // Create a V3 deployment transaction.
-    let deployment_id = v3_deployment.to_deployment_id()?;
-    let owner = ProgramOwner::new(&caller_private_key, deployment_id, rng)?;
-    let fee = snarkvm_ledger_test_helpers::sample_fee_public(deployment_id, rng);
-    let v3_transaction = Transaction::from_deployment(owner, v3_deployment.clone(), fee)?;
+    // Create a V3 deployment transaction with proper fee.
+    let v3_transaction = create_v3_deployment_transaction(&vm, &caller_private_key, &deployed_program, 0, rng)?;
 
     // Attempt to add the V3 deployment before V14 - it should be aborted.
     let block = sample_next_block(&vm, &caller_private_key, &[v3_transaction.clone()], rng)?;
@@ -104,14 +130,7 @@ constructor:
     assert!(vm.block_store().current_block_height() >= v14_height);
 
     // Create a new V3 deployment transaction (need fresh fee).
-    let mut v3_deployment = vm.process().read().deploy::<CurrentAleo, _>(&deployed_program, rng)?;
-    v3_deployment.set_program_checksum_raw(Some(checksum));
-    v3_deployment.set_program_owner_raw(None);
-
-    let deployment_id = v3_deployment.to_deployment_id()?;
-    let owner = ProgramOwner::new(&caller_private_key, deployment_id, rng)?;
-    let fee = snarkvm_ledger_test_helpers::sample_fee_public(deployment_id, rng);
-    let v3_transaction = Transaction::from_deployment(owner, v3_deployment, fee)?;
+    let v3_transaction = create_v3_deployment_transaction(&vm, &caller_private_key, &deployed_program, 0, rng)?;
 
     // Attempt to add the V3 deployment at V14 - it should succeed.
     let block = sample_next_block(&vm, &caller_private_key, &[v3_transaction], rng)?;
@@ -186,6 +205,7 @@ constructor:
 
     // Create and apply a V3 amendment.
     let mut v3_deployment = vm.process().read().deploy::<CurrentAleo, _>(&deployed_program, rng)?;
+    v3_deployment.set_edition_raw(0); // V3 keeps the same edition
     v3_deployment.set_program_checksum_raw(Some(checksum));
     v3_deployment.set_program_owner_raw(None);
 
@@ -195,7 +215,11 @@ constructor:
 
     let deployment_id = v3_deployment.to_deployment_id()?;
     let owner = ProgramOwner::new(&caller_private_key, deployment_id, rng)?;
-    let fee = snarkvm_ledger_test_helpers::sample_fee_public(deployment_id, rng);
+    // Create a proper fee using the VM's state.
+    let consensus_version = CurrentNetwork::CONSENSUS_VERSION(vm.block_store().current_block_height())?;
+    let (minimum_cost, _) = deployment_cost(&vm.process().read(), &v3_deployment, consensus_version)?;
+    let fee_authorization = vm.authorize_fee_public(&caller_private_key, minimum_cost, 0, deployment_id, rng)?;
+    let fee = vm.execute_fee_authorization(fee_authorization, None, rng)?;
     let v3_transaction = Transaction::from_deployment(owner, v3_deployment, fee)?;
 
     let block = sample_next_block(&vm, &caller_private_key, &[v3_transaction], rng)?;
@@ -266,16 +290,19 @@ constructor:
     // Get the deployed program info.
     let stack = vm.process().read().get_stack("validation_test.aleo")?;
     let deployed_program = stack.program().clone();
-    let correct_checksum = deployed_program.to_checksum();
 
     // Test 1: V3 amendment with wrong checksum should fail.
     let mut wrong_checksum_deployment = vm.process().read().deploy::<CurrentAleo, _>(&deployed_program, rng)?;
+    wrong_checksum_deployment.set_edition_raw(0); // V3 keeps the same edition
     wrong_checksum_deployment.set_program_checksum_raw(Some([0u8; 32].map(U8::new))); // Wrong checksum
     wrong_checksum_deployment.set_program_owner_raw(None);
 
     let deployment_id = wrong_checksum_deployment.to_deployment_id()?;
     let owner = ProgramOwner::new(&caller_private_key, deployment_id, rng)?;
-    let fee = snarkvm_ledger_test_helpers::sample_fee_public(deployment_id, rng);
+    let consensus_version = CurrentNetwork::CONSENSUS_VERSION(vm.block_store().current_block_height())?;
+    let (minimum_cost, _) = deployment_cost(&vm.process().read(), &wrong_checksum_deployment, consensus_version)?;
+    let fee_authorization = vm.authorize_fee_public(&caller_private_key, minimum_cost, 0, deployment_id, rng)?;
+    let fee = vm.execute_fee_authorization(fee_authorization, None, rng)?;
     let wrong_checksum_tx = Transaction::from_deployment(owner, wrong_checksum_deployment, fee)?;
 
     let block = sample_next_block(&vm, &caller_private_key, &[wrong_checksum_tx], rng)?;
@@ -296,12 +323,15 @@ constructor:
     )?;
 
     let mut nonexistent_deployment = vm.process().read().deploy::<CurrentAleo, _>(&nonexistent_program, rng)?;
+    nonexistent_deployment.set_edition_raw(0); // V3 keeps the same edition (even for nonexistent programs)
     nonexistent_deployment.set_program_checksum_raw(Some(nonexistent_program.to_checksum()));
     nonexistent_deployment.set_program_owner_raw(None);
 
     let deployment_id = nonexistent_deployment.to_deployment_id()?;
     let owner = ProgramOwner::new(&caller_private_key, deployment_id, rng)?;
-    let fee = snarkvm_ledger_test_helpers::sample_fee_public(deployment_id, rng);
+    let (minimum_cost, _) = deployment_cost(&vm.process().read(), &nonexistent_deployment, consensus_version)?;
+    let fee_authorization = vm.authorize_fee_public(&caller_private_key, minimum_cost, 0, deployment_id, rng)?;
+    let fee = vm.execute_fee_authorization(fee_authorization, None, rng)?;
     let nonexistent_tx = Transaction::from_deployment(owner, nonexistent_deployment, fee)?;
 
     let block = sample_next_block(&vm, &caller_private_key, &[nonexistent_tx], rng)?;
@@ -310,16 +340,9 @@ constructor:
     vm.add_next_block(&block)?;
 
     // Test 3: Valid V3 amendment should succeed.
-    let mut valid_deployment = vm.process().read().deploy::<CurrentAleo, _>(&deployed_program, rng)?;
-    valid_deployment.set_program_checksum_raw(Some(correct_checksum));
-    valid_deployment.set_program_owner_raw(None);
+    let v3_transaction = create_v3_deployment_transaction(&vm, &caller_private_key, &deployed_program, 0, rng)?;
 
-    let deployment_id = valid_deployment.to_deployment_id()?;
-    let owner = ProgramOwner::new(&caller_private_key, deployment_id, rng)?;
-    let fee = snarkvm_ledger_test_helpers::sample_fee_public(deployment_id, rng);
-    let valid_tx = Transaction::from_deployment(owner, valid_deployment, fee)?;
-
-    let block = sample_next_block(&vm, &caller_private_key, &[valid_tx], rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, &[v3_transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1, "Valid V3 should be accepted");
     assert_eq!(block.aborted_transaction_ids().len(), 0);
     vm.add_next_block(&block)?;
@@ -386,13 +409,18 @@ constructor:
 
     // Submit a V3 amendment as the OTHER user (not the original owner).
     let mut v3_deployment = vm.process().read().deploy::<CurrentAleo, _>(&deployed_program, rng)?;
+    v3_deployment.set_edition_raw(0); // V3 keeps the same edition
     v3_deployment.set_program_checksum_raw(Some(checksum));
     v3_deployment.set_program_owner_raw(None);
 
     let deployment_id = v3_deployment.to_deployment_id()?;
     // The OTHER user signs the deployment transaction.
     let owner = ProgramOwner::new(&other_user, deployment_id, rng)?;
-    let fee = snarkvm_ledger_test_helpers::sample_fee_public(deployment_id, rng);
+    // Create a proper fee using the other_user's balance.
+    let consensus_version = CurrentNetwork::CONSENSUS_VERSION(vm.block_store().current_block_height())?;
+    let (minimum_cost, _) = deployment_cost(&vm.process().read(), &v3_deployment, consensus_version)?;
+    let fee_authorization = vm.authorize_fee_public(&other_user, minimum_cost, 0, deployment_id, rng)?;
+    let fee = vm.execute_fee_authorization(fee_authorization, None, rng)?;
     let v3_transaction = Transaction::from_deployment(owner, v3_deployment, fee)?;
 
     // The V3 amendment should be accepted even though submitted by a different user.
@@ -413,12 +441,13 @@ constructor:
 
 // This test verifies that:
 // - credits.aleo cannot be amended with V3.
+// Note: credits.aleo is protected at multiple levels:
+//   1. Process::deploy blocks re-initialization of credits.aleo
+//   2. The verification logic also checks for credits.aleo amendments
+// This test verifies level 1 - the deployment creation itself is blocked.
 #[test]
 fn test_credits_cannot_be_amended() -> Result<()> {
     let rng = &mut TestRng::default();
-
-    // Initialize a new caller.
-    let caller_private_key = sample_genesis_private_key(rng);
 
     // Initialize the VM at V14 height.
     let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14)?;
@@ -426,23 +455,14 @@ fn test_credits_cannot_be_amended() -> Result<()> {
 
     // Get the credits program.
     let credits_program = Program::credits()?;
-    let checksum = credits_program.to_checksum();
 
-    // Attempt to create a V3 amendment for credits.aleo.
-    let mut v3_deployment = vm.process().read().deploy::<CurrentAleo, _>(&credits_program, rng)?;
-    v3_deployment.set_program_checksum_raw(Some(checksum));
-    v3_deployment.set_program_owner_raw(None);
+    // Attempt to create a V3 deployment for credits.aleo - this should fail.
+    let result = vm.process().read().deploy::<CurrentAleo, _>(&credits_program, rng);
 
-    let deployment_id = v3_deployment.to_deployment_id()?;
-    let owner = ProgramOwner::new(&caller_private_key, deployment_id, rng)?;
-    let fee = snarkvm_ledger_test_helpers::sample_fee_public(deployment_id, rng);
-    let v3_transaction = Transaction::from_deployment(owner, v3_deployment, fee)?;
-
-    // The V3 amendment for credits.aleo should be rejected.
-    let block = sample_next_block(&vm, &caller_private_key, &[v3_transaction], rng)?;
-    assert_eq!(block.transactions().num_accepted(), 0, "V3 for credits.aleo should be rejected");
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
-    vm.add_next_block(&block)?;
+    // Verify that creating a deployment for credits.aleo fails.
+    assert!(result.is_err(), "Creating a deployment for credits.aleo should fail");
+    let error = result.unwrap_err().to_string();
+    assert!(error.contains("credits.aleo"), "Error should mention credits.aleo: {error}");
 
     Ok(())
 }
@@ -489,6 +509,7 @@ constructor:
     // Apply multiple V3 amendments.
     for i in 1..=3 {
         let mut v3_deployment = vm.process().read().deploy::<CurrentAleo, _>(&deployed_program, rng)?;
+        v3_deployment.set_edition_raw(0); // V3 keeps the same edition
         v3_deployment.set_program_checksum_raw(Some(checksum));
         v3_deployment.set_program_owner_raw(None);
 
@@ -497,7 +518,11 @@ constructor:
 
         let deployment_id = v3_deployment.to_deployment_id()?;
         let owner = ProgramOwner::new(&caller_private_key, deployment_id, rng)?;
-        let fee = snarkvm_ledger_test_helpers::sample_fee_public(deployment_id, rng);
+        // Create a proper fee using the VM's state.
+        let consensus_version = CurrentNetwork::CONSENSUS_VERSION(vm.block_store().current_block_height())?;
+        let (minimum_cost, _) = deployment_cost(&vm.process().read(), &v3_deployment, consensus_version)?;
+        let fee_authorization = vm.authorize_fee_public(&caller_private_key, minimum_cost, 0, deployment_id, rng)?;
+        let fee = vm.execute_fee_authorization(fee_authorization, None, rng)?;
         let v3_transaction = Transaction::from_deployment(owner, v3_deployment, fee)?;
 
         let block = sample_next_block(&vm, &caller_private_key, &[v3_transaction], rng)?;

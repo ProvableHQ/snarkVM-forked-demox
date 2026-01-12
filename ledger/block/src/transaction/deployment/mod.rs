@@ -211,6 +211,13 @@ impl<N: Network> Deployment<N> {
 }
 
 impl<N: Network> Deployment<N> {
+    /// Sets the edition.
+    /// Note: This method is intended to be used by the synthesizer **only**, and should not be called by the user.
+    #[doc(hidden)]
+    pub fn set_edition_raw(&mut self, edition: u16) {
+        self.edition = edition;
+    }
+
     /// Sets the program checksum.
     /// Note: This method is intended to be used by the synthesizer **only**, and should not be called by the user.
     #[doc(hidden)]

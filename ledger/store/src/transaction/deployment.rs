@@ -457,6 +457,13 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
                 edition == latest_edition,
                 "Failed to remove the deployment for transaction '{transaction_id}' because it is not the latest edition"
             );
+            // Verify that no amendments exist for this deployment.
+            let amendment_count =
+                self.amendment_count_map().get_confirmed(&(program_id, edition))?.map(|c| *c).unwrap_or(0);
+            ensure!(
+                amendment_count == 0,
+                "Failed to remove deployment for program '{program_id}' (edition {edition}): {amendment_count} amendment(s) must be removed first"
+            );
             // Retrieve the program.
             let Some(program) = self.program_map().get_confirmed(&(program_id, edition))?.map(|x| x.into_owned())
             else {
@@ -524,8 +531,9 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         Ok(Some(*transaction_id))
     }
 
-    /// Returns the transaction ID that contains the given `program ID` and `edition`.
-    fn find_transaction_id_from_program_id_and_edition(
+    /// Returns the original (base) deployment transaction ID for the given `program ID` and `edition`.
+    /// This returns the initial deployment, not any subsequent amendments.
+    fn find_original_transaction_id_from_program_id_and_edition(
         &self,
         program_id: &ProgramID<N>,
         edition: u16,
@@ -537,6 +545,42 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             return Ok(None);
         }
         // Retrieve the transaction ID.
+        match self.reverse_id_map().get_confirmed(&(*program_id, edition))? {
+            Some(transaction_id) => Ok(Some(*transaction_id)),
+            None => Ok(None),
+        }
+    }
+
+    /// Returns the latest transaction ID for the given `program ID` and `edition`.
+    /// If amendments exist, returns the latest amendment transaction ID.
+    /// Otherwise, returns the original deployment transaction ID.
+    fn find_latest_transaction_id_from_program_id_and_edition(
+        &self,
+        program_id: &ProgramID<N>,
+        edition: u16,
+    ) -> Result<Option<N::TransactionID>> {
+        // Check if the program ID is for 'credits.aleo'.
+        // This case is handled separately, as it is a default program of the VM.
+        // TODO (howardwu): After we update 'fee' rules and 'Ratify' in genesis, we can remove this.
+        if program_id == &ProgramID::from_str("credits.aleo")? {
+            return Ok(None);
+        }
+
+        // Check if there are amendments for this program/edition.
+        if let Some(amendment_count) = self.amendment_count_map().get_confirmed(&(*program_id, edition))? {
+            let count = *amendment_count;
+            if count > 0 {
+                // Return the latest amendment transaction ID.
+                let latest_index = count.saturating_sub(1);
+                if let Some(transaction_id) =
+                    self.amendment_id_map().get_confirmed(&(*program_id, edition, latest_index))?
+                {
+                    return Ok(Some(*transaction_id));
+                }
+            }
+        }
+
+        // No amendments, return the original deployment transaction ID.
         match self.reverse_id_map().get_confirmed(&(*program_id, edition))? {
             Some(transaction_id) => Ok(Some(*transaction_id)),
             None => Ok(None),
@@ -1339,13 +1383,25 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
         self.storage.find_latest_transaction_id_from_program_id(program_id)
     }
 
-    /// Returns the transaction `ID` that deployed the given `program ID` and `edition`.
-    pub fn find_transaction_id_from_program_id_and_edition(
+    /// Returns the original (base) deployment transaction ID for the given `program ID` and `edition`.
+    /// This returns the initial deployment, not any subsequent amendments.
+    pub fn find_original_transaction_id_from_program_id_and_edition(
         &self,
         program_id: &ProgramID<N>,
         edition: u16,
     ) -> Result<Option<N::TransactionID>> {
-        self.storage.find_transaction_id_from_program_id_and_edition(program_id, edition)
+        self.storage.find_original_transaction_id_from_program_id_and_edition(program_id, edition)
+    }
+
+    /// Returns the latest transaction ID for the given `program ID` and `edition`.
+    /// If amendments exist, returns the latest amendment transaction ID.
+    /// Otherwise, returns the original deployment transaction ID.
+    pub fn find_latest_transaction_id_from_program_id_and_edition(
+        &self,
+        program_id: &ProgramID<N>,
+        edition: u16,
+    ) -> Result<Option<N::TransactionID>> {
+        self.storage.find_latest_transaction_id_from_program_id_and_edition(program_id, edition)
     }
 
     /// Returns the transaction ID that deployed the given `transition ID`.
@@ -1626,9 +1682,10 @@ mod tests {
             let test_find_methods = |program_exists: bool, transaction_exists: bool| {
                 // Find the latest transaction ID from the program ID.
                 let candidate_0 = deployment_store.find_latest_transaction_id_from_program_id(&program_id).unwrap();
-                // Find the transaction ID from the program ID and edition.
-                let candidate_1 =
-                    deployment_store.find_transaction_id_from_program_id_and_edition(&program_id, edition).unwrap();
+                // Find the original transaction ID from the program ID and edition.
+                let candidate_1 = deployment_store
+                    .find_original_transaction_id_from_program_id_and_edition(&program_id, edition)
+                    .unwrap();
                 // Find the transaction ID from the transition ID.
                 let candidate_2 = deployment_store.find_transaction_id_from_transition_id(&fee_id).unwrap();
 
@@ -1823,11 +1880,11 @@ mod tests {
         // Insert a V2 base deployment.
         let base_transaction = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, rng);
         let base_program_id = *base_transaction.deployment().unwrap().program_id();
-        let base_deployment = base_transaction.deployment().unwrap();
+        let original_deployment = base_transaction.deployment().unwrap();
         deployment_store.insert(&base_transaction).unwrap();
 
         // Verify we can get the base VKs.
-        for (function_name, (vk, _)) in base_deployment.verifying_keys() {
+        for (function_name, (vk, _)) in original_deployment.verifying_keys() {
             let latest_vk = deployment_store.get_latest_verifying_key(&base_program_id, function_name).unwrap();
             assert_eq!(Some(vk.clone()), latest_vk, "Base VK should be retrievable");
         }
@@ -1844,13 +1901,13 @@ mod tests {
         }
 
         // Also verify we can still get the base VK using the base-specific method.
-        for (function_name, (vk, _)) in base_deployment.verifying_keys() {
+        for (function_name, (vk, _)) in original_deployment.verifying_keys() {
             let base_vk = deployment_store.get_base_verifying_key(&base_program_id, function_name, 0).unwrap();
             assert_eq!(Some(vk.clone()), base_vk, "Base VK should still be retrievable");
         }
 
         // Also verify we can still get the base certificate using the base-specific method.
-        for (function_name, (_, cert)) in base_deployment.verifying_keys() {
+        for (function_name, (_, cert)) in original_deployment.verifying_keys() {
             let base_cert = deployment_store.get_base_certificate(&base_program_id, function_name, 0).unwrap();
             assert_eq!(Some(cert.clone()), base_cert, "Base certificate should still be retrievable");
         }
@@ -1865,5 +1922,96 @@ mod tests {
         let amendment_id = amendment_transaction.id();
         let info = deployment_store.get_amendment_info(&amendment_id).unwrap();
         assert_eq!(Some((base_program_id, 0, 0)), info, "Amendment info should be (program_id, edition=0, index=0)");
+    }
+
+    #[test]
+    fn test_cannot_remove_base_with_amendments() {
+        let rng = &mut TestRng::default();
+
+        // Initialize stores.
+        let transition_store = TransitionStore::open(StorageMode::Test(None)).unwrap();
+        let fee_store = FeeStore::open(transition_store).unwrap();
+        let deployment_store = DeploymentMemory::open(fee_store).unwrap();
+
+        // Insert a V2 base deployment.
+        let base_transaction = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, rng);
+        let base_transaction_id = base_transaction.id();
+        let base_program_id = *base_transaction.deployment().unwrap().program_id();
+        deployment_store.insert(&base_transaction).unwrap();
+
+        // Insert a V3 amendment.
+        let amendment_transaction = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 0, false, rng);
+        let amendment_transaction_id = amendment_transaction.id();
+        deployment_store.insert(&amendment_transaction).unwrap();
+
+        // Verify amendment exists.
+        assert_eq!(Some(1), deployment_store.get_amendment_count(&base_program_id, 0).unwrap());
+
+        // Attempt to remove base deployment while amendment exists - should FAIL.
+        let result = deployment_store.remove(&base_transaction_id);
+        assert!(result.is_err(), "Should not be able to remove base deployment with active amendments");
+        assert!(
+            result.unwrap_err().to_string().contains("amendment(s) must be removed first"),
+            "Error message should mention amendments need to be removed"
+        );
+
+        // Verify base and amendment still exist.
+        assert!(deployment_store.get_transaction(&base_transaction_id).unwrap().is_some());
+        assert!(deployment_store.get_transaction(&amendment_transaction_id).unwrap().is_some());
+
+        // Remove amendment first.
+        deployment_store.remove(&amendment_transaction_id).unwrap();
+        assert_eq!(None, deployment_store.get_amendment_count(&base_program_id, 0).unwrap());
+
+        // Now removing base should succeed.
+        deployment_store.remove(&base_transaction_id).unwrap();
+        assert!(deployment_store.get_transaction(&base_transaction_id).unwrap().is_none());
+    }
+
+    #[test]
+    fn test_cannot_remove_non_latest_amendment() {
+        let rng = &mut TestRng::default();
+
+        // Initialize stores.
+        let transition_store = TransitionStore::open(StorageMode::Test(None)).unwrap();
+        let fee_store = FeeStore::open(transition_store).unwrap();
+        let deployment_store = DeploymentMemory::open(fee_store).unwrap();
+
+        // Insert a V2 base deployment.
+        let base_transaction = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, rng);
+        let base_program_id = *base_transaction.deployment().unwrap().program_id();
+        deployment_store.insert(&base_transaction).unwrap();
+
+        // Insert first amendment (index 0).
+        let amendment_0 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 0, false, rng);
+        let amendment_0_id = amendment_0.id();
+        deployment_store.insert(&amendment_0).unwrap();
+
+        // Insert second amendment (index 1).
+        let amendment_1 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 0, true, rng);
+        let amendment_1_id = amendment_1.id();
+        deployment_store.insert(&amendment_1).unwrap();
+
+        // Verify both amendments exist.
+        assert_eq!(Some(2), deployment_store.get_amendment_count(&base_program_id, 0).unwrap());
+
+        // Attempt to remove amendment 0 (not latest) - should FAIL.
+        let result = deployment_store.remove(&amendment_0_id);
+        assert!(result.is_err(), "Should not be able to remove non-latest amendment");
+        assert!(
+            result.unwrap_err().to_string().contains("not the latest amendment"),
+            "Error message should mention not latest amendment"
+        );
+
+        // Amendment 0 should still exist.
+        assert!(deployment_store.get_transaction(&amendment_0_id).unwrap().is_some());
+
+        // Remove amendment 1 (latest) - should succeed.
+        deployment_store.remove(&amendment_1_id).unwrap();
+        assert_eq!(Some(1), deployment_store.get_amendment_count(&base_program_id, 0).unwrap());
+
+        // Now removing amendment 0 should succeed (it's now the latest).
+        deployment_store.remove(&amendment_0_id).unwrap();
+        assert_eq!(None, deployment_store.get_amendment_count(&base_program_id, 0).unwrap());
     }
 }
