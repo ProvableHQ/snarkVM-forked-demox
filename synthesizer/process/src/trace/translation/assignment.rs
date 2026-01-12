@@ -207,12 +207,12 @@ impl<N: Network> TranslationAssignment<N> {
 
         // ******** Assertions
 
-        A::assert_eq(circuit_record_static.owner().to_group(), circuit_record_dynamic.owner().to_group());
-        A::assert_eq(circuit_record_static.nonce(), circuit_record_dynamic.nonce());
-        A::assert_eq(circuit_record_static.version(), circuit_record_dynamic.version());
-        A::assert_eq(circuit_data_root, circuit_record_dynamic.root());
-        A::assert_eq(actual_id_static, circuit_id_static);
-        A::assert_eq(actual_id_dynamic, circuit_id_dynamic);
+        A::assert_eq(circuit_record_static.owner().to_group(), circuit_record_dynamic.owner().to_group())?;
+        A::assert_eq(circuit_record_static.nonce(), circuit_record_dynamic.nonce())?;
+        A::assert_eq(circuit_record_static.version(), circuit_record_dynamic.version())?;
+        A::assert_eq(circuit_data_root, circuit_record_dynamic.root())?;
+        A::assert_eq(actual_id_static, circuit_id_static)?;
+        A::assert_eq(actual_id_dynamic, circuit_id_dynamic)?;
 
         Ok(())
     }

@@ -16,6 +16,9 @@
 mod helpers;
 pub use helpers::*;
 
+mod error;
+pub use error::*;
+
 mod authorize;
 mod deploy;
 mod execute;
@@ -1451,7 +1454,7 @@ function call_fee_public:
 finalize call_fee_public:
     input r0 as credits.aleo/fee_public.future;
     await r0;
-    
+
 function call_fee_private:
     input r0 as credits.aleo/credits.record;
     input r1 as u64.private;

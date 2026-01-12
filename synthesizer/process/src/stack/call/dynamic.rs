@@ -23,7 +23,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         stack: &Stack<N>,
         registers: &mut Registers<N, A>,
         rng: &mut R,
-    ) -> Result<()> {
+    ) -> Result<(), CallEvalError> {
         let timer = timer!("CallDynamic::evaluate");
 
         // Load the operands values.
@@ -31,17 +31,17 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
 
         // Get the program name.
         let Value::Plaintext(Plaintext::Literal(Literal::Field(program_name_as_field), _)) = &inputs[0] else {
-            bail!("Expected the first operand of `call.dynamic` to be a 'Field' literal.")
+            return Err(anyhow!("Expected the first operand of `call.dynamic` to be a 'Field' literal.").into());
         };
 
         // Get the program network.
         let Value::Plaintext(Plaintext::Literal(Literal::Field(program_network_id), _)) = &inputs[1] else {
-            bail!("Expected the second operand of `call.dynamic` to be a 'Field' literal.")
+            return Err(anyhow!("Expected the second operand of `call.dynamic` to be a 'Field' literal.").into());
         };
 
         // Get the function name.
         let Value::Plaintext(Plaintext::Literal(Literal::Field(function_name_as_field), _)) = &inputs[2] else {
-            bail!("Expected the third operand of `call.dynamic` to be a 'Field' literal.")
+            return Err(anyhow!("Expected the third operand of `call.dynamic` to be a 'Field' literal.").into());
         };
 
         // Separate the remaining inputs as the function inputs.
@@ -58,7 +58,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
 
         // Get the target (in evaluate mode, we must have a valid target).
         let Some(target) = target else {
-            bail!("Failed to resolve the target of the dynamic call in 'evaluate' mode.")
+            return Err(anyhow!("Failed to resolve the target of the dynamic call in 'evaluate' mode.").into());
         };
 
         // Retrieve the program ID, function name, and substack from the resolved target.
@@ -70,13 +70,13 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         // If the operator is a closure, retrieve the closure and compute the output.
         let outputs = if substack.program().get_closure(function_name).is_ok() {
             // A closure cannot be dynamically called.
-            bail!("Cannot dynamically evaluate a closure: {function_name}")
+            return Err(anyhow!("Cannot dynamically evaluate a closure: {function_name}").into());
         }
         // If the operator is a function, retrieve the function and compute the output.
         else if let Ok(function) = substack.program().get_function(function_name) {
             // Ensure the number of inputs matches the number of input statements.
             if function.inputs().len() != inputs.len() {
-                bail!("Expected {} inputs, found {}", function.inputs().len(), inputs.len())
+                return Err(anyhow!("Expected {} inputs, found {}", function.inputs().len(), inputs.len()).into());
             }
 
             // Get the 'root_tvk'.
@@ -91,7 +91,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                 let is_root = false;
                 // Ensure that we have a private key to sign the new request.
                 let Some(private_key) = private_key else {
-                    bail!("Cannot authorize a new function call without a private key.")
+                    return Err(anyhow!("Cannot authorize a new function call without a private key.").into());
                 };
                 // Retrieve the program checksum, if the program has a constructor.
                 let program_checksum = match substack.program().contains_constructor() {
@@ -104,7 +104,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                 // Ensure that the number of inputs match.
                 // Ensure the number of inputs matches the number of input types.
                 if input_types.len() != inputs.len() {
-                    bail!("Expected {} inputs, found {}", input_types.len(), inputs.len())
+                    return Err(anyhow!("Expected {} inputs, found {}", input_types.len(), inputs.len()).into());
                 }
 
                 // Convert the caller's inputs to the callee's context.
@@ -137,17 +137,19 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         }
         // Else, throw an error.
         else {
-            bail!("Dynamic call to '{program_id}/{function_name}' is invalid or unsupported.")
+            return Err(anyhow!("Dynamic call to '{program_id}/{function_name}' is invalid or unsupported.").into());
         };
         lap!(timer, "Computed outputs");
 
         // Assign the outputs to the destination registers.
-        ensure!(
-            outputs.len() == self.destinations().len(),
-            "Expected {} outputs, but {} were provided.",
-            self.destinations().len(),
-            outputs.len()
-        );
+        if outputs.len() != self.destinations().len() {
+            return Err(anyhow!(
+                "Expected {} outputs, but {} were provided.",
+                self.destinations().len(),
+                outputs.len()
+            )
+            .into());
+        }
         for (output, register) in outputs.into_iter().zip(&self.destinations()) {
             // Assign the output to the register.
             registers.store(stack, register, output)?;
@@ -164,7 +166,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         stack: &Stack<N>,
         registers: &mut Registers<N, A>,
         rng: &mut R,
-    ) -> Result<()> {
+    ) -> Result<(), CallExecError> {
         use circuit::Eject;
 
         let timer = timer!("CallDynamic::execute");
@@ -177,7 +179,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         let circuit::Value::Plaintext(circuit::Plaintext::Literal(circuit::Literal::Field(program_name_as_field), _)) =
             &inputs[0]
         else {
-            bail!("Expected the first operand of `call.dynamic` to be a 'Field' literal.")
+            return Err(anyhow!("Expected the first operand of `call.dynamic` to be a 'Field' literal.").into());
         };
 
         // Get the program network.
@@ -186,14 +188,14 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             _,
         )) = &inputs[1]
         else {
-            bail!("Expected the second operand of `call.dynamic` to be a 'Field' literal.")
+            return Err(anyhow!("Expected the second operand of `call.dynamic` to be a 'Field' literal.").into());
         };
 
         // Get the function name.
         let circuit::Value::Plaintext(circuit::Plaintext::Literal(circuit::Literal::Field(function_name_as_field), _)) =
             &inputs[2]
         else {
-            bail!("Expected the third operand of `call.dynamic` to be a 'Field' literal.")
+            return Err(anyhow!("Expected the third operand of `call.dynamic` to be a 'Field' literal.").into());
         };
 
         // Separate the remaining inputs as the function inputs.
@@ -235,7 +237,10 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                     CallStack::Authorize(_, private_key, authorization) => {
                         // Get the target.
                         let Some(target) = target else {
-                            bail!("Failed to resolve the target of the dynamic call in 'Authorize' mode.")
+                            return Err(anyhow!(
+                                "Failed to resolve the target of the dynamic call in 'Authorize' mode."
+                            )
+                            .into());
                         };
                         // Get the function.
                         let function = target.substack().program().get_function_ref(target.function_name())?;
@@ -243,11 +248,11 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         let num_inputs = function.inputs().len();
                         // Ensure the number of inputs matches the number of input statements.
                         if num_inputs != inputs.len() {
-                            bail!("Expected {} inputs, found {}", num_inputs, inputs.len())
+                            return Err(anyhow!("Expected {} inputs, found {}", num_inputs, inputs.len()).into());
                         }
                         // Ensure that we have a private key to sign the new request.
                         let Some(private_key) = private_key else {
-                            bail!("Cannot authorize a new function call without a private key.")
+                            return Err(anyhow!("Cannot authorize a new function call without a private key.").into());
                         };
                         // Retrieve the program checksum, if the program has a constructor.
                         let program_checksum = match target.substack().program().contains_constructor() {
@@ -260,7 +265,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             &target.substack().program().get_function_ref(target.function_name())?.input_types();
                         // Ensure the number of inputs matches the number of input types.
                         if input_types.len() != inputs.len() {
-                            bail!("Expected {} inputs, found {}", input_types.len(), inputs.len())
+                            return Err(anyhow!("Expected {} inputs, found {}", input_types.len(), inputs.len()).into());
                         }
 
                         // Convert the caller's inputs to the callee's context.
@@ -334,9 +339,11 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                         Field::rand(rng),
                                     )),
                                     ValueType::ExternalRecord(..) => Ok(InputID::ExternalRecord(Field::rand(rng))),
-                                    ValueType::Future(..) => bail!("A future cannot be input directly"),
+                                    ValueType::Future(..) => Err(anyhow!("A future cannot be input directly")),
                                     ValueType::DynamicRecord => Ok(InputID::DynamicRecord(Field::rand(rng))),
-                                    ValueType::DynamicFuture => bail!("A dynamic future cannot be input directly"),
+                                    ValueType::DynamicFuture => {
+                                        Err(anyhow!("A dynamic future cannot be input directly"))
+                                    }
                                 })
                                 .collect::<Result<Vec<_>>>()?,
                         };
@@ -346,11 +353,11 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             .destination_types()
                             .iter()
                             .map(|output_type| match output_type {
-                                ValueType::Record(_) => bail!("A dynamic call cannot return a record."),
+                                ValueType::Record(_) => Err(anyhow!("A dynamic call cannot return a record.")),
                                 ValueType::ExternalRecord(_) => {
-                                    bail!("A dynamic call cannot return an external record.")
+                                    Err(anyhow!("A dynamic call cannot return an external record."))
                                 }
-                                ValueType::Future(_) => bail!("A dynamic call cannot return a future."),
+                                ValueType::Future(_) => Err(anyhow!("A dynamic call cannot return a future.")),
                                 // Sample the value.
                                 _ => stack.sample_value(&address, &output_type.into(), rng),
                             })
@@ -363,7 +370,10 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                     CallStack::PackageRun(_, private_key, ..) => {
                         // Get the target.
                         let Some(target) = target else {
-                            bail!("Failed to resolve the target of the dynamic call in 'Authorize' mode.")
+                            return Err(anyhow!(
+                                "Failed to resolve the target of the dynamic call in 'Authorize' mode."
+                            )
+                            .into());
                         };
                         // Get the function.
                         let function = target.substack().program().get_function_ref(target.function_name())?;
@@ -371,7 +381,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         let num_inputs = function.inputs().len();
                         // Ensure the number of inputs matches the number of input statements.
                         if num_inputs != inputs.len() {
-                            bail!("Expected {} inputs, found {}", num_inputs, inputs.len())
+                            return Err(anyhow!("Expected {} inputs, found {}", num_inputs, inputs.len()).into());
                         }
                         // Retrieve the program checksum, if the program has a constructor.
                         let program_checksum = match target.substack().program().contains_constructor() {
@@ -384,7 +394,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             &target.substack().program().get_function_ref(target.function_name())?.input_types();
                         // Ensure that the number of inputs match.
                         if input_types.len() != inputs.len() {
-                            bail!("Expected {} inputs, found {}", input_types.len(), inputs.len())
+                            return Err(anyhow!("Expected {} inputs, found {}", input_types.len(), inputs.len()).into());
                         }
                         // Convert the inputs to the callee's context.
                         let callee_inputs =
@@ -422,13 +432,16 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                     }
                     // In `Evaluate` mode, throw an error.
                     CallStack::Evaluate(..) => {
-                        bail!("Cannot 'execute' a function in 'evaluate' mode.")
+                        return Err(anyhow!("Cannot 'execute' a function in 'evaluate' mode.").into());
                     }
                     // In `Execute` mode, evaluate and execute the instructions.
                     CallStack::Execute(authorization, _, translations) => {
                         // Get the target.
                         let Some(target) = target else {
-                            bail!("Failed to resolve the target of the dynamic call in 'Authorize' mode.")
+                            return Err(anyhow!(
+                                "Failed to resolve the target of the dynamic call in 'Authorize' mode."
+                            )
+                            .into());
                         };
                         // Get the function.
                         let callee_function = target.substack().program().get_function_ref(target.function_name())?;
@@ -436,7 +449,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         let num_inputs = callee_function.inputs().len();
                         // Ensure the number of inputs matches the number of input statements.
                         if num_inputs != inputs.len() {
-                            bail!("Expected {} inputs, found {}", num_inputs, inputs.len())
+                            return Err(anyhow!("Expected {} inputs, found {}", num_inputs, inputs.len()).into());
                         }
 
                         // Retrieve the callee's request (without popping it).
@@ -467,10 +480,11 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                 console_callee_response.outputs(),
                                 callee_response.outputs()
                             );
-                            bail!(
+                            return Err(anyhow!(
                                 "Function '{}' outputs do not match in a 'call.dynamic' instruction.",
                                 callee_function.name()
                             )
+                            .into());
                         }
 
                         // A helper function that synthesizes the translation key for a given program-record combination (if it has not been synthesized yet) and stores it in the program's stack.
@@ -539,7 +553,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                 .get_index(operand_index)
                                 .map(|op| op.operand())
                             else {
-                                bail!("Expected output to be a register");
+                                return Err(anyhow!("Expected output to be a register"));
                             };
                             // Prepare the index as a field element.
                             let index = Field::from_u64(register.locator());
@@ -600,12 +614,14 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             );
 
             // Ensure that the program and function names in the registers match the witnessed values.
-            A::assert_eq(program_id.name(), program_name_as_field);
-            A::assert_eq(program_id.network(), program_network_as_field);
-            A::assert_eq(&function_name, function_name_as_field);
+            A::assert_eq(program_id.name(), program_name_as_field)?;
+            A::assert_eq(program_id.network(), program_network_as_field)?;
+            A::assert_eq(&function_name, function_name_as_field)?;
 
             // Ensure the number of public variables remains the same.
-            ensure!(A::num_public() == num_public + 4, "Forbidden: 'call.dynamic' injected excess public variables");
+            if A::num_public() != num_public + 4 {
+                return Err(anyhow!("Forbidden: 'call.dynamic' injected excess public variables").into());
+            }
 
             // Inject the `signer` (from the request) as `Mode::Private`.
             let signer = circuit::Address::new(circuit::Mode::Private, request.signer);
@@ -618,7 +634,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             // Compute the transition commitment as `Hash(tvk)`.
             let candidate_tcm = A::hash_psd2(&[tvk.clone()]);
             // Ensure the transition commitment matches the computed transition commitment.
-            A::assert_eq(&tcm, candidate_tcm);
+            A::assert_eq(&tcm, candidate_tcm)?;
 
             // Inject the caller input IDs  as `Mode::Public`.
             let input_ids = request
@@ -642,14 +658,14 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                 None,
                 Some(function_id.clone()),
             );
-            A::assert(check_input_ids);
+            A::assert(check_input_ids)?;
             lap!(timer, "Checked the input ids");
 
             // Checking that none of the outputs in the caller's context are records or futures.
             for output in caller_response_outputs.iter() {
                 match output {
-                    Value::Record(_) => bail!("A dynamic call cannot return a record."),
-                    Value::Future(_) => bail!("A dynamic call cannot return a future."),
+                    Value::Record(_) => return Err(anyhow!("A dynamic call cannot return a record.").into()),
+                    Value::Future(_) => return Err(anyhow!("A dynamic call cannot return a future.").into()),
                     Value::Plaintext(_) | Value::DynamicRecord(_) | Value::DynamicFuture(_) => {} // Do nothing.
                 }
             }
@@ -677,12 +693,14 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         };
 
         // Assign the outputs to the destination registers.
-        ensure!(
-            outputs.len() == self.destinations().len(),
-            "[execute Dynamic] Expected {} outputs, but {} were provided.",
-            self.destinations().len(),
-            outputs.len()
-        );
+        if outputs.len() != self.destinations().len() {
+            return Err(anyhow!(
+                "[execute Dynamic] Expected {} outputs, but {} were provided.",
+                self.destinations().len(),
+                outputs.len()
+            )
+            .into());
+        }
         for (output, register) in outputs.into_iter().zip(&self.destinations()) {
             // Assign the output to the register.
             registers.store_circuit(stack, register, output)?;
@@ -791,13 +809,9 @@ fn convert_caller_inputs_to_callee_inputs<N: Network>(
                     Ok(Value::Record(dynamic_record.to_record(owner_is_private)?))
                 }
                 // Futures are not allowed as inputs to dynamic calls.
-                (Value::Future(_), _) => {
-                    bail!("A future cannot be an input to a dynamic call.")
-                }
+                (Value::Future(_), _) => Err(anyhow!("A future cannot be an input to a dynamic call.")),
                 // Dynamic futures are not allowed as inputs to dynamic calls.
-                (Value::DynamicFuture(_), _) => {
-                    bail!("A dynamic future cannot be an input to a dynamic call.")
-                }
+                (Value::DynamicFuture(_), _) => Err(anyhow!("A dynamic future cannot be an input to a dynamic call.")),
                 // For all other types, pass through unchanged.
                 _ => Ok(input.clone()),
             }
@@ -873,7 +887,7 @@ fn resolve_dynamic_target<'a, N: Network>(
         Err(_) if in_dummy_mode => {
             return Ok(None);
         }
-        Err(e) => bail!("Failed to decode the program name in a dynamic call: {e}"),
+        Err(e) => return Err(anyhow!("Failed to decode the program name in a dynamic call: {e}")),
     };
 
     // Decode the program network, exiting gracefully in dummy mode if it fails.
@@ -882,7 +896,7 @@ fn resolve_dynamic_target<'a, N: Network>(
         Err(_) if in_dummy_mode => {
             return Ok(None);
         }
-        Err(e) => bail!("Failed to decode the program network in a dynamic call: {e}"),
+        Err(e) => return Err(anyhow!("Failed to decode the program network in a dynamic call: {e}")),
     };
 
     // Decode the function name, exiting gracefully in dummy mode if it fails.
@@ -891,7 +905,7 @@ fn resolve_dynamic_target<'a, N: Network>(
         Err(_) if in_dummy_mode => {
             return Ok(None);
         }
-        Err(e) => bail!("Failed to decode the function name in a dynamic call: {e}"),
+        Err(e) => return Err(anyhow!("Failed to decode the function name in a dynamic call: {e}")),
     };
 
     // Construct the program ID.
@@ -900,7 +914,7 @@ fn resolve_dynamic_target<'a, N: Network>(
         Err(_) if in_dummy_mode => {
             return Ok(None);
         }
-        Err(e) => bail!("Failed to construct the program ID in a dynamic call: {e}"),
+        Err(e) => return Err(anyhow!("Failed to construct the program ID in a dynamic call: {e}")),
     };
 
     // Verify that the call is not to `credits.aleo/fee_private` or `credits.aleo/fee_public`.
@@ -908,7 +922,9 @@ fn resolve_dynamic_target<'a, N: Network>(
     let is_fee_private = function_name.to_string() == "fee_private";
     let is_fee_public = function_name.to_string() == "fee_public";
     if is_credits_program && (is_fee_private || is_fee_public) {
-        bail!("Cannot perform an external call to 'credits.aleo/fee_private' or 'credits.aleo/fee_public'.")
+        return Err(anyhow!(
+            "Cannot perform an external call to 'credits.aleo/fee_private' or 'credits.aleo/fee_public'."
+        ));
     }
 
     // Retrieve the optional external stack.
@@ -918,7 +934,7 @@ fn resolve_dynamic_target<'a, N: Network>(
             Err(_) if in_dummy_mode => {
                 return Ok(None);
             }
-            Err(e) => bail!("Failed to retrieve the external stack in a dynamic call: {e}"),
+            Err(e) => return Err(anyhow!("Failed to retrieve the external stack in a dynamic call: {e}")),
         },
         true => None,
     };
@@ -931,13 +947,13 @@ fn resolve_dynamic_target<'a, N: Network>(
 
     // Verify that the function is not a closure.
     if substack.program().get_closure(&function_name).is_ok() {
-        bail!("Cannot dynamically evaluate a closure: {function_name}")
+        Err(anyhow!("Cannot dynamically evaluate a closure: {function_name}"))
     } else if substack.program().contains_function(&function_name) {
         Ok(Some(ResolvedTarget { program_id, function_name, substack }))
     } else if in_dummy_mode {
         Ok(None)
     } else {
-        bail!("Dynamic call to '{program_id}/{function_name}' is invalid or unsupported.")
+        Err(anyhow!("Dynamic call to '{program_id}/{function_name}' is invalid or unsupported."))
     }
 }
 

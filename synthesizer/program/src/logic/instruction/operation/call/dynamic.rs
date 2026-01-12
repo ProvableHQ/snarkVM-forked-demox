@@ -136,6 +136,13 @@ impl<N: Network> CallDynamic<N> {
     pub fn destination_types(&self) -> &Vec<ValueType<N>> {
         &self.destination_types
     }
+
+    /// Returns whether this instruction refers to an external struct.
+    /// Dynamic calls never reference external structs.
+    #[inline]
+    pub fn contains_external_struct(&self) -> bool {
+        false
+    }
 }
 
 impl<N: Network> CallDynamic<N> {

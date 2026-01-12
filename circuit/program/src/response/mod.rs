@@ -75,7 +75,7 @@ impl<A: Aleo> OutputID<A> {
         // Inject the expected hash as `Mode::Public`.
         let output_hash = Field::new(Mode::Public, expected_hash.eject_value());
         // Ensure the injected hash matches the given hash.
-        A::assert_eq(&output_hash, expected_hash);
+        A::assert_eq(&output_hash, expected_hash).expect("Constant output hash mismatch");
         // Return the output ID.
         Self::Constant(output_hash)
     }
@@ -85,7 +85,7 @@ impl<A: Aleo> OutputID<A> {
         // Inject the expected hash as `Mode::Public`.
         let output_hash = Field::new(Mode::Public, expected_hash.eject_value());
         // Ensure the injected hash matches the given hash.
-        A::assert_eq(&output_hash, expected_hash);
+        A::assert_eq(&output_hash, expected_hash).expect("Public output hash mismatch");
         // Return the output ID.
         Self::Public(output_hash)
     }
@@ -95,7 +95,7 @@ impl<A: Aleo> OutputID<A> {
         // Inject the ciphertext hash as `Mode::Public`.
         let output_hash = Field::new(Mode::Public, expected_hash.eject_value());
         // Ensure the injected hash matches the given hash.
-        A::assert_eq(&output_hash, expected_hash);
+        A::assert_eq(&output_hash, expected_hash).expect("Private output hash mismatch");
         // Return the output ID.
         Self::Private(output_hash)
     }
@@ -111,14 +111,14 @@ impl<A: Aleo> OutputID<A> {
         let output_checksum = Field::new(Mode::Public, expected_checksum.eject_value());
         let output_sender_ciphertext = Field::new(Mode::Public, expected_sender_ciphertext.eject_value()); // Note: Set to `0field` here and in consensus to make optional or deactivated.
         // Ensure the injected commitment and checksum matches the given commitment and checksum.
-        A::assert_eq(&output_commitment, expected_commitment);
-        A::assert_eq(&output_checksum, expected_checksum);
+        A::assert_eq(&output_commitment, expected_commitment).expect("Record output commitment mismatch");
+        A::assert_eq(&output_checksum, expected_checksum).expect("Record output checksum mismatch");
         // Ensure the sender ciphertext matches, or the sender ciphertext is zero.
         // Note: The option to allow a zero-value in the sender ciphertext allows
         // this feature to become optional or deactivated in the future.
         let is_sender_ciphertext_equal = output_sender_ciphertext.is_equal(&expected_sender_ciphertext);
         let is_sender_ciphertext_zero = output_sender_ciphertext.is_zero();
-        A::assert(is_sender_ciphertext_equal | is_sender_ciphertext_zero);
+        A::assert(is_sender_ciphertext_equal | is_sender_ciphertext_zero).expect("Record sender ciphertext mismatch");
         // Return the output ID.
         Self::Record(output_commitment, output_checksum, output_sender_ciphertext)
     }
@@ -128,7 +128,7 @@ impl<A: Aleo> OutputID<A> {
         // Inject the expected hash as `Mode::Public`.
         let output_hash = Field::new(Mode::Public, expected_hash.eject_value());
         // Ensure the injected hash matches the given commitment.
-        A::assert_eq(&output_hash, expected_hash);
+        A::assert_eq(&output_hash, expected_hash).expect("ExternalRecord output hash mismatch");
         // Return the output ID.
         Self::ExternalRecord(output_hash)
     }
@@ -138,7 +138,7 @@ impl<A: Aleo> OutputID<A> {
         // Inject the expected hash as `Mode::Public`.
         let output_hash = Field::new(Mode::Public, expected_hash.eject_value());
         // Ensure the injected hash matches the given hash.
-        A::assert_eq(&output_hash, expected_hash);
+        A::assert_eq(&output_hash, expected_hash).expect("Future output hash mismatch");
         // Return the output ID.
         Self::Future(output_hash)
     }
@@ -148,7 +148,7 @@ impl<A: Aleo> OutputID<A> {
         // Inject the expected hash as `Mode::Public`.
         let output_hash = Field::new(Mode::Public, expected_hash.eject_value());
         // Ensure the injected hash matches the given hash.
-        A::assert_eq(&output_hash, expected_hash);
+        A::assert_eq(&output_hash, expected_hash).expect("DynamicRecord output hash mismatch");
         // Return the output ID.
         Self::DynamicRecord(output_hash)
     }
@@ -158,7 +158,7 @@ impl<A: Aleo> OutputID<A> {
         // Inject the expected hash as `Mode::Public`.
         let output_hash = Field::new(Mode::Public, expected_hash.eject_value());
         // Ensure the injected hash matches the given hash.
-        A::assert_eq(&output_hash, expected_hash);
+        A::assert_eq(&output_hash, expected_hash).expect("DynamicFuture output hash mismatch");
         // Return the output ID.
         Self::DynamicFuture(output_hash)
     }

@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{CallStack, Registers, Stack, compute_function_id, stack::Address, trace::RecordTranslationData};
+use crate::{CallStack, Registers, Stack, compute_function_id, error::*, stack::Address, trace::RecordTranslationData};
 use aleo_std::prelude::{finish, lap, timer};
 use console::{
     account::Field,
@@ -46,7 +46,7 @@ pub trait CallTrait<N: Network> {
         stack: &Stack<N>,
         registers: &mut Registers<N, A>,
         rng: &mut R,
-    ) -> Result<()>;
+    ) -> Result<(), CallEvalError>;
 
     /// Executes the instruction.
     fn execute<A: circuit::Aleo<Network = N>, R: CryptoRng + Rng>(
@@ -54,5 +54,5 @@ pub trait CallTrait<N: Network> {
         stack: &Stack<N>,
         registers: &mut Registers<N, A>,
         rng: &mut R,
-    ) -> Result<()>;
+    ) -> Result<(), CallExecError>;
 }

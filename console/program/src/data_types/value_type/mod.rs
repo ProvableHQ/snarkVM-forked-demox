@@ -58,6 +58,15 @@ impl<N: Network> ValueType<N> {
             ValueType::DynamicFuture => 7,
         }
     }
+
+    /// Returns whether this type references an external struct.
+    pub fn contains_external_struct(&self) -> bool {
+        use ValueType::*;
+        matches!(
+            self,
+            Constant(plaintext) | Public(plaintext) | Private(plaintext) if plaintext.contains_external_struct()
+        )
+    }
 }
 
 impl<N: Network> From<EntryType<N>> for ValueType<N> {

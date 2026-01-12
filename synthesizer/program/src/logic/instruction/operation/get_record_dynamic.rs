@@ -99,6 +99,13 @@ impl<N: Network> GetRecordDynamic<N> {
     pub fn destinations(&self) -> Vec<Register<N>> {
         vec![self.destination.clone()]
     }
+
+    /// Returns whether this instruction refers to an external struct.
+    /// Dynamic instructions never reference external structs.
+    #[inline]
+    pub fn contains_external_struct(&self) -> bool {
+        false
+    }
 }
 
 impl<N: Network> GetRecordDynamic<N> {
@@ -212,7 +219,8 @@ impl<N: Network> GetRecordDynamic<N> {
         let circuit_path = circuit::merkle_tree::MerklePath::new(Mode::Private, console_path);
 
         // Verifying the path inside the circuit
-        A::assert(circuit_path.verify(&circuit_leaf_hasher, &circuit_path_hasher, circuit_root, &circuit_leaf));
+        A::assert(circuit_path.verify(&circuit_leaf_hasher, &circuit_path_hasher, circuit_root, &circuit_leaf))
+            .expect("In-circuit verification of the Merkle path for dynamic record entry failed");
 
         let circuit_entry_plaintext = match circuit_entry {
             circuit::Entry::Constant(plaintext) => plaintext,

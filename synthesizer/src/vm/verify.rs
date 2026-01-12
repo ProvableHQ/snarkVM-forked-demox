@@ -188,6 +188,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 );
                 // Verify the signature corresponds to the transaction ID.
                 ensure!(owner.verify(*deployment_id), "Invalid owner signature for deployment transaction '{id}'");
+
                 // If the `CONSENSUS_VERSION` is less than `V8`, ensure that
                 //   - the deployment edition is zero.
                 // If the `CONSENSUS_VERSION` is less than `V9` ensure that
@@ -253,6 +254,21 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         !deployment.program().contains_string_type(),
                         "Invalid deployment transaction '{id}' - program uses string type after `ConsensusVersion::V12`"
                     );
+                }
+
+                // If the `CONSENSUS_VERSION` is less than `V13`, then verify that:
+                //   - the program does not use the external struct syntax `some_program.aleo/StructT`
+                // If the `CONSENSUS_VERSION` is greater than or equal to `V13`, then verify that:
+                //   - the program's mappings do not use non-existent structs.
+                if consensus_version < ConsensusVersion::V13 {
+                    ensure!(
+                        !deployment.program().contains_external_struct(),
+                        "Invalid deployment transaction '{id}' - external structs may only be used beginning with `ConsensusVersion::V13`"
+                    );
+                }
+
+                if consensus_version >= ConsensusVersion::V13 {
+                    self.process.read().mapping_types_exist(deployment.program())?;
                 }
 
                 // If the program owner exists in the deployment, then verify that it matches the owner in the transaction.

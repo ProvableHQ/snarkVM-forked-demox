@@ -684,7 +684,7 @@ impl<F: FftField> EvaluationDomain<F> {
             // we parallelize the butterfly operation within the chunk.
 
             if gap > MIN_GAP_SIZE_FOR_PARALLELISATION && num_chunks < max_threads {
-                cfg_iter_mut!(lo).zip(hi).zip(cfg_iter!(roots).step_by(step)).for_each(g);
+                cfg_iter_mut!(lo, 1000).zip(hi).zip(cfg_iter!(roots, 1000).step_by(step)).for_each(g);
             } else {
                 lo.iter_mut().zip(hi).zip(roots.iter().step_by(step)).for_each(g);
             }
