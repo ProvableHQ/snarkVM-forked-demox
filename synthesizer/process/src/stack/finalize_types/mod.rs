@@ -237,6 +237,7 @@ pub fn finalize_types_equivalent<N: Network>(
             types_equivalent(stack0, plaintext0, stack1, plaintext1)
         }
         (FinalizeType::Future(future0), FinalizeType::Future(future1)) => Ok(future0 == future1),
+        (FinalizeType::DynamicFuture, FinalizeType::DynamicFuture) => Ok(true),
         _ => Ok(false),
     }
 }
