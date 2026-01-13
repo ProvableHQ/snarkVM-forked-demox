@@ -200,7 +200,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 //   - the deployment version is `V1`.
                 //   - the program does not use constructors, `Operand::Checksum`, `Operand::Edition`, or `Operand::ProgramOwner`
                 // If the `CONSENSUS_VERSION` is greater than or equal to `V9`, then verify that:
-                //   - the deployment version is `V2`.
+                //   - the deployment version is `V2` or `V3`.
                 // If the `CONSENSUS_VERSION` is less than `V11`, ensure that
                 //   - the program does not include V11 syntax
                 // If the `CONSENSUS_VERSION` is less than `V12`, ensure that
@@ -227,10 +227,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V9`"
                     );
                 }
-                if consensus_version >= ConsensusVersion::V9 && consensus_version < ConsensusVersion::V14 {
+                if consensus_version >= ConsensusVersion::V9 {
                     ensure!(
-                        version == DeploymentVersion::V2,
-                        "Invalid deployment transaction '{id}' - the deployment version should be `V2` (which should contain a program owner and checksum) for `ConsensusVersion::V9` up to `ConsensusVersion::V14`"
+                        version == DeploymentVersion::V2 || version == DeploymentVersion::V3,
+                        "Invalid deployment transaction '{id}' - the deployment version should be `V2` or `V3` at `ConsensusVersion::V9` and beyond"
                     );
                 }
                 if consensus_version < ConsensusVersion::V11 {
