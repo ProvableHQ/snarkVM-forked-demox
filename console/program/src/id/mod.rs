@@ -119,7 +119,7 @@ impl<N: Network> ProgramID<N> {
 
     /// Returns the `credits.aleo` program ID.
     pub fn credits() -> Self {
-        Self::try_from("credits.aleo").expect("Failed to parse credits.aleo as a program ID")
+        Self::from_str("credits.aleo").expect("Failed to parse credits.aleo as a program ID")
     }
 }
 

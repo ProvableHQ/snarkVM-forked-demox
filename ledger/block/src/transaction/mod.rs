@@ -479,7 +479,7 @@ pub mod test_helpers {
                 let mut deployment = crate::transaction::deployment::test_helpers::sample_deployment_v3(edition, rng);
                 // Ensure the checksum is set.
                 deployment.set_program_checksum_raw(Some(deployment.program().to_checksum()));
-                // V3 amendments have no program owner in the Deployment struct.
+                // Amendments have no program owner .
                 deployment.set_program_owner_raw(None);
                 // Return the deployment.
                 deployment

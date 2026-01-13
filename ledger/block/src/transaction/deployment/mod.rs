@@ -77,7 +77,7 @@ impl<N: Network> Deployment<N> {
     pub fn check_is_ordered(&self) -> Result<()> {
         let program_id = self.program.id();
 
-        // Verify the deployment version is well-formed (checksum and owner consistency).
+        //`Deployment::version` ensures the deployment checksum and owner is well-formed.
         self.version()?;
 
         // Validate the deployment based on the program checksum.
@@ -212,22 +212,16 @@ impl<N: Network> Deployment<N> {
 
 impl<N: Network> Deployment<N> {
     /// Sets the edition.
-    /// Note: This method is intended to be used by the synthesizer **only**, and should not be called by the user.
-    #[doc(hidden)]
     pub fn set_edition_raw(&mut self, edition: u16) {
         self.edition = edition;
     }
 
     /// Sets the program checksum.
-    /// Note: This method is intended to be used by the synthesizer **only**, and should not be called by the user.
-    #[doc(hidden)]
     pub fn set_program_checksum_raw(&mut self, program_checksum: Option<[U8<N>; 32]>) {
         self.program_checksum = program_checksum;
     }
 
     /// Sets the program owner.
-    /// Note: This method is intended to be used by the synthesizer **only**, and should not be called by the user.
-    #[doc(hidden)]
     pub fn set_program_owner_raw(&mut self, program_owner: Option<Address<N>>) {
         self.program_owner = program_owner;
     }
@@ -250,10 +244,13 @@ impl<N: Network> Deployment<N> {
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub enum DeploymentVersion {
     /// A deployment without a program checksum or program owner.
+    /// This is the original deployment format.
     V1 = 1,
     /// A deployment with both a program checksum and program owner.
+    /// This was introduced to support constructors and upgradability.
     V2 = 2,
-    /// A deployment with a program checksum but without a program owner (for amendments).
+    /// A deployment with a program checksum but without a program owner.
+    /// This was introduced to support amendments.
     V3 = 3,
 }
 
@@ -384,7 +381,7 @@ function compute:
                 let mut deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
                 // Set the program checksum.
                 deployment.set_program_checksum_raw(Some(deployment.program().to_checksum()));
-                // V3 amendments have no program owner.
+                // Amendments have no program owner.
                 deployment.set_program_owner_raw(None);
                 // Return the deployment.
                 // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.

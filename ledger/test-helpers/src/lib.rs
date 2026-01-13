@@ -259,7 +259,7 @@ function compute:
             let mut deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
             // Set the program checksum.
             deployment.set_program_checksum_raw(Some(deployment.program().to_checksum()));
-            // V3 amendments have no program owner.
+            // V3 deployments have no program owner.
             deployment.set_program_owner_raw(None);
             // Return the deployment.
             // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
@@ -502,7 +502,7 @@ pub fn sample_deployment_transaction(
             let mut deployment = sample_deployment_v3(edition, rng);
             // Ensure the checksum is set.
             deployment.set_program_checksum_raw(Some(deployment.program().to_checksum()));
-            // V3 amendments have no program owner in the Deployment struct.
+            // V3 deployments have no program owner.
             deployment.set_program_owner_raw(None);
             // Return the deployment.
             deployment
@@ -512,7 +512,7 @@ pub fn sample_deployment_transaction(
 
     // Compute the deployment ID.
     let deployment_id = deployment.to_deployment_id().unwrap();
-    // Construct a program owner (the transaction signer).
+    // Construct a program owner.
     let owner = ProgramOwner::new(&private_key, deployment_id, rng).unwrap();
 
     // Sample the fee.

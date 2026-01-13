@@ -28,7 +28,7 @@ impl<N: Network> Process<N> {
 
         // Retrieve the program ID.
         let program_id = deployment.program().id();
-        // Check if this is a V3 amendment.
+        // Check if this is an amendment.
         let is_amendment = deployment.version()? == DeploymentVersion::V3;
         // If this is an amendment, verify that the program exists.
         // If the edition is zero (and not an amendment), verify that the program does not exist.
@@ -55,7 +55,7 @@ impl<N: Network> Process<N> {
         // Note: The program owner is intentionally not set, since `program_owner` is an operand
         //   that is only available in a finalize scope.
         let stack = if is_amendment {
-            // For V3 amendments, use the existing edition instead of incrementing.
+            // For amendments, use the existing edition instead of incrementing.
             let existing_stack = self.get_stack(program_id)?;
             let stack = Stack::new_raw(self, deployment.program(), *existing_stack.program_edition())?;
             stack.initialize_and_check(self)?;

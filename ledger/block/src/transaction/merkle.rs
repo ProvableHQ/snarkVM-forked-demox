@@ -146,7 +146,6 @@ impl<N: Network> Transaction<N> {
         match deployment.version() {
             Ok(DeploymentVersion::V1) => Self::deployment_tree_v1(deployment),
             Ok(DeploymentVersion::V2) => Self::deployment_tree_v2(deployment),
-            // V3 deployments use the same tree structure as V2 since they also have checksums.
             Ok(DeploymentVersion::V3) => Self::deployment_tree_v2(deployment),
             Err(e) => bail!("Malformed deployment - {e}"),
         }

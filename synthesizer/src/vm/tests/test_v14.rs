@@ -63,7 +63,7 @@ fn create_v3_deployment_transaction<C: ConsensusStorage<CurrentNetwork>, R: Rng 
 }
 
 // This test verifies that:
-// - V3 (amendment) deployments are rejected before ConsensusVersion::V14
+// - V3 deployments are rejected before ConsensusVersion::V14
 // - V3 deployments are accepted at ConsensusVersion::V14
 #[test]
 fn test_v3_deployment_requires_v14() -> Result<()> {
@@ -106,7 +106,7 @@ constructor:
     let stack = vm.process().read().get_stack("amendment_test.aleo")?;
     assert_eq!(*stack.program_edition(), 0);
 
-    // Create a V3 amendment deployment.
+    // Create a V3 deployment.
     let deployed_program = stack.program().clone();
 
     // Create a V3 deployment transaction with proper fee.
@@ -141,16 +141,16 @@ constructor:
 
     // Verify the edition hasn't changed (V3 doesn't change edition).
     let stack = vm.process().read().get_stack("amendment_test.aleo")?;
-    assert_eq!(*stack.program_edition(), 0, "Edition should remain 0 after V3 amendment");
+    assert_eq!(*stack.program_edition(), 0, "Edition should remain 0 after an amendment");
 
     Ok(())
 }
 
 // This test verifies that:
-// - After a V3 amendment, executions use the new VKs.
+// - After an amendment, executions use the new VKs.
 // - Multiple amendments can be applied to the same program.
 #[test]
-fn test_v3_amendment_updates_vks() -> Result<()> {
+fn test_amendment_updates_vks() -> Result<()> {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
@@ -203,7 +203,7 @@ constructor:
     let deployed_program = stack.program().clone();
     let checksum = deployed_program.to_checksum();
 
-    // Create and apply a V3 amendment.
+    // Create and apply a V3 deployment.
     let mut v3_deployment = vm.process().read().deploy::<CurrentAleo, _>(&deployed_program, rng)?;
     v3_deployment.set_edition_raw(0); // V3 keeps the same edition
     v3_deployment.set_program_checksum_raw(Some(checksum));
@@ -229,7 +229,7 @@ constructor:
     // Verify the VK was updated.
     let stack = vm.process().read().get_stack("vk_test.aleo")?;
     let current_vk = stack.get_verifying_key(&Identifier::from_str("add_numbers")?)?;
-    assert_eq!(*current_vk, *amended_vk, "VK should be updated after V3 amendment");
+    assert_eq!(*current_vk, *amended_vk, "VK should be updated after an amendment");
 
     // Verify the edition is still 0.
     assert_eq!(*stack.program_edition(), 0);
@@ -253,11 +253,11 @@ constructor:
 }
 
 // This test verifies that:
-// - V3 amendments must match the existing program exactly.
-// - V3 amendments must have the correct checksum.
-// - V3 amendments must target an existing program.
+// - amendments must match the existing program exactly.
+// - amendments must have the correct checksum.
+// - amendments must target an existing program.
 #[test]
-fn test_v3_amendment_validation() -> Result<()> {
+fn test_amendment_validation() -> Result<()> {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
@@ -291,7 +291,7 @@ constructor:
     let stack = vm.process().read().get_stack("validation_test.aleo")?;
     let deployed_program = stack.program().clone();
 
-    // Test 1: V3 amendment with wrong checksum should fail.
+    // Test 1: An amendment with wrong checksum should fail.
     let mut wrong_checksum_deployment = vm.process().read().deploy::<CurrentAleo, _>(&deployed_program, rng)?;
     wrong_checksum_deployment.set_edition_raw(0); // V3 keeps the same edition
     wrong_checksum_deployment.set_program_checksum_raw(Some([0u8; 32].map(U8::new))); // Wrong checksum
@@ -310,7 +310,7 @@ constructor:
     assert_eq!(block.aborted_transaction_ids().len(), 1);
     vm.add_next_block(&block)?;
 
-    // Test 2: V3 amendment for non-existent program should fail.
+    // Test 2: An amendment for non-existent program should fail.
     let nonexistent_program = Program::from_str(
         r"
 program nonexistent.aleo;
@@ -339,7 +339,7 @@ constructor:
     assert_eq!(block.aborted_transaction_ids().len(), 1);
     vm.add_next_block(&block)?;
 
-    // Test 3: Valid V3 amendment should succeed.
+    // Test 3: Valid amendment should succeed.
     let v3_transaction = create_v3_deployment_transaction(&vm, &caller_private_key, &deployed_program, 0, rng)?;
 
     let block = sample_next_block(&vm, &caller_private_key, &[v3_transaction], rng)?;
@@ -351,10 +351,10 @@ constructor:
 }
 
 // This test verifies that:
-// - Anyone can submit a V3 amendment (not just the original owner).
+// - Anyone can submit an amendment.
 // - The amendment submitter is recorded but doesn't affect the program owner.
 #[test]
-fn test_v3_amendment_permissionless() -> Result<()> {
+fn test_amendment_permissionless() -> Result<()> {
     let rng = &mut TestRng::default();
 
     // Initialize the original deployer.
@@ -407,7 +407,7 @@ constructor:
     let checksum = deployed_program.to_checksum();
     let original_program_owner = *stack.program_owner();
 
-    // Submit a V3 amendment as the OTHER user (not the original owner).
+    // Submit an amendment as the OTHER user (not the original owner).
     let mut v3_deployment = vm.process().read().deploy::<CurrentAleo, _>(&deployed_program, rng)?;
     v3_deployment.set_edition_raw(0); // V3 keeps the same edition
     v3_deployment.set_program_checksum_raw(Some(checksum));
@@ -423,7 +423,7 @@ constructor:
     let fee = vm.execute_fee_authorization(fee_authorization, None, rng)?;
     let v3_transaction = Transaction::from_deployment(owner, v3_deployment, fee)?;
 
-    // The V3 amendment should be accepted even though submitted by a different user.
+    // The amendment should be accepted even though submitted by a different user.
     let block = sample_next_block(&vm, &original_owner, &[v3_transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1, "V3 from different user should be accepted");
     vm.add_next_block(&block)?;
@@ -433,7 +433,7 @@ constructor:
     assert_eq!(
         *stack.program_owner(),
         original_program_owner,
-        "Program owner should remain unchanged after V3 amendment"
+        "Program owner should remain unchanged after an amendment"
     );
 
     Ok(())
@@ -468,10 +468,10 @@ fn test_credits_cannot_be_amended() -> Result<()> {
 }
 
 // This test verifies that:
-// - Multiple sequential V3 amendments can be applied to the same program.
+// - Multiple sequential amendments can be applied to the same program.
 // - Each amendment updates the VKs correctly.
 #[test]
-fn test_multiple_v3_amendments() -> Result<()> {
+fn test_multiple_amendments() -> Result<()> {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
@@ -506,7 +506,7 @@ constructor:
     let deployed_program = stack.program().clone();
     let checksum = deployed_program.to_checksum();
 
-    // Apply multiple V3 amendments.
+    // Apply multiple amendments.
     for i in 1..=3 {
         let mut v3_deployment = vm.process().read().deploy::<CurrentAleo, _>(&deployed_program, rng)?;
         v3_deployment.set_edition_raw(0); // V3 keeps the same edition

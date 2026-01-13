@@ -34,6 +34,8 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     }
 
     /// Returns the latest transaction ID that contains the given `program ID`.
+    /// If amendments exist for the latest edition, returns the latest amendment transaction ID.
+    /// Otherwise, returns the original deployment transaction ID for the latest edition.
     pub fn find_latest_transaction_id_from_program_id(
         &self,
         program_id: &ProgramID<N>,
@@ -41,7 +43,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         self.vm.transaction_store().find_latest_transaction_id_from_program_id(program_id)
     }
 
-    /// Returns the original (base) deployment transaction ID for the given `program ID` and `edition`.
+    /// Returns the original deployment transaction ID for the given `program ID` and `edition`.
     /// This returns the initial deployment, not any subsequent amendments.
     pub fn find_original_transaction_id_from_program_id_and_edition(
         &self,
