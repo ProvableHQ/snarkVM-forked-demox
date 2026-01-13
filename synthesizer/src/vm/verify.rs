@@ -205,8 +205,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 //   - the program does not include V11 syntax
                 // If the `CONSENSUS_VERSION` is less than `V12`, ensure that
                 //   - the program does not include V12 syntax
-                // If the `CONSENSUS_VERSION` is greater than or equal to `V12`, ensure that
-                //  - the deployment version may be either `V2` or `V3`.
+                // If the `CONSENSUS_VERSION` is less than `V14`, ensure that
+                //   - the deployment version is not `V3`.
                 if consensus_version < ConsensusVersion::V8 {
                     ensure!(
                         deployment.edition().is_zero(),
