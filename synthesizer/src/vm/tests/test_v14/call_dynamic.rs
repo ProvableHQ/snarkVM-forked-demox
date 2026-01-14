@@ -1484,3 +1484,1181 @@ fn test_malformed_identifier_in_call_dynamic() {
 
     assert!(exec_result.is_err(), "Dynamic call with malformed program identifier should fail");
 }
+
+// Tests that `call.dynamic` inside a finalize block fails at parse time.
+#[test]
+fn test_call_dynamic_in_finalize_forbidden() {
+    let target_field = Identifier::<CurrentNetwork>::from_str("some_program").unwrap().to_field().unwrap();
+    let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+    let func_field = Identifier::<CurrentNetwork>::from_str("some_func").unwrap().to_field().unwrap();
+
+    let program_str = format!(
+        r"
+        program dynamic_in_finalize.aleo;
+
+        function entry:
+            input r0 as u64.public;
+            async entry r0 into r1;
+            output r1 as dynamic_in_finalize.aleo/entry.future;
+
+        finalize entry:
+            input r0 as u64.public;
+            call.dynamic {target_field} {aleo_field} {func_field}
+                with r0 (as u64.public)
+                into r1 (as u64.public);
+
+        constructor:
+            assert.eq true true;
+        "
+    );
+
+    let parse_result = Program::<CurrentNetwork>::from_str(&program_str);
+    assert!(parse_result.is_err(), "call.dynamic in finalize should fail to parse");
+}
+
+// Tests that outputting a `dynamic.future` directly fails at deployment time.
+// A `dynamic.future` must be passed to `async` and awaited, not returned directly.
+#[test]
+fn test_dynamic_future_direct_output_forbidden() {
+    let rng = &mut TestRng::default();
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    let target_field = Identifier::<CurrentNetwork>::from_str("some_program").unwrap().to_field().unwrap();
+    let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+    let func_field = Identifier::<CurrentNetwork>::from_str("some_func").unwrap().to_field().unwrap();
+
+    let program_str = format!(
+        r"
+        program direct_future_output.aleo;
+
+        function entry:
+            input r0 as u64.public;
+            call.dynamic {target_field} {aleo_field} {func_field}
+                with r0 (as u64.public)
+                into r1 (as dynamic.future);
+            output r1 as dynamic.future;
+
+        constructor:
+            assert.eq true true;
+        "
+    );
+
+    // Parsing succeeds but deployment should fail
+    let program = Program::<CurrentNetwork>::from_str(&program_str).unwrap();
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    let deploy_result = vm.deploy(&caller_private_key, &program, None, 0, None, rng);
+    assert!(deploy_result.is_err(), "dynamic.future direct output should fail deployment");
+}
+
+// Tests `call.dynamic` with local struct parameters (defined in the same program).
+#[test]
+fn test_dynamic_call_with_local_struct_parameters() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    let program_field = Identifier::<CurrentNetwork>::from_str("struct_ops").unwrap().to_field().unwrap();
+    let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+    let process_point_field = Identifier::<CurrentNetwork>::from_str("process_point").unwrap().to_field().unwrap();
+    let create_point_field = Identifier::<CurrentNetwork>::from_str("create_point").unwrap().to_field().unwrap();
+    let transform_point_field = Identifier::<CurrentNetwork>::from_str("transform_point").unwrap().to_field().unwrap();
+
+    // Program with struct defined locally, used in dynamic calls
+    let program_str = format!(
+        r"
+        program struct_ops.aleo;
+
+        struct point:
+            x as u64;
+            y as u64;
+
+        struct nested_point:
+            p as point;
+            label as u8;
+
+        // Function that takes a local struct as input
+        function process_point:
+            input r0 as point.public;
+            add r0.x r0.y into r1;
+            output r1 as u64.public;
+
+        // Function that returns a local struct as output
+        function create_point:
+            input r0 as u64.public;
+            input r1 as u64.public;
+            cast r0 r1 into r2 as point;
+            output r2 as point.public;
+
+        // Function that takes and returns a local struct
+        function transform_point:
+            input r0 as point.public;
+            mul r0.x 2u64 into r1;
+            mul r0.y 2u64 into r2;
+            cast r1 r2 into r3 as point;
+            output r3 as point.public;
+
+        // Dynamic caller that passes local struct as input
+        function dynamic_process_point:
+            input r0 as point.public;
+            call.dynamic {program_field} {aleo_field} {process_point_field}
+                with r0 (as point.public)
+                into r1 (as u64.public);
+            output r1 as u64.public;
+
+        // Dynamic caller that receives local struct as output
+        function dynamic_create_point:
+            input r0 as u64.public;
+            input r1 as u64.public;
+            call.dynamic {program_field} {aleo_field} {create_point_field}
+                with r0 r1 (as u64.public u64.public)
+                into r2 (as point.public);
+            output r2 as point.public;
+
+        // Dynamic caller that passes and receives local struct
+        function dynamic_transform_point:
+            input r0 as point.public;
+            call.dynamic {program_field} {aleo_field} {transform_point_field}
+                with r0 (as point.public)
+                into r1 (as point.public);
+            output r1 as point.public;
+
+        constructor:
+            assert.eq true true;
+        "
+    );
+
+    let program = Program::<CurrentNetwork>::from_str(&program_str).unwrap();
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    // Deploy the program
+    let deploy_tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_tx], rng);
+
+    // Test 1: Local struct as input
+    println!("Testing local struct as input to call.dynamic...");
+    let point_value = Value::from_str("{ x: 10u64, y: 20u64 }").unwrap();
+    let transaction = vm
+        .execute(
+            &caller_private_key,
+            ("struct_ops.aleo", "dynamic_process_point"),
+            vec![point_value].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+
+    // Test 2: Local struct as output
+    println!("Testing local struct as output from call.dynamic...");
+    let transaction = vm
+        .execute(
+            &caller_private_key,
+            ("struct_ops.aleo", "dynamic_create_point"),
+            vec![Value::from_str("5u64").unwrap(), Value::from_str("15u64").unwrap()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+
+    // Test 3: Local struct as both input and output
+    println!("Testing local struct as input and output in call.dynamic...");
+    let point_value = Value::from_str("{ x: 7u64, y: 3u64 }").unwrap();
+    let transaction = vm
+        .execute(
+            &caller_private_key,
+            ("struct_ops.aleo", "dynamic_transform_point"),
+            vec![point_value].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+}
+
+// Tests `call.dynamic` with external struct parameters (defined in an imported program).
+#[test]
+fn test_dynamic_call_with_external_struct_parameters() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    let provider_field = Identifier::<CurrentNetwork>::from_str("struct_provider").unwrap().to_field().unwrap();
+    let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+    let get_sum_field = Identifier::<CurrentNetwork>::from_str("get_sum").unwrap().to_field().unwrap();
+    let make_pair_field = Identifier::<CurrentNetwork>::from_str("make_pair").unwrap().to_field().unwrap();
+    let double_pair_field = Identifier::<CurrentNetwork>::from_str("double_pair").unwrap().to_field().unwrap();
+
+    // Provider program that defines the struct
+    let provider_program_str = r"
+        program struct_provider.aleo;
+
+        struct pair:
+            a as u64;
+            b as u64;
+
+        // Takes pair as input
+        function get_sum:
+            input r0 as pair.public;
+            add r0.a r0.b into r1;
+            output r1 as u64.public;
+
+        // Returns pair as output
+        function make_pair:
+            input r0 as u64.public;
+            input r1 as u64.public;
+            cast r0 r1 into r2 as pair;
+            output r2 as pair.public;
+
+        // Takes and returns pair
+        function double_pair:
+            input r0 as pair.public;
+            mul r0.a 2u64 into r1;
+            mul r0.b 2u64 into r2;
+            cast r1 r2 into r3 as pair;
+            output r3 as pair.public;
+
+        constructor:
+            assert.eq true true;
+    ";
+
+    // Consumer program that uses external struct via call.dynamic
+    let consumer_program_str = format!(
+        r"
+        import struct_provider.aleo;
+
+        program struct_consumer.aleo;
+
+        // Dynamic call with external struct as input
+        function call_get_sum:
+            input r0 as struct_provider.aleo/pair.public;
+            call.dynamic {provider_field} {aleo_field} {get_sum_field}
+                with r0 (as struct_provider.aleo/pair.public)
+                into r1 (as u64.public);
+            output r1 as u64.public;
+
+        // Dynamic call with external struct as output
+        function call_make_pair:
+            input r0 as u64.public;
+            input r1 as u64.public;
+            call.dynamic {provider_field} {aleo_field} {make_pair_field}
+                with r0 r1 (as u64.public u64.public)
+                into r2 (as struct_provider.aleo/pair.public);
+            output r2 as struct_provider.aleo/pair.public;
+
+        // Dynamic call with external struct as input and output
+        function call_double_pair:
+            input r0 as struct_provider.aleo/pair.public;
+            call.dynamic {provider_field} {aleo_field} {double_pair_field}
+                with r0 (as struct_provider.aleo/pair.public)
+                into r1 (as struct_provider.aleo/pair.public);
+            output r1 as struct_provider.aleo/pair.public;
+
+        constructor:
+            assert.eq true true;
+        "
+    );
+
+    let provider_program = Program::<CurrentNetwork>::from_str(provider_program_str).unwrap();
+    let consumer_program = Program::<CurrentNetwork>::from_str(&consumer_program_str).unwrap();
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    // Deploy provider program first
+    println!("Deploying struct_provider.aleo...");
+    let deploy_provider = vm.deploy(&caller_private_key, &provider_program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_provider], rng);
+
+    // Deploy consumer program
+    println!("Deploying struct_consumer.aleo...");
+    let deploy_consumer = vm.deploy(&caller_private_key, &consumer_program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_consumer], rng);
+
+    // Test 1: External struct as input
+    println!("Testing external struct as input to call.dynamic...");
+    let pair_value = Value::from_str("{ a: 100u64, b: 200u64 }").unwrap();
+    let transaction = vm
+        .execute(
+            &caller_private_key,
+            ("struct_consumer.aleo", "call_get_sum"),
+            vec![pair_value].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+
+    // Test 2: External struct as output
+    println!("Testing external struct as output from call.dynamic...");
+    let transaction = vm
+        .execute(
+            &caller_private_key,
+            ("struct_consumer.aleo", "call_make_pair"),
+            vec![Value::from_str("42u64").unwrap(), Value::from_str("58u64").unwrap()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+
+    // Test 3: External struct as both input and output
+    println!("Testing external struct as input and output in call.dynamic...");
+    let pair_value = Value::from_str("{ a: 25u64, b: 75u64 }").unwrap();
+    let transaction = vm
+        .execute(
+            &caller_private_key,
+            ("struct_consumer.aleo", "call_double_pair"),
+            vec![pair_value].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+}
+
+// Tests `call.dynamic` with array parameters.
+#[test]
+fn test_dynamic_call_with_array_parameters() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    let program_field = Identifier::<CurrentNetwork>::from_str("array_ops").unwrap().to_field().unwrap();
+    let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+    let sum_array_field = Identifier::<CurrentNetwork>::from_str("sum_array").unwrap().to_field().unwrap();
+    let create_array_field = Identifier::<CurrentNetwork>::from_str("create_array").unwrap().to_field().unwrap();
+    let double_array_field = Identifier::<CurrentNetwork>::from_str("double_array").unwrap().to_field().unwrap();
+
+    let program_str = format!(
+        r"
+        program array_ops.aleo;
+
+        // Function that takes an array as input
+        function sum_array:
+            input r0 as [u64; 4u32].public;
+            add r0[0u32] r0[1u32] into r1;
+            add r1 r0[2u32] into r2;
+            add r2 r0[3u32] into r3;
+            output r3 as u64.public;
+
+        // Function that returns an array as output
+        function create_array:
+            input r0 as u64.public;
+            mul r0 1u64 into r1;
+            mul r0 2u64 into r2;
+            mul r0 3u64 into r3;
+            mul r0 4u64 into r4;
+            cast r1 r2 r3 r4 into r5 as [u64; 4u32];
+            output r5 as [u64; 4u32].public;
+
+        // Function that takes and returns an array
+        function double_array:
+            input r0 as [u64; 4u32].public;
+            mul r0[0u32] 2u64 into r1;
+            mul r0[1u32] 2u64 into r2;
+            mul r0[2u32] 2u64 into r3;
+            mul r0[3u32] 2u64 into r4;
+            cast r1 r2 r3 r4 into r5 as [u64; 4u32];
+            output r5 as [u64; 4u32].public;
+
+        // Dynamic caller that passes array as input
+        function dynamic_sum_array:
+            input r0 as [u64; 4u32].public;
+            call.dynamic {program_field} {aleo_field} {sum_array_field}
+                with r0 (as [u64; 4u32].public)
+                into r1 (as u64.public);
+            output r1 as u64.public;
+
+        // Dynamic caller that receives array as output
+        function dynamic_create_array:
+            input r0 as u64.public;
+            call.dynamic {program_field} {aleo_field} {create_array_field}
+                with r0 (as u64.public)
+                into r1 (as [u64; 4u32].public);
+            output r1 as [u64; 4u32].public;
+
+        // Dynamic caller that passes and receives array
+        function dynamic_double_array:
+            input r0 as [u64; 4u32].public;
+            call.dynamic {program_field} {aleo_field} {double_array_field}
+                with r0 (as [u64; 4u32].public)
+                into r1 (as [u64; 4u32].public);
+            output r1 as [u64; 4u32].public;
+
+        constructor:
+            assert.eq true true;
+        "
+    );
+
+    let program = Program::<CurrentNetwork>::from_str(&program_str).unwrap();
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    // Deploy the program
+    let deploy_tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_tx], rng);
+
+    // Test 1: Array as input
+    println!("Testing array as input to call.dynamic...");
+    let array_value = Value::from_str("[1u64, 2u64, 3u64, 4u64]").unwrap();
+    let transaction = vm
+        .execute(
+            &caller_private_key,
+            ("array_ops.aleo", "dynamic_sum_array"),
+            vec![array_value].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+
+    // Test 2: Array as output
+    println!("Testing array as output from call.dynamic...");
+    let transaction = vm
+        .execute(
+            &caller_private_key,
+            ("array_ops.aleo", "dynamic_create_array"),
+            vec![Value::from_str("10u64").unwrap()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+
+    // Test 3: Array as both input and output
+    println!("Testing array as input and output in call.dynamic...");
+    let array_value = Value::from_str("[5u64, 10u64, 15u64, 20u64]").unwrap();
+    let transaction = vm
+        .execute(
+            &caller_private_key,
+            ("array_ops.aleo", "dynamic_double_array"),
+            vec![array_value].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+}
+
+// Tests double-spend detection behavior when passing dynamic records through `call.dynamic`.
+// - When a `dynamic.record` is passed to a function expecting a static record, translation occurs
+//   and the record is consumed. Passing the same record again causes double-spend.
+// - When a `dynamic.record` is passed to a function expecting `dynamic.record`, no translation
+//   occurs and the record is not consumed. The same record can be passed multiple times.
+#[test]
+fn test_dynamic_record_double_spend_detection() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    // Define the base program with record operations
+    let base_program_name = Identifier::<CurrentNetwork>::from_str("record_ops").unwrap();
+    let base_program_field = base_program_name.to_field().unwrap();
+    let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+
+    let consume_static_name = Identifier::<CurrentNetwork>::from_str("consume_static").unwrap();
+    let consume_static_field = consume_static_name.to_field().unwrap();
+
+    let consume_dynamic_name = Identifier::<CurrentNetwork>::from_str("consume_dynamic").unwrap();
+    let consume_dynamic_field = consume_dynamic_name.to_field().unwrap();
+
+    let base_program_str = format!(
+        r"
+        program {base_program_name}.aleo;
+
+        record token:
+            owner as address.private;
+            amount as u64.private;
+
+        function mint:
+            input r0 as address.private;
+            input r1 as u64.private;
+            cast r0 r1 into r2 as token.record;
+            output r2 as token.record;
+
+        // Takes a static record as input - triggers translation when called with dynamic record
+        function {consume_static_name}:
+            input r0 as token.record;
+
+        // Takes a dynamic record as input - no translation, record is not consumed
+        function {consume_dynamic_name}:
+            input r0 as dynamic.record;
+
+        constructor:
+            assert.eq true true;
+        "
+    );
+
+    // Define the caller program that tests double-spend scenarios
+    let caller_program_str = format!(
+        r"
+        program double_spend_test.aleo;
+
+        // Calls consume_static twice with the same dynamic record
+        // This SHOULD FAIL due to double-spend (translation consumes the record)
+        function call_static_twice:
+            input r0 as dynamic.record;
+            call.dynamic {base_program_field} {aleo_field} {consume_static_field} with r0 (as dynamic.record);
+            call.dynamic {base_program_field} {aleo_field} {consume_static_field} with r0 (as dynamic.record);
+
+        // Calls consume_dynamic twice with the same dynamic record
+        // This SHOULD SUCCEED (dynamic.record input doesn't consume the record)
+        function call_dynamic_twice:
+            input r0 as dynamic.record;
+            call.dynamic {base_program_field} {aleo_field} {consume_dynamic_field} with r0 (as dynamic.record);
+            call.dynamic {base_program_field} {aleo_field} {consume_dynamic_field} with r0 (as dynamic.record);
+
+        constructor:
+            assert.eq true true;
+        "
+    );
+
+    let base_program = Program::<CurrentNetwork>::from_str(&base_program_str).unwrap();
+    let caller_program = Program::<CurrentNetwork>::from_str(&caller_program_str).unwrap();
+
+    // Deploy both programs
+    println!("Deploying {base_program_name}.aleo...");
+    let deploy_base = vm.deploy(&caller_private_key, &base_program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_base], rng);
+
+    println!("Deploying double_spend_test.aleo...");
+    let deploy_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_caller], rng);
+
+    // Helper to mint a record and convert to dynamic
+    let mint_dynamic_record = |rng: &mut TestRng| {
+        println!("Minting record...");
+        let mint_tx = vm
+            .execute(
+                &caller_private_key,
+                (format!("{base_program_name}.aleo"), "mint"),
+                vec![Value::from_str(&caller_address.to_string()).unwrap(), Value::from_str("100u64").unwrap()]
+                    .into_iter(),
+                None,
+                0,
+                None,
+                rng,
+            )
+            .unwrap();
+        let execution = mint_tx.execution().unwrap();
+        let record = execution
+            .transitions()
+            .last()
+            .unwrap()
+            .outputs()
+            .iter()
+            .find_map(|output| match output {
+                Output::Record(_, _, Some(record), _) => Some(record.decrypt(&caller_view_key).unwrap()),
+                _ => None,
+            })
+            .unwrap();
+        add_and_test(&vm, &caller_private_key, &[mint_tx], rng);
+        DynamicRecord::<CurrentNetwork>::from_record(&record).unwrap()
+    };
+
+    // Test 1: Passing same dynamic record to static-input function twice should fail (double-spend)
+    println!("\nTest 1: Calling static-input function twice with same dynamic record (should fail)...");
+    let dynamic_record = mint_dynamic_record(rng);
+    let result = vm.execute(
+        &caller_private_key,
+        ("double_spend_test.aleo", "call_static_twice"),
+        vec![Value::DynamicRecord(dynamic_record)].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    );
+
+    if let Ok(transaction) = result {
+        // If execution succeeds, the transaction should be aborted when added to block
+        let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
+        assert_eq!(block.transactions().num_accepted(), 0, "Transaction should not be accepted");
+        assert_eq!(block.aborted_transaction_ids().len(), 1, "Transaction should be aborted due to double-spend");
+        vm.add_next_block(&block).unwrap();
+        println!("Double-spend correctly detected and transaction aborted.");
+    } else {
+        println!("Double-spend correctly detected during execution: {}", result.unwrap_err());
+    }
+
+    // Test 2: Passing same dynamic record to dynamic-input function twice should succeed
+    println!("\nTest 2: Calling dynamic-input function twice with same dynamic record (should succeed)...");
+    let dynamic_record = mint_dynamic_record(rng);
+    let transaction = vm
+        .execute(
+            &caller_private_key,
+            ("double_spend_test.aleo", "call_dynamic_twice"),
+            vec![Value::DynamicRecord(dynamic_record)].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .expect("Passing dynamic record to dynamic-input function multiple times should succeed");
+
+    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+    println!("Successfully passed same dynamic record to dynamic-input function twice.");
+}
+
+// Tests dynamic calls to programs deployed before V14 (without translation keys).
+// Verifies that:
+// 1. Pre-V14 deployments do not include translation keys.
+// 2. V14 deployments include translation keys.
+// 3. A prover VM with translation keys can create transactions.
+// 4. A verifier VM without translation keys rejects the transaction.
+#[test]
+fn test_dynamic_call_to_pre_v14_program() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
+
+    let legacy_program = Program::<CurrentNetwork>::from_str(
+        r"
+        program legacy_token.aleo;
+
+        record token:
+            owner as address.private;
+            amount as u64.private;
+
+        function mint:
+            input r0 as address.private;
+            input r1 as u64.private;
+            cast r0 r1 into r2 as token.record;
+            output r2 as token.record;
+
+        function transfer:
+            input r0 as token.record;
+            input r1 as address.private;
+            input r2 as u64.private;
+            cast r1 r2 into r3 as token.record;
+            output r3 as token.record;
+
+        constructor:
+            assert.eq true true;
+        ",
+    )
+    .unwrap();
+
+    let caller_program = Program::<CurrentNetwork>::from_str(
+        r"
+        program dynamic_caller.aleo;
+
+        function call_legacy_transfer:
+            input r0 as field.public;
+            input r1 as field.public;
+            input r2 as field.public;
+            input r3 as dynamic.record;
+            input r4 as address.private;
+            input r5 as u64.private;
+            call.dynamic r0 r1 r2 with r3 r4 r5 (as dynamic.record address.private u64.private) into r6 (as dynamic.record);
+            async call_legacy_transfer into r7;
+            output r6 as dynamic.record;
+            output r7 as dynamic_caller.aleo/call_legacy_transfer.future;
+
+        finalize call_legacy_transfer:
+            assert.eq true true;
+
+        constructor:
+            assert.eq true true;
+        ",
+    )
+    .unwrap();
+
+    let legacy_program_field = Identifier::<CurrentNetwork>::from_str("legacy_token").unwrap().to_field().unwrap();
+    let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+    let transfer_field = Identifier::<CurrentNetwork>::from_str("transfer").unwrap().to_field().unwrap();
+
+    // --- Set up verifier VM (pre-V14 deployment, no translation keys) ---
+    let pre_v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V13).unwrap_or(1);
+    let verifier_vm = sample_vm_at_height(pre_v14_height, rng);
+
+    // Deploy legacy program before V14.
+    let deploy_legacy_pre_v14 = verifier_vm.deploy(&caller_private_key, &legacy_program, None, 0, None, rng).unwrap();
+
+    if let Transaction::Deploy(_, _, _, deployment, _) = &deploy_legacy_pre_v14 {
+        assert!(
+            deployment.translation_verifying_keys().is_none(),
+            "Pre-V14 deployment should not have translation keys"
+        );
+    }
+
+    add_and_test(&verifier_vm, &caller_private_key, &[deploy_legacy_pre_v14], rng);
+
+    // Mint a token on verifier VM.
+    let mint_tx = verifier_vm
+        .execute(
+            &caller_private_key,
+            ("legacy_token.aleo", "mint"),
+            vec![Value::from_str(&caller_address.to_string()).unwrap(), Value::from_str("1000u64").unwrap()]
+                .into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    add_and_test(&verifier_vm, &caller_private_key, &[mint_tx], rng);
+
+    // Advance verifier VM to V14.
+    let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
+    for _ in verifier_vm.block_store().current_block_height()..v14_height {
+        let block = sample_next_block(&verifier_vm, &caller_private_key, &[], rng).unwrap();
+        verifier_vm.add_next_block(&block).unwrap();
+    }
+
+    // Deploy caller program on verifier VM at V14.
+    let deploy_caller_verifier = verifier_vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
+    add_and_test(&verifier_vm, &caller_private_key, &[deploy_caller_verifier], rng);
+
+    // Verify the verifier VM does NOT have translation keys for `legacy_token.aleo/token`.
+    let legacy_program_id = console::program::ProgramID::<CurrentNetwork>::from_str("legacy_token.aleo").unwrap();
+    let token_name = Identifier::<CurrentNetwork>::from_str("token").unwrap();
+
+    {
+        let process = verifier_vm.process();
+        let vm_process = process.read();
+        let stack = vm_process.get_stack(legacy_program_id).unwrap();
+        assert!(
+            stack.get_translation_verifying_key(&token_name).is_err(),
+            "Verifier VM should NOT have translation key (pre-V14 deployment)"
+        );
+    }
+
+    // --- Set up prover VM (V14 deployment, has translation keys) ---
+    let prover_vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    // Deploy legacy program at V14 (includes translation keys).
+    let deploy_legacy_v14 = prover_vm.deploy(&caller_private_key, &legacy_program, None, 0, None, rng).unwrap();
+
+    if let Transaction::Deploy(_, _, _, deployment, _) = &deploy_legacy_v14 {
+        assert!(deployment.translation_verifying_keys().is_some(), "V14 deployment should include translation keys");
+    }
+
+    add_and_test(&prover_vm, &caller_private_key, &[deploy_legacy_v14], rng);
+
+    // Deploy caller program on prover VM.
+    let deploy_caller_prover = prover_vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
+    add_and_test(&prover_vm, &caller_private_key, &[deploy_caller_prover], rng);
+
+    // Mint a token on prover VM.
+    let prover_mint_tx = prover_vm
+        .execute(
+            &caller_private_key,
+            ("legacy_token.aleo", "mint"),
+            vec![Value::from_str(&caller_address.to_string()).unwrap(), Value::from_str("1000u64").unwrap()]
+                .into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    let prover_minted_record = prover_mint_tx
+        .execution()
+        .unwrap()
+        .transitions()
+        .last()
+        .unwrap()
+        .outputs()
+        .iter()
+        .find_map(|output| match output {
+            Output::Record(_, _, Some(record), _) => Some(record.decrypt(&caller_view_key).unwrap()),
+            _ => None,
+        })
+        .unwrap();
+    add_and_test(&prover_vm, &caller_private_key, &[prover_mint_tx], rng);
+
+    // Prover creates a transaction requiring translation.
+    let dynamic_record = DynamicRecord::<CurrentNetwork>::from_record(&prover_minted_record).unwrap();
+
+    let transaction = prover_vm
+        .execute(
+            &caller_private_key,
+            ("dynamic_caller.aleo", "call_legacy_transfer"),
+            vec![
+                Value::from_str(&format!("{legacy_program_field}")).unwrap(),
+                Value::from_str(&format!("{aleo_field}")).unwrap(),
+                Value::from_str(&format!("{transfer_field}")).unwrap(),
+                Value::DynamicRecord(dynamic_record),
+                Value::from_str(&caller_address.to_string()).unwrap(),
+                Value::from_str("500u64").unwrap(),
+            ]
+            .into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .expect("Prover with translation keys should create transaction");
+
+    // Prover VM can verify its own transaction.
+    prover_vm.check_transaction(&transaction, None, rng).expect("Prover VM should verify its own transaction");
+
+    // Verifier VM (without translation keys) should fail to verify.
+    let verify_result = verifier_vm.check_transaction(&transaction, None, rng);
+    assert!(verify_result.is_err(), "Verifier VM without translation keys should reject transaction");
+}
+
+// Tests that a consumed record cannot be reused in a subsequent block.
+#[test]
+fn test_replay_attack_prevention_across_blocks() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    let base_program_field = Identifier::<CurrentNetwork>::from_str("replay_base").unwrap().to_field().unwrap();
+    let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+    let consume_field = Identifier::<CurrentNetwork>::from_str("consume").unwrap().to_field().unwrap();
+
+    // Define a base program with a record that can be consumed
+    let base_program = Program::<CurrentNetwork>::from_str(
+        r"
+        program replay_base.aleo;
+
+        record token:
+            owner as address.private;
+            amount as u64.private;
+
+        function mint:
+            input r0 as u64.private;
+            cast self.caller r0 into r1 as token.record;
+            output r1 as token.record;
+
+        function consume:
+            input r0 as token.record;
+            output r0.amount as u64.public;
+
+        constructor:
+            assert.eq true true;
+        ",
+    )
+    .unwrap();
+
+    // Define a caller program that consumes records via dynamic call
+    let caller_program_str = format!(
+        r"
+        program replay_caller.aleo;
+
+        function dynamic_consume:
+            input r0 as dynamic.record;
+            call.dynamic {base_program_field} {aleo_field} {consume_field}
+                with r0 (as dynamic.record)
+                into r1 (as u64.public);
+            output r1 as u64.public;
+
+        constructor:
+            assert.eq true true;
+        "
+    );
+    let caller_program = Program::<CurrentNetwork>::from_str(&caller_program_str).unwrap();
+
+    // Deploy programs
+    println!("Deploying replay_base.aleo...");
+    let deploy_base = vm.deploy(&caller_private_key, &base_program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_base], rng);
+
+    println!("Deploying replay_caller.aleo...");
+    let deploy_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_caller], rng);
+
+    // Mint a record
+    println!("\nMinting a token record...");
+    let mint_tx = vm
+        .execute(
+            &caller_private_key,
+            ("replay_base.aleo", "mint"),
+            vec![Value::from_str("1000u64").unwrap()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[mint_tx.clone()], rng);
+
+    // Extract the minted record
+    let record = mint_tx
+        .records()
+        .filter_map(|(_, record)| record.decrypt(&caller_view_key).ok())
+        .next()
+        .expect("Should have a minted record");
+    let dynamic_record = DynamicRecord::<CurrentNetwork>::from_record(&record).unwrap();
+    println!("Minted record");
+
+    // Block N: Consume the record via dynamic call (should succeed)
+    println!("\nBlock N: Consuming record via dynamic call (should succeed)...");
+    let consume_tx = vm
+        .execute(
+            &caller_private_key,
+            ("replay_caller.aleo", "dynamic_consume"),
+            vec![Value::DynamicRecord(dynamic_record.clone())].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[consume_tx], rng);
+    println!("Record consumed successfully in block N");
+
+    // Block N+1: Try to consume the same record again (replay attack - should fail)
+    println!("\nBlock N+1: Attempting replay attack with same record (should fail)...");
+    let replay_result = vm.execute(
+        &caller_private_key,
+        ("replay_caller.aleo", "dynamic_consume"),
+        vec![Value::DynamicRecord(dynamic_record)].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    );
+
+    match replay_result {
+        Ok(replay_tx) => {
+            // If execution succeeds, the transaction should be rejected when added to block
+            let block = sample_next_block(&vm, &caller_private_key, &[replay_tx], rng).unwrap();
+            assert_eq!(block.transactions().num_accepted(), 0, "Replay transaction should not be accepted");
+            assert!(!block.aborted_transaction_ids().is_empty(), "Replay should be aborted");
+            vm.add_next_block(&block).unwrap();
+            println!("Replay correctly prevented - transaction aborted");
+        }
+        Err(e) => {
+            println!("Replay attack correctly prevented during execution: {e}");
+        }
+    }
+
+    println!("\nSUCCESS: Replay attack prevented");
+}
+
+// Tests that self.caller reflects the immediate caller in nested dynamic calls.
+// A → B → C: C sees B as caller, not A.
+#[test]
+fn test_nested_caller_authorization() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    // Program that records who called it
+    let recorder_program = Program::<CurrentNetwork>::from_str(
+        r"
+        program caller_recorder.aleo;
+
+        mapping callers:
+            key as u8.public;
+            value as address.public;
+
+        function record_caller:
+            input r0 as u8.public;
+            async record_caller r0 self.caller into r1;
+            output r1 as caller_recorder.aleo/record_caller.future;
+
+        finalize record_caller:
+            input r0 as u8.public;
+            input r1 as address.public;
+            set r1 into callers[r0];
+
+        constructor:
+            assert.eq true true;
+        ",
+    )
+    .unwrap();
+
+    let recorder_field = Identifier::<CurrentNetwork>::from_str("caller_recorder").unwrap().to_field().unwrap();
+    let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+    let record_caller_field = Identifier::<CurrentNetwork>::from_str("record_caller").unwrap().to_field().unwrap();
+
+    // Middle program that calls recorder and passes self.caller
+    let middle_program_str = format!(
+        r"
+        program middle_caller.aleo;
+
+        function call_recorder:
+            input r0 as u8.public;
+            call.dynamic {recorder_field} {aleo_field} {record_caller_field}
+                with r0 (as u8.public)
+                into r1 (as dynamic.future);
+            async call_recorder r1 into r2;
+            output r2 as middle_caller.aleo/call_recorder.future;
+
+        finalize call_recorder:
+            input r0 as dynamic.future;
+            await r0;
+
+        constructor:
+            assert.eq true true;
+        "
+    );
+    let middle_program = Program::<CurrentNetwork>::from_str(&middle_program_str).unwrap();
+
+    let middle_field = Identifier::<CurrentNetwork>::from_str("middle_caller").unwrap().to_field().unwrap();
+    let call_recorder_field = Identifier::<CurrentNetwork>::from_str("call_recorder").unwrap().to_field().unwrap();
+
+    // Outer program that calls middle
+    let outer_program_str = format!(
+        r"
+        program outer_caller.aleo;
+
+        function call_middle:
+            input r0 as u8.public;
+            call.dynamic {middle_field} {aleo_field} {call_recorder_field}
+                with r0 (as u8.public)
+                into r1 (as dynamic.future);
+            async call_middle r1 into r2;
+            output r2 as outer_caller.aleo/call_middle.future;
+
+        finalize call_middle:
+            input r0 as dynamic.future;
+            await r0;
+
+        constructor:
+            assert.eq true true;
+        "
+    );
+    let outer_program = Program::<CurrentNetwork>::from_str(&outer_program_str).unwrap();
+
+    // Deploy all programs
+    println!("Deploying caller_recorder.aleo...");
+    let deploy_recorder = vm.deploy(&caller_private_key, &recorder_program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_recorder], rng);
+
+    println!("Deploying middle_caller.aleo...");
+    let deploy_middle = vm.deploy(&caller_private_key, &middle_program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_middle], rng);
+
+    println!("Deploying outer_caller.aleo...");
+    let deploy_outer = vm.deploy(&caller_private_key, &outer_program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_outer], rng);
+
+    // Test 1: Direct call to recorder - self.caller should be the user's address
+    println!("\nTest 1: Direct call to recorder (self.caller = user address)...");
+    let direct_tx = vm
+        .execute(
+            &caller_private_key,
+            ("caller_recorder.aleo", "record_caller"),
+            vec![Value::from_str("0u8").unwrap()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[direct_tx], rng);
+
+    // Verify the mapping value
+    let recorded_caller_0 = vm
+        .finalize_store()
+        .get_value_confirmed(
+            ProgramID::from_str("caller_recorder.aleo").unwrap(),
+            Identifier::from_str("callers").unwrap(),
+            &Plaintext::from_str("0u8").unwrap(),
+        )
+        .unwrap()
+        .unwrap();
+    println!("Direct call recorded caller: {recorded_caller_0}");
+    assert_eq!(
+        recorded_caller_0.to_string(),
+        caller_address.to_string(),
+        "Direct call should record user's address as caller"
+    );
+
+    // Test 2: Call through middle program - self.caller should be middle program's address
+    println!("\nTest 2: Call through middle_caller (self.caller = middle program address)...");
+    let middle_program_address =
+        ProgramID::<CurrentNetwork>::from_str("middle_caller.aleo").unwrap().to_address().unwrap();
+    let through_middle_tx = vm
+        .execute(
+            &caller_private_key,
+            ("middle_caller.aleo", "call_recorder"),
+            vec![Value::from_str("1u8").unwrap()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[through_middle_tx], rng);
+
+    let recorded_caller_1 = vm
+        .finalize_store()
+        .get_value_confirmed(
+            ProgramID::from_str("caller_recorder.aleo").unwrap(),
+            Identifier::from_str("callers").unwrap(),
+            &Plaintext::from_str("1u8").unwrap(),
+        )
+        .unwrap()
+        .unwrap();
+    println!("Through middle recorded caller: {recorded_caller_1}");
+    println!("Expected middle program address: {middle_program_address}");
+    assert_eq!(
+        recorded_caller_1.to_string(),
+        middle_program_address.to_string(),
+        "Call through middle should record middle program's address as caller"
+    );
+
+    // Test 3: Call through outer->middle - self.caller should still be middle program's address
+    println!("\nTest 3: Call through outer->middle->recorder (self.caller = middle program address)...");
+    let through_outer_tx = vm
+        .execute(
+            &caller_private_key,
+            ("outer_caller.aleo", "call_middle"),
+            vec![Value::from_str("2u8").unwrap()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    add_and_test(&vm, &caller_private_key, &[through_outer_tx], rng);
+
+    let recorded_caller_2 = vm
+        .finalize_store()
+        .get_value_confirmed(
+            ProgramID::from_str("caller_recorder.aleo").unwrap(),
+            Identifier::from_str("callers").unwrap(),
+            &Plaintext::from_str("2u8").unwrap(),
+        )
+        .unwrap()
+        .unwrap();
+    println!("Through outer->middle recorded caller: {recorded_caller_2}");
+    // The caller to recorder is middle_caller, even when called through outer_caller
+    assert_eq!(
+        recorded_caller_2.to_string(),
+        middle_program_address.to_string(),
+        "Call through outer->middle should record middle program's address as caller (immediate caller)"
+    );
+
+    println!("\nSUCCESS: Nested caller authorization correctly identifies immediate caller in dynamic call chains");
+}

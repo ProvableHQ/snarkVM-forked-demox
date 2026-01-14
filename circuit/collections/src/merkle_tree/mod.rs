@@ -149,8 +149,8 @@ impl<E: Environment, LH: LeafHash<E, Hash = PH::Hash>, PH: PathHash<E, Hash = Fi
                 *tree_node = path_hasher.hash_children(left, right);
             }
             // Use the precomputed empty node hash for every empty node, if there are any.
+            let empty_node_hash = path_hasher.hash_children(&empty_hash, &empty_hash);
             if start + num_full_nodes < end {
-                let empty_node_hash = path_hasher.hash_children(&empty_hash, &empty_hash);
                 for node in tree.iter_mut().take(end).skip(start + num_full_nodes) {
                     *node = empty_node_hash.clone();
                 }
@@ -207,11 +207,9 @@ fn tree_depth<const DEPTH: u8>(tree_size: usize) -> Result<u8> {
     // Since we only allow tree sizes up to u64::MAX, the maximum possible depth is 63.
     let tree_depth = u8::try_from(tree_size.checked_ilog2().unwrap_or(0))?;
     // Ensure the tree depth is within the depth bound.
-    match tree_depth <= DEPTH {
-        // Return the tree depth.
-        true => Ok(tree_depth),
-        false => bail!("Merkle tree cannot exceed depth {DEPTH}: attempted to reach depth {tree_depth}"),
-    }
+    ensure!(tree_depth <= DEPTH, "Merkle tree cannot exceed depth {DEPTH}: attempted to reach depth {tree_depth}");
+
+    Ok(tree_depth)
 }
 
 /// Returns the index of the left child, given an index.

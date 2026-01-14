@@ -1133,3 +1133,117 @@ fn test_differing_keys() {
         .unwrap();
     add_and_test(&vm, &caller_private_key, &[transaction_mint_all], rng);
 }
+
+// Tests translation with a record containing exactly 32 entries (MAX_DATA_ENTRIES boundary).
+// This verifies that the Merkle tree of depth 5 can handle the maximum number of entries.
+#[test]
+fn test_translation_max_entries_record() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
+
+    let program_name_field = Identifier::<CurrentNetwork>::from_str("max_entries").unwrap().to_field().unwrap();
+    let network_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+    let consume_max_field = Identifier::<CurrentNetwork>::from_str("consume_max_record").unwrap().to_field().unwrap();
+
+    // Generate 32 field names (f0 through f31) for the record entries
+    let field_names: Vec<String> = (0..32).map(|i| format!("f{i}")).collect();
+    let field_declarations: String =
+        field_names.iter().map(|name| format!("        {name} as u64.public;\n")).collect();
+
+    // Generate cast arguments for minting
+    let cast_args: String = (0..32).map(|i| format!("{i}u64 ")).collect::<String>().trim().to_string();
+
+    // Generate sum computation for consuming (sum all 32 fields)
+    let mut sum_computation = String::new();
+    sum_computation.push_str("        add r0.f0 r0.f1 into r1;\n");
+    for i in 2..32 {
+        let prev = if i == 2 { 1 } else { i - 1 };
+        sum_computation.push_str(&format!("        add r{prev} r0.f{i} into r{i};\n"));
+    }
+
+    let program_str = format!(
+        r"
+    program max_entries.aleo;
+
+    // Record with exactly 32 entries (MAX_DATA_ENTRIES)
+    record max_record:
+        owner as address.private;
+{field_declarations}
+    // Mint a max_record with all fields set to their index value
+    function mint_max_record:
+        cast self.signer {cast_args} into r0 as max_record.record;
+        output r0 as max_record.record;
+
+    // Consume a max_record and return the sum of all fields
+    function consume_max_record:
+        input r0 as max_record.record;
+{sum_computation}        output r31 as u64.public;
+
+    // Dynamic caller that passes max_record through translation
+    function dynamic_consume_max:
+        input r0 as dynamic.record;
+        call.dynamic {program_name_field} {network_field} {consume_max_field}
+            with r0 (as dynamic.record)
+            into r1 (as u64.public);
+        output r1 as u64.public;
+
+    constructor:
+        assert.eq true true;
+    "
+    );
+
+    let program = Program::<CurrentNetwork>::from_str(&program_str).unwrap();
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    // Deploy the program
+    println!("Deploying max_entries.aleo with 32-entry record...");
+    let deploy_tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_tx], rng);
+
+    // Mint a max_record
+    println!("Minting max_record with 32 entries...");
+    let mint_tx = vm
+        .execute(
+            &caller_private_key,
+            ("max_entries.aleo", "mint_max_record"),
+            Vec::<Value<CurrentNetwork>>::new().into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    let mint_output = mint_tx.transitions().next().unwrap().outputs().iter().next().unwrap();
+    let max_record = match mint_output {
+        Output::Record(_, _, record_ciphertext, _) => {
+            record_ciphertext.as_ref().unwrap().decrypt(&caller_view_key).unwrap()
+        }
+        _ => panic!("Expected a record output"),
+    };
+
+    add_and_test(&vm, &caller_private_key, &[mint_tx], rng);
+
+    // Convert to dynamic record and test translation
+    println!("Testing translation of 32-entry record...");
+    let dynamic_record = DynamicRecord::from_record(&max_record).unwrap();
+
+    let consume_tx = vm
+        .execute(
+            &caller_private_key,
+            ("max_entries.aleo", "dynamic_consume_max"),
+            vec![Value::<CurrentNetwork>::DynamicRecord(dynamic_record)].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    // Verify the transaction succeeds (sum of 0+1+2+...+31 = 496)
+    add_and_test(&vm, &caller_private_key, &[consume_tx], rng);
+    println!("Successfully translated 32-entry record (MAX_DATA_ENTRIES boundary)");
+}

@@ -284,7 +284,7 @@ impl<N: Network> GetRecordDynamic<N> {
             Some(data) => {
                 // Retrieving the entry
                 let (index, _, entry) = data.get_full(entry_identifier).ok_or_else(|| {
-                    anyhow!("The dynamic record's data is present but does not contain entry entry {entry_identifier}",)
+                    anyhow!("The dynamic record's data is present but does not contain entry {entry_identifier}",)
                 })?;
 
                 // Constructing the leaf of the merkleized-data tree

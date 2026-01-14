@@ -150,7 +150,7 @@ impl<N: Network> Translation<N> {
     {
         let mut batch_verifier_inputs: HashMap<(ProgramID<N>, Identifier<N>), Vec<Vec<N::Field>>> = HashMap::new();
 
-        let mut translation_count = 0;
+        let mut translation_index = 0;
 
         // Traversal order affects the translation count as well as the internal order of each batch input to proving/verification.
         // Order is irrelevant as long as it is consistent between the prover and verifier. (cf. Translation::prepare)
@@ -185,7 +185,7 @@ impl<N: Network> Translation<N> {
                     izip!(caller_inputs.iter(), transition.inputs().iter(), callee_input_types.iter()).enumerate()
                 {
                     // Construct the translation count as a field element.
-                    let field_translation_count = *Field::<N>::from_u128(translation_count as u128);
+                    let field_translation_index = *Field::<N>::from_u128(translation_index as u128);
                     // Construct the input output index as a field element.
                     let field_input_output_index = *Field::<N>::from_u128(input_output_index as u128);
 
@@ -210,7 +210,7 @@ impl<N: Network> Translation<N> {
                                 field_is_input,
                                 field_static_is_external,
                                 field_function_id,
-                                field_translation_count,
+                                field_translation_index,
                                 field_input_output_index,
                                 field_id_static,
                                 field_id_dynamic,
@@ -221,7 +221,7 @@ impl<N: Network> Translation<N> {
                                 .or_default()
                                 .push(verifier_inputs);
 
-                            translation_count += 1;
+                            translation_index += 1;
                         }
                         (
                             Input::DynamicRecord(id_dynamic),
@@ -243,7 +243,7 @@ impl<N: Network> Translation<N> {
                                 field_is_input,
                                 field_static_is_external,
                                 field_function_id,
-                                field_translation_count,
+                                field_translation_index,
                                 field_input_output_index,
                                 field_id_static,
                                 field_id_dynamic,
@@ -254,7 +254,7 @@ impl<N: Network> Translation<N> {
 
                             batch_verifier_inputs.entry((*program_id, *record_name)).or_default().push(verifier_inputs);
 
-                            translation_count += 1;
+                            translation_index += 1;
                         }
                         (Input::Record(..), Input::DynamicRecord(..), ValueType::DynamicRecord) => {
                             bail!("Translation of (non-external) input records to dynamic records is not supported");
@@ -310,7 +310,7 @@ impl<N: Network> Translation<N> {
                     izip!(caller_outputs.iter(), transition.outputs().iter(), callee_output_types.iter()).enumerate()
                 {
                     // Construct the translation count as a field element.
-                    let field_translation_count = *Field::<N>::from_u128(translation_count as u128);
+                    let field_translation_index = *Field::<N>::from_u128(translation_index as u128);
                     // Construct the input output index as a field element.
                     let field_input_output_index = *Field::<N>::from_u128((num_inputs + input_output_index) as u128);
 
@@ -336,7 +336,7 @@ impl<N: Network> Translation<N> {
                                 field_is_input,
                                 field_static_is_external,
                                 field_function_id,
-                                field_translation_count,
+                                field_translation_index,
                                 field_input_output_index,
                                 field_id_static,
                                 field_id_dynamic,
@@ -347,7 +347,7 @@ impl<N: Network> Translation<N> {
                                 .or_default()
                                 .push(verifier_inputs);
 
-                            translation_count += 1;
+                            translation_index += 1;
                         }
                         (
                             Output::DynamicRecord(id_dynamic),
@@ -370,7 +370,7 @@ impl<N: Network> Translation<N> {
                                 field_is_input,
                                 field_static_is_external,
                                 field_function_id,
-                                field_translation_count,
+                                field_translation_index,
                                 field_input_output_index,
                                 field_id_static,
                                 field_id_dynamic,
@@ -381,7 +381,7 @@ impl<N: Network> Translation<N> {
 
                             batch_verifier_inputs.entry((*program_id, *record_name)).or_default().push(verifier_inputs);
 
-                            translation_count += 1;
+                            translation_index += 1;
                         }
                         (Output::Record(..), Output::DynamicRecord(..), ValueType::DynamicRecord) => {
                             bail!("Translation of output dynamic records to (non-external) records is not supported");

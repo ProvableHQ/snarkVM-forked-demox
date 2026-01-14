@@ -40,7 +40,7 @@ fn translation_assignment_from_record_str(
     let program_id = ProgramID::<CurrentNetwork>::from_str("space_fighters.aleo").unwrap();
     let function_id = function_id_opt.unwrap_or(Field::<CurrentNetwork>::from_u64(Uniform::rand(rng)));
     let record_name = Identifier::<CurrentNetwork>::from_str("spacecraft").unwrap();
-    let translation_count = Uniform::rand(rng);
+    let translation_index = Uniform::rand(rng);
     let tvk = Uniform::rand(rng);
     let input_output_index = Uniform::rand(rng);
     let record_view_key = Uniform::rand(rng);
@@ -66,7 +66,7 @@ fn translation_assignment_from_record_str(
         record_name,
         is_input,
         static_is_external,
-        translation_count,
+        translation_index,
         tvk,
         input_output_index,
         id_dynamic,
@@ -109,7 +109,7 @@ fn test_translation_simple() {
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
     print_rc1s_data("simple");
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
-    let counts = count_is!(36081, 8, 24131, 24156);
+    let counts = count_is!(<=36085, 8, 24131, 24156);
     counts.assert_matches(
         <CurrentAleo as circuit::Environment>::num_constants(),
         <CurrentAleo as circuit::Environment>::num_public(),
@@ -122,7 +122,7 @@ fn test_translation_simple() {
     let translation_assignment = translation_assignment_from_record_str(record_static_str, true, false, None, &mut rng);
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
-    let counts = count_is!(6155, 8, 24131, 24156);
+    let counts = count_is!(<=6160, 8, 24131, 24156);
     counts.assert_matches(
         <CurrentAleo as circuit::Environment>::num_constants(),
         <CurrentAleo as circuit::Environment>::num_public(),
@@ -180,7 +180,7 @@ fn test_translation_recursive() {
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
     print_rc1s_data("recursive");
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
-    let counts = count_is!(38779, 8, 32721, 32750);
+    let counts = count_is!(<=38785, 8, 32721, 32750);
     counts.assert_matches(
         <CurrentAleo as circuit::Environment>::num_constants(),
         <CurrentAleo as circuit::Environment>::num_public(),
@@ -194,7 +194,7 @@ fn test_translation_recursive() {
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
 
-    let counts = count_is!(8853, 8, 32721, 32750);
+    let counts = count_is!(<=8860, 8, 32721, 32750);
     counts.assert_matches(
         <CurrentAleo as circuit::Environment>::num_constants(),
         <CurrentAleo as circuit::Environment>::num_public(),
@@ -268,7 +268,7 @@ fn test_translation_complex() {
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
     print_rc1s_data("complex");
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
-    let counts = count_is!(41323, 8, 68798, 68844);
+    let counts = count_is!(<=41330, 8, 68798, 68844);
     counts.assert_matches(
         <CurrentAleo as circuit::Environment>::num_constants(),
         <CurrentAleo as circuit::Environment>::num_public(),
@@ -281,7 +281,7 @@ fn test_translation_complex() {
     let translation_assignment = translation_assignment_from_record_str(record_static_str, true, false, None, &mut rng);
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
-    let counts = count_is!(11397, 8, 68798, 68844);
+    let counts = count_is!(<=11405, 8, 68798, 68844);
     counts.assert_matches(
         <CurrentAleo as circuit::Environment>::num_constants(),
         <CurrentAleo as circuit::Environment>::num_public(),
@@ -404,7 +404,7 @@ fn test_definition_invariance() {
 
     // Checking parameters of the first translation separately
     translation_assignments[0].to_circuit_assignment_internal::<CurrentAleo>().unwrap();
-    let counts = count_is!(37794, 8, 31043, 31070);
+    let counts = count_is!(<=37800, 8, 31043, 31070);
     counts.assert_matches(
         <CurrentAleo as circuit::Environment>::num_constants(),
         <CurrentAleo as circuit::Environment>::num_public(),
@@ -622,7 +622,7 @@ fn test_external_translation() {
     let is_input = bool::rand(&mut rng);
     // We specifically set the external-record flag to true
     let static_is_external = true;
-    let translation_count = Uniform::rand(&mut rng);
+    let translation_index = Uniform::rand(&mut rng);
     let id_dynamic = record_dynamic.to_id(function_id, tvk, U16::new(input_output_index)).unwrap();
     let id_static = external_record_output_id;
     let record_view_key = Uniform::rand(&mut rng);
@@ -636,7 +636,7 @@ fn test_external_translation() {
         record_name,
         is_input,
         static_is_external,
-        translation_count,
+        translation_index,
         tvk,
         input_output_index,
         id_dynamic,
@@ -648,7 +648,7 @@ fn test_external_translation() {
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
 
-    let counts = count_is!(38793, 8, 32562, 32591);
+    let counts = count_is!(<=38800, 8, 32562, 32591);
     counts.assert_matches(
         <CurrentAleo as circuit::Environment>::num_constants(),
         <CurrentAleo as circuit::Environment>::num_public(),

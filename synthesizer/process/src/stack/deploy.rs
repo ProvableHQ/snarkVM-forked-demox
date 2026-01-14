@@ -268,7 +268,7 @@ impl<N: Network> Stack<N> {
                     let record_name = *record_name;
                     let record_static = self.sample_record(&Address::rand(rng), &record_name, Group::rand(rng), rng)?;
                     let record_dynamic = DynamicRecord::<N>::from_record(&record_static)?;
-                    let translation_count = Uniform::rand(rng);
+                    let translation_index = Uniform::rand(rng);
                     let tvk = Uniform::rand(rng);
                     let input_output_index = Uniform::rand(rng);
                     let record_view_key: Option<Field<N>> = Uniform::rand(rng);
@@ -290,7 +290,7 @@ impl<N: Network> Stack<N> {
                             record_name,
                             is_input,
                             static_is_external,
-                            translation_count,
+                            translation_index,
                             tvk,
                             input_output_index,
                             id_dynamic,

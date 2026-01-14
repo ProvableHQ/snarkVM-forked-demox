@@ -34,8 +34,8 @@ pub struct TranslationAssignment<N: Network> {
     pub(super) is_input: bool,
     /// Whether the value type corresponding to the static record is `Record` or that of an `ExternalRecord`.
     pub(super) static_is_external: bool,
-    /// The number of times a translation circuit has been invoked in the current batch.
-    pub(super) translation_count: u16,
+    /// The index of this translation within the current batch.
+    pub(super) translation_index: u16,
     /// The view key of the transition containing the dynamic call.
     pub(super) tvk: Field<N>,
     /// Index of the input operand or output destination that contains the (dynamic and static) record.
@@ -65,7 +65,7 @@ impl<N: Network> TranslationAssignment<N> {
         record_name: Identifier<N>,
         is_input: bool,
         static_is_external: bool,
-        translation_count: u16,
+        translation_index: u16,
         tvk: Field<N>,
         input_output_index: u16,
         id_dynamic: Field<N>,
@@ -81,7 +81,7 @@ impl<N: Network> TranslationAssignment<N> {
             record_dynamic,
             is_input,
             static_is_external,
-            translation_count,
+            translation_index,
             tvk,
             input_output_index,
             id_dynamic,
@@ -123,10 +123,11 @@ impl<N: Network> TranslationAssignment<N> {
         // Inject the calling function id as `Mode::Public`.
         let circuit_function_id = circuit::Field::<A>::new(circuit::Mode::Public, self.function_id);
 
-        // Inject the translation count as `Mode::Public`.
-        let _circuit_translation_count = circuit::Field::<A>::new(
+        // Inject the translation index as `Mode::Public`.
+        // Note that although the index is not explicitly used in the circuit, the prover and verifier must use the same value for proof verification to succeed.
+        let _circuit_translation_index = circuit::Field::<A>::new(
             circuit::Mode::Public,
-            console::types::Field::<N>::from_u16(self.translation_count),
+            console::types::Field::<N>::from_u16(self.translation_index),
         );
 
         // Inject the register index as `Mode::Public`.

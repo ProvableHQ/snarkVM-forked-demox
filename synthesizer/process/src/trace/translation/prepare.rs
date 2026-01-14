@@ -29,7 +29,7 @@ impl<N: Network> Translation<N> {
         let mut batched_assignments: HashMap<(ProgramID<N>, Identifier<N>), Vec<TranslationAssignment<N>>> =
             HashMap::new();
 
-        let mut translation_count = 0;
+        let mut translation_index = 0;
 
         // Traversal order affects the translation count as well as the internal order of each batch input to proving/verification.
         // Order is irrelevant as long as it is consistent between the prover and verifier. (cf. Translation::prepare_verifier_inputs).
@@ -53,7 +53,7 @@ impl<N: Network> Translation<N> {
         // Construct the reverse call graph to easily access the caller when the need for translation is detected.
         let reverse_call_graph = Process::<N>::reverse_call_graph(call_graph);
 
-        // Closure that fetches the next translation task for the given caller and updates the next_task and translation_count
+        // Closure that fetches the next translation task for the given caller and updates the next_task and translation_index
         // trackers. It is called while iterating through the (callee's) inputs and outputs.
         let mut consume_translation_task = |caller_id: N::TransitionID| -> Result<()> {
             let translation_tasks = self
@@ -103,7 +103,7 @@ impl<N: Network> Translation<N> {
                 *record_name,
                 *is_input,
                 *static_is_external,
-                translation_count,
+                translation_index,
                 *tvk,
                 *input_output_index,
                 *id_dynamic,
@@ -112,7 +112,7 @@ impl<N: Network> Translation<N> {
                 *gamma,
             ));
 
-            translation_count += 1;
+            translation_index += 1;
 
             Ok(())
         };

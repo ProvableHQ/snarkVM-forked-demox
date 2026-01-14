@@ -2524,3 +2524,428 @@ fn test_many_futures_in_single_transaction() {
         assert_eq!(value, Value::from_str(&format!("{expected}u64")).unwrap());
     }
 }
+
+// Tests a `DynamicFuture` with exactly 16 arguments (MAX_INPUTS boundary).
+// This verifies that the Merkle tree of depth 4 can handle the maximum number of future arguments.
+#[test]
+fn test_dynamic_future_max_arguments() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    let program_field = Identifier::<CurrentNetwork>::from_str("max_args").unwrap().to_field().unwrap();
+    let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+    let sum_sixteen_field = Identifier::<CurrentNetwork>::from_str("sum_sixteen").unwrap().to_field().unwrap();
+
+    // Generate finalize input declarations for 16 u64 arguments
+    let finalize_inputs: String = (0..16).map(|i| format!("            input r{i} as u64.public;\n")).collect();
+
+    // Generate sum computation: add all 16 arguments together
+    let mut sum_computation = String::new();
+    sum_computation.push_str("            add r0 r1 into r16;\n");
+    for i in 2..16 {
+        let prev = 14 + i; // r16, r17, ... r29
+        let result = 15 + i; // r17, r18, ... r30
+        sum_computation.push_str(&format!("            add r{prev} r{i} into r{result};\n"));
+    }
+
+    // Program with a function that takes 16 arguments in its finalize
+    let callee_program_str = format!(
+        r"
+        program max_args.aleo;
+
+        mapping result:
+            key as u8.public;
+            value as u64.public;
+
+        // Function with finalize that takes 16 arguments
+        function sum_sixteen:
+            input r0 as u64.public;
+            input r1 as u64.public;
+            input r2 as u64.public;
+            input r3 as u64.public;
+            input r4 as u64.public;
+            input r5 as u64.public;
+            input r6 as u64.public;
+            input r7 as u64.public;
+            input r8 as u64.public;
+            input r9 as u64.public;
+            input r10 as u64.public;
+            input r11 as u64.public;
+            input r12 as u64.public;
+            input r13 as u64.public;
+            input r14 as u64.public;
+            input r15 as u64.public;
+            async sum_sixteen r0 r1 r2 r3 r4 r5 r6 r7 r8 r9 r10 r11 r12 r13 r14 r15 into r16;
+            output r16 as max_args.aleo/sum_sixteen.future;
+
+        finalize sum_sixteen:
+{finalize_inputs}{sum_computation}            set r30 into result[0u8];
+
+        constructor:
+            assert.eq true true;
+        "
+    );
+
+    // Caller that invokes sum_sixteen dynamically and receives a DynamicFuture with 16 arguments
+    let caller_program_str = format!(
+        r"
+        program max_args_caller.aleo;
+
+        function call_sum_sixteen:
+            call.dynamic {program_field} {aleo_field} {sum_sixteen_field}
+                with 1u64 2u64 3u64 4u64 5u64 6u64 7u64 8u64 9u64 10u64 11u64 12u64 13u64 14u64 15u64 16u64
+                (as u64.public u64.public u64.public u64.public u64.public u64.public u64.public u64.public u64.public u64.public u64.public u64.public u64.public u64.public u64.public u64.public)
+                into r0 (as dynamic.future);
+            async call_sum_sixteen r0 into r1;
+            output r1 as max_args_caller.aleo/call_sum_sixteen.future;
+
+        finalize call_sum_sixteen:
+            input r0 as dynamic.future;
+            await r0;
+
+        constructor:
+            assert.eq true true;
+        "
+    );
+
+    let callee_program = Program::<CurrentNetwork>::from_str(&callee_program_str).unwrap();
+    let caller_program = Program::<CurrentNetwork>::from_str(&caller_program_str).unwrap();
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    // Deploy callee first
+    println!("Deploying max_args.aleo with 16-argument finalize...");
+    let deploy_callee = vm.deploy(&caller_private_key, &callee_program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_callee], rng);
+
+    // Deploy caller
+    println!("Deploying max_args_caller.aleo...");
+    let deploy_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_caller], rng);
+
+    // Execute the dynamic call
+    println!("Executing call.dynamic with DynamicFuture containing 16 arguments...");
+    let transaction = vm
+        .execute(
+            &caller_private_key,
+            ("max_args_caller.aleo", "call_sum_sixteen"),
+            Vec::<Value<CurrentNetwork>>::new().into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+
+    // Verify the sum was computed correctly (1+2+3+...+16 = 136)
+    let result_value = vm
+        .finalize_store()
+        .get_value_confirmed(
+            ProgramID::from_str("max_args.aleo").unwrap(),
+            Identifier::from_str("result").unwrap(),
+            &Plaintext::from_str("0u8").unwrap(),
+        )
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(result_value, Value::from_str("136u64").unwrap());
+    println!("Successfully handled DynamicFuture with 16 arguments (MAX_INPUTS boundary)");
+}
+
+// Tests state consistency when multiple dynamic-call transactions in the same block
+// update the same mapping key.
+#[test]
+fn test_multiple_dynamic_transactions_same_mapping_key() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    let counter_field = Identifier::<CurrentNetwork>::from_str("counter").unwrap().to_field().unwrap();
+    let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+    let increment_field = Identifier::<CurrentNetwork>::from_str("increment").unwrap().to_field().unwrap();
+
+    // Program with a counter mapping that can be incremented
+    let counter_program = Program::<CurrentNetwork>::from_str(
+        r"
+        program counter.aleo;
+
+        mapping values:
+            key as u8.public;
+            value as u64.public;
+
+        function increment:
+            input r0 as u8.public;
+            input r1 as u64.public;
+            async increment r0 r1 into r2;
+            output r2 as counter.aleo/increment.future;
+
+        finalize increment:
+            input r0 as u8.public;
+            input r1 as u64.public;
+            get.or_use values[r0] 0u64 into r2;
+            add r2 r1 into r3;
+            set r3 into values[r0];
+
+        constructor:
+            assert.eq true true;
+        ",
+    )
+    .unwrap();
+
+    // Caller that uses dynamic call to increment the counter
+    let caller_program_str = format!(
+        r"
+        program dynamic_counter.aleo;
+
+        function dynamic_increment:
+            input r0 as u8.public;
+            input r1 as u64.public;
+            call.dynamic {counter_field} {aleo_field} {increment_field}
+                with r0 r1 (as u8.public u64.public)
+                into r2 (as dynamic.future);
+            async dynamic_increment r2 into r3;
+            output r3 as dynamic_counter.aleo/dynamic_increment.future;
+
+        finalize dynamic_increment:
+            input r0 as dynamic.future;
+            await r0;
+
+        constructor:
+            assert.eq true true;
+        "
+    );
+    let caller_program = Program::<CurrentNetwork>::from_str(&caller_program_str).unwrap();
+
+    // Deploy programs
+    println!("Deploying counter.aleo...");
+    let deploy_counter = vm.deploy(&caller_private_key, &counter_program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_counter], rng);
+
+    println!("Deploying dynamic_counter.aleo...");
+    let deploy_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_caller], rng);
+
+    // Create 3 transactions that all increment the same key (key=0)
+    // Each adds a different value: 10, 20, 30
+    // Expected final value: 0 + 10 + 20 + 30 = 60
+    println!("\nCreating 3 transactions to increment the same mapping key...");
+
+    let tx1 = vm
+        .execute(
+            &caller_private_key,
+            ("dynamic_counter.aleo", "dynamic_increment"),
+            vec![Value::from_str("0u8").unwrap(), Value::from_str("10u64").unwrap()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    let tx2 = vm
+        .execute(
+            &caller_private_key,
+            ("dynamic_counter.aleo", "dynamic_increment"),
+            vec![Value::from_str("0u8").unwrap(), Value::from_str("20u64").unwrap()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    let tx3 = vm
+        .execute(
+            &caller_private_key,
+            ("dynamic_counter.aleo", "dynamic_increment"),
+            vec![Value::from_str("0u8").unwrap(), Value::from_str("30u64").unwrap()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    // Add all 3 transactions in a single block
+    println!("Adding all 3 transactions in a single block...");
+    let block = sample_next_block(&vm, &caller_private_key, &[tx1, tx2, tx3], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 3, "All 3 transactions should be accepted");
+    vm.add_next_block(&block).unwrap();
+
+    // Verify the final state
+    let final_value = vm
+        .finalize_store()
+        .get_value_confirmed(
+            ProgramID::from_str("counter.aleo").unwrap(),
+            Identifier::from_str("values").unwrap(),
+            &Plaintext::from_str("0u8").unwrap(),
+        )
+        .unwrap()
+        .unwrap();
+
+    println!("Final value at key 0: {final_value}");
+    assert_eq!(final_value, Value::from_str("60u64").unwrap(), "Final value should be 10 + 20 + 30 = 60");
+
+    println!("\nSUCCESS: Multiple transactions updated same mapping key correctly");
+}
+
+// Tests that a failed finalize rejects only that transaction while others commit.
+#[test]
+fn test_multiple_dynamic_transactions_one_fails() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    let conditional_field = Identifier::<CurrentNetwork>::from_str("conditional").unwrap().to_field().unwrap();
+    let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+    let maybe_fail_field = Identifier::<CurrentNetwork>::from_str("maybe_fail").unwrap().to_field().unwrap();
+
+    // Program that conditionally fails during finalize
+    let conditional_program = Program::<CurrentNetwork>::from_str(
+        r"
+        program conditional.aleo;
+
+        mapping counter:
+            key as u8.public;
+            value as u64.public;
+
+        function maybe_fail:
+            input r0 as boolean.public;
+            input r1 as u64.public;
+            async maybe_fail r0 r1 into r2;
+            output r2 as conditional.aleo/maybe_fail.future;
+
+        finalize maybe_fail:
+            input r0 as boolean.public;
+            input r1 as u64.public;
+            // Fail if r0 is false
+            assert.eq r0 true;
+            // If we get here, increment the counter
+            get.or_use counter[0u8] 0u64 into r2;
+            add r2 r1 into r3;
+            set r3 into counter[0u8];
+
+        constructor:
+            assert.eq true true;
+        ",
+    )
+    .unwrap();
+
+    // Caller that uses dynamic call
+    let caller_program_str = format!(
+        r"
+        program conditional_caller.aleo;
+
+        function dynamic_maybe_fail:
+            input r0 as boolean.public;
+            input r1 as u64.public;
+            call.dynamic {conditional_field} {aleo_field} {maybe_fail_field}
+                with r0 r1 (as boolean.public u64.public)
+                into r2 (as dynamic.future);
+            async dynamic_maybe_fail r2 into r3;
+            output r3 as conditional_caller.aleo/dynamic_maybe_fail.future;
+
+        finalize dynamic_maybe_fail:
+            input r0 as dynamic.future;
+            await r0;
+
+        constructor:
+            assert.eq true true;
+        "
+    );
+    let caller_program = Program::<CurrentNetwork>::from_str(&caller_program_str).unwrap();
+
+    // Deploy programs
+    println!("Deploying conditional.aleo...");
+    let deploy_conditional = vm.deploy(&caller_private_key, &conditional_program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_conditional], rng);
+
+    println!("Deploying conditional_caller.aleo...");
+    let deploy_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_caller], rng);
+
+    // Create 3 transactions:
+    // tx1: succeeds (true), adds 10
+    // tx2: fails (false), tries to add 20
+    // tx3: succeeds (true), adds 30
+    // Expected final value: 0 + 10 + 30 = 40 (tx2's 20 is not added)
+    println!("\nCreating 3 transactions (tx2 will fail during finalize)...");
+
+    let tx1 = vm
+        .execute(
+            &caller_private_key,
+            ("conditional_caller.aleo", "dynamic_maybe_fail"),
+            vec![Value::from_str("true").unwrap(), Value::from_str("10u64").unwrap()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    let tx2 = vm
+        .execute(
+            &caller_private_key,
+            ("conditional_caller.aleo", "dynamic_maybe_fail"),
+            vec![Value::from_str("false").unwrap(), Value::from_str("20u64").unwrap()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    let tx3 = vm
+        .execute(
+            &caller_private_key,
+            ("conditional_caller.aleo", "dynamic_maybe_fail"),
+            vec![Value::from_str("true").unwrap(), Value::from_str("30u64").unwrap()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    let tx2_id = tx2.id();
+
+    // Add all 3 transactions in a single block
+    println!("Adding all 3 transactions in a single block...");
+    let block = sample_next_block(&vm, &caller_private_key, &[tx1, tx2, tx3], rng).unwrap();
+
+    // tx2 should be rejected, tx1 and tx3 should succeed
+    println!("Accepted: {}, Rejected: {}", block.transactions().num_accepted(), block.transactions().num_rejected());
+    assert_eq!(block.transactions().num_accepted(), 2, "2 transactions should be accepted");
+    assert_eq!(block.transactions().num_rejected(), 1, "1 transaction should be rejected");
+
+    // Final state value confirms which transaction was rejected:
+    // tx1 (10) + tx3 (30) = 40 means tx2 (20) was rejected.
+    println!("Expected tx2 ID that should be rejected: {tx2_id}");
+
+    vm.add_next_block(&block).unwrap();
+
+    // Verify the final state only includes tx1 and tx3's contributions
+    let final_value = vm
+        .finalize_store()
+        .get_value_confirmed(
+            ProgramID::from_str("conditional.aleo").unwrap(),
+            Identifier::from_str("counter").unwrap(),
+            &Plaintext::from_str("0u8").unwrap(),
+        )
+        .unwrap()
+        .unwrap();
+
+    println!("Final value at key 0: {final_value}");
+    assert_eq!(
+        final_value,
+        Value::from_str("40u64").unwrap(),
+        "Final value should be 10 + 30 = 40 (tx2's 20 was not added due to finalize failure)"
+    );
+
+    println!("\nSUCCESS: Failed transaction rejected, others committed");
+}

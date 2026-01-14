@@ -87,7 +87,7 @@ pub fn sample_assignment<N: Network, A: Aleo<Network = N>>(
     // [Output static (at callee) -> dynamic (at caller)]
     let record_static = stack.sample_record(&address, credits_record_name, nonce, rng)?;
     let record_dynamic = DynamicRecord::<N>::from_record(&record_static)?;
-    let translation_count = Uniform::rand(rng);
+    let translation_index = Uniform::rand(rng);
     let tvk = Uniform::rand(rng);
     let input_output_index = Uniform::rand(rng);
     let record_view_key: Field<N> = Uniform::rand(rng);
@@ -105,7 +105,7 @@ pub fn sample_assignment<N: Network, A: Aleo<Network = N>>(
         *credits_record_name,
         is_input,
         static_is_external,
-        translation_count,
+        translation_index,
         tvk,
         input_output_index,
         id_dynamic,
@@ -122,7 +122,7 @@ pub fn sample_assignment<N: Network, A: Aleo<Network = N>>(
         // static_is_external
         *Field::<N>::zero(),
         *function_id,
-        *Field::<N>::from_u128(translation_count as u128),
+        *Field::<N>::from_u128(translation_index as u128),
         *Field::<N>::from_u128(input_output_index as u128),
         *id_static,
         *id_dynamic,
