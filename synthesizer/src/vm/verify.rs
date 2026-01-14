@@ -190,85 +190,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 ensure!(owner.verify(*deployment_id), "Invalid owner signature for deployment transaction '{id}'");
 
                 // Get the deployment version.
-                // This implicitly check that the program checksum and program owner fields are set correctly.
+                // This implicitly checks that the program checksum and program owner fields are set correctly.
                 let version = deployment.version()?;
 
-                // If the `CONSENSUS_VERSION` is less than `V8`, ensure that
-                //   - the deployment edition is zero.
-                // If the `CONSENSUS_VERSION` is less than `V9` ensure that
-                //   - the deployment edition is zero or one.
-                //   - the deployment version is `V1`.
-                //   - the program does not use constructors, `Operand::Checksum`, `Operand::Edition`, or `Operand::ProgramOwner`
-                // If the `CONSENSUS_VERSION` is greater than or equal to `V9`, then verify that:
-                //   - the deployment version is `V2` or `V3`.
-                // If the `CONSENSUS_VERSION` is less than `V11`, ensure that
-                //   - the program does not include V11 syntax
-                // If the `CONSENSUS_VERSION` is less than `V12`, ensure that
-                //   - the program does not include V12 syntax
-                // If the `CONSENSUS_VERSION` is less than `V14`, ensure that
-                //   - the deployment version is not `V3`.
-                if consensus_version < ConsensusVersion::V8 {
-                    ensure!(
-                        deployment.edition().is_zero(),
-                        "Invalid deployment transaction '{id}' - edition should be zero before `ConsensusVersion::V8`",
-                    );
-                }
-                if consensus_version < ConsensusVersion::V9 {
-                    ensure!(
-                        deployment.edition() <= 1,
-                        "Invalid deployment transaction '{id}' - edition should be zero or one for before `ConsensusVersion::V9`"
-                    );
-                    ensure!(
-                        version == DeploymentVersion::V1,
-                        "Invalid deployment transaction '{id}' - the deployment version should be `V1` (which should not contain a program owner or checksum) before `ConsenusVersion::V9`"
-                    );
-                    ensure!(
-                        !deployment.program().contains_v9_syntax(),
-                        "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V9`"
-                    );
-                }
-                if consensus_version >= ConsensusVersion::V9 {
-                    ensure!(
-                        version == DeploymentVersion::V2 || version == DeploymentVersion::V3,
-                        "Invalid deployment transaction '{id}' - the deployment version should be `V2` or `V3` at `ConsensusVersion::V9` and beyond"
-                    );
-                }
-                if consensus_version < ConsensusVersion::V11 {
-                    ensure!(
-                        !deployment.program().contains_v11_syntax(),
-                        "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V11`"
-                    );
-                }
-                if consensus_version < ConsensusVersion::V12 {
-                    ensure!(
-                        !deployment.program().contains_v12_syntax(),
-                        "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V12`"
-                    );
-                }
-                if consensus_version >= ConsensusVersion::V12 {
-                    ensure!(
-                        !deployment.program().contains_string_type(),
-                        "Invalid deployment transaction '{id}' - program uses string type after `ConsensusVersion::V12`"
-                    );
-                }
-                if consensus_version < ConsensusVersion::V14 {
-                    ensure!(
-                        version != DeploymentVersion::V3,
-                        "Invalid deployment transaction '{id}' - the deployment version cannot be `V3` (which should contain a checksum but not a program owner) before `ConsensusVersion::V14`"
-                    );
-                }
+                // Validate deployment constraints based on consensus version.
+                validate_deployment_for_consensus_version(deployment, version, consensus_version, *id)?;
 
-                // If the `CONSENSUS_VERSION` is less than `V13`, then verify that:
-                //   - the program does not use the external struct syntax `some_program.aleo/StructT`
-                // If the `CONSENSUS_VERSION` is greater than or equal to `V13`, then verify that:
-                //   - the program's mappings do not use non-existent structs.
-                if consensus_version < ConsensusVersion::V13 {
-                    ensure!(
-                        !deployment.program().contains_external_struct(),
-                        "Invalid deployment transaction '{id}' - external structs may only be used beginning with `ConsensusVersion::V13`"
-                    );
-                }
-
+                // If the consensus version is V13 or later, verify the program's mappings do not use non-existent structs.
                 if consensus_version >= ConsensusVersion::V13 {
                     self.process.read().mapping_types_exist(deployment.program())?;
                 }
@@ -754,6 +682,93 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         finish!(timer, "Check the global state root");
         result
     }
+}
+
+/// Validates deployment constraints based on consensus version.
+///
+/// # Constraints by Consensus Version
+///
+/// - **< V8**: Edition must be zero.
+/// - **< V9**: Edition must be zero or one; deployment version must be `V1`; program cannot use V9 syntax.
+/// - **≥ V9**: Deployment version must be `V2` or `V3`.
+/// - **< V11**: Program cannot use V11 syntax.
+/// - **< V12**: Program cannot use V12 syntax.
+/// - **≥ V12**: Program cannot use string type.
+/// - **< V13**: Program cannot use external structs.
+/// - **< V14**: Deployment version cannot be `V3`.
+fn validate_deployment_for_consensus_version<N: Network>(
+    deployment: &Deployment<N>,
+    version: DeploymentVersion,
+    consensus_version: ConsensusVersion,
+    id: N::TransactionID,
+) -> Result<()> {
+    // Edition constraints.
+    if consensus_version < ConsensusVersion::V8 {
+        ensure!(
+            deployment.edition().is_zero(),
+            "Invalid deployment transaction '{id}' - edition should be zero before `ConsensusVersion::V8`",
+        );
+    }
+    if consensus_version < ConsensusVersion::V9 {
+        ensure!(
+            deployment.edition() <= 1,
+            "Invalid deployment transaction '{id}' - edition should be zero or one before `ConsensusVersion::V9`"
+        );
+    }
+
+    // Deployment version constraints.
+    if consensus_version < ConsensusVersion::V9 {
+        ensure!(
+            version == DeploymentVersion::V1,
+            "Invalid deployment transaction '{id}' - the deployment version should be `V1` before `ConsensusVersion::V9`"
+        );
+    }
+    if consensus_version >= ConsensusVersion::V9 {
+        ensure!(
+            version == DeploymentVersion::V2 || version == DeploymentVersion::V3,
+            "Invalid deployment transaction '{id}' - the deployment version should be `V2` or `V3` at `ConsensusVersion::V9` and beyond"
+        );
+    }
+    if consensus_version < ConsensusVersion::V14 {
+        ensure!(
+            version != DeploymentVersion::V3,
+            "Invalid deployment transaction '{id}' - the deployment version cannot be `V3` before `ConsensusVersion::V14`"
+        );
+    }
+
+    // Syntax constraints.
+    if consensus_version < ConsensusVersion::V9 {
+        ensure!(
+            !deployment.program().contains_v9_syntax(),
+            "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V9`"
+        );
+    }
+    if consensus_version < ConsensusVersion::V11 {
+        ensure!(
+            !deployment.program().contains_v11_syntax(),
+            "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V11`"
+        );
+    }
+    if consensus_version < ConsensusVersion::V12 {
+        ensure!(
+            !deployment.program().contains_v12_syntax(),
+            "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V12`"
+        );
+    }
+    if consensus_version >= ConsensusVersion::V12 {
+        ensure!(
+            !deployment.program().contains_string_type(),
+            "Invalid deployment transaction '{id}' - program uses string type after `ConsensusVersion::V12`"
+        );
+    }
+    if consensus_version < ConsensusVersion::V13 {
+        ensure!(
+            !deployment.program().contains_external_struct(),
+            "Invalid deployment transaction '{id}' - external structs may only be used beginning with `ConsensusVersion::V13`"
+        );
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
