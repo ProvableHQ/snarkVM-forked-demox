@@ -59,6 +59,11 @@ name = "check_deployment"
 path = "benches/check_deployment.rs"
 harness = false
 
+[[bench]]
+name = "call_graph"
+path = "benches/call_graph.rs"
+harness = false
+
 [dependencies.snarkvm-algorithms]
 workspace = true
 

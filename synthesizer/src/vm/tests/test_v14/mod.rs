@@ -38,6 +38,9 @@ mod dynamic_futures;
 // Tests for record translation between static and dynamic representations.
 mod translation;
 
+// Tests comparing static vs dynamic calls to all credits.aleo functions.
+mod compare_calls_to_credits;
+
 use super::*;
 
 use crate::{
@@ -51,7 +54,7 @@ use console::{
     network::ConsensusVersion,
     program::{DynamicRecord, Entry, Identifier, Value},
 };
-use snarkvm_synthesizer_process::execution_cost_for_authorization;
+use snarkvm_synthesizer_process::{deployment_cost, execution_cost, execution_cost_for_authorization};
 use snarkvm_synthesizer_program::Program;
 use snarkvm_utilities::TestRng;
 
