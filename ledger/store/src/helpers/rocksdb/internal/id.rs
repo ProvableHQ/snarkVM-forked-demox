@@ -114,7 +114,7 @@ pub enum DeploymentMap {
     Checksum = DataID::DeploymentChecksumMap as u16,
     VerifyingKey = DataID::DeploymentVerifyingKeyMap as u16,
     Certificate = DataID::DeploymentCertificateMap as u16,
-    AmendmentCount = DataID::DeploymentAmendmentCountMap as u16,
+    AmendmentNextIndex = DataID::DeploymentAmendmentCountMap as u16,
     AmendmentID = DataID::DeploymentAmendmentIDMap as u16,
     ReverseAmendmentID = DataID::DeploymentReverseAmendmentIDMap as u16,
     AmendmentVerifyingKey = DataID::DeploymentAmendmentVerifyingKeyMap as u16,

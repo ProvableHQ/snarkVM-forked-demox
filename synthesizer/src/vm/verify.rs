@@ -376,6 +376,29 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             *stack.program_edition() == deployment.edition(),
                             "Invalid deployment transaction '{id}' - program edition does not match the existing program edition"
                         );
+
+                        // Ensure at least one VK has changed or been added.
+                        let mut has_vk_change = false;
+                        for (function_name, (new_vk, _)) in deployment.verifying_keys() {
+                            match stack.get_verifying_key(function_name) {
+                                Ok(existing_vk) => {
+                                    // VK exists - check if it changed.
+                                    if *new_vk != existing_vk {
+                                        has_vk_change = true;
+                                        break;
+                                    }
+                                }
+                                Err(_) => {
+                                    // New function added.
+                                    has_vk_change = true;
+                                    break;
+                                }
+                            }
+                        }
+                        ensure!(
+                            has_vk_change,
+                            "Invalid deployment transaction '{id}' - amendment must add or modify at least one verifying key"
+                        );
                     }
                 }
 

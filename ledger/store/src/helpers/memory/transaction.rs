@@ -111,8 +111,8 @@ pub struct DeploymentMemory<N: Network> {
     certificate_map: MemoryMap<(ProgramID<N>, Identifier<N>, u16), Certificate<N>>,
     /// The fee store.
     fee_store: FeeStore<N, FeeMemory<N>>,
-    /// The amendment count map.
-    amendment_count_map: MemoryMap<(ProgramID<N>, u16), u64>,
+    /// The amendment next index map.
+    amendment_next_index_map: MemoryMap<(ProgramID<N>, u16), u64>,
     /// The amendment ID map.
     amendment_id_map: MemoryMap<(ProgramID<N>, u16, u64), N::TransactionID>,
     /// The reverse amendment ID map.
@@ -137,7 +137,7 @@ impl<N: Network> DeploymentStorage<N> for DeploymentMemory<N> {
     type VerifyingKeyMap = MemoryMap<(ProgramID<N>, Identifier<N>, u16), VerifyingKey<N>>;
     type CertificateMap = MemoryMap<(ProgramID<N>, Identifier<N>, u16), Certificate<N>>;
     type FeeStorage = FeeMemory<N>;
-    type AmendmentCountMap = MemoryMap<(ProgramID<N>, u16), u64>;
+    type AmendmentNextIndexMap = MemoryMap<(ProgramID<N>, u16), u64>;
     type AmendmentIDMap = MemoryMap<(ProgramID<N>, u16, u64), N::TransactionID>;
     type ReverseAmendmentIDMap = MemoryMap<N::TransactionID, (ProgramID<N>, u16, u64)>;
     type AmendmentVerifyingKeyMap = MemoryMap<(ProgramID<N>, Identifier<N>, u16, u64), VerifyingKey<N>>;
@@ -157,7 +157,7 @@ impl<N: Network> DeploymentStorage<N> for DeploymentMemory<N> {
             verifying_key_map: MemoryMap::default(),
             certificate_map: MemoryMap::default(),
             fee_store,
-            amendment_count_map: MemoryMap::default(),
+            amendment_next_index_map: MemoryMap::default(),
             amendment_id_map: MemoryMap::default(),
             reverse_amendment_id_map: MemoryMap::default(),
             amendment_verifying_key_map: MemoryMap::default(),
@@ -216,9 +216,9 @@ impl<N: Network> DeploymentStorage<N> for DeploymentMemory<N> {
         &self.fee_store
     }
 
-    /// Returns the amendment count map.
-    fn amendment_count_map(&self) -> &Self::AmendmentCountMap {
-        &self.amendment_count_map
+    /// Returns the amendment next index map.
+    fn amendment_next_index_map(&self) -> &Self::AmendmentNextIndexMap {
+        &self.amendment_next_index_map
     }
 
     /// Returns the amendment ID map.

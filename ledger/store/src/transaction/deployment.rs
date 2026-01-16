@@ -65,8 +65,8 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     type CertificateMap: for<'a> Map<'a, (ProgramID<N>, Identifier<N>, u16), Certificate<N>>;
     /// The fee storage.
     type FeeStorage: FeeStorage<N>;
-    /// The mapping of `(program ID, edition)` to the number of amendments.
-    type AmendmentCountMap: for<'a> Map<'a, (ProgramID<N>, u16), u64>;
+    /// The mapping of `(program ID, edition)` to the next amendment index.
+    type AmendmentNextIndexMap: for<'a> Map<'a, (ProgramID<N>, u16), u64>;
     /// The mapping of `(program ID, edition, amendment index)` to `transaction ID`.
     type AmendmentIDMap: for<'a> Map<'a, (ProgramID<N>, u16, u64), N::TransactionID>;
     /// The mapping of `transaction ID` to `(program ID, edition, amendment index)`.
@@ -101,8 +101,8 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     fn certificate_map(&self) -> &Self::CertificateMap;
     /// Returns the fee storage.
     fn fee_store(&self) -> &FeeStore<N, Self::FeeStorage>;
-    /// Returns the amendment count map.
-    fn amendment_count_map(&self) -> &Self::AmendmentCountMap;
+    /// Returns the amendment next index map.
+    fn amendment_next_index_map(&self) -> &Self::AmendmentNextIndexMap;
     /// Returns the amendment ID map.
     fn amendment_id_map(&self) -> &Self::AmendmentIDMap;
     /// Returns the reverse amendment ID map.
@@ -131,7 +131,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.verifying_key_map().start_atomic();
         self.certificate_map().start_atomic();
         self.fee_store().start_atomic();
-        self.amendment_count_map().start_atomic();
+        self.amendment_next_index_map().start_atomic();
         self.amendment_id_map().start_atomic();
         self.reverse_amendment_id_map().start_atomic();
         self.amendment_verifying_key_map().start_atomic();
@@ -151,7 +151,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             || self.verifying_key_map().is_atomic_in_progress()
             || self.certificate_map().is_atomic_in_progress()
             || self.fee_store().is_atomic_in_progress()
-            || self.amendment_count_map().is_atomic_in_progress()
+            || self.amendment_next_index_map().is_atomic_in_progress()
             || self.amendment_id_map().is_atomic_in_progress()
             || self.reverse_amendment_id_map().is_atomic_in_progress()
             || self.amendment_verifying_key_map().is_atomic_in_progress()
@@ -171,7 +171,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.verifying_key_map().atomic_checkpoint();
         self.certificate_map().atomic_checkpoint();
         self.fee_store().atomic_checkpoint();
-        self.amendment_count_map().atomic_checkpoint();
+        self.amendment_next_index_map().atomic_checkpoint();
         self.amendment_id_map().atomic_checkpoint();
         self.reverse_amendment_id_map().atomic_checkpoint();
         self.amendment_verifying_key_map().atomic_checkpoint();
@@ -191,7 +191,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.verifying_key_map().clear_latest_checkpoint();
         self.certificate_map().clear_latest_checkpoint();
         self.fee_store().clear_latest_checkpoint();
-        self.amendment_count_map().clear_latest_checkpoint();
+        self.amendment_next_index_map().clear_latest_checkpoint();
         self.amendment_id_map().clear_latest_checkpoint();
         self.reverse_amendment_id_map().clear_latest_checkpoint();
         self.amendment_verifying_key_map().clear_latest_checkpoint();
@@ -211,7 +211,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.verifying_key_map().atomic_rewind();
         self.certificate_map().atomic_rewind();
         self.fee_store().atomic_rewind();
-        self.amendment_count_map().atomic_rewind();
+        self.amendment_next_index_map().atomic_rewind();
         self.amendment_id_map().atomic_rewind();
         self.reverse_amendment_id_map().atomic_rewind();
         self.amendment_verifying_key_map().atomic_rewind();
@@ -231,7 +231,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.verifying_key_map().abort_atomic();
         self.certificate_map().abort_atomic();
         self.fee_store().abort_atomic();
-        self.amendment_count_map().abort_atomic();
+        self.amendment_next_index_map().abort_atomic();
         self.amendment_id_map().abort_atomic();
         self.reverse_amendment_id_map().abort_atomic();
         self.amendment_verifying_key_map().abort_atomic();
@@ -251,7 +251,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.verifying_key_map().finish_atomic()?;
         self.certificate_map().finish_atomic()?;
         self.fee_store().finish_atomic()?;
-        self.amendment_count_map().finish_atomic()?;
+        self.amendment_next_index_map().finish_atomic()?;
         self.amendment_id_map().finish_atomic()?;
         self.reverse_amendment_id_map().finish_atomic()?;
         self.amendment_verifying_key_map().finish_atomic()?;
@@ -299,7 +299,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
 
             // Get the current amendment count, or initialize to 0 if this is the first amendment.
             let amendment_index =
-                self.amendment_count_map().get_confirmed(&(program_id, edition))?.map(|c| *c).unwrap_or(0);
+                self.amendment_next_index_map().get_confirmed(&(program_id, edition))?.map(|c| *c).unwrap_or(0);
 
             atomic_batch_scope!(self, {
                 // Store the program ID and edition for faster lookups.
@@ -324,7 +324,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
                 }
 
                 // Increment the amendment count.
-                self.amendment_count_map().insert((program_id, edition), amendment_index.saturating_add(1))?;
+                self.amendment_next_index_map().insert((program_id, edition), amendment_index.saturating_add(1))?;
 
                 // Store the fee transition.
                 self.fee_store().insert(*transaction_id, fee)?;
@@ -386,7 +386,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             let (program_id, edition, amendment_index) = *amendment_info;
 
             // Retrieve the current amendment count.
-            let Some(current_count) = self.amendment_count_map().get_confirmed(&(program_id, edition))? else {
+            let Some(current_count) = self.amendment_next_index_map().get_confirmed(&(program_id, edition))? else {
                 bail!("Failed to locate amendment count for program '{program_id}' (edition {edition})");
             };
             let count = *current_count;
@@ -429,9 +429,9 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
                 // Update the amendment count.
                 match count == 1 {
                     // If this was the only amendment, remove the count entry.
-                    true => self.amendment_count_map().remove(&(program_id, edition))?,
+                    true => self.amendment_next_index_map().remove(&(program_id, edition))?,
                     // Otherwise, decrement the count.
-                    false => self.amendment_count_map().insert((program_id, edition), count.saturating_sub(1))?,
+                    false => self.amendment_next_index_map().insert((program_id, edition), count.saturating_sub(1))?,
                 }
 
                 // Remove the fee transition.
@@ -459,7 +459,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             );
             // Verify that no amendments exist for this deployment.
             let amendment_count =
-                self.amendment_count_map().get_confirmed(&(program_id, edition))?.map(|c| *c).unwrap_or(0);
+                self.amendment_next_index_map().get_confirmed(&(program_id, edition))?.map(|c| *c).unwrap_or(0);
             ensure!(
                 amendment_count == 0,
                 "Failed to remove deployment for program '{program_id}' (edition {edition}): {amendment_count} amendment(s) must be removed first"
@@ -528,7 +528,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         };
 
         // Check if there are amendments for this program/edition.
-        if let Some(amendment_count) = self.amendment_count_map().get_confirmed(&(*program_id, edition))? {
+        if let Some(amendment_count) = self.amendment_next_index_map().get_confirmed(&(*program_id, edition))? {
             let count = *amendment_count;
             if count > 0 {
                 // Return the latest amendment transaction ID.
@@ -584,7 +584,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         }
 
         // Check if there are amendments for this program/edition.
-        if let Some(amendment_count) = self.amendment_count_map().get_confirmed(&(*program_id, edition))? {
+        if let Some(amendment_count) = self.amendment_next_index_map().get_confirmed(&(*program_id, edition))? {
             let count = *amendment_count;
             if count > 0 {
                 // Return the latest amendment transaction ID.
@@ -706,7 +706,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         };
 
         // Check if there are amendments for this program/edition.
-        if let Some(amendment_count) = self.amendment_count_map().get_confirmed(&(*program_id, edition))? {
+        if let Some(amendment_count) = self.amendment_next_index_map().get_confirmed(&(*program_id, edition))? {
             let count = *amendment_count;
             if count > 0 {
                 // Return the verifying key from the latest amendment.
@@ -757,7 +757,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         }
 
         // Check if there are amendments for this program/edition.
-        if let Some(amendment_count) = self.amendment_count_map().get_confirmed(&(*program_id, edition))? {
+        if let Some(amendment_count) = self.amendment_next_index_map().get_confirmed(&(*program_id, edition))? {
             let count = *amendment_count;
             if count > 0 {
                 // Return the verifying key from the latest amendment.
@@ -830,7 +830,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         };
 
         // Check if there are amendments for this program/edition.
-        if let Some(amendment_count) = self.amendment_count_map().get_confirmed(&(*program_id, edition))? {
+        if let Some(amendment_count) = self.amendment_next_index_map().get_confirmed(&(*program_id, edition))? {
             let count = *amendment_count;
             if count > 0 {
                 // Return the certificate from the latest amendment.
@@ -873,7 +873,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         }
 
         // Check if there are amendments for this program/edition.
-        if let Some(amendment_count) = self.amendment_count_map().get_confirmed(&(*program_id, edition))? {
+        if let Some(amendment_count) = self.amendment_next_index_map().get_confirmed(&(*program_id, edition))? {
             let count = *amendment_count;
             if count > 0 {
                 // Return the certificate from the latest amendment.
@@ -1118,7 +1118,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
 
     /// Returns the number of amendments for the given `program ID` and `edition`.
     fn get_amendment_count(&self, program_id: &ProgramID<N>, edition: u16) -> Result<Option<u64>> {
-        Ok(self.amendment_count_map().get_confirmed(&(*program_id, edition))?.map(|c| *c))
+        Ok(self.amendment_next_index_map().get_confirmed(&(*program_id, edition))?.map(|c| *c))
     }
 
     /// Returns `true` if the given `transaction ID` is an amendment.
@@ -1169,7 +1169,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         amendment_index: u64,
     ) -> Result<Option<Deployment<N>>> {
         // Check if this amendment exists.
-        let Some(count) = self.amendment_count_map().get_confirmed(&(*program_id, edition))? else {
+        let Some(count) = self.amendment_next_index_map().get_confirmed(&(*program_id, edition))? else {
             return Ok(None);
         };
         if amendment_index >= *count {

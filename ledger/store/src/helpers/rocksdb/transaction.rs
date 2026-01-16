@@ -121,8 +121,8 @@ pub struct DeploymentDB<N: Network> {
     certificate_map: DataMap<(ProgramID<N>, Identifier<N>, u16), Certificate<N>>,
     /// The fee store.
     fee_store: FeeStore<N, FeeDB<N>>,
-    /// The amendment count map.
-    amendment_count_map: DataMap<(ProgramID<N>, u16), u64>,
+    /// The amendment next index map.
+    amendment_next_index_map: DataMap<(ProgramID<N>, u16), u64>,
     /// The amendment ID map.
     amendment_id_map: DataMap<(ProgramID<N>, u16, u64), N::TransactionID>,
     /// The reverse amendment ID map.
@@ -147,7 +147,7 @@ impl<N: Network> DeploymentStorage<N> for DeploymentDB<N> {
     type VerifyingKeyMap = DataMap<(ProgramID<N>, Identifier<N>, u16), VerifyingKey<N>>;
     type CertificateMap = DataMap<(ProgramID<N>, Identifier<N>, u16), Certificate<N>>;
     type FeeStorage = FeeDB<N>;
-    type AmendmentCountMap = DataMap<(ProgramID<N>, u16), u64>;
+    type AmendmentNextIndexMap = DataMap<(ProgramID<N>, u16), u64>;
     type AmendmentIDMap = DataMap<(ProgramID<N>, u16, u64), N::TransactionID>;
     type ReverseAmendmentIDMap = DataMap<N::TransactionID, (ProgramID<N>, u16, u64)>;
     type AmendmentVerifyingKeyMap = DataMap<(ProgramID<N>, Identifier<N>, u16, u64), VerifyingKey<N>>;
@@ -168,7 +168,7 @@ impl<N: Network> DeploymentStorage<N> for DeploymentDB<N> {
             checksum_map: rocksdb::RocksDB::open_map(N::ID, storage_mode.clone(), MapID::Deployment(DeploymentMap::Checksum))?,
             verifying_key_map: rocksdb::RocksDB::open_map(N::ID, storage_mode.clone(), MapID::Deployment(DeploymentMap::VerifyingKey))?,
             certificate_map: rocksdb::RocksDB::open_map(N::ID, storage_mode.clone(), MapID::Deployment(DeploymentMap::Certificate))?,
-            amendment_count_map: rocksdb::RocksDB::open_map(N::ID, storage_mode.clone(), MapID::Deployment(DeploymentMap::AmendmentCount))?,
+            amendment_next_index_map: rocksdb::RocksDB::open_map(N::ID, storage_mode.clone(), MapID::Deployment(DeploymentMap::AmendmentNextIndex))?,
             amendment_id_map: rocksdb::RocksDB::open_map(N::ID, storage_mode.clone(), MapID::Deployment(DeploymentMap::AmendmentID))?,
             reverse_amendment_id_map: rocksdb::RocksDB::open_map(N::ID, storage_mode.clone(), MapID::Deployment(DeploymentMap::ReverseAmendmentID))?,
             amendment_verifying_key_map: rocksdb::RocksDB::open_map(N::ID, storage_mode.clone(), MapID::Deployment(DeploymentMap::AmendmentVerifyingKey))?,
@@ -228,9 +228,9 @@ impl<N: Network> DeploymentStorage<N> for DeploymentDB<N> {
         &self.fee_store
     }
 
-    /// Returns the amendment count map.
-    fn amendment_count_map(&self) -> &Self::AmendmentCountMap {
-        &self.amendment_count_map
+    /// Returns the amendment next index map.
+    fn amendment_next_index_map(&self) -> &Self::AmendmentNextIndexMap {
+        &self.amendment_next_index_map
     }
 
     /// Returns the amendment ID map.
