@@ -159,7 +159,7 @@ Extended the `Value` enum with DynamicRecord and DynamicFuture variants.
 #### `data/value/parse.rs`
 **Purpose:** String parsing and display.
 
-**Changes:** Added parsing/display for "dynamic.record" and "dynamic.future" formats.
+**Changes:** Added parsing/display for "record.dynamic" and "future.dynamic" formats.
 
 ---
 
@@ -306,7 +306,7 @@ Extended type enums with dynamic variants.
 **Changes:** Serialization for new variants.
 
 #### `data_types/value_type/parse.rs`
-**Changes:** Parsing for "dynamic.record" and "dynamic.future".
+**Changes:** Parsing for "record.dynamic" and "future.dynamic".
 
 ---
 

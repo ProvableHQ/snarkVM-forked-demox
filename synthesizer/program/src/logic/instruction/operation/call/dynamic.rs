@@ -29,7 +29,7 @@ use console::{
 /// The second operand must resolve to a field element representing the function name.
 /// The remaining operands are the arguments to the call.
 /// The destination registers along with their expected types are specified after the `into` keyword.
-/// i.e. `call.dynamic r0 r1 with r2 r3 (as address.private u64.private) into r4 r5 (as u64 dynamic.future);`
+/// i.e. `call.dynamic r0 r1 with r2 r3 (as address.private u64.private) into r4 r5 (as u64 future.dynamic);`
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct CallDynamic<N: Network> {
     /// The operands.
@@ -72,11 +72,11 @@ impl<N: Network> CallDynamic<N> {
         for type_ in &operand_types {
             match type_ {
                 ValueType::Record(_) => {
-                    bail!("A record cannot be passed in as input to a dynamic call, use `dynamic.record` instead.")
+                    bail!("A record cannot be passed in as input to a dynamic call, use `record.dynamic` instead.")
                 }
                 ValueType::ExternalRecord(_) => {
                     bail!(
-                        "An external record cannot be passed in as input to a dynamic call, use `dynamic.record` instead."
+                        "An external record cannot be passed in as input to a dynamic call, use `record.dynamic` instead."
                     )
                 }
                 ValueType::Future(_) => bail!("A future cannot be passed in as input to a dynamic call."),
@@ -94,11 +94,11 @@ impl<N: Network> CallDynamic<N> {
         // Ensure that the destination types do not contain a future, record, or external record type.
         for type_ in &destination_types {
             match type_ {
-                ValueType::Record(_) => bail!("A dynamic call cannot return a record, use `dynamic.record` instead."),
+                ValueType::Record(_) => bail!("A dynamic call cannot return a record, use `record.dynamic` instead."),
                 ValueType::ExternalRecord(_) => {
-                    bail!("A dynamic call cannot return an external record, use `dynamic.record` instead.")
+                    bail!("A dynamic call cannot return an external record, use `record.dynamic` instead.")
                 }
-                ValueType::Future(_) => bail!("A dynamic call cannot return a future, use `dynamic.future` instead."),
+                ValueType::Future(_) => bail!("A dynamic call cannot return a future, use `future.dynamic` instead."),
                 _ => {}
             }
         }
@@ -259,7 +259,7 @@ impl<N: Network> Parser for CallDynamic<N> {
         }
 
         /// A helper function to parse a non-empty, parenthesis-delimited sequence of value types.
-        /// For example, `(as u64.public dynamic.future)`.
+        /// For example, `(as u64.public future.dynamic)`.
         fn parse_value_types<N: Network>(string: &str) -> ParserResult<Vec<ValueType<N>>> {
             // Parse the whitespace from the string.
             let (string, _) = Sanitizer::parse_whitespaces(string)?;
@@ -496,13 +496,13 @@ mod tests {
         "call.dynamic r0 r1 r2 with r3 r4 (as u8.public u64.private)",
         "call.dynamic r0 r1 r2 into r3 (as u8.constant)",
         "call.dynamic r0 r1 r2 into r3 r4 (as foo.public bar.private)",
-        "call.dynamic r0 r1 r2 into r3 r4 r5 (as u64.public address.private dynamic.future)",
+        "call.dynamic r0 r1 r2 into r3 r4 r5 (as u64.public address.private future.dynamic)",
         "call.dynamic r0 r1 r2 with r3 (as boolean.private) into r4 (as u8.private)",
         "call.dynamic r0 r1 r2 with r3 r4 (as u8.public foo.private) into r5 (as boolean.public)",
         "call.dynamic r0 r1 r2 with r3 r4 (as u8.public foo.private) into r5 r6 (as u8.private u64.public)",
-        "call.dynamic r0 r1 r2 with r3 r4 r5 (as foo.private dynamic.record boolean.public) into r6 r7 (as u8.private u64.public)",
-        "call.dynamic r0 r1 r2 with r3 r4 r5 (as foo.private bar.public boolean.public) into r6 r7 r8 (as u8.private dynamic.record dynamic.future)",
-        "call.dynamic r0 r1 r2 with r3 r4 (as address.public u64.public) into r5 (as dynamic.future)",
+        "call.dynamic r0 r1 r2 with r3 r4 r5 (as foo.private record.dynamic boolean.public) into r6 r7 (as u8.private u64.public)",
+        "call.dynamic r0 r1 r2 with r3 r4 r5 (as foo.private bar.public boolean.public) into r6 r7 r8 (as u8.private record.dynamic future.dynamic)",
+        "call.dynamic r0 r1 r2 with r3 r4 (as address.public u64.public) into r5 (as future.dynamic)",
     ];
 
     fn check_parser(
@@ -551,7 +551,7 @@ mod tests {
     #[test]
     fn test_parse() {
         check_parser(
-            "call.dynamic r4 r5 r6 with r0.owner r0.token_amount (as address.private u64.private) into r1 r2 r3 (as u64.public u8.private dynamic.future)",
+            "call.dynamic r4 r5 r6 with r0.owner r0.token_amount (as address.private u64.private) into r1 r2 r3 (as u64.public u8.private future.dynamic)",
             vec![
                 Operand::Register(Register::Locator(4)),
                 Operand::Register(Register::Locator(5)),
@@ -571,7 +571,7 @@ mod tests {
 
         // // TODO (dynamic_dispatch) Support for this test case.
         // check_parser(
-        //     "call.dynamic 'credits' 'aleo' 'transfer_public' with aleo1wfyyj2uvwuqw0c0dqa5x70wrawnlkkvuepn4y08xyaqfqqwweqys39jayw 100u64 (as address.private u6.private) into r0 (as dynamic.future)",
+        //     "call.dynamic 'credits' 'aleo' 'transfer_public' with aleo1wfyyj2uvwuqw0c0dqa5x70wrawnlkkvuepn4y08xyaqfqqwweqys39jayw 100u64 (as address.private u6.private) into r0 (as future.dynamic)",
         //     Operand::ProgramID(ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap()),
         //     Operand::Identifier(Identifier::from_str("transfer_public").unwrap()),
         //     vec![

@@ -113,7 +113,7 @@ Comprehensive test suite for V14 dynamic dispatch features.
 ---
 
 #### `cast.rs` (350 lines)
-**Purpose:** Tests casting static records to `dynamic.record`.
+**Purpose:** Tests casting static records to `record.dynamic`.
 
 **Key Tests:**
 - `test_circuit_dynamic_record_from_record()` - Circuit ↔ console consistency

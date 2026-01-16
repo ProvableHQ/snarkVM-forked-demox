@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Tests for casting static records to `dynamic.record`.
+// Tests for casting static records to `record.dynamic`.
 mod cast;
 
 // Tests for the `get.record.dynamic` instruction.

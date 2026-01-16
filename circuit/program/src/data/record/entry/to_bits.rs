@@ -15,6 +15,13 @@
 
 use super::*;
 
+/// Visibility prefix bits for (de)serializing the `Constant` variant.
+const VISIBILITY_CONSTANT: [bool; 2] = [false, false];
+/// Visibility prefix bits for (de)serializing the `Public` variant.
+const VISIBILITY_PUBLIC: [bool; 2] = [false, true];
+/// Visibility prefix bits for (de)serializing the `Private` variant.
+const VISIBILITY_PRIVATE: [bool; 2] = [true, false];
+
 impl<A: Aleo> Entry<A, Plaintext<A>> {
     /// Returns this entry as a list of **little-endian** bits, with the specified mode.
     pub(super) fn write_bits_le_with_mode(&self, vec: &mut Vec<Boolean<A>>, mode: Mode) {
@@ -26,11 +33,12 @@ impl<A: Aleo> Entry<A, Plaintext<A>> {
             Mode::Private => Boolean::new(Mode::Private, value),
         };
         // Write the variant bits.
-        match self {
-            Self::Constant(..) => vec.extend_from_slice(&[boolean_new(mode, false), boolean_new(mode, false)]),
-            Self::Public(..) => vec.extend_from_slice(&[boolean_new(mode, false), boolean_new(mode, true)]),
-            Self::Private(..) => vec.extend_from_slice(&[boolean_new(mode, true), boolean_new(mode, false)]),
+        let visibility_bits = match self {
+            Self::Constant(..) => VISIBILITY_CONSTANT,
+            Self::Public(..) => VISIBILITY_PUBLIC,
+            Self::Private(..) => VISIBILITY_PRIVATE,
         };
+        vec.extend(visibility_bits.iter().map(|&bit| boolean_new(mode, bit)));
         // Write the data bits.
         match self {
             Self::Constant(plaintext) => plaintext.write_bits_le(vec),
@@ -50,11 +58,12 @@ impl<A: Aleo> ToBits for Entry<A, Plaintext<A>> {
 
     /// Returns this entry as a list of **big-endian** bits.
     fn write_bits_be(&self, vec: &mut Vec<Boolean<A>>) {
-        match self {
-            Self::Constant(..) => vec.extend_from_slice(&[Boolean::constant(false), Boolean::constant(false)]),
-            Self::Public(..) => vec.extend_from_slice(&[Boolean::constant(false), Boolean::constant(true)]),
-            Self::Private(..) => vec.extend_from_slice(&[Boolean::constant(true), Boolean::constant(false)]),
+        let visibility_bits = match self {
+            Self::Constant(..) => VISIBILITY_CONSTANT,
+            Self::Public(..) => VISIBILITY_PUBLIC,
+            Self::Private(..) => VISIBILITY_PRIVATE,
         };
+        vec.extend(visibility_bits.iter().map(|&bit| Boolean::constant(bit)));
         match self {
             Self::Constant(plaintext) => plaintext.write_bits_be(vec),
             Self::Public(plaintext) => plaintext.write_bits_be(vec),
@@ -68,11 +77,12 @@ impl<A: Aleo> ToBits for Entry<A, Ciphertext<A>> {
 
     /// Returns this entry as a list of **little-endian** bits.
     fn write_bits_le(&self, vec: &mut Vec<Boolean<A>>) {
-        match self {
-            Self::Constant(..) => vec.extend_from_slice(&[Boolean::constant(false), Boolean::constant(false)]),
-            Self::Public(..) => vec.extend_from_slice(&[Boolean::constant(false), Boolean::constant(true)]),
-            Self::Private(..) => vec.extend_from_slice(&[Boolean::constant(true), Boolean::constant(false)]),
+        let visibility_bits = match self {
+            Self::Constant(..) => VISIBILITY_CONSTANT,
+            Self::Public(..) => VISIBILITY_PUBLIC,
+            Self::Private(..) => VISIBILITY_PRIVATE,
         };
+        vec.extend(visibility_bits.iter().map(|&bit| Boolean::constant(bit)));
         match self {
             Self::Constant(plaintext) => plaintext.write_bits_le(vec),
             Self::Public(plaintext) => plaintext.write_bits_le(vec),
@@ -82,11 +92,12 @@ impl<A: Aleo> ToBits for Entry<A, Ciphertext<A>> {
 
     /// Returns this entry as a list of **big-endian** bits.
     fn write_bits_be(&self, vec: &mut Vec<Boolean<A>>) {
-        match self {
-            Self::Constant(..) => vec.extend_from_slice(&[Boolean::constant(false), Boolean::constant(false)]),
-            Self::Public(..) => vec.extend_from_slice(&[Boolean::constant(false), Boolean::constant(true)]),
-            Self::Private(..) => vec.extend_from_slice(&[Boolean::constant(true), Boolean::constant(false)]),
+        let visibility_bits = match self {
+            Self::Constant(..) => VISIBILITY_CONSTANT,
+            Self::Public(..) => VISIBILITY_PUBLIC,
+            Self::Private(..) => VISIBILITY_PRIVATE,
         };
+        vec.extend(visibility_bits.iter().map(|&bit| Boolean::constant(bit)));
         match self {
             Self::Constant(plaintext) => plaintext.write_bits_be(vec),
             Self::Public(plaintext) => plaintext.write_bits_be(vec),

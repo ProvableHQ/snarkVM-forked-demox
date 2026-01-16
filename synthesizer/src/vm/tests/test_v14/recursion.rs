@@ -207,23 +207,23 @@ function {two_name}:
     input r0 as Data.record;
 
 function {three_name}:
-    input r0 as dynamic.record;
-    output r0 as dynamic.record;
+    input r0 as record.dynamic;
+    output r0 as record.dynamic;
 
 function {four_name}:
-    input r0 as dynamic.record;
+    input r0 as record.dynamic;
 
 function {two_indexed_name}:
-    input r0 as dynamic.record;
+    input r0 as record.dynamic;
     input r1 as u8.public;
 
 function {three_indexed_name}:
-    input r0 as dynamic.record;
+    input r0 as record.dynamic;
     input r1 as u8.public;
-    output r0 as dynamic.record;
+    output r0 as record.dynamic;
 
 function {four_indexed_name}:
-    input r0 as dynamic.record;
+    input r0 as record.dynamic;
     input r1 as u8.public;
 
 constructor:
@@ -256,44 +256,44 @@ constructor:
 program {test_functions_program_name}.aleo;
 
 function {five_name}:
-    input r0 as dynamic.record;
-    call.dynamic {basic_records_ops_program_field} {aleo_field} {two_field} with r0 (as dynamic.record);
-    call.dynamic {basic_records_ops_program_field} {aleo_field} {two_field} with r0 (as dynamic.record);
+    input r0 as record.dynamic;
+    call.dynamic {basic_records_ops_program_field} {aleo_field} {two_field} with r0 (as record.dynamic);
+    call.dynamic {basic_records_ops_program_field} {aleo_field} {two_field} with r0 (as record.dynamic);
 
 function {six_name}:
-    input r0 as dynamic.record;
-    call.dynamic {basic_records_ops_program_field} {aleo_field} {four_field} with r0 (as dynamic.record);
-    call.dynamic {basic_records_ops_program_field} {aleo_field} {four_field} with r0 (as dynamic.record);
+    input r0 as record.dynamic;
+    call.dynamic {basic_records_ops_program_field} {aleo_field} {four_field} with r0 (as record.dynamic);
+    call.dynamic {basic_records_ops_program_field} {aleo_field} {four_field} with r0 (as record.dynamic);
 
 function {seven_name}:
-    input r0 as dynamic.record;
+    input r0 as record.dynamic;
     input r1 as u8.public;
     is.eq r1 0u8 into r2;
     sub.w r1 1u8 into r3;
     ternary r2 {two_indexed_field} {seven_field} into r4;
     ternary r2 {basic_records_ops_program_field} {test_functions_program_field} into r5;
-    call.dynamic r5 {aleo_field} r4 with r0 r3 (as dynamic.record u8.public);
+    call.dynamic r5 {aleo_field} r4 with r0 r3 (as record.dynamic u8.public);
 
 function {eight_name}:
-    input r0 as dynamic.record;
+    input r0 as record.dynamic;
     input r1 as u8.public;
-    call.dynamic {basic_records_ops_program_field} {aleo_field} {two_field} with r0 (as dynamic.record);
+    call.dynamic {basic_records_ops_program_field} {aleo_field} {two_field} with r0 (as record.dynamic);
     is.eq r1 0u8 into r2;
     sub.w r1 1u8 into r3;
     ternary r2 {four_indexed_field} {eight_field} into r4;
     ternary r2 {basic_records_ops_program_field} {test_functions_program_field} into r5;
-    call.dynamic r5 {aleo_field} r4 with r0 r3 (as dynamic.record u8.public);
+    call.dynamic r5 {aleo_field} r4 with r0 r3 (as record.dynamic u8.public);
 
 function {nine_name}:
-    input r0 as dynamic.record;
+    input r0 as record.dynamic;
     input r1 as u8.public;
-    call.dynamic {basic_records_ops_program_field} {aleo_field} {one_field} with r0 (as dynamic.record) into r2 (as dynamic.record);
+    call.dynamic {basic_records_ops_program_field} {aleo_field} {one_field} with r0 (as record.dynamic) into r2 (as record.dynamic);
     is.eq r1 0u8 into r3;
     sub.w r1 1u8 into r4;
     ternary r3 {three_indexed_field} {nine_field} into r5;
     ternary r3 {basic_records_ops_program_field} {test_functions_program_field} into r6;
-    call.dynamic r6 {aleo_field} r5 with r2 r4 (as dynamic.record u8.public) into r7 (as dynamic.record);
-    output r7 as dynamic.record;
+    call.dynamic r6 {aleo_field} r5 with r2 r4 (as record.dynamic u8.public) into r7 (as record.dynamic);
+    output r7 as record.dynamic;
 
 constructor:
     assert.eq true true;

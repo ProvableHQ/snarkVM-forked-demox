@@ -142,8 +142,8 @@ impl<N: Network> GetDynamic<N> {
             Some(Value::Plaintext(plaintext)) => Value::Plaintext(plaintext),
             Some(Value::Record(..)) => bail!("Cannot 'get.dynamic' a 'record'"),
             Some(Value::Future(..)) => bail!("Cannot 'get.dynamic' a 'future'",),
-            Some(Value::DynamicRecord(..)) => bail!("Cannot 'get.dynamic' a 'dynamic.record'"),
-            Some(Value::DynamicFuture(..)) => bail!("Cannot 'get.dynamic' a 'dynamic.future'"),
+            Some(Value::DynamicRecord(..)) => bail!("Cannot 'get.dynamic' a 'record.dynamic'"),
+            Some(Value::DynamicFuture(..)) => bail!("Cannot 'get.dynamic' a 'future.dynamic'"),
             // If a key does not exist, then bail.
             None => bail!("Key '{key}' does not exist in mapping '{program_id}/{mapping_name}'"),
         };

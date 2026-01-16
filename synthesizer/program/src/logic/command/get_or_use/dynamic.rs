@@ -149,8 +149,8 @@ impl<N: Network> GetOrUseDynamic<N> {
             Some(Value::Plaintext(plaintext)) => Value::Plaintext(plaintext),
             Some(Value::Record(..)) => bail!("Cannot 'get.or_use.dynamic' a 'record'"),
             Some(Value::Future(..)) => bail!("Cannot 'get.or_use.dynamic' a 'future'"),
-            Some(Value::DynamicRecord(..)) => bail!("Cannot 'get.or_use.dynamic' a 'dynamic.record'"),
-            Some(Value::DynamicFuture(..)) => bail!("Cannot 'get.or_use.dynamic' a 'dynamic.future'"),
+            Some(Value::DynamicRecord(..)) => bail!("Cannot 'get.or_use.dynamic' a 'record.dynamic'"),
+            Some(Value::DynamicFuture(..)) => bail!("Cannot 'get.or_use.dynamic' a 'future.dynamic'"),
             // If a key does not exist, then use the default value.
             None => Value::Plaintext(registers.load_plaintext(stack, self.default())?),
         };

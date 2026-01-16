@@ -37,7 +37,7 @@ Located in `synthesizer/src/vm/tests/test_v14/`:
 | File | Lines | Focus |
 |------|-------|-------|
 | `call_dynamic.rs` | 1486 | `call.dynamic` instruction |
-| `cast.rs` | 350 | Record to `dynamic.record` casting |
+| `cast.rs` | 350 | Record to `record.dynamic` casting |
 | `translation.rs` | 1135 | Record translation proofs |
 | `dynamic_futures.rs` | 2526 | `DynamicFuture` await patterns |
 | `dynamic_mapping_operations.rs` | 1695 | `contains.dynamic`, `get.dynamic`, `get.or_use.dynamic` |

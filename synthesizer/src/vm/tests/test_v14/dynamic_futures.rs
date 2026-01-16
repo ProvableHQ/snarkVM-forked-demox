@@ -60,14 +60,14 @@ fn test_await_in_order() {
         function call_twice_await_in_order:
             input r0 as u64.public;
             input r1 as u64.public;
-            call.dynamic {counter_program_field} {aleo_field} {increment_field} with r0 (as u64.public) into r2 (as dynamic.future);
-            call.dynamic {counter_program_field} {aleo_field} {increment_field} with r1 (as u64.public) into r3 (as dynamic.future);
+            call.dynamic {counter_program_field} {aleo_field} {increment_field} with r0 (as u64.public) into r2 (as future.dynamic);
+            call.dynamic {counter_program_field} {aleo_field} {increment_field} with r1 (as u64.public) into r3 (as future.dynamic);
             async call_twice_await_in_order r2 r3 into r4;
             output r4 as await_order_caller.aleo/call_twice_await_in_order.future;
 
         finalize call_twice_await_in_order:
-            input r0 as dynamic.future;
-            input r1 as dynamic.future;
+            input r0 as future.dynamic;
+            input r1 as future.dynamic;
             await r0;
             await r1;
 
@@ -160,14 +160,14 @@ fn test_await_reverse_order() {
         program reverse_order_caller.aleo;
 
         function call_twice_await_reverse:
-            call.dynamic {tracker_program_field} {aleo_field} {record_value_field} with 1u8 100u64 (as u8.public u64.public) into r0 (as dynamic.future);
-            call.dynamic {tracker_program_field} {aleo_field} {record_value_field} with 2u8 200u64 (as u8.public u64.public) into r1 (as dynamic.future);
+            call.dynamic {tracker_program_field} {aleo_field} {record_value_field} with 1u8 100u64 (as u8.public u64.public) into r0 (as future.dynamic);
+            call.dynamic {tracker_program_field} {aleo_field} {record_value_field} with 2u8 200u64 (as u8.public u64.public) into r1 (as future.dynamic);
             async call_twice_await_reverse r0 r1 into r2;
             output r2 as reverse_order_caller.aleo/call_twice_await_reverse.future;
 
         finalize call_twice_await_reverse:
-            input r0 as dynamic.future;
-            input r1 as dynamic.future;
+            input r0 as future.dynamic;
+            input r1 as future.dynamic;
             await r1;
             await r0;
 
@@ -271,13 +271,13 @@ fn test_nested_dynamic_futures() {
 
         function middle_op:
             input r0 as u64.public;
-            call.dynamic {leaf_program_field} {aleo_field} {leaf_op_field} with r0 (as u64.public) into r1 (as dynamic.future);
+            call.dynamic {leaf_program_field} {aleo_field} {leaf_op_field} with r0 (as u64.public) into r1 (as future.dynamic);
             add r0 10u64 into r2;
             async middle_op r1 r2 into r3;
             output r3 as middle_b.aleo/middle_op.future;
 
         finalize middle_op:
-            input r0 as dynamic.future;
+            input r0 as future.dynamic;
             input r1 as u64.public;
             await r0;
             set r1 into middle_data[0u8];
@@ -303,13 +303,13 @@ fn test_nested_dynamic_futures() {
 
         function root_op:
             input r0 as u64.public;
-            call.dynamic {middle_program_field} {aleo_field} {middle_op_field} with r0 (as u64.public) into r1 (as dynamic.future);
+            call.dynamic {middle_program_field} {aleo_field} {middle_op_field} with r0 (as u64.public) into r1 (as future.dynamic);
             add r0 100u64 into r2;
             async root_op r1 r2 into r3;
             output r3 as root_a.aleo/root_op.future;
 
         finalize root_op:
-            input r0 as dynamic.future;
+            input r0 as future.dynamic;
             input r1 as u64.public;
             await r0;
             set r1 into root_data[0u8];
@@ -427,12 +427,12 @@ fn test_dynamic_future_finalize_failure() {
 
         function call_failing:
             input r0 as boolean.public;
-            call.dynamic {failing_program_field} {aleo_field} {will_fail_field} with r0 (as boolean.public) into r1 (as dynamic.future);
+            call.dynamic {failing_program_field} {aleo_field} {will_fail_field} with r0 (as boolean.public) into r1 (as future.dynamic);
             async call_failing r1 into r2;
             output r2 as failure_caller.aleo/call_failing.future;
 
         finalize call_failing:
-            input r0 as dynamic.future;
+            input r0 as future.dynamic;
             await r0;
 
         constructor:
@@ -529,16 +529,16 @@ fn test_multiple_futures_same_function() {
             input r0 as u64.public;
             input r1 as u64.public;
             input r2 as u64.public;
-            call.dynamic {accumulator_field} {aleo_field} {add_value_field} with r0 (as u64.public) into r3 (as dynamic.future);
-            call.dynamic {accumulator_field} {aleo_field} {add_value_field} with r1 (as u64.public) into r4 (as dynamic.future);
-            call.dynamic {accumulator_field} {aleo_field} {add_value_field} with r2 (as u64.public) into r5 (as dynamic.future);
+            call.dynamic {accumulator_field} {aleo_field} {add_value_field} with r0 (as u64.public) into r3 (as future.dynamic);
+            call.dynamic {accumulator_field} {aleo_field} {add_value_field} with r1 (as u64.public) into r4 (as future.dynamic);
+            call.dynamic {accumulator_field} {aleo_field} {add_value_field} with r2 (as u64.public) into r5 (as future.dynamic);
             async call_three_times r3 r4 r5 into r6;
             output r6 as multi_future_caller.aleo/call_three_times.future;
 
         finalize call_three_times:
-            input r0 as dynamic.future;
-            input r1 as dynamic.future;
-            input r2 as dynamic.future;
+            input r0 as future.dynamic;
+            input r1 as future.dynamic;
+            input r2 as future.dynamic;
             await r0;
             await r1;
             await r2;
@@ -643,12 +643,12 @@ fn test_read_state_after_dynamic_await() {
             input r1 as field.public;
             input r2 as field.public;
             input r3 as field.public;
-            call.dynamic {writer_field} {aleo_field} {write_value_field} with 1u8 r0 (as u8.public u64.public) into r4 (as dynamic.future);
+            call.dynamic {writer_field} {aleo_field} {write_value_field} with 1u8 r0 (as u8.public u64.public) into r4 (as future.dynamic);
             async write_then_read r4 r1 r2 r3 into r5;
             output r5 as state_reader_caller.aleo/write_then_read.future;
 
         finalize write_then_read:
-            input r0 as dynamic.future;
+            input r0 as future.dynamic;
             input r1 as field.public;
             input r2 as field.public;
             input r3 as field.public;
@@ -756,13 +756,13 @@ fn test_dynamic_future_with_dynamic_record() {
 
         function mint_and_track:
             input r0 as u64.public;
-            call.dynamic {token_field} {aleo_field} {mint_field} with self.signer r0 (as address.private u64.public) into r1 r2 (as dynamic.record dynamic.future);
+            call.dynamic {token_field} {aleo_field} {mint_field} with self.signer r0 (as address.private u64.public) into r1 r2 (as dynamic.record future.dynamic);
             async mint_and_track r2 into r3;
             output r1 as dynamic.record;
             output r3 as record_future_caller.aleo/mint_and_track.future;
 
         finalize mint_and_track:
-            input r0 as dynamic.future;
+            input r0 as future.dynamic;
             await r0;
 
         constructor:
@@ -881,18 +881,18 @@ fn test_interleaved_awaits_different_programs() {
         program interleave_caller.aleo;
 
         function interleaved_calls:
-            call.dynamic {alpha_field} {aleo_field} {alpha_op_field} with 1u64 (as u64.public) into r0 (as dynamic.future);
-            call.dynamic {beta_field} {aleo_field} {beta_op_field} with 2u64 (as u64.public) into r1 (as dynamic.future);
-            call.dynamic {alpha_field} {aleo_field} {alpha_op_field} with 3u64 (as u64.public) into r2 (as dynamic.future);
-            call.dynamic {beta_field} {aleo_field} {beta_op_field} with 4u64 (as u64.public) into r3 (as dynamic.future);
+            call.dynamic {alpha_field} {aleo_field} {alpha_op_field} with 1u64 (as u64.public) into r0 (as future.dynamic);
+            call.dynamic {beta_field} {aleo_field} {beta_op_field} with 2u64 (as u64.public) into r1 (as future.dynamic);
+            call.dynamic {alpha_field} {aleo_field} {alpha_op_field} with 3u64 (as u64.public) into r2 (as future.dynamic);
+            call.dynamic {beta_field} {aleo_field} {beta_op_field} with 4u64 (as u64.public) into r3 (as future.dynamic);
             async interleaved_calls r0 r1 r2 r3 into r4;
             output r4 as interleave_caller.aleo/interleaved_calls.future;
 
         finalize interleaved_calls:
-            input r0 as dynamic.future;
-            input r1 as dynamic.future;
-            input r2 as dynamic.future;
-            input r3 as dynamic.future;
+            input r0 as future.dynamic;
+            input r1 as future.dynamic;
+            input r2 as future.dynamic;
+            input r3 as future.dynamic;
             await r1;
             await r0;
             await r3;
@@ -1015,12 +1015,12 @@ fn test_dynamic_future_complex_finalize() {
         function do_transfer:
             input r0 as address.public;
             input r1 as u64.public;
-            call.dynamic {complex_field} {aleo_field} {transfer_field} with r0 r1 (as address.public u64.public) into r2 (as dynamic.future);
+            call.dynamic {complex_field} {aleo_field} {transfer_field} with r0 r1 (as address.public u64.public) into r2 (as future.dynamic);
             async do_transfer r2 into r3;
             output r3 as complex_caller.aleo/do_transfer.future;
 
         finalize do_transfer:
-            input r0 as dynamic.future;
+            input r0 as future.dynamic;
             await r0;
 
         constructor:
@@ -1136,12 +1136,12 @@ fn test_conditional_future_via_branch() {
         function conditional_write:
             input r0 as boolean.public;
             ternary r0 100u64 200u64 into r1;
-            call.dynamic {worker_field} {aleo_field} {write_value_field} with r1 (as u64.public) into r2 (as dynamic.future);
+            call.dynamic {worker_field} {aleo_field} {write_value_field} with r1 (as u64.public) into r2 (as future.dynamic);
             async conditional_write r2 into r3;
             output r3 as conditional_caller.aleo/conditional_write.future;
 
         finalize conditional_write:
-            input r0 as dynamic.future;
+            input r0 as future.dynamic;
             await r0;
 
         constructor:
@@ -1256,12 +1256,12 @@ fn test_interface_mismatch_wrong_input_type() {
 
         function call_with_wrong_type:
             input r0 as u32.public;
-            call.dynamic {u64_input_field} {aleo_field} {store_field} with r0 (as u32.public) into r1 (as dynamic.future);
+            call.dynamic {u64_input_field} {aleo_field} {store_field} with r0 (as u32.public) into r1 (as future.dynamic);
             async call_with_wrong_type r1 into r2;
             output r2 as type_mismatch_caller.aleo/call_with_wrong_type.future;
 
         finalize call_with_wrong_type:
-            input r0 as dynamic.future;
+            input r0 as future.dynamic;
             await r0;
 
         constructor:
@@ -1350,13 +1350,13 @@ fn test_double_await_fails() {
 
         function double_await:
             input r0 as u64.public;
-            call.dynamic {simple_field} {aleo_field} {set_value_field} with r0 (as u64.public) into r1 (as dynamic.future);
+            call.dynamic {simple_field} {aleo_field} {set_value_field} with r0 (as u64.public) into r1 (as future.dynamic);
             async double_await r1 r1 into r2;
             output r2 as double_await_caller.aleo/double_await.future;
 
         finalize double_await:
-            input r0 as dynamic.future;
-            input r1 as dynamic.future;
+            input r0 as future.dynamic;
+            input r1 as future.dynamic;
             await r0;
             await r1;
 
@@ -1451,13 +1451,13 @@ fn test_deep_nested_futures() {
 
         function depth3:
             input r0 as u64.public;
-            call.dynamic {level4_field} {aleo_field} {depth4_field} with r0 (as u64.public) into r1 (as dynamic.future);
+            call.dynamic {level4_field} {aleo_field} {depth4_field} with r0 (as u64.public) into r1 (as future.dynamic);
             add r0 10u64 into r2;
             async depth3 r1 r2 into r3;
             output r3 as level3.aleo/depth3.future;
 
         finalize depth3:
-            input r0 as dynamic.future;
+            input r0 as future.dynamic;
             input r1 as u64.public;
             await r0;
             set r1 into depth[3u8];
@@ -1483,13 +1483,13 @@ fn test_deep_nested_futures() {
 
         function depth2:
             input r0 as u64.public;
-            call.dynamic {level3_field} {aleo_field} {depth3_field} with r0 (as u64.public) into r1 (as dynamic.future);
+            call.dynamic {level3_field} {aleo_field} {depth3_field} with r0 (as u64.public) into r1 (as future.dynamic);
             add r0 100u64 into r2;
             async depth2 r1 r2 into r3;
             output r3 as level2.aleo/depth2.future;
 
         finalize depth2:
-            input r0 as dynamic.future;
+            input r0 as future.dynamic;
             input r1 as u64.public;
             await r0;
             set r1 into depth[2u8];
@@ -1515,13 +1515,13 @@ fn test_deep_nested_futures() {
 
         function depth1:
             input r0 as u64.public;
-            call.dynamic {level2_field} {aleo_field} {depth2_field} with r0 (as u64.public) into r1 (as dynamic.future);
+            call.dynamic {level2_field} {aleo_field} {depth2_field} with r0 (as u64.public) into r1 (as future.dynamic);
             add r0 1000u64 into r2;
             async depth1 r1 r2 into r3;
             output r3 as level1.aleo/depth1.future;
 
         finalize depth1:
-            input r0 as dynamic.future;
+            input r0 as future.dynamic;
             input r1 as u64.public;
             await r0;
             set r1 into depth[1u8];
@@ -1653,12 +1653,12 @@ fn test_interface_mismatch_public_to_private() {
 
         function call_with_wrong_mode:
             input r0 as u64.public;
-            call.dynamic {private_input_field} {aleo_field} {store_field} with r0 (as u64.public) into r1 (as dynamic.future);
+            call.dynamic {private_input_field} {aleo_field} {store_field} with r0 (as u64.public) into r1 (as future.dynamic);
             async call_with_wrong_mode r1 into r2;
             output r2 as public_to_private_caller.aleo/call_with_wrong_mode.future;
 
         finalize call_with_wrong_mode:
-            input r0 as dynamic.future;
+            input r0 as future.dynamic;
             await r0;
 
         constructor:
@@ -1748,12 +1748,12 @@ fn test_interface_mismatch_private_to_public() {
 
         function call_with_wrong_mode:
             input r0 as u64.private;
-            call.dynamic {public_input_field} {aleo_field} {store_field} with r0 (as u64.private) into r1 (as dynamic.future);
+            call.dynamic {public_input_field} {aleo_field} {store_field} with r0 (as u64.private) into r1 (as future.dynamic);
             async call_with_wrong_mode r1 into r2;
             output r2 as private_to_public_caller.aleo/call_with_wrong_mode.future;
 
         finalize call_with_wrong_mode:
-            input r0 as dynamic.future;
+            input r0 as future.dynamic;
             await r0;
 
         constructor:
@@ -1869,15 +1869,15 @@ fn test_conditional_future_execution_with_branches() {
             input r0 as boolean.public;
             input r1 as u64.public;
             input r2 as u64.public;
-            call.dynamic {worker_a_field} {aleo_field} {work_field} with r1 (as u64.public) into r3 (as dynamic.future);
-            call.dynamic {worker_b_field} {aleo_field} {work_field} with r2 (as u64.public) into r4 (as dynamic.future);
+            call.dynamic {worker_a_field} {aleo_field} {work_field} with r1 (as u64.public) into r3 (as future.dynamic);
+            call.dynamic {worker_b_field} {aleo_field} {work_field} with r2 (as u64.public) into r4 (as future.dynamic);
             async call_both r0 r3 r4 into r5;
             output r5 as branch_caller.aleo/call_both.future;
 
         finalize call_both:
             input r0 as boolean.public;
-            input r1 as dynamic.future;
-            input r2 as dynamic.future;
+            input r1 as future.dynamic;
+            input r2 as future.dynamic;
             branch.eq r0 true to await_a_first;
             await r2;
             await r1;
@@ -2036,14 +2036,14 @@ fn test_skipped_future_await_is_caught() {
         function call_and_skip:
             input r0 as u64.public;
             input r1 as u64.public;
-            call.dynamic {worker_field} {aleo_field} {work_field} with r0 (as u64.public) into r2 (as dynamic.future);
-            call.dynamic {worker_field} {aleo_field} {work_field} with r1 (as u64.public) into r3 (as dynamic.future);
+            call.dynamic {worker_field} {aleo_field} {work_field} with r0 (as u64.public) into r2 (as future.dynamic);
+            call.dynamic {worker_field} {aleo_field} {work_field} with r1 (as u64.public) into r3 (as future.dynamic);
             async call_and_skip r2 r3 into r4;
             output r4 as skip_caller.aleo/call_and_skip.future;
 
         finalize call_and_skip:
-            input r0 as dynamic.future;
-            input r1 as dynamic.future;
+            input r0 as future.dynamic;
+            input r1 as future.dynamic;
             await r0;
             // Intentionally skip awaiting r1 by branching to end
             branch.eq true true to done;
@@ -2168,15 +2168,15 @@ fn test_finalize_partial_failure_rollback() {
         function call_both:
             input r0 as boolean.public;
             // First call always succeeds
-            call.dynamic {success_field} {aleo_field} {succeed_field} with 100u64 (as u64.public) into r1 (as dynamic.future);
+            call.dynamic {success_field} {aleo_field} {succeed_field} with 100u64 (as u64.public) into r1 (as future.dynamic);
             // Second call conditionally fails
-            call.dynamic {conditional_field} {aleo_field} {maybe_fail_field} with r0 200u64 (as boolean.public u64.public) into r2 (as dynamic.future);
+            call.dynamic {conditional_field} {aleo_field} {maybe_fail_field} with r0 200u64 (as boolean.public u64.public) into r2 (as future.dynamic);
             async call_both r1 r2 into r3;
             output r3 as partial_fail_caller.aleo/call_both.future;
 
         finalize call_both:
-            input r0 as dynamic.future;
-            input r1 as dynamic.future;
+            input r0 as future.dynamic;
+            input r1 as future.dynamic;
             await r0;
             await r1;
 
@@ -2329,20 +2329,20 @@ fn test_future_isolation_sequential_calls() {
 
         function call_five_times:
             // Each call increments a different key
-            call.dynamic {worker_field} {aleo_field} {increment_field} with 0u8 10u64 (as u8.public u64.public) into r0 (as dynamic.future);
-            call.dynamic {worker_field} {aleo_field} {increment_field} with 1u8 20u64 (as u8.public u64.public) into r1 (as dynamic.future);
-            call.dynamic {worker_field} {aleo_field} {increment_field} with 2u8 30u64 (as u8.public u64.public) into r2 (as dynamic.future);
-            call.dynamic {worker_field} {aleo_field} {increment_field} with 3u8 40u64 (as u8.public u64.public) into r3 (as dynamic.future);
-            call.dynamic {worker_field} {aleo_field} {increment_field} with 4u8 50u64 (as u8.public u64.public) into r4 (as dynamic.future);
+            call.dynamic {worker_field} {aleo_field} {increment_field} with 0u8 10u64 (as u8.public u64.public) into r0 (as future.dynamic);
+            call.dynamic {worker_field} {aleo_field} {increment_field} with 1u8 20u64 (as u8.public u64.public) into r1 (as future.dynamic);
+            call.dynamic {worker_field} {aleo_field} {increment_field} with 2u8 30u64 (as u8.public u64.public) into r2 (as future.dynamic);
+            call.dynamic {worker_field} {aleo_field} {increment_field} with 3u8 40u64 (as u8.public u64.public) into r3 (as future.dynamic);
+            call.dynamic {worker_field} {aleo_field} {increment_field} with 4u8 50u64 (as u8.public u64.public) into r4 (as future.dynamic);
             async call_five_times r0 r1 r2 r3 r4 into r5;
             output r5 as isolation_caller.aleo/call_five_times.future;
 
         finalize call_five_times:
-            input r0 as dynamic.future;
-            input r1 as dynamic.future;
-            input r2 as dynamic.future;
-            input r3 as dynamic.future;
-            input r4 as dynamic.future;
+            input r0 as future.dynamic;
+            input r1 as future.dynamic;
+            input r2 as future.dynamic;
+            input r3 as future.dynamic;
+            input r4 as future.dynamic;
             // Await in a different order than creation to test isolation
             await r4;
             await r2;
@@ -2443,30 +2443,30 @@ fn test_many_futures_in_single_transaction() {
         program many_futures_caller.aleo;
 
         function store_ten_values:
-            call.dynamic {worker_field} {aleo_field} {store_field} with 0u8 100u64 (as u8.public u64.public) into r0 (as dynamic.future);
-            call.dynamic {worker_field} {aleo_field} {store_field} with 1u8 101u64 (as u8.public u64.public) into r1 (as dynamic.future);
-            call.dynamic {worker_field} {aleo_field} {store_field} with 2u8 102u64 (as u8.public u64.public) into r2 (as dynamic.future);
-            call.dynamic {worker_field} {aleo_field} {store_field} with 3u8 103u64 (as u8.public u64.public) into r3 (as dynamic.future);
-            call.dynamic {worker_field} {aleo_field} {store_field} with 4u8 104u64 (as u8.public u64.public) into r4 (as dynamic.future);
-            call.dynamic {worker_field} {aleo_field} {store_field} with 5u8 105u64 (as u8.public u64.public) into r5 (as dynamic.future);
-            call.dynamic {worker_field} {aleo_field} {store_field} with 6u8 106u64 (as u8.public u64.public) into r6 (as dynamic.future);
-            call.dynamic {worker_field} {aleo_field} {store_field} with 7u8 107u64 (as u8.public u64.public) into r7 (as dynamic.future);
-            call.dynamic {worker_field} {aleo_field} {store_field} with 8u8 108u64 (as u8.public u64.public) into r8 (as dynamic.future);
-            call.dynamic {worker_field} {aleo_field} {store_field} with 9u8 109u64 (as u8.public u64.public) into r9 (as dynamic.future);
+            call.dynamic {worker_field} {aleo_field} {store_field} with 0u8 100u64 (as u8.public u64.public) into r0 (as future.dynamic);
+            call.dynamic {worker_field} {aleo_field} {store_field} with 1u8 101u64 (as u8.public u64.public) into r1 (as future.dynamic);
+            call.dynamic {worker_field} {aleo_field} {store_field} with 2u8 102u64 (as u8.public u64.public) into r2 (as future.dynamic);
+            call.dynamic {worker_field} {aleo_field} {store_field} with 3u8 103u64 (as u8.public u64.public) into r3 (as future.dynamic);
+            call.dynamic {worker_field} {aleo_field} {store_field} with 4u8 104u64 (as u8.public u64.public) into r4 (as future.dynamic);
+            call.dynamic {worker_field} {aleo_field} {store_field} with 5u8 105u64 (as u8.public u64.public) into r5 (as future.dynamic);
+            call.dynamic {worker_field} {aleo_field} {store_field} with 6u8 106u64 (as u8.public u64.public) into r6 (as future.dynamic);
+            call.dynamic {worker_field} {aleo_field} {store_field} with 7u8 107u64 (as u8.public u64.public) into r7 (as future.dynamic);
+            call.dynamic {worker_field} {aleo_field} {store_field} with 8u8 108u64 (as u8.public u64.public) into r8 (as future.dynamic);
+            call.dynamic {worker_field} {aleo_field} {store_field} with 9u8 109u64 (as u8.public u64.public) into r9 (as future.dynamic);
             async store_ten_values r0 r1 r2 r3 r4 r5 r6 r7 r8 r9 into r10;
             output r10 as many_futures_caller.aleo/store_ten_values.future;
 
         finalize store_ten_values:
-            input r0 as dynamic.future;
-            input r1 as dynamic.future;
-            input r2 as dynamic.future;
-            input r3 as dynamic.future;
-            input r4 as dynamic.future;
-            input r5 as dynamic.future;
-            input r6 as dynamic.future;
-            input r7 as dynamic.future;
-            input r8 as dynamic.future;
-            input r9 as dynamic.future;
+            input r0 as future.dynamic;
+            input r1 as future.dynamic;
+            input r2 as future.dynamic;
+            input r3 as future.dynamic;
+            input r4 as future.dynamic;
+            input r5 as future.dynamic;
+            input r6 as future.dynamic;
+            input r7 as future.dynamic;
+            input r8 as future.dynamic;
+            input r9 as future.dynamic;
             await r0;
             await r1;
             await r2;
@@ -2596,12 +2596,12 @@ fn test_dynamic_future_max_arguments() {
             call.dynamic {program_field} {aleo_field} {sum_sixteen_field}
                 with 1u64 2u64 3u64 4u64 5u64 6u64 7u64 8u64 9u64 10u64 11u64 12u64 13u64 14u64 15u64 16u64
                 (as u64.public u64.public u64.public u64.public u64.public u64.public u64.public u64.public u64.public u64.public u64.public u64.public u64.public u64.public u64.public u64.public)
-                into r0 (as dynamic.future);
+                into r0 (as future.dynamic);
             async call_sum_sixteen r0 into r1;
             output r1 as max_args_caller.aleo/call_sum_sixteen.future;
 
         finalize call_sum_sixteen:
-            input r0 as dynamic.future;
+            input r0 as future.dynamic;
             await r0;
 
         constructor:
@@ -2706,12 +2706,12 @@ fn test_multiple_dynamic_transactions_same_mapping_key() {
             input r1 as u64.public;
             call.dynamic {counter_field} {aleo_field} {increment_field}
                 with r0 r1 (as u8.public u64.public)
-                into r2 (as dynamic.future);
+                into r2 (as future.dynamic);
             async dynamic_increment r2 into r3;
             output r3 as dynamic_counter.aleo/dynamic_increment.future;
 
         finalize dynamic_increment:
-            input r0 as dynamic.future;
+            input r0 as future.dynamic;
             await r0;
 
         constructor:
@@ -2846,12 +2846,12 @@ fn test_multiple_dynamic_transactions_one_fails() {
             input r1 as u64.public;
             call.dynamic {conditional_field} {aleo_field} {maybe_fail_field}
                 with r0 r1 (as boolean.public u64.public)
-                into r2 (as dynamic.future);
+                into r2 (as future.dynamic);
             async dynamic_maybe_fail r2 into r3;
             output r3 as conditional_caller.aleo/dynamic_maybe_fail.future;
 
         finalize dynamic_maybe_fail:
-            input r0 as dynamic.future;
+            input r0 as future.dynamic;
             await r0;
 
         constructor:

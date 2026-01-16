@@ -57,12 +57,11 @@ impl<A: Aleo> Identifier<A> {
     /// Returns a public identifier.
     /// Note: This method should be used cautiously since identifiers typically should be constant.
     pub fn public(identifier: console::Identifier<A::Network>) -> Self {
-        // Convert the identifier to a string to check its validity.
+        // Get the identifier string length.
         let identifier_string = identifier.to_string();
 
         // Initialize the field as public variable.
         let field = match identifier.to_field() {
-            // TODO (@reviewers). Confirm that a field element is sufficient to uniquely represent an identifier.
             Ok(field) => Field::new(Mode::Public, field),
             Err(error) => A::halt(format!("Failed to convert an identifier to a field: {error}")),
         };

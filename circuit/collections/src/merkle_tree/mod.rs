@@ -133,6 +133,8 @@ impl<E: Environment, LH: LeafHash<E, Hash = PH::Hash>, PH: PathHash<E, Hash = Fi
 
         // Compute and store the hashes for each level, iterating from the penultimate level to the root level.
         let mut start_index = num_nodes;
+        // Precompute the empty node hash for filling empty nodes.
+        let empty_node_hash = path_hasher.hash_children(&empty_hash, &empty_hash);
         // Compute the start index of the current level.
         while let Some(start) = parent(start_index) {
             // Compute the end index of the current level.
@@ -149,7 +151,6 @@ impl<E: Environment, LH: LeafHash<E, Hash = PH::Hash>, PH: PathHash<E, Hash = Fi
                 *tree_node = path_hasher.hash_children(left, right);
             }
             // Use the precomputed empty node hash for every empty node, if there are any.
-            let empty_node_hash = path_hasher.hash_children(&empty_hash, &empty_hash);
             if start + num_full_nodes < end {
                 for node in tree.iter_mut().take(end).skip(start + num_full_nodes) {
                     *node = empty_node_hash.clone();
@@ -372,11 +373,11 @@ mod tests {
         // injected as vectors of bits of varying length.
         let rng = &mut TestRng::from_seed(1234567);
 
-        test_compatibility::<1>(Mode::Constant, rng, count_is!(1085, 0, 0, 0));
-        test_compatibility::<2>(Mode::Public, rng, count_is!(1076, 15, 3575, 3575));
-        test_compatibility::<3>(Mode::Private, rng, count_is!(1084, 0, 9877, 9825));
-        test_compatibility::<4>(Mode::Constant, rng, count_is!(1194, 0, 0, 0));
-        test_compatibility::<5>(Mode::Public, rng, count_is!(1132, 160, 37145, 37145));
-        test_compatibility::<6>(Mode::Private, rng, count_is!(1196, 0, 73607, 73280));
+        test_compatibility::<1>(Mode::Constant, rng, count_is!(1086, 0, 0, 0));
+        test_compatibility::<2>(Mode::Public, rng, count_is!(1077, 15, 3575, 3575));
+        test_compatibility::<3>(Mode::Private, rng, count_is!(1085, 0, 9877, 9825));
+        test_compatibility::<4>(Mode::Constant, rng, count_is!(1195, 0, 0, 0));
+        test_compatibility::<5>(Mode::Public, rng, count_is!(1133, 160, 37145, 37145));
+        test_compatibility::<6>(Mode::Private, rng, count_is!(1197, 0, 73607, 73280));
     }
 }

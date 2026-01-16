@@ -67,33 +67,33 @@ fn test_translation(
 
     // Tries to consume a container passed as dynamic as a specifically liquid one
     function get_dynamic_liters_from_liquid:
-        input r0 as dynamic.record;
+        input r0 as record.dynamic;
         
         call.dynamic {program_b_name_field} {network_field} {get_liquid_liters_function_field}
-            with r0 (as dynamic.record)
+            with r0 (as record.dynamic)
             into r1 (as u64.public);
 
         output r1 as u64.public;
     
     function {get_dynamic_liters_from_gas_function_name}:
-        input r0 as dynamic.record;
+        input r0 as record.dynamic;
         
         call.dynamic {program_b_name_field} {network_field} {get_gas_liters_function_field}
-            with r0 (as dynamic.record)
+            with r0 (as record.dynamic)
             into r1 (as u64.public);
 
         output r1 as u64.public;
 
     function consume_dynamic_blob:
-        input r0 as dynamic.record;
+        input r0 as record.dynamic;
         output true as boolean.private;
 
     function dynamic_pump:
         call.dynamic {program_b_name_field} {network_field} {nitrogen_pump_function_field}
             with 1u64 (as u64.public)
-            into r0 (as dynamic.record);
+            into r0 (as record.dynamic);
         
-        output r0 as dynamic.record;
+        output r0 as record.dynamic;
 
     // Get the liters in an external liquid record
     function {get_external_liters_function_name}:
@@ -108,13 +108,13 @@ fn test_translation(
     // Receive a dynamic blob of gas and pass it to another function for leaking,
     // then receive it and measure its liters with yet another function
     function dynamic_gas_leak:
-        input r0 as dynamic.record;
+        input r0 as record.dynamic;
         
         call.dynamic {program_b_name_field} {network_field} {static_gas_leak_function_field}
-            with r0 (as dynamic.record)
-            into r1 (as dynamic.record);
+            with r0 (as record.dynamic)
+            into r1 (as record.dynamic);
         call.dynamic {program_a_name_field} {network_field} {get_dynamic_liters_from_gas_function_field}
-            with r1 (as dynamic.record)
+            with r1 (as record.dynamic)
             into r2 (as u64.public);
 
         output r2 as u64.public;
@@ -162,10 +162,10 @@ fn test_translation(
         output r0.liters as u64.public;
 
     function get_gas_liters_externally:
-        input r0 as dynamic.record;
+        input r0 as record.dynamic;
         
         call.dynamic {program_a_name_field} {network_field} {get_external_liters_function_field}
-            with r0 (as dynamic.record)
+            with r0 (as record.dynamic)
             into r1 (as u64.public);
         
         output r1 as u64.public;
@@ -188,11 +188,11 @@ fn test_translation(
         output r0 as gas_container.record;
 
     function pump_and_send_through_pipe:
-        input r0 as dynamic.record;
+        input r0 as record.dynamic;
         
         call.dynamic {program_a_name_field} {network_field} {gas_pipe_function_field}
-            with r0 (as dynamic.record)
-            into r1 (as dynamic.record);
+            with r0 (as record.dynamic)
+            into r1 (as record.dynamic);
     
     // Consume a gas record and produce a new one containing 10 fewer liters
     function static_gas_leak:
@@ -533,46 +533,46 @@ fn test_translation_traversal_consistency() {
         canon as boolean.private;
 
     function quadruple_caller:
-        input r0 as dynamic.record; // type A
-        input r1 as dynamic.record; // type B
-        input r2 as dynamic.record; // type B
+        input r0 as record.dynamic; // type A
+        input r1 as record.dynamic; // type B
+        input r2 as record.dynamic; // type B
         
         // underlying input types: A B
         // underlying output types: B
         call.dynamic {program_name_field} {network_field} {leaf_two_one_function_field}
-            with r0 r1 (as dynamic.record dynamic.record)
-            into r3 (as dynamic.record);
+            with r0 r1 (as record.dynamic record.dynamic)
+            into r3 (as record.dynamic);
 
         // underlying input types: B
         // underlying output types: B C
         call.dynamic {program_name_field} {network_field} {leaf_one_two_function_field}
-            with r3 (as dynamic.record)
-            into r4 r5 (as dynamic.record dynamic.record);
+            with r3 (as record.dynamic)
+            into r4 r5 (as record.dynamic record.dynamic);
 
         // underlying input types: C B B (the last two are not translated)
         call.dynamic {program_name_field} {network_field} {double_caller_one_zero_function_field}
-            with r5 r4 r2 (as dynamic.record dynamic.record dynamic.record);
+            with r5 r4 r2 (as record.dynamic record.dynamic record.dynamic);
 
         // underlying output types: B
         call.dynamic {program_name_field} {network_field} {leaf_zero_one_function_field}
-            into r6 (as dynamic.record);
+            into r6 (as record.dynamic);
 
     function double_caller_one_zero:
         input r0 as c.record;
-        input r1 as dynamic.record; // type B
-        input r2 as dynamic.record; // type B
+        input r1 as record.dynamic; // type B
+        input r2 as record.dynamic; // type B
 
         // underlying input types: B
         // underlying output types: A
         call.dynamic {program_name_field} {network_field} {leaf_one_one_function_field}
-            with r1 (as dynamic.record)
-            into r3 (as dynamic.record);
+            with r1 (as record.dynamic)
+            into r3 (as record.dynamic);
 
         // underlying input types: A B
         // underlying output types: B
         call.dynamic {program_name_field} {network_field} {leaf_two_one_function_field}
-            with r3 r2 (as dynamic.record dynamic.record)
-            into r4 (as dynamic.record);
+            with r3 r2 (as record.dynamic record.dynamic)
+            into r4 (as record.dynamic);
 
     function leaf_two_one:
         input r0 as a.record;
@@ -729,13 +729,13 @@ fn test_malicious_caller_inputs_outputs() {
             output r2 as stained_glass.record;
 
         function decolor_glass_dynamically:
-            input r0 as dynamic.record;
+            input r0 as record.dynamic;
 
             call.dynamic {glass_pane_program_field} {network_field} {decolor_glass_statically_function_field}
-                with r0 (as dynamic.record)
-                into r1 (as dynamic.record);
+                with r0 (as record.dynamic)
+                into r1 (as record.dynamic);
 
-            output r1 as dynamic.record;
+            output r1 as record.dynamic;
 
         function decolor_glass_statically:
             input r0 as stained_glass.record;
@@ -1073,16 +1073,16 @@ fn test_differing_keys() {
 
         function mint_all:
             call.dynamic {program_a_field} {network_field} {mint_record_a_function_field}
-                into r0 (as dynamic.record);
+                into r0 (as record.dynamic);
 
             call.dynamic {program_a_field} {network_field} {mint_record_b_function_field}
-                into r1 (as dynamic.record);
+                into r1 (as record.dynamic);
 
             call.dynamic {program_b_field} {network_field} {mint_record_a_function_field}
-                into r2 (as dynamic.record);
+                into r2 (as record.dynamic);
 
             call.dynamic {program_b_field} {network_field} {mint_record_b_function_field}
-                into r3 (as dynamic.record);
+                into r3 (as record.dynamic);
 
         constructor:
             assert.eq true true;
@@ -1183,9 +1183,9 @@ fn test_translation_max_entries_record() {
 
     // Dynamic caller that passes max_record through translation
     function dynamic_consume_max:
-        input r0 as dynamic.record;
+        input r0 as record.dynamic;
         call.dynamic {program_name_field} {network_field} {consume_max_field}
-            with r0 (as dynamic.record)
+            with r0 (as record.dynamic)
             into r1 (as u64.public);
         output r1 as u64.public;
 

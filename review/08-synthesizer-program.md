@@ -8,7 +8,7 @@ The `synthesizer/program` crate defines the instruction set and command set for 
 
 1. **New Instructions:** `call.dynamic`, `get.record.dynamic`
 2. **New Commands:** `contains.dynamic`, `get.dynamic`, `get.or_use.dynamic`
-3. **Extended casting:** Support for `dynamic.record` cast type
+3. **Extended casting:** Support for `record.dynamic` cast type
 
 ## Files Requiring Review
 
@@ -181,11 +181,11 @@ get.or_use.dynamic <program_name> <program_network> <mapping_name>[<key>] <defau
 #### `logic/instruction/operation/cast.rs`
 **Purpose:** Type casting instruction.
 
-**Changes:** Extended to support `dynamic.record` cast type.
+**Changes:** Extended to support `record.dynamic` cast type.
 
 **New Cast:**
 ```
-cast <record_operand> into <destination> as dynamic.record
+cast <record_operand> into <destination> as record.dynamic
 ```
 
 **Validation:** `validate_dynamic_record_cast()` ensures:

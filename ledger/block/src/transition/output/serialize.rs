@@ -80,7 +80,7 @@ impl<N: Network> Serialize for Output<N> {
                 }
                 Self::DynamicRecord(id) => {
                     let mut output = serializer.serialize_struct("Output", 2)?;
-                    output.serialize_field("type", "dynamic_record")?;
+                    output.serialize_field("type", "record_dynamic")?;
                     output.serialize_field("id", &id)?;
                     output.end()
                 }
@@ -138,7 +138,7 @@ impl<'de, N: Network> Deserialize<'de> for Output<N> {
                         Some(value) => Some(Future::<N>::from_str(value).map_err(de::Error::custom)?),
                         None => None,
                     }),
-                    Some("dynamic_record") => Output::DynamicRecord(id),
+                    Some("record_dynamic") => Output::DynamicRecord(id),
                     _ => return Err(de::Error::custom("Invalid output type")),
                 };
 

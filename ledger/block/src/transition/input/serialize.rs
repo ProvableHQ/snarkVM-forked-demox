@@ -62,7 +62,7 @@ impl<N: Network> Serialize for Input<N> {
                 }
                 Self::DynamicRecord(id) => {
                     let mut input = serializer.serialize_struct("Input", 2)?;
-                    input.serialize_field("type", "dynamic_record")?;
+                    input.serialize_field("type", "record_dynamic")?;
                     input.serialize_field("id", &id)?;
                     input.end()
                 }
@@ -98,7 +98,7 @@ impl<'de, N: Network> Deserialize<'de> for Input<N> {
                     }),
                     Some("record") => Input::Record(id, DeserializeExt::take_from_value::<D>(&mut input, "tag")?),
                     Some("external_record") => Input::ExternalRecord(id),
-                    Some("dynamic_record") => Input::DynamicRecord(id),
+                    Some("record_dynamic") => Input::DynamicRecord(id),
                     _ => return Err(de::Error::custom("Invalid transition input type")),
                 };
                 // Return the input.

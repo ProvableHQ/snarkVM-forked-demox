@@ -205,7 +205,7 @@ impl<A: Aleo> DynamicRecord<A> {
         let circuit_leaf_hasher = CircuitLH::<A>::constant(console_leaf_hasher);
         let circuit_path_hasher = CircuitPH::<A>::constant(console_path_hasher);
 
-        // Inject the leaves
+        // Serialize the in-circuit entries to leaf field elements.
         let leaves = data
             .iter()
             .map(|(identifier, entry)| {
