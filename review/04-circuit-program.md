@@ -18,17 +18,11 @@ The `circuit/program` crate provides circuit implementations of Aleo program typ
 These files implement circuit versions of dynamic types. **High priority for review.**
 
 #### `data/dynamic/mod.rs`
-**Purpose:** Module root defining circuit-level DynamicRecord with Merkle tree infrastructure.
+**Purpose:** Module root exporting circuit-level dynamic types.
 
-**Key Types:**
-```rust
-type CircuitLH<A> = Poseidon8<A>;  // Leaf hasher
-type CircuitPH<A> = Poseidon2<A>;  // Path hasher
-type RecordDataTree<A> = MerkleTree<A, CircuitLH<A>, CircuitPH<A>, RECORD_DATA_TREE_DEPTH>;
-```
-
-**Key Function:**
-- `merkleize_data()` - Constructs Merkle tree from ordered entry data during circuit execution
+**Exports:**
+- `DynamicFuture` from `future` module
+- `DynamicRecord`, `RecordDataTree`, `compute_record_id` from `record` module
 
 ---
 
@@ -51,6 +45,17 @@ pub struct DynamicRecord<A: Aleo> {
 - `Eject` impl: Converts back to console type
 - Mode combination via `Mode::combine()` for all 4 fields
 
+**Key Methods:**
+- `from_record()` - Creates DynamicRecord from static Record
+- `merkleize_data()` - Constructs circuit Merkle tree from entry data
+
+**Tree Types:**
+```rust
+type CircuitLH<A> = Poseidon8<A>;  // Leaf hasher
+type CircuitPH<A> = Poseidon2<A>;  // Path hasher
+type RecordDataTree<A> = MerkleTree<A, CircuitLH<A>, CircuitPH<A>, RECORD_DATA_TREE_DEPTH>;
+```
+
 ---
 
 #### `data/dynamic/record/equal.rs`
@@ -67,8 +72,9 @@ pub struct DynamicRecord<A: Aleo> {
 **Purpose:** Record field access in circuit.
 
 **Limitations:**
-- Only allows accessing the `owner` field
-- Halts with error for other field access (prevents data leakage)
+- Only allows accessing the `owner` field directly
+- All other field access requires `get.record.dynamic` instruction with Merkle proof verification
+- This restriction prevents unauthorized data access without proper cryptographic verification
 
 ---
 

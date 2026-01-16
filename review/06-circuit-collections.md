@@ -4,7 +4,7 @@ This document covers the 3 files changed in `circuit/collections` plus 3 files i
 
 ## Overview
 
-The `circuit/collections` crate provides circuit implementations of data structures. The `circuit/environment` crate provides the constraint system infrastructure. Changes are minimal for dynamic dispatch.
+The `circuit/collections` crate provides circuit implementations of data structures. The `circuit/environment` crate provides the constraint system infrastructure. Key additions include a generic `MerkleTree` struct for circuit-based tree construction.
 
 ## Files Requiring Review
 
@@ -25,14 +25,34 @@ The `circuit/collections` crate provides circuit implementations of data structu
 ---
 
 #### `src/merkle_tree/mod.rs`
-**Purpose:** Main Merkle tree circuit implementation.
+**Purpose:** Main Merkle tree circuit implementation. **Significant new functionality.**
 
-**Changes:** Improved test infrastructure and metrics tracking.
+**New Struct:**
+```rust
+pub struct MerkleTree<E: Environment, LH: LeafHash, PH: PathHash, const DEPTH: u8> {
+    leaf_hasher: LH,
+    path_hasher: PH,
+    root: PH::Hash,
+    tree: Vec<PH::Hash>,
+    empty_hash: Field<E>,
+    number_of_leaves: usize,
+}
+```
 
-**Key Constraints:**
-- Tree construction with parent/child index calculations
-- Padding handling for incomplete trees
-- Empty hash initialization
+**Key Methods:**
+- `new(leaf_hasher, path_hasher, leaves)` - Constructs circuit Merkle tree from leaves
+- `root()` - Returns computed root
+- `tree()` - Returns internal hashes
+- `empty_hash()` - Returns canonical empty hash
+- `number_of_leaves()` - Returns leaf count
+
+**Circuit Behavior:**
+- Tree construction adds constraints for each hash operation
+- Padding with empty hashes for non-power-of-two leaf counts
+- Depth padding from tree depth up to `DEPTH`
+
+**Connection to Dynamic Dispatch:**
+This struct enables `DynamicRecord::merkleize_data()` and `DynamicFuture` circuit merkleization.
 
 ---
 
@@ -53,14 +73,23 @@ The `circuit/collections` crate provides circuit implementations of data structu
 ---
 
 #### `src/helpers/assignment.rs`
-**Purpose:** R1CS assignment generation for constraint synthesis.
+**Purpose:** R1CS assignment generation for constraint synthesis. **New struct added.**
 
-**Changes:** Updated for new error handling from `E::enforce`.
+**New Struct:**
+```rust
+pub struct Assignment<F: PrimeField> {
+    public: Vec<F>,
+    private: Vec<F>,
+}
+```
 
-**Key Functions:**
-- Constraint system conversion and validation
-- Variable mapping
-- Public/private variable allocation
+**Key Methods:**
+- `new(num_public, num_private)` - Allocates assignment with given sizes
+- `public()` / `private()` - Returns public/private variable slices
+- `public_mut()` / `private_mut()` - Returns mutable slices
+
+**Usage:**
+Used for constraint system variable assignment during circuit synthesis, supporting the new error handling from `E::enforce`.
 
 ---
 
@@ -105,4 +134,4 @@ These Merkle tree circuits are the foundation for:
 - `DynamicRecord` Merkle root verification (depth-5 tree)
 - `DynamicFuture` argument root verification (depth-4 tree)
 
-The actual dynamic type Merkle trees are constructed using `Poseidon8` (leaf hash) and `Poseidon2` (path hash) as defined in `circuit/program/src/data/dynamic/mod.rs`.
+The actual dynamic type Merkle trees are constructed using `Poseidon8` (leaf hash) and `Poseidon2` (path hash) as defined in `circuit/program/src/data/dynamic/record/mod.rs`.

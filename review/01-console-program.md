@@ -41,7 +41,7 @@ pub struct DynamicRecord<N: Network> {
 ```
 
 **Constants:**
-- `RECORD_DATA_TREE_DEPTH: usize = 5` (max 32 entries)
+- `RECORD_DATA_TREE_DEPTH: u8 = 5` (max 32 entries)
 - `RecordDataTree` = `MerkleTree<E, Poseidon8<E>, Poseidon2<E>, 5>`
 
 **Key Methods:**
@@ -67,9 +67,11 @@ pub struct DynamicRecord<N: Network> {
 ---
 
 #### `data/dynamic/record/find.rs`
-**Purpose:** Entry lookup with Merkle path generation.
+**Purpose:** Limited field access for DynamicRecord (owner only).
 
-**Key Method:** `find(&self, identifier: &Identifier) -> Result<(Entry, MerklePath)>`
+**Key Method:** `find<A>(&self, path: &[A]) -> Result<Value<N>>`
+
+**Behavior:** Only allows accessing the `owner` field. All other access returns an error directing users to use `get.record.dynamic` instead.
 
 ---
 
@@ -100,7 +102,7 @@ pub struct DynamicFuture<N: Network> {
 ```
 
 **Constants:**
-- `FUTURE_ARGUMENT_TREE_DEPTH: usize = 4` (max 16 arguments)
+- `FUTURE_ARGUMENT_TREE_DEPTH: u8 = 4` (max 16 arguments)
 
 **Key Methods:**
 - `from_future()` - Convert static Future to DynamicFuture

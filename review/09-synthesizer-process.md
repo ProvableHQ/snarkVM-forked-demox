@@ -129,6 +129,8 @@ pub struct RecordTranslationData<N: Network> {
 5. Verify Merkle roots match
 6. Assert: owner, nonce, version match; IDs match
 
+**Note:** `translation_index` is injected as a public input for verifier synchronization but is intentionally unused in circuit constraint logic (indicated by `_` prefix in code).
+
 **Constraint Counts:**
 - Simple record: ~24K constraints
 - Complex record (32 fields): ~68K constraints
