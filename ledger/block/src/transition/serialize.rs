@@ -21,10 +21,10 @@ impl<N: Network> Serialize for Transition<N> {
         match serializer.is_human_readable() {
             true => {
                 let num_fields = match self.caller_metadata() {
-                    None => 7,
+                    None => 8,
                     Some(metadata) => match metadata.is_dynamic() {
-                        true => 8,
-                        false => 10,
+                        true => 9,
+                        false => 11,
                     },
                 };
                 let mut transition = serializer.serialize_struct("Transition", num_fields)?;

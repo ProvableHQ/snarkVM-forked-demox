@@ -18,3 +18,6 @@ pub use leaf_hash::*;
 
 mod path_hash;
 pub use path_hash::*;
+
+mod print_merkle_tree;
+pub use print_merkle_tree::*;
