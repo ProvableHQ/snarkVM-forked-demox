@@ -473,6 +473,15 @@ impl<N: Network> Trace<N> {
             proving_tasks.push((proving_key.clone(), circuit_assignments));
         }
 
+        // Ensure the number of instances does not exceed the limit.
+        let num_instances: usize = proving_tasks.iter().map(|(_, assignments)| assignments.len()).sum();
+        ensure!(
+            num_instances <= N::MAX_BATCH_PROOF_INSTANCES,
+            "Total proof instances ({}) exceed the maximum allowed ({})",
+            num_instances,
+            N::MAX_BATCH_PROOF_INSTANCES
+        );
+
         // Compute the proof.
         let proof = ProvingKey::prove_batch(locator, varuna_version, &proving_tasks, rng)?;
         // Return the global state root and proof.

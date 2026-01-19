@@ -41,6 +41,9 @@ mod translation;
 // Tests comparing static vs dynamic calls to all credits.aleo functions.
 mod compare_calls_to_credits;
 
+// Tests for restricted keywords at V14.
+mod restricted_keywords;
+
 use super::*;
 
 use crate::{
