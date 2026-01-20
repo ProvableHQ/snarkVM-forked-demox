@@ -707,7 +707,7 @@ fn test_read_state_after_dynamic_await() {
     assert_eq!(read_result, Value::from_str("42u64").unwrap());
 }
 
-// Tests a `call.dynamic` that returns both a `dynamic.record` and a `DynamicFuture`.
+// Tests a `call.dynamic` that returns both a `record.dynamic` and a `DynamicFuture`.
 #[test]
 fn test_dynamic_future_with_dynamic_record() {
     let rng = &mut TestRng::default();
@@ -756,9 +756,9 @@ fn test_dynamic_future_with_dynamic_record() {
 
         function mint_and_track:
             input r0 as u64.public;
-            call.dynamic {token_field} {aleo_field} {mint_field} with self.signer r0 (as address.private u64.public) into r1 r2 (as dynamic.record future.dynamic);
+            call.dynamic {token_field} {aleo_field} {mint_field} with self.signer r0 (as address.private u64.public) into r1 r2 (as record.dynamic future.dynamic);
             async mint_and_track r2 into r3;
-            output r1 as dynamic.record;
+            output r1 as record.dynamic;
             output r3 as record_future_caller.aleo/mint_and_track.future;
 
         finalize mint_and_track:

@@ -120,6 +120,64 @@ impl<N: Network> TransitionCallerMetadata<N> {
     }
 }
 
+/// Implements `ToBits` for `TransitionCallerMetadata` to support including the caller metadata in the transition ID.
+/// The bit representation includes:
+/// - `is_dynamic` (1 bit)
+/// - `num_inputs` (8 bits)
+/// - `num_outputs` (8 bits)
+/// - For each input: variant (8 bits) + id (Field)
+/// - For each output: variant (8 bits) + id (Field) + checksum
+/// - Note that a caller input or output can never be a `Record`.
+impl<N: Network> ToBits for TransitionCallerMetadata<N> {
+    /// Writes the caller metadata into the given vector as a boolean array in little-endian order.
+    fn write_bits_le(&self, vec: &mut Vec<bool>) {
+        // Write whether the transition is dynamic.
+        self.is_dynamic.write_bits_le(vec);
+        // Write the number of inputs.
+        (self.inputs.len() as u8).write_bits_le(vec);
+        // Write the number of outputs.
+        (self.outputs.len() as u8).write_bits_le(vec);
+        // Write each input.
+        for input in &self.inputs {
+            // Write the variant.
+            input.variant().write_bits_le(vec);
+            // Write the input ID.
+            input.id().write_bits_le(vec);
+        }
+        // Write each output.
+        for output in &self.outputs {
+            // Write the variant.
+            output.variant().write_bits_le(vec);
+            // Write the output ID.
+            output.id().write_bits_le(vec);
+        }
+    }
+
+    /// Writes the caller metadata into the given vector as a boolean array in big-endian order.
+    fn write_bits_be(&self, vec: &mut Vec<bool>) {
+        // Write whether the transition is dynamic.
+        self.is_dynamic.write_bits_be(vec);
+        // Write the number of inputs.
+        (self.inputs.len() as u8).write_bits_be(vec);
+        // Write the number of outputs.
+        (self.outputs.len() as u8).write_bits_be(vec);
+        // Write each input.
+        for input in &self.inputs {
+            // Write the variant.
+            input.variant().write_bits_be(vec);
+            // Write the input ID.
+            input.id().write_bits_be(vec);
+        }
+        // Write each output.
+        for output in &self.outputs {
+            // Write the variant.
+            output.variant().write_bits_be(vec);
+            // Write the output ID.
+            output.id().write_bits_be(vec);
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Eq)]
 pub struct Transition<N: Network> {
     /// The transition ID.
@@ -176,7 +234,12 @@ impl<N: Network> Transition<N> {
         // Compute the transition ID.
         // TODO (@reviewers): Should the caller metadata be included in the transition ID computation?
         let function_tree = Self::function_tree(&inputs, &outputs)?;
-        let id = N::hash_bhp512(&(*function_tree.root(), tcm).to_bits_le())?;
+        let id = match &caller_metadata {
+            Some(caller_metadata) => {
+                N::hash_bhp512(&(*function_tree.root(), tcm, caller_metadata.clone()).to_bits_le())?
+            }
+            None => N::hash_bhp512(&(*function_tree.root(), tcm).to_bits_le())?,
+        };
         // Return the transition.
         Ok(Self { id: id.into(), program_id, function_name, inputs, outputs, tpk, tcm, scm, caller_metadata })
     }
