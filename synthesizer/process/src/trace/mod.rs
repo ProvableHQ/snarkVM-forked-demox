@@ -504,11 +504,10 @@ impl<N: Network> Trace<N> {
             Inclusion::prepare_verifier_inputs(global_state_root, inclusion_version, transitions.clone())?;
 
         let expected_n_inclusions = Authorization::number_of_input_records(transitions);
+        let actual_n_inclusions = batch_inclusion_inputs.len();
         ensure!(
-            batch_inclusion_inputs.len() == expected_n_inclusions,
-            "Unexpected number of inclusion inputs: {} instead of {}",
-            batch_inclusion_inputs.len(),
-            expected_n_inclusions
+            actual_n_inclusions == expected_n_inclusions,
+            "Unexpected inclusion inputs: {actual_n_inclusions} v.s. {expected_n_inclusions}"
         );
 
         // Insert the batch of inclusion verifier inputs to the verifier inputs.
