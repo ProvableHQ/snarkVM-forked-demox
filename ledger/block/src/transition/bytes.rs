@@ -187,25 +187,27 @@ mod tests {
             // Sample the transition.
             let static_transition = crate::transition::test_helpers::sample_transition(rng);
 
+            // Create dynamic caller metadata from the static transition's inputs/outputs.
             let caller_metadata = TransitionCallerMetadata::new_dynamic(
                 static_transition.inputs().to_vec(),
                 static_transition.outputs().to_vec(),
             )
             .unwrap();
 
-            let dynamic_transition = Transition {
-                id: *static_transition.id(),
-                program_id: *static_transition.program_id(),
-                function_name: *static_transition.function_name(),
-                inputs: static_transition.inputs().to_vec(),
-                outputs: static_transition.outputs().to_vec(),
-                tpk: *static_transition.tpk(),
-                tcm: *static_transition.tcm(),
-                scm: *static_transition.scm(),
-                caller_metadata: Some(caller_metadata),
-            };
+            // Create the dynamic transition using `Transition::new` to ensure the ID is computed correctly.
+            // Note: The transition ID includes the caller metadata when present.
+            let dynamic_transition = Transition::new(
+                *static_transition.program_id(),
+                *static_transition.function_name(),
+                static_transition.inputs().to_vec(),
+                static_transition.outputs().to_vec(),
+                *static_transition.tpk(),
+                *static_transition.tcm(),
+                *static_transition.scm(),
+                Some(caller_metadata),
+            )?;
 
-            //  Check the byte representation.
+            // Check the byte representation.
             let expected_bytes = dynamic_transition.to_bytes_le()?;
             assert_eq!(dynamic_transition, Transition::read_le(&expected_bytes[..])?);
         }

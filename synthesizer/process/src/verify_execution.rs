@@ -93,11 +93,14 @@ impl<N: Network> Process<N> {
         for transition in execution.transitions() {
             dev_println!("Verifying transition for {}/{}...", transition.program_id(), transition.function_name());
             // Debug-mode only, as the `Transition` constructor recomputes the transition ID at initialization.
-            debug_assert_eq!(
-                **transition.id(),
-                N::hash_bhp512(&(transition.to_root()?, *transition.tcm()).to_bits_le())?,
-                "The transition ID is incorrect"
-            );
+            // Note: The transition ID includes the caller metadata when present.
+            let expected_id = match transition.caller_metadata() {
+                Some(caller_metadata) => {
+                    N::hash_bhp512(&(transition.to_root()?, *transition.tcm(), caller_metadata.clone()).to_bits_le())?
+                }
+                None => N::hash_bhp512(&(transition.to_root()?, *transition.tcm()).to_bits_le())?,
+            };
+            debug_assert_eq!(**transition.id(), expected_id, "The transition ID is incorrect");
 
             // Ensure the transition is not a fee transition.
             let is_fee_transition = transition.is_fee_private() || transition.is_fee_public();
