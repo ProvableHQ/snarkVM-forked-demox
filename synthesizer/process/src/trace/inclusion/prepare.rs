@@ -37,7 +37,7 @@ macro_rules! prepare_impl {
         // Fetch all the record commitments for the transitions.
         let commitments: Vec<_> = $transitions
             .iter()
-            .flat_map(|t| $self.input_tasks.get(t.id()).into_iter().flatten())
+            .flat_map(|t| $self.input_tasks.get(&t.inclusion_id()).into_iter().flatten())
             .filter_map(|task| task.local.is_none().then_some(task.commitment))
             .collect();
 
@@ -61,10 +61,10 @@ macro_rules! prepare_impl {
 
         for (transition_index, transition) in $transitions.iter().enumerate() {
             // Construct the transaction leaf.
-            let transaction_leaf = TransactionLeaf::new_execution(transition_index as u16, **transition.id());
+            let transaction_leaf = TransactionLeaf::new_execution(transition_index as u16, *transition.inclusion_id());
 
             // Process the input tasks.
-            match $self.input_tasks.get(transition.id()) {
+            match $self.input_tasks.get(&transition.inclusion_id()) {
                 Some(tasks) => {
                     for task in tasks {
                         // Retrieve the local state root.

@@ -210,6 +210,50 @@ mod tests {
             // Check the byte representation.
             let expected_bytes = dynamic_transition.to_bytes_le()?;
             assert_eq!(dynamic_transition, Transition::read_le(&expected_bytes[..])?);
+
+            // Verify the inclusion_id differs from the transition ID (since caller_metadata is present).
+            assert_ne!(*dynamic_transition.id(), dynamic_transition.inclusion_id());
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_bytes_static_v2() -> Result<()> {
+        let rng = &mut TestRng::default();
+
+        for _ in 0..3 {
+            // Sample a V1 transition.
+            let v1_transition = crate::transition::test_helpers::sample_transition(rng);
+
+            // Create static caller metadata (V2 with is_dynamic = false).
+            let caller_metadata = TransitionCallerMetadata::new_static();
+
+            // Create the V2 static transition.
+            let static_v2_transition = Transition::new(
+                *v1_transition.program_id(),
+                *v1_transition.function_name(),
+                v1_transition.inputs().to_vec(),
+                v1_transition.outputs().to_vec(),
+                *v1_transition.tpk(),
+                *v1_transition.tcm(),
+                *v1_transition.scm(),
+                Some(caller_metadata),
+            )?;
+
+            // Verify version is V2.
+            assert_eq!(static_v2_transition.version(), TransitionVersion::V2);
+
+            // For static metadata, id != inclusion_id (because id includes the metadata hash).
+            assert_ne!(*static_v2_transition.id(), static_v2_transition.inclusion_id());
+
+            // Check the byte representation round-trips correctly.
+            let expected_bytes = static_v2_transition.to_bytes_le()?;
+            let deserialized = Transition::read_le(&expected_bytes[..])?;
+            assert_eq!(static_v2_transition, deserialized);
+
+            // Verify the deserialized transition also has correct inclusion_id.
+            assert_eq!(static_v2_transition.inclusion_id(), deserialized.inclusion_id());
         }
 
         Ok(())

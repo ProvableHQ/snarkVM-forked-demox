@@ -198,6 +198,8 @@ pub struct Transition<N: Network> {
     scm: Field<N>,
     /// The optional caller metadata.
     caller_metadata: Option<TransitionCallerMetadata<N>>,
+    /// The inclusion ID (without caller_metadata). Only stored when caller_metadata is Some.
+    inclusion_id: Option<N::TransitionID>,
 }
 
 impl<N: Network> Transition<N> {
@@ -231,17 +233,24 @@ impl<N: Network> Transition<N> {
                 );
             }
         }
-        // Compute the transition ID.
-        // TODO (@reviewers): Should the caller metadata be included in the transition ID computation?
+        // Compute the transition ID and inclusion_id.
         let function_tree = Self::function_tree(&inputs, &outputs)?;
-        let id = match &caller_metadata {
+        let (id, inclusion_id) = match &caller_metadata {
             Some(caller_metadata) => {
-                N::hash_bhp512(&(*function_tree.root(), tcm, caller_metadata.clone()).to_bits_le())?
+                // Compute inclusion_id (without caller_metadata).
+                let inclusion_id = N::hash_bhp512(&(*function_tree.root(), tcm).to_bits_le())?;
+                // Compute id (with caller_metadata).
+                let id = N::hash_bhp512(&(*function_tree.root(), tcm, caller_metadata.clone()).to_bits_le())?;
+                (id.into(), Some(inclusion_id.into()))
             }
-            None => N::hash_bhp512(&(*function_tree.root(), tcm).to_bits_le())?,
+            None => {
+                // id == inclusion_id, no need to store separately.
+                let id = N::hash_bhp512(&(*function_tree.root(), tcm).to_bits_le())?;
+                (id.into(), None)
+            }
         };
         // Return the transition.
-        Ok(Self { id: id.into(), program_id, function_name, inputs, outputs, tpk, tcm, scm, caller_metadata })
+        Ok(Self { id, program_id, function_name, inputs, outputs, tpk, tcm, scm, caller_metadata, inclusion_id })
     }
 
     /// Initializes a new transition from a request, response, and optional dynamic outputs.
@@ -606,6 +615,13 @@ impl<N: Network> Transition<N> {
     /// Returns the caller outputs, if the transition is dynamic.
     pub fn caller_outputs(&self) -> Option<&[Output<N>]> {
         self.caller_metadata.as_ref().and_then(|m| m.outputs())
+    }
+
+    /// Returns the inclusion ID for use in inclusion proofs.
+    /// This ID is `hash(root, tcm)` WITHOUT caller_metadata, ensuring that
+    /// inclusion proofs are independent of how a transition was called.
+    pub fn inclusion_id(&self) -> N::TransitionID {
+        self.inclusion_id.unwrap_or(self.id)
     }
 }
 

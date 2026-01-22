@@ -88,7 +88,7 @@ impl<N: Network> Inclusion<N> {
         let transition_index = u16::try_from(self.input_tasks.len())?;
 
         // Initialize the input tasks.
-        let input_tasks = self.input_tasks.entry(*transition.id()).or_default();
+        let input_tasks = self.input_tasks.entry(transition.inclusion_id()).or_default();
 
         // Process the inputs.
         for input_id in input_ids {
@@ -106,7 +106,7 @@ impl<N: Network> Inclusion<N> {
 
         if !transition.outputs().is_empty() {
             // Compute the transaction leaf.
-            let transaction_leaf = TransactionLeaf::new_execution(transition_index, **transition.id());
+            let transaction_leaf = TransactionLeaf::new_execution(transition_index, *transition.inclusion_id());
             // Compute the transition root.
             let transition_root = transition.to_root()?;
             // Fetch the tcm.
@@ -188,7 +188,7 @@ impl<N: Network> Inclusion<N> {
             // If this is not the last transition, append the transaction leaf to the transaction tree.
             if transition_index + 1 != num_transitions {
                 // Construct the transaction leaf.
-                let leaf = TransactionLeaf::new_execution(u16::try_from(transition_index)?, **transition.id());
+                let leaf = TransactionLeaf::new_execution(u16::try_from(transition_index)?, *transition.inclusion_id());
                 // Insert the leaf into the transaction tree.
                 transaction_tree.append(&[leaf.to_bits_le()])?;
             }
