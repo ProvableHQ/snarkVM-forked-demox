@@ -152,9 +152,9 @@ pub struct Request<A: Aleo> {
     tcm: Field<A>,
     /// The signer commitment.
     scm: Field<A>,
-    /// An flag indicating whether or not the request is dynamic.
+    /// A flag indicating whether or not the request is dynamic.
     /// Note that this field is intentionally excluded from the circuit representation and is only used to eject back to the console representation.
-    dynamic: Option<bool>,
+    is_dynamic: bool,
 }
 
 impl<A: Aleo> Inject for Request<A> {
@@ -249,7 +249,7 @@ impl<A: Aleo> Inject for Request<A> {
             tvk: Field::new(mode, *request.tvk()),
             tcm,
             scm,
-            dynamic: request.dynamic(),
+            is_dynamic: request.is_dynamic(),
         }
     }
 }
@@ -312,7 +312,7 @@ impl<A: Aleo> Request<A> {
 
     /// Returns whether or not the request is dynamic.
     pub fn is_dynamic(&self) -> bool {
-        self.dynamic.unwrap_or(false)
+        self.is_dynamic
     }
 }
 
@@ -349,7 +349,7 @@ impl<A: Aleo> Eject for Request<A> {
             self.tvk.eject_value(),
             self.tcm.eject_value(),
             self.scm.eject_value(),
-            self.dynamic,
+            self.is_dynamic,
         ))
     }
 }

@@ -29,7 +29,7 @@ impl<N: Network> Request<N> {
         root_tvk: Option<Field<N>>,
         is_root: bool,
         program_checksum: Option<Field<N>>,
-        dynamic: Option<bool>,
+        is_dynamic: bool,
         rng: &mut R,
     ) -> Result<Self> {
         // Ensure the number of inputs matches the number of input types.
@@ -177,86 +177,7 @@ impl<N: Network> Request<N> {
             tvk,
             tcm,
             scm,
-            dynamic,
+            is_dynamic,
         })
-    }
-
-    /// Returns a static request.
-    /// Note: Static requests do not include the `dynamic` field, resulting in V1 transitions.
-    pub fn sign_static<R: Rng + CryptoRng>(
-        private_key: &PrivateKey<N>,
-        program_id: ProgramID<N>,
-        function_name: Identifier<N>,
-        inputs: impl ExactSizeIterator<Item = impl TryInto<Value<N>>>,
-        input_types: &[ValueType<N>],
-        root_tvk: Option<Field<N>>,
-        is_root: bool,
-        program_checksum: Option<Field<N>>,
-        rng: &mut R,
-    ) -> Result<Self> {
-        Self::sign(
-            private_key,
-            program_id,
-            function_name,
-            inputs,
-            input_types,
-            root_tvk,
-            is_root,
-            program_checksum,
-            None,
-            rng,
-        )
-    }
-
-    /// Returns a dynamic request.
-    pub fn sign_dynamic<R: Rng + CryptoRng>(
-        private_key: &PrivateKey<N>,
-        program_id: ProgramID<N>,
-        function_name: Identifier<N>,
-        inputs: impl ExactSizeIterator<Item = impl TryInto<Value<N>>>,
-        input_types: &[ValueType<N>],
-        root_tvk: Option<Field<N>>,
-        is_root: bool,
-        program_checksum: Option<Field<N>>,
-        rng: &mut R,
-    ) -> Result<Self> {
-        Self::sign(
-            private_key,
-            program_id,
-            function_name,
-            inputs,
-            input_types,
-            root_tvk,
-            is_root,
-            program_checksum,
-            Some(true),
-            rng,
-        )
-    }
-
-    /// Returns a V1 request.
-    pub fn sign_v1<R: Rng + CryptoRng>(
-        private_key: &PrivateKey<N>,
-        program_id: ProgramID<N>,
-        function_name: Identifier<N>,
-        inputs: impl ExactSizeIterator<Item = impl TryInto<Value<N>>>,
-        input_types: &[ValueType<N>],
-        root_tvk: Option<Field<N>>,
-        is_root: bool,
-        program_checksum: Option<Field<N>>,
-        rng: &mut R,
-    ) -> Result<Self> {
-        Self::sign(
-            private_key,
-            program_id,
-            function_name,
-            inputs,
-            input_types,
-            root_tvk,
-            is_root,
-            program_checksum,
-            None,
-            rng,
-        )
     }
 }

@@ -17,15 +17,13 @@ mod equal;
 mod find;
 mod to_bits;
 mod to_fields;
-mod to_id;
-pub use to_id::compute_record_id;
 
 use crate::{Access, Aleo, Entry, Equal, Identifier, Literal, Plaintext, Record, ToBits, ToFields, Value};
 
 use console::RECORD_DATA_TREE_DEPTH;
 use snarkvm_circuit_algorithms::{Poseidon2, Poseidon8};
 use snarkvm_circuit_collections::merkle_tree::MerkleTree;
-use snarkvm_circuit_types::{Address, Boolean, Field, Group, U8, U16, environment::prelude::*};
+use snarkvm_circuit_types::{Address, Boolean, Field, Group, U8, environment::prelude::*};
 
 type CircuitLH<A> = Poseidon8<A>;
 type CircuitPH<A> = Poseidon2<A>;
@@ -190,5 +188,164 @@ impl<A: Aleo> DynamicRecord<A> {
 
         // Construct the merkle tree
         RecordDataTree::<A>::new(circuit_leaf_hasher, circuit_path_hasher, &leaves)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Circuit;
+    use snarkvm_circuit_types::environment::{Inject, assert_scope};
+    use snarkvm_utilities::{TestRng, Uniform};
+
+    use core::str::FromStr;
+
+    type CurrentNetwork = <Circuit as Environment>::Network;
+    type ConsoleRecord = console::Record<CurrentNetwork, console::Plaintext<CurrentNetwork>>;
+
+    /// Creates a console record with the given data for testing.
+    fn create_console_record(
+        rng: &mut TestRng,
+        data: console::RecordData<CurrentNetwork>,
+        owner_is_private: bool,
+    ) -> ConsoleRecord {
+        let owner = match owner_is_private {
+            true => console::Owner::Private(console::Plaintext::from(console::Literal::Address(
+                console::Address::rand(rng),
+            ))),
+            false => console::Owner::Public(console::Address::rand(rng)),
+        };
+        ConsoleRecord::from_plaintext(owner, data, console::Group::rand(rng), console::U8::new(0)).unwrap()
+    }
+
+    #[test]
+    fn test_circuit_console_equivalence() {
+        let rng = &mut TestRng::default();
+
+        // Create test data with mixed entry types.
+        let mut data = IndexMap::new();
+        data.insert(
+            console::Identifier::from_str("a").unwrap(),
+            console::Entry::Private(console::Plaintext::from(console::Literal::U64(console::U64::rand(rng)))),
+        );
+        data.insert(
+            console::Identifier::from_str("b").unwrap(),
+            console::Entry::Public(console::Plaintext::from(console::Literal::U64(console::U64::rand(rng)))),
+        );
+        data.insert(
+            console::Identifier::from_str("c").unwrap(),
+            console::Entry::Constant(console::Plaintext::from(console::Literal::U64(console::U64::rand(rng)))),
+        );
+
+        // Create a console record.
+        let console_record = create_console_record(rng, data, true);
+
+        // Convert to console DynamicRecord.
+        let console_dynamic = console::DynamicRecord::from_record(&console_record).unwrap();
+
+        // Inject the console record into the circuit.
+        let circuit_record = Record::<Circuit, Plaintext<Circuit>>::new(Mode::Private, console_record.clone());
+
+        Circuit::scope("test_circuit_console_equivalence", || {
+            // Convert to circuit DynamicRecord.
+            let circuit_dynamic = DynamicRecord::<Circuit>::from_record(&circuit_record).unwrap();
+
+            // Verify the circuit root matches the console root.
+            let circuit_root = circuit_dynamic.root().eject_value();
+            let console_root = *console_dynamic.root();
+            assert_eq!(
+                circuit_root, console_root,
+                "Circuit and console DynamicRecord should produce the same Merkle root"
+            );
+
+            // Also verify other fields match.
+            assert_eq!(circuit_dynamic.owner().eject_value(), *console_dynamic.owner());
+            assert_eq!(circuit_dynamic.nonce().eject_value(), *console_dynamic.nonce());
+            assert_eq!(circuit_dynamic.version().eject_value(), *console_dynamic.version());
+
+            // Verify circuit constraint counts.
+            assert_scope!(<=1200, <=0, <=4700, <=4700);
+        });
+
+        Circuit::reset();
+    }
+
+    #[test]
+    fn test_circuit_console_equivalence_empty_record() {
+        let rng = &mut TestRng::default();
+
+        // Create an empty record.
+        let console_record = create_console_record(rng, IndexMap::new(), false);
+
+        // Convert to console DynamicRecord.
+        let console_dynamic = console::DynamicRecord::from_record(&console_record).unwrap();
+
+        // Inject the console record into the circuit.
+        let circuit_record = Record::<Circuit, Plaintext<Circuit>>::new(Mode::Private, console_record.clone());
+
+        Circuit::scope("test_circuit_console_equivalence_empty", || {
+            // Convert to circuit DynamicRecord.
+            let circuit_dynamic = DynamicRecord::<Circuit>::from_record(&circuit_record).unwrap();
+
+            // Verify the circuit root matches the console root.
+            let circuit_root = circuit_dynamic.root().eject_value();
+            let console_root = *console_dynamic.root();
+            assert_eq!(
+                circuit_root, console_root,
+                "Circuit and console DynamicRecord should produce the same Merkle root for empty records"
+            );
+
+            // Verify circuit constraint counts.
+            assert_scope!(<=1100, <=0, <=0, <=0);
+        });
+
+        Circuit::reset();
+    }
+
+    #[test]
+    fn test_circuit_console_equivalence_nested_struct() {
+        let rng = &mut TestRng::default();
+
+        // Create a nested struct entry.
+        let mut inner_map = IndexMap::new();
+        inner_map.insert(
+            console::Identifier::from_str("x").unwrap(),
+            console::Plaintext::from(console::Literal::U64(console::U64::rand(rng))),
+        );
+        inner_map.insert(
+            console::Identifier::from_str("y").unwrap(),
+            console::Plaintext::from(console::Literal::U64(console::U64::rand(rng))),
+        );
+        let inner = console::Plaintext::Struct(inner_map, Default::default());
+
+        let mut data = IndexMap::new();
+        data.insert(console::Identifier::from_str("point").unwrap(), console::Entry::Private(inner));
+
+        // Create a console record.
+        let console_record = create_console_record(rng, data, false);
+
+        // Convert to console DynamicRecord.
+        let console_dynamic = console::DynamicRecord::from_record(&console_record).unwrap();
+
+        // Inject the console record into the circuit.
+        let circuit_record = Record::<Circuit, Plaintext<Circuit>>::new(Mode::Private, console_record.clone());
+
+        Circuit::scope("test_circuit_console_equivalence_nested", || {
+            // Convert to circuit DynamicRecord.
+            let circuit_dynamic = DynamicRecord::<Circuit>::from_record(&circuit_record).unwrap();
+
+            // Verify the circuit root matches the console root.
+            let circuit_root = circuit_dynamic.root().eject_value();
+            let console_root = *console_dynamic.root();
+            assert_eq!(
+                circuit_root, console_root,
+                "Circuit and console DynamicRecord should produce the same Merkle root for nested structs"
+            );
+
+            // Verify circuit constraint counts.
+            assert_scope!(<=1200, <=0, <=3200, <=3200);
+        });
+
+        Circuit::reset();
     }
 }

@@ -19,11 +19,11 @@ impl<N: Network> FromBytes for Transition<N> {
     /// Reads the output from a buffer.
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
         // Read the version.
-        let version = match u8::read_le(&mut reader)? {
-            1 => TransitionVersion::V1,
-            2 => TransitionVersion::V2,
-            v => return Err(error(format!("Invalid transition version: {v}"))),
-        };
+        let version = u8::read_le(&mut reader)?;
+        // Validate the version.
+        if version != 1 && version != 2 {
+            return Err(error(format!("Invalid transition version: {version}")));
+        }
 
         // Read the transition ID.
         let transition_id = N::TransitionID::read_le(&mut reader)?;
@@ -73,10 +73,10 @@ impl<N: Network> FromBytes for Transition<N> {
         // Read the signer commitment.
         let scm = FromBytes::read_le(&mut reader)?;
 
-        // If the version is V2, read the caller metadata.
+        // If the version is 2, read the caller metadata. V1 transitions have no caller metadata.
         let caller_metadata = match version {
-            TransitionVersion::V1 => None,
-            TransitionVersion::V2 => {
+            1 => None,
+            2 => {
                 // Read the is_dynamic flag.
                 let is_dynamic = bool::read_le(&mut reader)?;
                 // If the metadata is dynamic, then read the inputs and outputs.
@@ -96,6 +96,8 @@ impl<N: Network> FromBytes for Transition<N> {
                     Some(TransitionCallerMetadata::new_static())
                 }
             }
+            // SAFETY: Version is validated above to be 1 or 2.
+            _ => unreachable!(),
         };
 
         // Construct the candidate transition.
@@ -112,8 +114,11 @@ impl<N: Network> FromBytes for Transition<N> {
 impl<N: Network> ToBytes for Transition<N> {
     /// Writes the literal to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
-        // Write the version.
-        (self.version() as u8).write_le(&mut writer)?;
+        // Write the version based on caller_metadata presence.
+        match &self.caller_metadata {
+            None => 1u8.write_le(&mut writer)?,
+            Some(_) => 2u8.write_le(&mut writer)?,
+        }
 
         // Write the transition ID.
         self.id.write_le(&mut writer)?;
@@ -241,8 +246,8 @@ mod tests {
                 Some(caller_metadata),
             )?;
 
-            // Verify version is V2.
-            assert_eq!(static_v2_transition.version(), TransitionVersion::V2);
+            // Verify it's a V2 transition by checking caller_metadata is present.
+            assert!(static_v2_transition.caller_metadata().is_some());
 
             // For static metadata, id != inclusion_id (because id includes the metadata hash).
             assert_ne!(*static_v2_transition.id(), static_v2_transition.inclusion_id());

@@ -17,4 +17,4 @@ mod future;
 pub use future::DynamicFuture;
 
 mod record;
-pub use record::{DynamicRecord, RecordDataTree, compute_record_id};
+pub use record::{DynamicRecord, RecordDataTree};

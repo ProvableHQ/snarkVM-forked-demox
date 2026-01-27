@@ -111,7 +111,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                 let callee_inputs = convert_caller_inputs_to_callee_inputs(inputs, &input_types, substack)?;
 
                 // Compute the request.
-                let request = Request::sign_dynamic(
+                let request = Request::sign(
                     private_key,
                     *substack.program_id(),
                     *function.name(),
@@ -120,6 +120,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                     root_tvk,
                     is_root,
                     program_checksum,
+                    true,
                     rng,
                 )?;
                 // Add the request to the requests.
@@ -273,7 +274,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             convert_caller_inputs_to_callee_inputs(&inputs, input_types, target.substack())?;
 
                         // Construct the callee's version of the request.
-                        let callee_request = Request::sign_dynamic(
+                        let callee_request = Request::sign(
                             private_key,
                             *target.substack().program_id(),
                             *function.name(),
@@ -282,6 +283,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             root_tvk,
                             is_root,
                             program_checksum,
+                            true,
                             rng,
                         )?;
 
@@ -400,7 +402,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         let callee_inputs =
                             convert_caller_inputs_to_callee_inputs(&inputs, input_types, target.substack())?;
                         // Construct the callee's version of the request.
-                        let callee_request = Request::sign_dynamic(
+                        let callee_request = Request::sign(
                             private_key,
                             *target.substack().program_id(),
                             *function.name(),
@@ -409,6 +411,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             root_tvk,
                             is_root,
                             program_checksum,
+                            true,
                             rng,
                         )?;
 

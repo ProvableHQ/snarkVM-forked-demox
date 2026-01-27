@@ -845,10 +845,14 @@ fn test_malicious_caller_inputs_outputs() {
     let tampered_transaction =
         Transaction::from_execution(tampered_execution, transaction_consume.fee_transition()).unwrap();
 
-    // Note: With caller metadata included in the transition ID, the tampered transaction will have
-    // a different ID than the original. This is correct security behavior - tampering with caller
-    // metadata changes the transition ID.
-    assert_ne!(tampered_transaction.id(), transaction_consume.id());
+    // Note: There are two relevant IDs here:
+    // - `transaction_id` (via `transaction.id()`): Uses `inclusion_id()`, does NOT include caller_metadata.
+    //   This is for inclusion proof compatibility. The transaction IDs will be identical.
+    // - `execution_id` (via `execution.to_execution_id()`): Uses `transition.id()`, DOES include caller_metadata.
+    //   This is for fee binding security. The execution IDs will be DIFFERENT when caller_metadata is stripped.
+    let original_execution_id = transaction_consume.execution().unwrap().to_execution_id().unwrap();
+    let tampered_execution_id = tampered_transaction.execution().unwrap().to_execution_id().unwrap();
+    assert_ne!(tampered_execution_id, original_execution_id, "Stripping caller_metadata should change execution_id");
 
     // Make sure translation verification fails.
     // With caller metadata included in the transition ID, the verification will fail

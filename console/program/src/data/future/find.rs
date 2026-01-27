@@ -79,3 +79,135 @@ impl<N: Network> Future<N> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use snarkvm_console_network::MainnetV0;
+
+    use core::str::FromStr;
+
+    type CurrentNetwork = MainnetV0;
+
+    #[test]
+    fn test_find_plaintext_argument() {
+        // Create a future with plaintext arguments.
+        let future = Future::<CurrentNetwork>::new(
+            ProgramID::from_str("test.aleo").unwrap(),
+            Identifier::from_str("foo").unwrap(),
+            vec![
+                Argument::Plaintext(Plaintext::from_str("100u64").unwrap()),
+                Argument::Plaintext(Plaintext::from_str("200u64").unwrap()),
+            ],
+        );
+
+        // Access the first argument.
+        let value = future.find(&[Access::Index(U32::new(0))]).unwrap();
+        assert_eq!(value, Value::Plaintext(Plaintext::from_str("100u64").unwrap()));
+
+        // Access the second argument.
+        let value = future.find(&[Access::Index(U32::new(1))]).unwrap();
+        assert_eq!(value, Value::Plaintext(Plaintext::from_str("200u64").unwrap()));
+    }
+
+    #[test]
+    fn test_find_nested_future_argument() {
+        // Create an inner future.
+        let inner = Future::<CurrentNetwork>::new(
+            ProgramID::from_str("inner.aleo").unwrap(),
+            Identifier::from_str("bar").unwrap(),
+            vec![Argument::Plaintext(Plaintext::from_str("42u64").unwrap())],
+        );
+
+        // Create an outer future with the inner future as an argument.
+        let outer = Future::<CurrentNetwork>::new(
+            ProgramID::from_str("outer.aleo").unwrap(),
+            Identifier::from_str("baz").unwrap(),
+            vec![Argument::Future(inner.clone())],
+        );
+
+        // Access the nested future.
+        let value = outer.find(&[Access::Index(U32::new(0))]).unwrap();
+        assert_eq!(value, Value::Future(inner));
+    }
+
+    #[test]
+    fn test_find_dynamic_future_argument() {
+        // Create an inner future and convert to dynamic.
+        let inner = Future::<CurrentNetwork>::new(
+            ProgramID::from_str("inner.aleo").unwrap(),
+            Identifier::from_str("bar").unwrap(),
+            vec![Argument::Plaintext(Plaintext::from_str("42u64").unwrap())],
+        );
+        let dynamic_inner = DynamicFuture::from_future(&inner).unwrap();
+
+        // Create an outer future with the dynamic future as an argument.
+        let outer = Future::<CurrentNetwork>::new(
+            ProgramID::from_str("outer.aleo").unwrap(),
+            Identifier::from_str("baz").unwrap(),
+            vec![Argument::DynamicFuture(dynamic_inner.clone())],
+        );
+
+        // Access the dynamic future argument.
+        let value = outer.find(&[Access::Index(U32::new(0))]).unwrap();
+
+        // Verify the result is a dynamic future with matching fields.
+        match value {
+            Value::DynamicFuture(result) => {
+                assert_eq!(result.program_name(), dynamic_inner.program_name());
+                assert_eq!(result.program_network(), dynamic_inner.program_network());
+                assert_eq!(result.function_name(), dynamic_inner.function_name());
+                assert_eq!(result.root(), dynamic_inner.root());
+            }
+            _ => panic!("Expected DynamicFuture value"),
+        }
+    }
+
+    #[test]
+    fn test_find_mixed_arguments() {
+        // Create an inner future and dynamic future.
+        let inner = Future::<CurrentNetwork>::new(
+            ProgramID::from_str("inner.aleo").unwrap(),
+            Identifier::from_str("bar").unwrap(),
+            vec![],
+        );
+        let dynamic_inner = DynamicFuture::from_future(&inner).unwrap();
+
+        // Create a future with mixed argument types.
+        let future = Future::<CurrentNetwork>::new(
+            ProgramID::from_str("test.aleo").unwrap(),
+            Identifier::from_str("mixed").unwrap(),
+            vec![
+                Argument::Plaintext(Plaintext::from_str("100u64").unwrap()),
+                Argument::Future(inner.clone()),
+                Argument::DynamicFuture(dynamic_inner.clone()),
+            ],
+        );
+
+        // Access plaintext argument.
+        let value = future.find(&[Access::Index(U32::new(0))]).unwrap();
+        assert!(matches!(value, Value::Plaintext(_)));
+
+        // Access future argument.
+        let value = future.find(&[Access::Index(U32::new(1))]).unwrap();
+        assert!(matches!(value, Value::Future(_)));
+
+        // Access dynamic future argument.
+        let value = future.find(&[Access::Index(U32::new(2))]).unwrap();
+        assert!(matches!(value, Value::DynamicFuture(_)));
+    }
+
+    #[test]
+    fn test_find_out_of_bounds() {
+        // Create a future with one argument.
+        let future = Future::<CurrentNetwork>::new(
+            ProgramID::from_str("test.aleo").unwrap(),
+            Identifier::from_str("foo").unwrap(),
+            vec![Argument::Plaintext(Plaintext::from_str("100u64").unwrap())],
+        );
+
+        // Try to access an out-of-bounds index.
+        let result = future.find(&[Access::Index(U32::new(5))]);
+        assert!(result.is_err());
+    }
+}

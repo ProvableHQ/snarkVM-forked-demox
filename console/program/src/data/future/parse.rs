@@ -236,10 +236,12 @@ mod tests {
     use super::*;
     use snarkvm_console_network::MainnetV0;
 
+    use core::str::FromStr;
+
     type CurrentNetwork = MainnetV0;
 
     #[test]
-    fn test_parse_future() -> Result<()> {
+    fn test_parse_future() {
         // No argument case.
         let expected = r"{
   program_id: credits.aleo,
@@ -247,7 +249,8 @@ mod tests {
   arguments: []
 }";
         let (remainder, candidate) =
-            Future::<CurrentNetwork>::parse("{ program_id: credits.aleo, function_name: transfer, arguments: [] }")?;
+            Future::<CurrentNetwork>::parse("{ program_id: credits.aleo, function_name: transfer, arguments: [] }")
+                .unwrap();
         assert!(remainder.is_empty());
         assert_eq!(expected, candidate.to_string());
         assert_eq!("", remainder);
@@ -263,12 +266,70 @@ mod tests {
 }";
         let (remainder, candidate) = Future::<CurrentNetwork>::parse(
             "{ program_id: credits.aleo, function_name: transfer_public_to_private, arguments: [ aleo1g8qul5a44vk22u9uuvaewdcjw4v6xg8wx0llru39nnjn7eu08yrscxe4e2, 100000000u64 ] }",
-        )?;
+        ).unwrap();
         assert!(remainder.is_empty());
         assert_eq!(expected, candidate.to_string());
         assert_eq!("", remainder);
+    }
 
-        Ok(())
+    #[test]
+    fn test_parse_display_roundtrip() {
+        // Create a future with various argument types.
+        let inner = Future::<CurrentNetwork>::new(
+            ProgramID::from_str("inner.aleo").unwrap(),
+            Identifier::from_str("bar").unwrap(),
+            vec![Argument::Plaintext(Plaintext::from_str("42u64").unwrap())],
+        );
+
+        let expected = Future::<CurrentNetwork>::new(
+            ProgramID::from_str("test.aleo").unwrap(),
+            Identifier::from_str("foo").unwrap(),
+            vec![Argument::Plaintext(Plaintext::from_str("100u64").unwrap()), Argument::Future(inner)],
+        );
+
+        // Convert to string and parse back.
+        let string = expected.to_string();
+        let candidate = Future::<CurrentNetwork>::from_str(&string).unwrap();
+
+        assert_eq!(expected, candidate);
+    }
+
+    #[test]
+    fn test_parse_future_with_dynamic_future_argument() {
+        // Create an inner future and convert to dynamic.
+        let inner = Future::<CurrentNetwork>::new(
+            ProgramID::from_str("inner.aleo").unwrap(),
+            Identifier::from_str("bar").unwrap(),
+            vec![Argument::Plaintext(Plaintext::from_str("42u64").unwrap())],
+        );
+        let dynamic_inner = DynamicFuture::from_future(&inner).unwrap();
+
+        // Create a future with a dynamic future argument.
+        let expected = Future::<CurrentNetwork>::new(
+            ProgramID::from_str("test.aleo").unwrap(),
+            Identifier::from_str("foo").unwrap(),
+            vec![Argument::DynamicFuture(dynamic_inner)],
+        );
+
+        // Convert to string and parse back.
+        let string = expected.to_string();
+        let candidate = Future::<CurrentNetwork>::from_str(&string).unwrap();
+
+        // Verify structure.
+        assert_eq!(expected.program_id(), candidate.program_id());
+        assert_eq!(expected.function_name(), candidate.function_name());
+        assert_eq!(expected.arguments().len(), candidate.arguments().len());
+
+        // Verify the dynamic future argument matches.
+        match (&expected.arguments()[0], &candidate.arguments()[0]) {
+            (Argument::DynamicFuture(e), Argument::DynamicFuture(c)) => {
+                assert_eq!(e.program_name(), c.program_name());
+                assert_eq!(e.program_network(), c.program_network());
+                assert_eq!(e.function_name(), c.function_name());
+                assert_eq!(e.root(), c.root());
+            }
+            _ => panic!("Expected DynamicFuture argument"),
+        }
     }
 
     #[test]

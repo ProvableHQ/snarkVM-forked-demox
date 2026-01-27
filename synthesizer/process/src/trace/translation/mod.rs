@@ -14,7 +14,7 @@
 // limitations under the License.
 
 mod assignment;
-pub use assignment::*;
+pub use assignment::{TranslationAssignment, compute_console_external_record_id};
 
 mod prepare;
 

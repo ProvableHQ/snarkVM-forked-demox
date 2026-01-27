@@ -20,14 +20,135 @@ impl<A: Aleo> Equal<Self> for DynamicFuture<A> {
 
     /// Returns `true` if `self` and `other` are equal.
     fn is_equal(&self, other: &Self) -> Self::Output {
-        (self.program_name.is_equal(&other.program_name))
-            .bitand(self.program_network.is_equal(&other.program_network))
-            .bitand(self.function_name.is_equal(&other.function_name))
-            .bitand(self.root.is_equal(&other.root))
+        self.program_name.is_equal(&other.program_name)
+            & self.program_network.is_equal(&other.program_network)
+            & self.function_name.is_equal(&other.function_name)
+            & self.root.is_equal(&other.root)
     }
 
     /// Returns `true` if `self` and `other` are *not* equal.
     fn is_not_equal(&self, other: &Self) -> Self::Output {
         !self.is_equal(other)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Circuit;
+    use snarkvm_circuit_types::environment::{Eject, Inject, Mode, assert_scope};
+    use snarkvm_utilities::{TestRng, Uniform};
+
+    type CurrentNetwork = <Circuit as Environment>::Network;
+
+    /// Creates a sample dynamic future for testing.
+    fn sample_dynamic_future(mode: Mode, rng: &mut TestRng) -> DynamicFuture<Circuit> {
+        let program_name = console::Field::<CurrentNetwork>::rand(rng);
+        let program_network = console::Field::<CurrentNetwork>::rand(rng);
+        let function_name = console::Field::<CurrentNetwork>::rand(rng);
+        let root = console::Field::<CurrentNetwork>::rand(rng);
+        let console_future =
+            console::DynamicFuture::new_unchecked(program_name, program_network, function_name, root, None);
+        DynamicFuture::new(mode, console_future)
+    }
+
+    /// Creates a mismatched dynamic future for testing.
+    fn sample_mismatched_dynamic_future(mode: Mode, rng: &mut TestRng) -> DynamicFuture<Circuit> {
+        // Create a different future with different fields.
+        let program_name = console::Field::<CurrentNetwork>::rand(rng);
+        let program_network = console::Field::<CurrentNetwork>::rand(rng);
+        let function_name = console::Field::<CurrentNetwork>::rand(rng);
+        let root = console::Field::<CurrentNetwork>::rand(rng);
+        let console_future =
+            console::DynamicFuture::new_unchecked(program_name, program_network, function_name, root, None);
+        DynamicFuture::new(mode, console_future)
+    }
+
+    fn check_is_equal(
+        mode: Mode,
+        num_constants: u64,
+        num_public: u64,
+        num_private: u64,
+        num_constraints: u64,
+    ) -> Result<(), console::Error> {
+        let rng = &mut TestRng::default();
+
+        // Sample the dynamic futures.
+        let future = sample_dynamic_future(mode, rng);
+        let mismatched_future = sample_mismatched_dynamic_future(mode, rng);
+
+        Circuit::scope(format!("{mode}"), || {
+            let candidate = future.is_equal(&future);
+            assert!(candidate.eject_value());
+            assert_scope!(<=num_constants, <=num_public, <=num_private, <=num_constraints);
+        });
+
+        Circuit::scope(format!("{mode}"), || {
+            let candidate = future.is_equal(&mismatched_future);
+            assert!(!candidate.eject_value());
+            assert_scope!(<=num_constants, <=num_public, <=num_private, <=num_constraints);
+        });
+
+        Circuit::reset();
+        Ok(())
+    }
+
+    fn check_is_not_equal(
+        mode: Mode,
+        num_constants: u64,
+        num_public: u64,
+        num_private: u64,
+        num_constraints: u64,
+    ) -> Result<(), console::Error> {
+        let rng = &mut TestRng::default();
+
+        // Sample the dynamic futures.
+        let future = sample_dynamic_future(mode, rng);
+        let mismatched_future = sample_mismatched_dynamic_future(mode, rng);
+
+        Circuit::scope(format!("{mode}"), || {
+            let candidate = future.is_not_equal(&mismatched_future);
+            assert!(candidate.eject_value());
+            assert_scope!(<=num_constants, <=num_public, <=num_private, <=num_constraints);
+        });
+
+        Circuit::scope(format!("{mode}"), || {
+            let candidate = future.is_not_equal(&future);
+            assert!(!candidate.eject_value());
+            assert_scope!(<=num_constants, <=num_public, <=num_private, <=num_constraints);
+        });
+
+        Circuit::reset();
+        Ok(())
+    }
+
+    #[test]
+    fn test_is_equal_constant() -> Result<(), console::Error> {
+        check_is_equal(Mode::Constant, 10, 0, 15, 15)
+    }
+
+    #[test]
+    fn test_is_equal_public() -> Result<(), console::Error> {
+        check_is_equal(Mode::Public, 10, 0, 15, 15)
+    }
+
+    #[test]
+    fn test_is_equal_private() -> Result<(), console::Error> {
+        check_is_equal(Mode::Private, 10, 0, 15, 15)
+    }
+
+    #[test]
+    fn test_is_not_equal_constant() -> Result<(), console::Error> {
+        check_is_not_equal(Mode::Constant, 10, 0, 15, 15)
+    }
+
+    #[test]
+    fn test_is_not_equal_public() -> Result<(), console::Error> {
+        check_is_not_equal(Mode::Public, 10, 0, 15, 15)
+    }
+
+    #[test]
+    fn test_is_not_equal_private() -> Result<(), console::Error> {
+        check_is_not_equal(Mode::Private, 10, 0, 15, 15)
     }
 }

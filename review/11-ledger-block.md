@@ -11,6 +11,137 @@ The `ledger/block` crate defines blockchain data structures. For dynamic dispatc
 3. **Updates serialization** for versioned transitions
 4. **Extends Deployment V3** with translation verifying keys
 
+## Transaction ID and Execution ID Computation
+
+### Transition ID vs Inclusion ID
+
+V2 transitions store TWO identifiers. This distinction is essential because:
+- The fee must commit to the full transaction identity (including dynamic call context)
+- The SNARK circuits remain unchanged (they only verify inclusion_id)
+
+```
+                    +------------------------+
+                    |      function_tree     |
+                    |       (depth 5)        |
+                    |   [inputs | outputs]   |
+                    +-----------+------------+
+                                |
+                          function_root
+                                |
+                    +-----------+-----------+
+                    |                       |
+              +-----v-----+           +-----v-----+
+              | inclusion |           |    id     |
+              |    _id    |           | (full ID) |
+              +-----------+           +-----------+
+              |           |           |           |
+              | Hash_BHP( |           | Hash_BHP( |
+              |  root,    |           |  root,    |
+              |  tcm      |           |  tcm,     |
+              | )         |           |  caller_  |
+              |           |           |  metadata |
+              |           |           | )         |
+              +-----------+           +-----------+
+                    |                       |
+                    v                       v
+              Used for:               Used for:
+              - SNARK proofs          - Fee binding
+              - State paths           - Execution ID
+              - Inclusion tree        - Transaction map
+```
+
+**V1 Transitions (no caller_metadata):**
+```
+id = inclusion_id = Hash_BHP512(function_tree.root || tcm)
+```
+
+**V2 Transitions (with caller_metadata):**
+```
+inclusion_id = Hash_BHP512(function_tree.root || tcm)
+id           = Hash_BHP512(function_tree.root || tcm || caller_metadata)
+```
+
+---
+
+### Execution ID vs Inclusion Tree
+
+Two DIFFERENT Merkle trees exist over the same transitions:
+
+```
+EXECUTION ID TREE                    INCLUSION TREE
+(for fee binding)                    (for SNARK proofs)
+
+    execution_id                     inclusion_tree_root
+         |                                  |
+   +-----+-----+                      +-----+-----+
+   |     |     |                      |     |     |
+t0.id  t1.id  t2.id               t0.incl t1.incl t2.incl
+   |     |     |                      |       |       |
+  V1    V2    V1                     V1      V2      V1
+   |     |     |                      |       |       |
+ [same] [diff] [same]               [same]  [same]  [same]
+
+Note: For V1: id == inclusion_id
+      For V2: id != inclusion_id (id includes caller_metadata)
+```
+
+**Purpose of each tree:**
+
+| Tree | Method | Uses | Purpose |
+|------|--------|------|---------|
+| Execution ID Tree | `Execution::compute_execution_id` | `transition.id()` | Fee binding - commits to COMPLETE execution identity |
+| Inclusion Tree | `Transaction::transitions_tree` | `transition.inclusion_id()` | SNARK inclusion proofs - circuit doesn't know about caller_metadata |
+
+---
+
+### Full Tree Hierarchy
+
+```
+Global State Root
+      |
++-----+-----+ Block Header Tree (depth 3)
+|           |
+|     Transactions Root
+|           |
+|     +-----+-----+ Transactions Tree (depth 20)
+|     |           |
+|   TX_0        TX_n
+|     |
+|  Transaction Tree (depth 5)
+|     |
++-----+-----+
+|           |
+Transition  Fee
+leaves      leaf
+   |
+   +-- Each leaf contains:
+       - variant (execution=1)
+       - index
+       - inclusion_id (NOT full id)
+
+Transition (Function) Tree (depth 5)
+            |
+      +-----+-----+
+      |           |
+   Inputs      Outputs
+   (≤16)       (≤16)
+      |           |
+   TransitionLeaf for each:
+   - variant (Constant/Public/Private/Record/External/Dynamic...)
+   - index
+   - id (hash, serial_number, commitment, etc.)
+```
+
+**Tree Depths:**
+
+| Tree | Depth | Purpose |
+|------|-------|---------|
+| Transition Tree | 5 | Inputs/outputs within a transition |
+| Transaction/Execution Tree | 5 | Transitions within an execution |
+| Transactions Tree | 20 | Transactions within a block |
+
+---
+
 ## Files Requiring Review
 
 ### Core Versioning: `transition/mod.rs`

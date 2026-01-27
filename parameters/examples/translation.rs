@@ -21,10 +21,15 @@ use snarkvm_console::{
     account::PrivateKey,
     network::{CanaryV0, MainnetV0, Network, TestnetV0},
     prelude::ToBytes,
-    program::{DynamicRecord, Identifier, One, ProgramID, Zero, compute_function_id},
+    program::{DynamicRecord, Identifier, One, ProgramID, ToFields, Zero, compute_function_id},
     types::{Address, Field, Group, U16},
 };
-use snarkvm_synthesizer::{Process, Stack, process::TranslationAssignment, program::StackTrait};
+use snarkvm_synthesizer::{
+    Process,
+    Stack,
+    process::{TranslationAssignment, compute_console_external_record_id},
+    program::StackTrait,
+};
 
 use anyhow::Result;
 use rand::{CryptoRng, Rng, thread_rng};
@@ -92,7 +97,9 @@ pub fn sample_assignment<N: Network, A: Aleo<Network = N>>(
     let input_output_index = Uniform::rand(rng);
     let record_view_key: Field<N> = Uniform::rand(rng);
     let gamma = None;
-    let id_dynamic = record_dynamic.to_id(function_id, tvk, U16::new(input_output_index)).unwrap();
+    let id_dynamic =
+        compute_console_external_record_id(function_id, record_dynamic.to_fields().unwrap(), tvk, U16::new(input_output_index))
+            .unwrap();
     let is_input = false;
     let static_is_external = false;
     let id_static = record_static.to_commitment(credits_program_id, credits_record_name, &record_view_key).unwrap();

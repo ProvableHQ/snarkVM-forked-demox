@@ -621,4 +621,36 @@ mod tests {
         // Sanity check that the max operands is within bounds.
         assert!(CurrentNetwork::MAX_OPERANDS <= usize::from(u8::MAX));
     }
+
+    #[test]
+    fn test_external_record_not_allowed_as_input() {
+        // External records are not allowed as input types to call.dynamic.
+        // This is enforced in CallDynamic::new at the operand_types check.
+        // The CallDynamic::new function explicitly checks for ExternalRecord at lines 77-81.
+        let result = CallDynamic::<CurrentNetwork>::from_str("call.dynamic r0 r1 r2 with r3 (as foo.aleo/bar.record)");
+        assert!(result.is_err(), "External records should not be allowed as input");
+    }
+
+    #[test]
+    fn test_record_not_allowed_as_input() {
+        // Records are not allowed as input types to call.dynamic.
+        // The CallDynamic::new function explicitly checks for Record at lines 74-76.
+        let result = CallDynamic::<CurrentNetwork>::from_str("call.dynamic r0 r1 r2 with r3 (as bar.record)");
+        assert!(result.is_err(), "Records should not be allowed as input");
+    }
+
+    #[test]
+    fn test_future_not_allowed_as_input() {
+        // Futures are not allowed as input types to call.dynamic.
+        // The CallDynamic::new function explicitly checks for Future at line 82.
+        let result = CallDynamic::<CurrentNetwork>::from_str("call.dynamic r0 r1 r2 with r3 (as foo.aleo/bar.future)");
+        assert!(result.is_err(), "Futures should not be allowed as input");
+    }
+
+    #[test]
+    fn test_dynamic_record_allowed_as_input() {
+        // Dynamic records ARE allowed as input types to call.dynamic.
+        let result = CallDynamic::<CurrentNetwork>::from_str("call.dynamic r0 r1 r2 with r3 (as record.dynamic)");
+        assert!(result.is_ok(), "Dynamic records should be allowed as input");
+    }
 }

@@ -15,12 +15,13 @@
 
 use circuit::{environment::compare_constraints, prelude::count_is};
 use console::{
-    program::{InputID, Plaintext, ProgramID, Record, Value},
+    program::{InputID, Plaintext, ProgramID, Record, ToFields, Value},
     types::{Address, Field, U16},
 };
 
 use crate::{
     TranslationAssignment,
+    compute_console_external_record_id,
     tests::test_utils::{CurrentAleo, CurrentNetwork},
 };
 
@@ -49,7 +50,13 @@ fn translation_assignment_from_record_str(
     // Dependent fields
     let record_dynamic = DynamicRecord::<CurrentNetwork>::from_record(&record_static).unwrap();
 
-    let id_dynamic = record_dynamic.to_id(function_id, tvk, U16::new(input_output_index)).unwrap();
+    let id_dynamic = compute_console_external_record_id(
+        function_id,
+        record_dynamic.to_fields().unwrap(),
+        tvk,
+        U16::new(input_output_index),
+    )
+    .unwrap();
 
     let commitment = record_static.to_commitment(&program_id, &record_name, &record_view_key).unwrap();
     let id_static = if is_input {
@@ -623,7 +630,13 @@ fn test_external_translation() {
     // We specifically set the external-record flag to true
     let static_is_external = true;
     let translation_index = Uniform::rand(&mut rng);
-    let id_dynamic = record_dynamic.to_id(function_id, tvk, U16::new(input_output_index)).unwrap();
+    let id_dynamic = compute_console_external_record_id(
+        function_id,
+        record_dynamic.to_fields().unwrap(),
+        tvk,
+        U16::new(input_output_index),
+    )
+    .unwrap();
     let id_static = external_record_output_id;
     let record_view_key = Uniform::rand(&mut rng);
     let gamma = Uniform::rand(&mut rng);

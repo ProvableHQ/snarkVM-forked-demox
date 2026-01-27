@@ -27,15 +27,6 @@ use snarkvm_console_account::{Address, ComputeKey, GraphKey, PrivateKey, Signatu
 use snarkvm_console_network::Network;
 use snarkvm_console_types::prelude::*;
 
-/// The version for a request.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub(super) enum RequestVersion {
-    /// V1 requests do not have a `dynamic` flag and are implicitly static.
-    V1 = 1,
-    /// V2 requests include a `dynamic` flag to indicate whether or not the request is dynamic.
-    V2 = 2,
-}
-
 #[derive(Clone, PartialEq, Eq)]
 pub struct Request<N: Network> {
     /// The request signer.
@@ -61,8 +52,7 @@ pub struct Request<N: Network> {
     /// The signer commitment.
     scm: Field<N>,
     /// A flag indicating whether or not the request is dynamic.
-    /// Note that`None` indicates that the request is not dynamic.
-    dynamic: Option<bool>,
+    is_dynamic: bool,
 }
 
 impl<N: Network>
@@ -78,12 +68,25 @@ impl<N: Network>
         Field<N>,
         Field<N>,
         Field<N>,
-        Option<bool>,
+        bool,
     )> for Request<N>
 {
     /// Note: See `Request::sign` to create the request. This method is used to eject from a circuit.
     fn from(
-        (signer, network_id, program_id, function_name, input_ids, inputs, signature, sk_tag, tvk, tcm, scm, dynamic): (
+        (
+            signer,
+            network_id,
+            program_id,
+            function_name,
+            input_ids,
+            inputs,
+            signature,
+            sk_tag,
+            tvk,
+            tcm,
+            scm,
+            is_dynamic,
+        ): (
             Address<N>,
             U16<N>,
             ProgramID<N>,
@@ -95,7 +98,7 @@ impl<N: Network>
             Field<N>,
             Field<N>,
             Field<N>,
-            Option<bool>,
+            bool,
         ),
     ) -> Self {
         // Ensure that the number of inputs matches the number of input IDs.
@@ -123,7 +126,7 @@ impl<N: Network>
                 tvk,
                 tcm,
                 scm,
-                dynamic,
+                is_dynamic,
             }
         }
     }
@@ -197,22 +200,9 @@ impl<N: Network> Request<N> {
         &self.scm
     }
 
-    /// Returns the dynamic flag.
-    pub const fn dynamic(&self) -> Option<bool> {
-        self.dynamic
-    }
-
     /// Returns whether or not the request is dynamic.
-    pub fn is_dynamic(&self) -> bool {
-        self.dynamic.unwrap_or(false)
-    }
-
-    /// Returns the version for this request.
-    pub(super) fn version(&self) -> RequestVersion {
-        match self.dynamic {
-            None => RequestVersion::V1,
-            Some(_) => RequestVersion::V2,
-        }
+    pub const fn is_dynamic(&self) -> bool {
+        self.is_dynamic
     }
 
     /// Returns the expected caller input IDs for a dynamic call by:
@@ -325,23 +315,22 @@ mod test_helpers {
                     false => None,
                 };
 
+                // Randomly choose whether to sign as static or dynamic.
+                let is_dynamic = bool::rand(rng);
                 // Compute the signed request.
-                let request = if bool::rand(rng) {
-                    Request::sign_static(&private_key, program_id, function_name, inputs.into_iter(), &input_types, root_tvk, is_root, program_checksum, rng).unwrap()
-                } else {
-                    // Compute the dynamic signed request.
-                    Request::sign_dynamic(
-                        &private_key,
-                        program_id,
-                        function_name,
-                        inputs.clone().into_iter(),
-                        &input_types,
-                        root_tvk,
-                        is_root,
-                        program_checksum,
-                        rng,
-                    ).unwrap()
-                };
+                let request = Request::sign(
+                    &private_key,
+                    program_id,
+                    function_name,
+                    inputs.into_iter(),
+                    &input_types,
+                    root_tvk,
+                    is_root,
+                    program_checksum,
+                    is_dynamic,
+                    rng,
+                )
+                .unwrap();
                 assert!(request.verify(&input_types, is_root, program_checksum));
                 request
             })

@@ -47,15 +47,6 @@ use console::{
     types::{Field, Group},
 };
 
-/// The version of a transition.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub(super) enum TransitionVersion {
-    /// V1 transitions do not have caller metadata.
-    V1 = 1,
-    /// V2 transitions include caller metadata to indicate whether or not the transition is dynamic.
-    V2 = 2,
-}
-
 /// The caller metadata for a transition.
 // Note: This struct is used for internal memory organization only.
 // TODO (@reviewers) This structure informs the Transition of the *caller's* view of the Transition inputs and outputs. It gives the child easy access to inputs/outputs which are viewed differently by the caller parent and the child, which is limited to the following at the moment:
@@ -506,10 +497,9 @@ impl<N: Network> Transition<N> {
             .collect::<Result<Vec<_>>>()?;
 
         // Compute and verify the caller metadata.
-        let caller_metadata = match request.dynamic() {
-            None => None,
-            Some(false) => Some(TransitionCallerMetadata::new_static()),
-            Some(true) => {
+        let caller_metadata = match request.is_dynamic() {
+            false => Some(TransitionCallerMetadata::new_static()),
+            true => {
                 // Construct and verify the caller inputs.
                 let caller_inputs = construct_inputs(&request.caller_input_ids()?, &request.caller_inputs()?)?;
                 // Construct and verify the caller outputs.
@@ -592,14 +582,6 @@ impl<N: Network> Transition<N> {
     /// Returns whether or not the transition is dynamic.
     pub fn is_dynamic(&self) -> bool {
         self.caller_metadata.as_ref().is_some_and(|m| m.is_dynamic())
-    }
-
-    /// Returns the serialization version for this transition.
-    pub(super) fn version(&self) -> TransitionVersion {
-        match &self.caller_metadata {
-            None => TransitionVersion::V1,
-            Some(_) => TransitionVersion::V2,
-        }
     }
 
     /// Returns the optional caller metadata.

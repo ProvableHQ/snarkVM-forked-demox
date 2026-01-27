@@ -282,35 +282,22 @@ mod tests {
                 false => None,
             };
 
+            // Randomly choose whether to sign as static or dynamic.
+            let is_dynamic = bool::rand(rng);
             // Compute the signed request.
-            let request = if bool::rand(rng) {
-                Request::sign_static(
-                    &private_key,
-                    program_id,
-                    function_name,
-                    inputs.into_iter(),
-                    &input_types,
-                    root_tvk,
-                    is_root,
-                    program_checksum,
-                    rng,
-                )
-                .unwrap()
-            } else {
-                // Compute the request.
-                Request::sign_dynamic(
-                    &private_key,
-                    program_id,
-                    function_name,
-                    inputs.into_iter(),
-                    &input_types,
-                    root_tvk,
-                    is_root,
-                    program_checksum,
-                    rng,
-                )
-                .unwrap()
-            };
+            let request = Request::sign(
+                &private_key,
+                program_id,
+                function_name,
+                inputs.into_iter(),
+                &input_types,
+                root_tvk,
+                is_root,
+                program_checksum,
+                is_dynamic,
+                rng,
+            )
+            .unwrap();
             assert!(request.verify(&input_types, is_root, program_checksum));
         }
     }
