@@ -38,8 +38,6 @@ pub struct Fee<N: Network> {
 impl<N: Network> Fee<N> {
     /// Initializes a new `Fee` instance with the given transition, global state root, and proof.
     pub fn from(transition: Transition<N>, global_state_root: N::StateRoot, proof: Option<Proof<N>>) -> Result<Self> {
-        // Ensure that the transition is not a dynamic transition.
-        ensure!(!transition.is_dynamic(), "Fee transition cannot be dynamic");
         // Ensure the transition is correct for a fee function.
         match transition.is_fee_private() || transition.is_fee_public() {
             true => Ok(Self::from_unchecked(transition, global_state_root, proof)),

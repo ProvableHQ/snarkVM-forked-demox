@@ -2727,7 +2727,6 @@ finalize transfer_public_to_private:
             tpk,
             tcm,
             scm,
-            None,
         )
         .unwrap();
 
@@ -2857,7 +2856,6 @@ finalize transfer_public_to_private:
             tpk,
             tcm,
             scm,
-            None,
         )
         .unwrap();
         // Get the state root.
@@ -2993,7 +2991,6 @@ function add_thrice:
             tpk,
             tcm,
             scm,
-            None,
         )
         .unwrap();
 

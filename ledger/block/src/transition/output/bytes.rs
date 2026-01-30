@@ -95,7 +95,50 @@ impl<N: Network> FromBytes for Output<N> {
                 let commitment = FromBytes::read_le(&mut reader)?;
                 Self::DynamicRecord(commitment)
             }
-            7.. => return Err(error(format!("Failed to decode output variant {index}"))),
+            7 => {
+                // Read the commitment.
+                let commitment = FromBytes::read_le(&mut reader)?;
+                // Read the checksum.
+                let checksum = FromBytes::read_le(&mut reader)?;
+                // Read the record ciphertext.
+                let record_ciphertext_exists: bool = FromBytes::read_le(&mut reader)?;
+                let record_ciphertext: Option<Record<N, _>> = match record_ciphertext_exists {
+                    true => Some(FromBytes::read_le(&mut reader)?),
+                    false => None,
+                };
+                // If the record version is Version 1 or higher, read the sender ciphertext.
+                let sender_ciphertext = match &record_ciphertext {
+                    Some(record) => match record.version().is_zero() {
+                        true => None,
+                        false => {
+                            // Read the sender ciphertext version.
+                            let sender_ciphertext_version: u8 = FromBytes::read_le(&mut reader)?;
+                            // Ensure the sender ciphertext version is 0.
+                            if sender_ciphertext_version != 0 {
+                                return Err(error(format!(
+                                    "Failed to decode sender ciphertext version {sender_ciphertext_version}"
+                                )));
+                            }
+                            // Read the sender ciphertext.
+                            Some(FromBytes::read_le(&mut reader)?)
+                        }
+                    },
+                    None => None,
+                };
+                // Read the dynamic_id.
+                let dynamic_id: Field<N> = FromBytes::read_le(&mut reader)?;
+                // Return the record with dynamic ID.
+                Self::RecordWithDynamicID(commitment, checksum, record_ciphertext, sender_ciphertext, dynamic_id)
+            }
+            8 => {
+                // Read the external record hash.
+                let external_hash: Field<N> = FromBytes::read_le(&mut reader)?;
+                // Read the dynamic_id.
+                let dynamic_id: Field<N> = FromBytes::read_le(&mut reader)?;
+                // Return the external record with dynamic ID.
+                Self::ExternalRecordWithDynamicID(external_hash, dynamic_id)
+            }
+            9.. => return Err(error(format!("Failed to decode output variant {index}"))),
         };
         Ok(literal)
     }
@@ -183,6 +226,39 @@ impl<N: Network> ToBytes for Output<N> {
             Self::DynamicRecord(commitment) => {
                 (6 as Variant).write_le(&mut writer)?;
                 commitment.write_le(&mut writer)
+            }
+            Self::RecordWithDynamicID(commitment, checksum, record_ciphertext, sender_ciphertext, dynamic_id) => {
+                (7 as Variant).write_le(&mut writer)?;
+                commitment.write_le(&mut writer)?;
+                checksum.write_le(&mut writer)?;
+                match record_ciphertext {
+                    Some(record) => {
+                        true.write_le(&mut writer)?;
+                        record.write_le(&mut writer)?;
+                        // If the record version is Version 1 or higher, write the sender ciphertext.
+                        if !record.version().is_zero() {
+                            // Write the sender ciphertext version.
+                            0u8.write_le(&mut writer)?;
+                            // Write the sender ciphertext.
+                            match sender_ciphertext {
+                                Some(sender) => sender.write_le(&mut writer)?,
+                                None => {
+                                    return Err(error(
+                                        "Failed to encode sender ciphertext for non-zero version record",
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                    None => false.write_le(&mut writer)?,
+                }
+                // Write the dynamic_id.
+                dynamic_id.write_le(&mut writer)
+            }
+            Self::ExternalRecordWithDynamicID(external_hash, dynamic_id) => {
+                (8 as Variant).write_le(&mut writer)?;
+                external_hash.write_le(&mut writer)?;
+                dynamic_id.write_le(&mut writer)
             }
         }
     }

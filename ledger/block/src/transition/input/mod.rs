@@ -40,6 +40,10 @@ pub enum Input<N: Network> {
     ExternalRecord(Field<N>),
     /// The hash of the dynamic record's (function_id, record, tvk, input index).
     DynamicRecord(Field<N>),
+    /// The serial number, tag, and dynamic_id of a record input called dynamically.
+    RecordWithDynamicID(Field<N>, Field<N>, Field<N>),
+    /// The external record hash and dynamic_id of an external record input called dynamically.
+    ExternalRecordWithDynamicID(Field<N>, Field<N>),
 }
 
 impl<N: Network> Input<N> {
@@ -52,6 +56,8 @@ impl<N: Network> Input<N> {
             Input::Record(..) => 3, // <- Changing this will invalidate 'console::StatePath' and 'circuit::StatePath'.
             Input::ExternalRecord(..) => 4,
             Input::DynamicRecord(..) => 5,
+            Input::RecordWithDynamicID(..) => 6,
+            Input::ExternalRecordWithDynamicID(..) => 7,
         }
     }
 
@@ -64,18 +70,29 @@ impl<N: Network> Input<N> {
             Input::Record(serial_number, ..) => serial_number,
             Input::ExternalRecord(id) => id,
             Input::DynamicRecord(id) => id,
+            Input::RecordWithDynamicID(serial_number, ..) => serial_number,
+            Input::ExternalRecordWithDynamicID(id, ..) => id,
         }
     }
 
     /// Returns the input as a transition leaf.
+    /// Note: RecordWithDynamicID uses leaf variant 3 (same as Record),
+    /// and ExternalRecordWithDynamicID uses leaf variant 4 (same as ExternalRecord).
     pub fn to_transition_leaf(&self, index: u8) -> TransitionLeaf<N> {
-        TransitionLeaf::new_with_version(index, self.variant(), *self.id())
+        match self {
+            // RecordWithDynamicID produces the same leaf as Record (variant 3, id = sn).
+            Input::RecordWithDynamicID(sn, ..) => TransitionLeaf::new_with_version(index, 3, *sn),
+            // ExternalRecordWithDynamicID produces the same leaf as ExternalRecord (variant 4, id = hash).
+            Input::ExternalRecordWithDynamicID(hash, ..) => TransitionLeaf::new_with_version(index, 4, *hash),
+            // All other variants use their serialization variant byte.
+            _ => TransitionLeaf::new_with_version(index, self.variant(), *self.id()),
+        }
     }
 
     /// Returns the tag, if the input is a record.
     pub const fn tag(&self) -> Option<&Field<N>> {
         match self {
-            Input::Record(_, tag) => Some(tag),
+            Input::Record(_, tag) | Input::RecordWithDynamicID(_, tag, _) => Some(tag),
             _ => None,
         }
     }
@@ -83,7 +100,7 @@ impl<N: Network> Input<N> {
     /// Returns the tag, if the input is a record, and consumes `self`.
     pub fn into_tag(self) -> Option<Field<N>> {
         match self {
-            Input::Record(_, tag) => Some(tag),
+            Input::Record(_, tag) | Input::RecordWithDynamicID(_, tag, _) => Some(tag),
             _ => None,
         }
     }
@@ -91,7 +108,7 @@ impl<N: Network> Input<N> {
     /// Returns the serial number, if the input is a record.
     pub const fn serial_number(&self) -> Option<&Field<N>> {
         match self {
-            Input::Record(serial_number, ..) => Some(serial_number),
+            Input::Record(serial_number, ..) | Input::RecordWithDynamicID(serial_number, ..) => Some(serial_number),
             _ => None,
         }
     }
@@ -99,14 +116,26 @@ impl<N: Network> Input<N> {
     /// Returns the serial number, if the input is a record, and consumes `self`.
     pub fn into_serial_number(self) -> Option<Field<N>> {
         match self {
-            Input::Record(serial_number, ..) => Some(serial_number),
+            Input::Record(serial_number, ..) | Input::RecordWithDynamicID(serial_number, ..) => Some(serial_number),
             _ => None,
         }
     }
 
     /// Returns the public verifier inputs for the proof.
+    /// Note: RecordWithDynamicID returns [sn, tag] (same as Record),
+    /// and ExternalRecordWithDynamicID returns [hash] (same as ExternalRecord).
     pub fn verifier_inputs(&self) -> impl '_ + Iterator<Item = N::Field> {
         [Some(self.id()), self.tag()].into_iter().flatten().map(|id| **id)
+    }
+
+    /// Returns the dynamic_id, if the input carries one.
+    pub const fn dynamic_id(&self) -> Option<&Field<N>> {
+        match self {
+            Input::RecordWithDynamicID(_, _, dynamic_id) | Input::ExternalRecordWithDynamicID(_, dynamic_id) => {
+                Some(dynamic_id)
+            }
+            _ => None,
+        }
     }
 
     /// Returns `true` if the input is well-formed.
@@ -169,7 +198,11 @@ impl<N: Network> Input<N> {
                 // A similar rule is enforced for the transition output.
                 bail!("A transition input value is missing")
             }
-            Input::Record(_, _) | Input::ExternalRecord(_) | Input::DynamicRecord(_) => Ok(true),
+            Input::Record(_, _)
+            | Input::ExternalRecord(_)
+            | Input::DynamicRecord(_)
+            | Input::RecordWithDynamicID(_, _, _)
+            | Input::ExternalRecordWithDynamicID(_, _) => Ok(true),
         };
 
         match result() {
@@ -189,7 +222,13 @@ impl<N: Network> Input<N> {
                 | (Self::Public(..), Self::Public(..))
                 | (Self::Private(..), Self::Private(..))
                 | (Self::Record(..), Self::Record(..))
+                | (Self::Record(..), Self::RecordWithDynamicID(..))
+                | (Self::RecordWithDynamicID(..), Self::Record(..))
+                | (Self::RecordWithDynamicID(..), Self::RecordWithDynamicID(..))
                 | (Self::ExternalRecord(_), Self::ExternalRecord(_))
+                | (Self::ExternalRecord(_), Self::ExternalRecordWithDynamicID(..))
+                | (Self::ExternalRecordWithDynamicID(..), Self::ExternalRecord(_))
+                | (Self::ExternalRecordWithDynamicID(..), Self::ExternalRecordWithDynamicID(..))
                 | (Self::DynamicRecord(_), Self::DynamicRecord(_))
         )
     }
@@ -202,7 +241,9 @@ impl<N: Network> Input<N> {
                 | (Self::Public(..), ValueType::Public(..))
                 | (Self::Private(..), ValueType::Private(..))
                 | (Self::Record(..), ValueType::Record(..))
+                | (Self::RecordWithDynamicID(..), ValueType::Record(..))
                 | (Self::ExternalRecord(..), ValueType::ExternalRecord(..))
+                | (Self::ExternalRecordWithDynamicID(..), ValueType::ExternalRecord(..))
                 | (Self::DynamicRecord(..), ValueType::DynamicRecord)
         )
     }
@@ -245,6 +286,11 @@ pub(crate) mod test_helpers {
             (Uniform::rand(rng), Input::Private(ciphertext_hash, Some(ciphertext))),
             (Uniform::rand(rng), Input::Record(Uniform::rand(rng), Uniform::rand(rng))),
             (Uniform::rand(rng), Input::ExternalRecord(Uniform::rand(rng))),
+            (
+                Uniform::rand(rng),
+                Input::RecordWithDynamicID(Uniform::rand(rng), Uniform::rand(rng), Uniform::rand(rng)),
+            ),
+            (Uniform::rand(rng), Input::ExternalRecordWithDynamicID(Uniform::rand(rng), Uniform::rand(rng))),
         ]
     }
 }

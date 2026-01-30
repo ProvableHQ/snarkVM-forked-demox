@@ -26,7 +26,6 @@ use console::{
     program::{Ciphertext, Future, Identifier, Plaintext, ProgramID, Record},
     types::{Field, Group},
 };
-use snarkvm_ledger_block::{Input, Output};
 
 use aleo_std_storage::StorageMode;
 
@@ -49,12 +48,6 @@ pub struct TransitionDB<N: Network> {
     reverse_tcm_map: DataMap<Field<N>, N::TransitionID>,
     /// The signer commitments.
     scm_map: DataMap<N::TransitionID, Field<N>>,
-    /// The `is_dynamic` map.
-    is_dynamic_map: DataMap<N::TransitionID, bool>,
-    /// The caller inputs map.
-    caller_inputs_map: DataMap<N::TransitionID, Vec<Input<N>>>,
-    /// The caller outputs map.
-    caller_outputs_map: DataMap<N::TransitionID, Vec<Output<N>>>,
 }
 
 #[rustfmt::skip]
@@ -67,9 +60,6 @@ impl<N: Network> TransitionStorage<N> for TransitionDB<N> {
     type TCMMap = DataMap<N::TransitionID, Field<N>>;
     type ReverseTCMMap = DataMap<Field<N>, N::TransitionID>;
     type SCMMap = DataMap<N::TransitionID, Field<N>>;
-    type IsDynamicMap = DataMap<N::TransitionID, bool>;
-    type CallerInputsMap = DataMap<N::TransitionID, Vec<Input<N>>>;
-    type CallerOutputsMap = DataMap<N::TransitionID, Vec<Output<N>>>;
 
     /// Initializes the transition storage.
     fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
@@ -82,10 +72,7 @@ impl<N: Network> TransitionStorage<N> for TransitionDB<N> {
             reverse_tpk_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Transition(TransitionMap::ReverseTPK))?,
             tcm_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Transition(TransitionMap::TCM))?,
             reverse_tcm_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(),  MapID::Transition(TransitionMap::ReverseTCM))?,
-            scm_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Transition(TransitionMap::SCM))?,
-            is_dynamic_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Transition(TransitionMap::IsDynamic))?,
-            caller_inputs_map: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::Transition(TransitionMap::CallerInputs))?,
-            caller_outputs_map: rocksdb::RocksDB::open_map(N::ID, storage, MapID::Transition(TransitionMap::CallerOutputs))?,
+            scm_map: rocksdb::RocksDB::open_map(N::ID, storage, MapID::Transition(TransitionMap::SCM))?,
         })
     }
 
@@ -129,20 +116,6 @@ impl<N: Network> TransitionStorage<N> for TransitionDB<N> {
         &self.scm_map
     }
 
-    /// Returns the `is_dynamic` map.
-    fn is_dynamic_map(&self) -> &Self::IsDynamicMap {
-        &self.is_dynamic_map
-    } 
-
-    /// Returns the caller inputs map.
-    fn caller_inputs_map(&self) -> &Self::CallerInputsMap {
-        &self.caller_inputs_map
-    }
-
-    /// Returns the caller outputs map.
-    fn caller_outputs_map(&self) -> &Self::CallerOutputsMap {
-        &self.caller_outputs_map
-    }
 }
 
 /// An database transition input storage.
@@ -166,6 +139,8 @@ pub struct InputDB<N: Network> {
     external_record: DataMap<Field<N>, ()>,
     /// The mapping of `dynamic hash` to `()`. Note: This is **not** the record commitment.
     dynamic_record: DataMap<Field<N>, ()>,
+    /// The mapping of `input ID` to `dynamic_id` for inputs with dynamic IDs.
+    dynamic_id: DataMap<Field<N>, Field<N>>,
     /// The storage mode.
     storage_mode: StorageMode,
 }
@@ -181,6 +156,7 @@ impl<N: Network> InputStorage<N> for InputDB<N> {
     type RecordTagMap = DataMap<Field<N>, Field<N>>;
     type ExternalRecordMap = DataMap<Field<N>, ()>;
     type DynamicRecordMap = DataMap<Field<N>, ()>;
+    type DynamicIDMap = DataMap<Field<N>, Field<N>>;
 
     /// Initializes the transition input storage.
     fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
@@ -195,6 +171,7 @@ impl<N: Network> InputStorage<N> for InputDB<N> {
             record_tag: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::TransitionInput(TransitionInputMap::RecordTag))?,
             external_record: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::TransitionInput(TransitionInputMap::ExternalRecord))?,
             dynamic_record: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::TransitionInput(TransitionInputMap::DynamicRecord))?,
+            dynamic_id: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::TransitionInput(TransitionInputMap::DynamicID))?,
             storage_mode: storage,
         })
     }
@@ -244,6 +221,11 @@ impl<N: Network> InputStorage<N> for InputDB<N> {
         &self.dynamic_record
     }
 
+    /// Returns the dynamic ID map.
+    fn dynamic_id_map(&self) -> &Self::DynamicIDMap {
+        &self.dynamic_id
+    }
+
     /// Returns the storage mode.
     fn storage_mode(&self) -> &StorageMode {
         &self.storage_mode
@@ -276,6 +258,8 @@ pub struct OutputDB<N: Network> {
     future: DataMap<Field<N>, Option<Future<N>>>,
     /// The mapping of `dynamic hash` to `()`. Note: This is **not** the record commitment.
     dynamic_record: DataMap<Field<N>, ()>,
+    /// The mapping of `output ID` to `dynamic_id` for outputs with dynamic IDs.
+    dynamic_id: DataMap<Field<N>, Field<N>>,
     /// The storage mode.
     storage_mode: StorageMode,
 }
@@ -293,6 +277,7 @@ impl<N: Network> OutputStorage<N> for OutputDB<N> {
     type ExternalRecordMap = DataMap<Field<N>, ()>;
     type FutureMap = DataMap<Field<N>, Option<Future<N>>>;
     type DynamicRecordMap = DataMap<Field<N>, ()>;
+    type DynamicIDMap = DataMap<Field<N>, Field<N>>;
 
     /// Initializes the transition output storage.
     fn open<S: Into<StorageMode>>(storage: S) -> Result<Self> {
@@ -309,6 +294,7 @@ impl<N: Network> OutputStorage<N> for OutputDB<N> {
             external_record: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::TransitionOutput(TransitionOutputMap::ExternalRecord))?,
             future: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::TransitionOutput(TransitionOutputMap::Future))?,
             dynamic_record: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::TransitionOutput(TransitionOutputMap::DynamicRecord))?,
+            dynamic_id: rocksdb::RocksDB::open_map(N::ID, storage.clone(), MapID::TransitionOutput(TransitionOutputMap::DynamicID))?,
             storage_mode: storage,
         })
     }
@@ -365,6 +351,11 @@ impl<N: Network> OutputStorage<N> for OutputDB<N> {
 
     fn dynamic_record_map(&self) -> &Self::DynamicRecordMap {
         &self.dynamic_record
+    }
+
+    /// Returns the dynamic ID map.
+    fn dynamic_id_map(&self) -> &Self::DynamicIDMap {
+        &self.dynamic_id
     }
 
     /// Returns the storage mode.

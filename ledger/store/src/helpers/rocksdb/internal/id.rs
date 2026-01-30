@@ -152,6 +152,7 @@ pub enum TransitionInputMap {
     RecordTag = DataID::InputRecordTagMap as u16,
     ExternalRecord = DataID::InputExternalRecordMap as u16,
     DynamicRecord = DataID::InputDynamicRecordMap as u16,
+    DynamicID = DataID::InputDynamicIDMap as u16,
 }
 
 /// The RocksDB map prefix for transition output entries.
@@ -171,6 +172,7 @@ pub enum TransitionOutputMap {
     ExternalRecord = DataID::OutputExternalRecordMap as u16,
     Future = DataID::OutputFutureMap as u16,
     DynamicRecord = DataID::OutputDynamicRecordMap as u16,
+    DynamicID = DataID::OutputDynamicIDMap as u16,
 }
 
 /// The RocksDB map prefix for transaction-related entries.
@@ -194,9 +196,6 @@ pub enum TransitionMap {
     TCM = DataID::TransitionTCMMap as u16,
     ReverseTCM = DataID::TransitionReverseTCMMap as u16,
     SCM = DataID::TransitionSCMMap as u16,
-    IsDynamic = DataID::IsDynamicMap as u16,
-    CallerInputs = DataID::TransitionCallerInputMap as u16,
-    CallerOutputs = DataID::TransitionCallerOutputMap as u16,
 }
 
 /// The RocksDB map prefix for program-related entries.
@@ -313,12 +312,11 @@ enum DataID {
     InputDynamicRecordMap,
     // Track dynamic record outputs.
     OutputDynamicRecordMap,
-    // Track whether a transition is dynamic.
-    IsDynamicMap,
-    // Track caller inputs.
-    TransitionCallerInputMap,
-    // Track caller outputs.
-    TransitionCallerOutputMap,
+
+    // Track dynamic IDs for inputs.
+    InputDynamicIDMap,
+    // Track dynamic IDs for outputs.
+    OutputDynamicIDMap,
 
     // Testing
     #[cfg(test)]

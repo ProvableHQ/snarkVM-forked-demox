@@ -117,53 +117,27 @@ impl<N: Network> Translation<N> {
             Ok(())
         };
 
-        // Iterate through the transitions (consistent order with the verifier)
+        // Iterate through the transitions (consistent order with the verifier).
         for transition in transitions {
             let transition_id = transition.id();
 
-            ensure!(
-                transition.caller_inputs().is_some() == transition.caller_outputs().is_some(),
-                "The caller inputs and caller outputs should either both be Some or both be None, but a discrepancy was found in transition {}: caller inputs = {}, caller outputs = {}",
-                transition.id(),
-                if transition.caller_inputs().is_some() { "Some" } else { "None" },
-                if transition.caller_outputs().is_some() { "Some" } else { "None" }
-            );
-
-            // Input translation
-            if let Some(caller_inputs) = transition.caller_inputs() {
-                for (caller_input, callee_input) in caller_inputs.iter().zip(transition.inputs().iter()) {
-                    match (caller_input, callee_input) {
-                        (Input::DynamicRecord(..), Input::Record(..))
-                        | (Input::DynamicRecord(..), Input::ExternalRecord(..)) => {
-                            let caller_transition_id = reverse_call_graph.get(transition_id).ok_or_else(|| {
-                                anyhow!("Caller transition ID not found for transition ID {transition_id}")
-                            })?;
-                            consume_translation_task(*caller_transition_id)?;
-                        }
-                        (Input::Record(..), Input::DynamicRecord(..)) => {
-                            bail!("Translation of (non-external) input records to dynamic records is not supported");
-                        }
-                        _ => {}
-                    }
+            // Input translation: detect inputs with dynamic IDs (RecordWithDynamicID, ExternalRecordWithDynamicID).
+            for input in transition.inputs() {
+                if input.dynamic_id().is_some() {
+                    let caller_transition_id = reverse_call_graph
+                        .get(transition_id)
+                        .ok_or_else(|| anyhow!("Caller transition ID not found for transition ID {transition_id}"))?;
+                    consume_translation_task(*caller_transition_id)?;
                 }
             }
 
-            // Output translation
-            if let Some(caller_outputs) = transition.caller_outputs() {
-                for (caller_output, callee_output) in caller_outputs.iter().zip(transition.outputs().iter()) {
-                    match (caller_output, callee_output) {
-                        (Output::DynamicRecord(..), Output::Record(..))
-                        | (Output::DynamicRecord(..), Output::ExternalRecord(..)) => {
-                            let caller_transition_id = reverse_call_graph.get(transition_id).ok_or_else(|| {
-                                anyhow!("Caller transition ID not found for transition ID {transition_id}")
-                            })?;
-                            consume_translation_task(*caller_transition_id)?;
-                        }
-                        (Output::Record(..), Output::DynamicRecord(..)) => {
-                            bail!("Translation of output dynamic records to (non-external) records is not supported");
-                        }
-                        _ => {}
-                    }
+            // Output translation: detect outputs with dynamic IDs (RecordWithDynamicID, ExternalRecordWithDynamicID).
+            for output in transition.outputs() {
+                if output.dynamic_id().is_some() {
+                    let caller_transition_id = reverse_call_graph
+                        .get(transition_id)
+                        .ok_or_else(|| anyhow!("Caller transition ID not found for transition ID {transition_id}"))?;
+                    consume_translation_task(*caller_transition_id)?;
                 }
             }
         }

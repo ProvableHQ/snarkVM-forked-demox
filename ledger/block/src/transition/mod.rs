@@ -47,128 +47,6 @@ use console::{
     types::{Field, Group},
 };
 
-/// The caller metadata for a transition.
-// Note: This struct is used for internal memory organization only.
-// TODO (@reviewers) This structure informs the Transition of the *caller's* view of the Transition inputs and outputs. It gives the child easy access to inputs/outputs which are viewed differently by the caller parent and the child, which is limited to the following at the moment:
-// - input dynamic records received as static/external ones by the callee
-// - output static/external records received as dynamic ones by the caller
-// However, at the moment, the `inputs` and `outputs` mirror the Transition's inputs and outputs, duplicating values viewed equally by the caller and callee; and only differing at some positions due to the two situations above. Equally viewed values are checked to have the expected type only for defense in depth: the verifier does not rely on them.
-// An alternative design was considered, where TransitionCallerMetadata would contain a more compact representation including only differing inputs/outputs. This would be slightly more cumbersom to work with, but more memory efficient and elegant. Decide whether switching to the latter desing is desired (at least at this stage).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct TransitionCallerMetadata<N: Network> {
-    /// Whether or not the transition is dynamic.
-    is_dynamic: bool,
-    /// The caller inputs.
-    inputs: Vec<Input<N>>,
-    /// The caller outputs.
-    outputs: Vec<Output<N>>,
-}
-
-impl<N: Network> TransitionCallerMetadata<N> {
-    /// Creates a new static caller metadata.
-    pub fn new_static() -> Self {
-        Self { is_dynamic: false, inputs: Vec::new(), outputs: Vec::new() }
-    }
-
-    /// Creates a new dynamic caller metadata.
-    pub fn new_dynamic(inputs: Vec<Input<N>>, outputs: Vec<Output<N>>) -> Result<Self> {
-        // Check that the number of inputs is within bounds.
-        ensure!(
-            inputs.len() <= N::MAX_INPUTS,
-            "Transition caller metadata has too many inputs ({} > {}).",
-            inputs.len(),
-            N::MAX_INPUTS
-        );
-        // Check that the number of outputs is within bounds.
-        ensure!(
-            outputs.len() <= N::MAX_OUTPUTS,
-            "Transition caller metadata has too many outputs ({} > {}).",
-            outputs.len(),
-            N::MAX_OUTPUTS
-        );
-        Ok(Self { is_dynamic: true, inputs, outputs })
-    }
-
-    /// Returns the caller inputs, if the metadata is dynamic.
-    pub fn inputs(&self) -> Option<&[Input<N>]> {
-        match self.is_dynamic {
-            false => None,
-            true => Some(&self.inputs),
-        }
-    }
-
-    /// Returns the caller outputs, if the metadata is dynamic.
-    pub fn outputs(&self) -> Option<&[Output<N>]> {
-        match self.is_dynamic {
-            false => None,
-            true => Some(&self.outputs),
-        }
-    }
-
-    /// Returns whether or not the transition metadata is dynamic.
-    pub fn is_dynamic(&self) -> bool {
-        self.is_dynamic
-    }
-}
-
-/// Implements `ToBits` for `TransitionCallerMetadata` to support including the caller metadata in the transition ID.
-/// The bit representation includes:
-/// - `is_dynamic` (1 bit)
-/// - `num_inputs` (8 bits)
-/// - `num_outputs` (8 bits)
-/// - For each input: variant (8 bits) + id (Field)
-/// - For each output: variant (8 bits) + id (Field) + checksum
-/// - Note that a caller input or output can never be a `Record`.
-impl<N: Network> ToBits for TransitionCallerMetadata<N> {
-    /// Writes the caller metadata into the given vector as a boolean array in little-endian order.
-    fn write_bits_le(&self, vec: &mut Vec<bool>) {
-        // Write whether the transition is dynamic.
-        self.is_dynamic.write_bits_le(vec);
-        // Write the number of inputs.
-        (self.inputs.len() as u8).write_bits_le(vec);
-        // Write the number of outputs.
-        (self.outputs.len() as u8).write_bits_le(vec);
-        // Write each input.
-        for input in &self.inputs {
-            // Write the variant.
-            input.variant().write_bits_le(vec);
-            // Write the input ID.
-            input.id().write_bits_le(vec);
-        }
-        // Write each output.
-        for output in &self.outputs {
-            // Write the variant.
-            output.variant().write_bits_le(vec);
-            // Write the output ID.
-            output.id().write_bits_le(vec);
-        }
-    }
-
-    /// Writes the caller metadata into the given vector as a boolean array in big-endian order.
-    fn write_bits_be(&self, vec: &mut Vec<bool>) {
-        // Write whether the transition is dynamic.
-        self.is_dynamic.write_bits_be(vec);
-        // Write the number of inputs.
-        (self.inputs.len() as u8).write_bits_be(vec);
-        // Write the number of outputs.
-        (self.outputs.len() as u8).write_bits_be(vec);
-        // Write each input.
-        for input in &self.inputs {
-            // Write the variant.
-            input.variant().write_bits_be(vec);
-            // Write the input ID.
-            input.id().write_bits_be(vec);
-        }
-        // Write each output.
-        for output in &self.outputs {
-            // Write the variant.
-            output.variant().write_bits_be(vec);
-            // Write the output ID.
-            output.id().write_bits_be(vec);
-        }
-    }
-}
-
 #[derive(Clone, PartialEq, Eq)]
 pub struct Transition<N: Network> {
     /// The transition ID.
@@ -187,10 +65,6 @@ pub struct Transition<N: Network> {
     tcm: Field<N>,
     /// The transition signer commitment.
     scm: Field<N>,
-    /// The optional caller metadata.
-    caller_metadata: Option<TransitionCallerMetadata<N>>,
-    /// The inclusion ID (without caller_metadata). Only stored when caller_metadata is Some.
-    inclusion_id: Option<N::TransitionID>,
 }
 
 impl<N: Network> Transition<N> {
@@ -204,44 +78,13 @@ impl<N: Network> Transition<N> {
         tpk: Group<N>,
         tcm: Field<N>,
         scm: Field<N>,
-        caller_metadata: Option<TransitionCallerMetadata<N>>,
     ) -> Result<Self> {
-        // If caller metadata is present and is dynamic, ensure the counts match.
-        if let Some(ref metadata) = caller_metadata {
-            if metadata.is_dynamic() {
-                // Note that the unwraps are safe, since `is_dynamic()` implies the presence of inputs and outputs.
-                let num_caller_inputs = metadata.inputs().unwrap().len();
-                let num_caller_outputs = metadata.outputs().unwrap().len();
-                ensure!(
-                    num_caller_inputs == inputs.len(),
-                    "Transition has mismatched caller inputs count ({num_caller_inputs} != {}).",
-                    inputs.len()
-                );
-                ensure!(
-                    num_caller_outputs == outputs.len(),
-                    "Transition has mismatched caller outputs count ({num_caller_outputs} != {}).",
-                    outputs.len()
-                );
-            }
-        }
-        // Compute the transition ID and inclusion_id.
+        // Compute the function tree.
         let function_tree = Self::function_tree(&inputs, &outputs)?;
-        let (id, inclusion_id) = match &caller_metadata {
-            Some(caller_metadata) => {
-                // Compute inclusion_id (without caller_metadata).
-                let inclusion_id = N::hash_bhp512(&(*function_tree.root(), tcm).to_bits_le())?;
-                // Compute id (with caller_metadata).
-                let id = N::hash_bhp512(&(*function_tree.root(), tcm, caller_metadata.clone()).to_bits_le())?;
-                (id.into(), Some(inclusion_id.into()))
-            }
-            None => {
-                // id == inclusion_id, no need to store separately.
-                let id = N::hash_bhp512(&(*function_tree.root(), tcm).to_bits_le())?;
-                (id.into(), None)
-            }
-        };
+        // Compute the transition ID as `hash(root, tcm)`.
+        let id = N::hash_bhp512(&(*function_tree.root(), tcm).to_bits_le())?.into();
         // Return the transition.
-        Ok(Self { id, program_id, function_name, inputs, outputs, tpk, tcm, scm, caller_metadata, inclusion_id })
+        Ok(Self { id, program_id, function_name, inputs, outputs, tpk, tcm, scm })
     }
 
     /// Initializes a new transition from a request, response, and optional dynamic outputs.
@@ -470,8 +313,8 @@ impl<N: Network> Transition<N> {
             }
         };
 
-        // Construct and verify the inputs.
-        let inputs = construct_inputs(request.input_ids(), request.inputs())?;
+        // Construct and verify the callee inputs.
+        let mut inputs = construct_inputs(request.input_ids(), request.inputs())?;
 
         // Construct and verify the outputs.
         {
@@ -489,43 +332,83 @@ impl<N: Network> Transition<N> {
             );
         }
 
-        let outputs = itertools::izip!(response.output_ids(), response.outputs(), output_types, output_registers)
+        let mut outputs = itertools::izip!(response.output_ids(), response.outputs(), output_types, output_registers)
             .enumerate()
             .map(|(output_index, (output_id, output, output_type, output_register))| {
                 construct_output(output_index, &Some(output_id.clone()), output, output_type, output_register)
             })
             .collect::<Result<Vec<_>>>()?;
 
-        // Compute and verify the caller metadata.
-        let caller_metadata = match request.is_dynamic() {
-            false => Some(TransitionCallerMetadata::new_static()),
-            true => {
-                // Construct and verify the caller inputs.
-                let caller_inputs = construct_inputs(&request.caller_input_ids()?, &request.caller_inputs()?)?;
-                // Construct and verify the caller outputs.
-                let caller_outputs = response
-                    .caller_outputs()?
-                    .iter()
-                    .zip(output_types.iter())
-                    .zip(outputs.iter())
-                    .enumerate()
-                    .map(|(output_index, ((caller_output_value, callee_output_type), callee_output))| {
-                        match (&caller_output_value, callee_output_type) {
-                            // Convert the record output to a dynamic record output.
-                            // Note that we do not explicitly convert future outputs to dynamic future outputs at this point.
-                            //  Since the future is a public output, the verifier can compute the corresponding dynamic future directly.
-                            (Value::DynamicRecord(_), ValueType::Record(..) | ValueType::ExternalRecord(..)) => {
-                                construct_output(output_index, &None, caller_output_value, callee_output_type, &None)
-                            }
-                            // In other cases, return the callee output as is.
-                            _ => Ok(callee_output.clone()),
-                        }
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-                // Construct the caller metadata.
-                Some(TransitionCallerMetadata::new_dynamic(caller_inputs, caller_outputs)?)
+        // If the request is dynamic, augment the callee's inputs/outputs with dynamic_ids.
+        if request.is_dynamic() {
+            // Construct the caller input IDs to extract dynamic_ids.
+            let caller_input_ids = request.caller_input_ids()?;
+            ensure!(
+                caller_input_ids.len() == inputs.len(),
+                "Mismatched caller input IDs and callee inputs: {} vs. {}",
+                caller_input_ids.len(),
+                inputs.len()
+            );
+
+            // Replace callee inputs with WithDynamicID variants where the caller sees a DynamicRecord.
+            for (i, caller_input_id) in caller_input_ids.iter().enumerate() {
+                match (caller_input_id, &inputs[i]) {
+                    // Caller sees DynamicRecord, callee sees Record → RecordWithDynamicID.
+                    (InputID::DynamicRecord(dynamic_id), Input::Record(sn, tag)) => {
+                        inputs[i] = Input::RecordWithDynamicID(*sn, *tag, *dynamic_id);
+                    }
+                    // Caller sees DynamicRecord, callee sees ExternalRecord → ExternalRecordWithDynamicID.
+                    (InputID::DynamicRecord(dynamic_id), Input::ExternalRecord(hash)) => {
+                        inputs[i] = Input::ExternalRecordWithDynamicID(*hash, *dynamic_id);
+                    }
+                    // All other cases: keep the callee's input as-is.
+                    _ => {}
+                }
             }
-        };
+
+            // Extract caller output values to detect DynamicRecord outputs.
+            let caller_output_values = response.caller_outputs()?;
+            ensure!(
+                caller_output_values.len() == outputs.len(),
+                "Mismatched caller outputs and callee outputs: {} vs. {}",
+                caller_output_values.len(),
+                outputs.len()
+            );
+
+            // Replace callee outputs with WithDynamicID variants where the caller sees a DynamicRecord.
+            for (i, (caller_value, callee_output_type)) in
+                caller_output_values.iter().zip(output_types.iter()).enumerate()
+            {
+                match (caller_value, callee_output_type, &outputs[i]) {
+                    // Caller sees DynamicRecord, callee sees Record → RecordWithDynamicID.
+                    (Value::DynamicRecord(_), ValueType::Record(..), Output::Record(cm, cs, rec, sc)) => {
+                        // Compute the dynamic_id for the output.
+                        let output_index = Field::from_u16(u16::try_from(num_inputs + i)?);
+                        let mut preimage = Vec::new();
+                        preimage.push(function_id);
+                        preimage.extend(caller_value.to_fields()?);
+                        preimage.push(*request.tvk());
+                        preimage.push(output_index);
+                        let dynamic_id = N::hash_psd8(&preimage)?;
+                        outputs[i] = Output::RecordWithDynamicID(*cm, *cs, rec.clone(), *sc, dynamic_id);
+                    }
+                    // Caller sees DynamicRecord, callee sees ExternalRecord → ExternalRecordWithDynamicID.
+                    (Value::DynamicRecord(_), ValueType::ExternalRecord(..), Output::ExternalRecord(hash)) => {
+                        // Compute the dynamic_id for the output.
+                        let output_index = Field::from_u16(u16::try_from(num_inputs + i)?);
+                        let mut preimage = Vec::new();
+                        preimage.push(function_id);
+                        preimage.extend(caller_value.to_fields()?);
+                        preimage.push(*request.tvk());
+                        preimage.push(output_index);
+                        let dynamic_id = N::hash_psd8(&preimage)?;
+                        outputs[i] = Output::ExternalRecordWithDynamicID(*hash, dynamic_id);
+                    }
+                    // All other cases: keep the callee's output as-is.
+                    _ => {}
+                }
+            }
+        }
 
         // Retrieve the `tpk`.
         let tpk = request.to_tpk();
@@ -534,7 +417,7 @@ impl<N: Network> Transition<N> {
         // Retrieve the `scm`.
         let scm = *request.scm();
         // Return the transition.
-        Self::new(program_id, function_name, inputs, outputs, tpk, tcm, scm, caller_metadata)
+        Self::new(program_id, function_name, inputs, outputs, tpk, tcm, scm)
     }
 }
 
@@ -577,33 +460,6 @@ impl<N: Network> Transition<N> {
     /// Returns the signer commitment.
     pub const fn scm(&self) -> &Field<N> {
         &self.scm
-    }
-
-    /// Returns whether or not the transition is dynamic.
-    pub fn is_dynamic(&self) -> bool {
-        self.caller_metadata.as_ref().is_some_and(|m| m.is_dynamic())
-    }
-
-    /// Returns the optional caller metadata.
-    pub const fn caller_metadata(&self) -> Option<&TransitionCallerMetadata<N>> {
-        self.caller_metadata.as_ref()
-    }
-
-    /// Returns the caller inputs, if the transition is dynamic.
-    pub fn caller_inputs(&self) -> Option<&[Input<N>]> {
-        self.caller_metadata.as_ref().and_then(|m| m.inputs())
-    }
-
-    /// Returns the caller outputs, if the transition is dynamic.
-    pub fn caller_outputs(&self) -> Option<&[Output<N>]> {
-        self.caller_metadata.as_ref().and_then(|m| m.outputs())
-    }
-
-    /// Returns the inclusion ID for use in inclusion proofs.
-    /// This ID is `hash(root, tcm)` WITHOUT caller_metadata, ensuring that
-    /// inclusion proofs are independent of how a transition was called.
-    pub fn inclusion_id(&self) -> N::TransitionID {
-        self.inclusion_id.unwrap_or(self.id)
     }
 }
 
@@ -685,9 +541,10 @@ impl<N: Network> Transition<N> {
             Input::Constant(_, _) => false,
             Input::Public(_, _) => false,
             Input::Private(_, _) => false,
-            Input::Record(input_sn, _) => input_sn == serial_number,
+            Input::Record(input_sn, _) | Input::RecordWithDynamicID(input_sn, _, _) => input_sn == serial_number,
             Input::ExternalRecord(_) => false,
             Input::DynamicRecord(_) => false,
+            Input::ExternalRecordWithDynamicID(_, _) => false,
         })
     }
 
@@ -697,10 +554,13 @@ impl<N: Network> Transition<N> {
             Output::Constant(_, _) => false,
             Output::Public(_, _) => false,
             Output::Private(_, _) => false,
-            Output::Record(output_cm, _, _, _) => output_cm == commitment,
+            Output::Record(output_cm, _, _, _) | Output::RecordWithDynamicID(output_cm, _, _, _, _) => {
+                output_cm == commitment
+            }
             Output::ExternalRecord(_) => false,
             Output::Future(_, _) => false,
             Output::DynamicRecord(_) => false,
+            Output::ExternalRecordWithDynamicID(_, _) => false,
         })
     }
 }
@@ -714,9 +574,12 @@ impl<N: Network> Transition<N> {
             Output::Private(_, _) => None,
             Output::Record(output_cm, _, Some(record), _) if output_cm == commitment => Some(record),
             Output::Record(_, _, _, _) => None,
+            Output::RecordWithDynamicID(output_cm, _, Some(record), _, _) if output_cm == commitment => Some(record),
+            Output::RecordWithDynamicID(_, _, _, _, _) => None,
             Output::ExternalRecord(_) => None,
             Output::Future(_, _) => None,
             Output::DynamicRecord(_) => None,
+            Output::ExternalRecordWithDynamicID(_, _) => None,
         })
     }
 }

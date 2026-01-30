@@ -316,24 +316,17 @@ impl<N: Network> Authorization<N> {
             let stack = process.get_stack(transition.program_id())?;
             let function = stack.get_function(transition.function_name())?;
 
-            ensure!(
-                transition.caller_inputs().is_some() == transition.caller_outputs().is_some(),
-                "The caller inputs and caller outputs should either both be Some or both be None, but a discrepancy was found in transition {}: caller inputs = {}, caller outputs = {}",
-                transition.id(),
-                if transition.caller_inputs().is_some() { "Some" } else { "None" },
-                if transition.caller_outputs().is_some() { "Some" } else { "None" }
-            );
+            let input_types = function.input_types();
+            let output_types = function.output_types();
 
-            // Input translation
-            if let Some(caller_inputs) = transition.caller_inputs() {
-                let input_types = function.input_types();
-
-                for (caller_input, callee_input_type) in caller_inputs.iter().zip(input_types.iter()) {
-                    match (caller_input, callee_input_type) {
-                        (Input::DynamicRecord(..), ValueType::Record(record_name)) => {
+            // Input translation: detect inputs with dynamic IDs.
+            for (input, input_type) in transition.inputs().iter().zip(input_types.iter()) {
+                if input.dynamic_id().is_some() {
+                    match (input, input_type) {
+                        (Input::RecordWithDynamicID(..), ValueType::Record(record_name)) => {
                             *batches.entry((*transition.program_id(), *record_name)).or_insert(0) += 1;
                         }
-                        (Input::DynamicRecord(..), ValueType::ExternalRecord(locator)) => {
+                        (Input::ExternalRecordWithDynamicID(..), ValueType::ExternalRecord(locator)) => {
                             *batches.entry((*locator.program_id(), *locator.resource())).or_insert(0) += 1;
                         }
                         _ => {}
@@ -341,16 +334,14 @@ impl<N: Network> Authorization<N> {
                 }
             }
 
-            // Output translation
-            if let Some(caller_outputs) = transition.caller_outputs() {
-                let output_types = function.output_types();
-
-                for (caller_output, callee_output_type) in caller_outputs.iter().zip(output_types.iter()) {
-                    match (caller_output, callee_output_type) {
-                        (Output::DynamicRecord(..), ValueType::Record(record_name)) => {
+            // Output translation: detect outputs with dynamic IDs.
+            for (output, output_type) in transition.outputs().iter().zip(output_types.iter()) {
+                if output.dynamic_id().is_some() {
+                    match (output, output_type) {
+                        (Output::RecordWithDynamicID(..), ValueType::Record(record_name)) => {
                             *batches.entry((*transition.program_id(), *record_name)).or_insert(0) += 1;
                         }
-                        (Output::DynamicRecord(..), ValueType::ExternalRecord(locator)) => {
+                        (Output::ExternalRecordWithDynamicID(..), ValueType::ExternalRecord(locator)) => {
                             *batches.entry((*locator.program_id(), *locator.resource())).or_insert(0) += 1;
                         }
                         _ => {}

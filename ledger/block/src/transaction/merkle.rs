@@ -62,8 +62,8 @@ impl<N: Network> Transaction<N> {
 
                 // Iterate through the transitions in the execution.
                 for (index, transition) in execution.transitions().enumerate() {
-                    // Check if the transition inclusion ID matches the given ID.
-                    if *id == *transition.inclusion_id() {
+                    // Check if the transition ID matches the given ID.
+                    if *id == **transition.id() {
                         // Return the transaction leaf.
                         return Ok(TransactionLeaf::new_execution(u16::try_from(index)?, *id));
                     }
@@ -169,9 +169,7 @@ impl<N: Network> Transaction<N> {
         // Prepare the leaves.
         let leaves = transitions.enumerate().map(|(index, transition)| {
             // Construct the transaction leaf.
-            Ok::<_, Error>(
-                TransactionLeaf::new_execution(u16::try_from(index)?, *transition.inclusion_id()).to_bits_le(),
-            )
+            Ok::<_, Error>(TransactionLeaf::new_execution(u16::try_from(index)?, **transition.id()).to_bits_le())
         });
         // Compute the execution tree.
         N::merkle_tree_bhp::<TRANSACTION_DEPTH>(&leaves.collect::<Result<Vec<_>, _>>()?)

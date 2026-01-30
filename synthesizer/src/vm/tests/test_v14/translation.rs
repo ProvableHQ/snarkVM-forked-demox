@@ -13,8 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use snarkvm_ledger_block::{Input, Transition, TransitionCallerMetadata};
-
 use super::*;
 
 fn test_translation(
@@ -694,78 +692,88 @@ fn test_translation_traversal_consistency() {
     add_and_test(&vm, &caller_private_key, &[transaction], rng);
 }
 
-// Tests that malicious tampering with `caller_inputs` and `caller_outputs` (stripping, replacing dynamic with static) is detected.
+// Tests that stripping or altering `dynamic_id` from `RecordWithDynamicID` inputs causes verification failure.
 #[test]
-fn test_malicious_caller_inputs_outputs() {
+fn test_malicious_dynamic_id_tampering() {
+    use snarkvm_ledger_block::{Execution, Input, Output, Transition};
+
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
-    let caller_view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
+    let caller_view_key = ViewKey::<CurrentNetwork>::try_from(&caller_private_key).unwrap();
     let caller_address = Address::try_from(&caller_private_key).unwrap();
 
-    let glass_pane_program_str = Identifier::<CurrentNetwork>::from_str("glass_panes").unwrap();
-    let network_str = Identifier::<CurrentNetwork>::from_str("aleo").unwrap();
-    let decolor_glass_statically_function_str =
-        Identifier::<CurrentNetwork>::from_str("decolor_glass_statically").unwrap();
+    // Parameters for dynamic calls.
+    let program_a_name_str = "flow";
+    let program_b_name_str = "gas_manager";
+    let program_b_name_field = Identifier::<CurrentNetwork>::from_str(program_b_name_str).unwrap().to_field().unwrap();
+    let network_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+    let get_gas_liters_function_field =
+        Identifier::<CurrentNetwork>::from_str("get_gas_liters").unwrap().to_field().unwrap();
 
-    let glass_pane_program_field = glass_pane_program_str.to_field().unwrap();
-    let network_field = network_str.to_field().unwrap();
-    let decolor_glass_statically_function_field = decolor_glass_statically_function_str.to_field().unwrap();
-
-    let program_str = format!(
+    // Define the programs (same as test_translation helper).
+    let program_a_str = format!(
         r"
-        program {glass_pane_program_str}.aleo;
+    import {program_b_name_str}.aleo;
 
-        record stained_glass:
-            owner as address.private;
-            color as u8.public;
+    program {program_a_name_str}.aleo;
 
-        function produce:
-            input r0 as address.private;
-            input r1 as u8.public;
+    function get_dynamic_liters_from_gas:
+        input r0 as record.dynamic;
 
-            cast r0 r1 into r2 as stained_glass.record;
+        call.dynamic {program_b_name_field} {network_field} {get_gas_liters_function_field}
+            with r0 (as record.dynamic)
+            into r1 (as u64.public);
 
-            output r2 as stained_glass.record;
+        output r1 as u64.public;
 
-        function decolor_glass_dynamically:
-            input r0 as record.dynamic;
-
-            call.dynamic {glass_pane_program_field} {network_field} {decolor_glass_statically_function_field}
-                with r0 (as record.dynamic)
-                into r1 (as record.dynamic);
-
-            output r1 as record.dynamic;
-
-        function decolor_glass_statically:
-            input r0 as stained_glass.record;
-
-            // Cannot decolor a glass that is not stained
-            assert.neq r0.color 0u8;
-            
-            cast r0.owner 0u8 into r1 as stained_glass.record;
-
-            output r1 as stained_glass.record;
-
-        constructor:
-            assert.eq true true;
+    constructor:
+        assert.eq true true;
     "
     );
 
-    let program = Program::<CurrentNetwork>::from_str(&program_str).unwrap();
+    let gas_owner = caller_address.to_string();
+    let program_b_str = format!(
+        r"
+    program {program_b_name_str}.aleo;
 
+    record gas_container:
+        owner as address.private;
+        liters as u64.public;
+        flammable as boolean.private;
+
+    function get_gas_liters:
+        input r0 as gas_container.record;
+        output r0.liters as u64.public;
+
+    function hardcoded_gas_pump:
+        cast {gas_owner} 100u64 false into r0 as gas_container.record;
+        output r0 as gas_container.record;
+
+    constructor:
+        assert.eq true true;
+    "
+    );
+
+    let program_a = Program::<CurrentNetwork>::from_str(&program_a_str).unwrap();
+    let program_b = Program::<CurrentNetwork>::from_str(&program_b_str).unwrap();
+
+    // Initialize the VM.
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
-    // Deploy the program.
-    let transaction_deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[transaction_deploy], rng);
+    // Deploy the programs.
+    let transaction_b = vm.deploy(&caller_private_key, &program_b, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[transaction_b], rng);
 
-    // Mint a record and decrypt it
+    let transaction_a = vm.deploy(&caller_private_key, &program_a, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[transaction_a], rng);
+
+    // Mint a gas_container record.
     let transaction_mint = vm
         .execute(
             &caller_private_key,
-            ("glass_panes.aleo", "produce"),
-            [Value::from_str(&caller_address.to_string()).unwrap(), Value::from_str("1u8").unwrap()].into_iter(),
+            (format!("{program_b_name_str}.aleo"), "hardcoded_gas_pump"),
+            Vec::<Value<CurrentNetwork>>::new().iter(),
             None,
             0,
             None,
@@ -773,257 +781,106 @@ fn test_malicious_caller_inputs_outputs() {
         )
         .unwrap();
 
-    let output_record = transaction_mint.transitions().next().unwrap().outputs().iter().next().unwrap();
-
-    let output_record = match output_record {
+    let mint_output = transaction_mint.transitions().next().unwrap().outputs().iter().next().unwrap();
+    let output_gas_record = match mint_output {
         Output::Record(_, _, record_ciphertext, _) => {
             record_ciphertext.as_ref().unwrap().decrypt(&caller_view_key).unwrap()
         }
         _ => panic!("Minted record is not a record"),
     };
 
-    add_and_test(&vm, &caller_private_key, &[transaction_mint], rng);
+    let block_mint = sample_next_block(&vm, &caller_private_key, &[transaction_mint], rng).unwrap();
+    assert_eq!(block_mint.transactions().num_accepted(), 1);
+    vm.add_next_block(&block_mint).unwrap();
 
-    // Convert the static record into a dynamic one and pass it to decolor_glass_dynamically
-    let dynamic_record = DynamicRecord::from_record(&output_record).unwrap();
+    // Convert the static record to a dynamic record.
+    let dynamic_record = DynamicRecord::from_record(&output_gas_record).unwrap();
 
-    let transaction_consume = vm
+    // Execute a dynamic call (flow.aleo/get_dynamic_liters_from_gas).
+    let transaction = vm
         .execute(
             &caller_private_key,
-            ("glass_panes.aleo", "decolor_glass_dynamically"),
-            [Value::DynamicRecord(dynamic_record)].into_iter(),
+            ("flow.aleo", "get_dynamic_liters_from_gas"),
+            [Value::<CurrentNetwork>::DynamicRecord(dynamic_record)].into_iter(),
             None,
-            1000u64,
+            0,
             None,
             rng,
         )
         .unwrap();
 
-    // The transaction contains three transitions:
-    //    [child (= decolor_glass_statically), parent (= decolor_glass_dynamically), fee].
-    // Since the child transition corresponds to a dynamic call, its
-    // caller_inputs and caller_outputs are set to Some.
-    let child_transition = transaction_consume.transitions().next().unwrap();
+    // Verify the valid transaction passes.
+    vm.check_transaction(&transaction, None, rng).unwrap();
 
-    assert!(transaction_consume.transitions().count() == 3);
-    assert_eq!(*child_transition.function_name(), decolor_glass_statically_function_str);
-    assert!(child_transition.caller_inputs().is_some());
-    assert!(child_transition.caller_outputs().is_some());
+    // Extract the execution.
+    let (execution, fee) = match &transaction {
+        Transaction::Execute(_, _, execution, fee) => (execution.as_ref().clone(), fee.clone()),
+        _ => panic!("Expected an execution transaction"),
+    };
 
-    // ************************* Case 1: Stipping caller inputs *************************
+    // Find a child transition containing RecordWithDynamicID inputs.
+    let transitions: Vec<_> = execution.transitions().cloned().collect();
+    let global_state_root = execution.global_state_root();
+    let proof = execution.proof().cloned();
 
-    // Here a malicious prover removes caller_inputs from a dynamic-call transition
-    // and the verifier detects it.
+    let mut found_dynamic_input = false;
+    let mut tampered_transitions = Vec::new();
 
-    // We tamper with the transition by removing the caller metadata:
-    let tampered_child_transition = Transition::new(
-        *child_transition.program_id(),
-        *child_transition.function_name(),
-        child_transition.inputs().to_vec(),
-        child_transition.outputs().to_vec(),
-        *child_transition.tpk(),
-        *child_transition.tcm(),
-        *child_transition.scm(),
-        None,
-    )
-    .unwrap();
+    for transition in &transitions {
+        // Check if this transition has a RecordWithDynamicID input.
+        let has_dynamic_input = transition.inputs().iter().any(|input| input.dynamic_id().is_some());
 
-    let mut tampered_transitions = transaction_consume.transitions().cloned().collect_vec();
+        if has_dynamic_input && !found_dynamic_input {
+            found_dynamic_input = true;
 
-    // We remove the fee transition, which added separately when creating the transaction below.
-    tampered_transitions.pop().unwrap();
+            // Tamper: strip dynamic_id from RecordWithDynamicID inputs.
+            let tampered_inputs: Vec<Input<CurrentNetwork>> = transition
+                .inputs()
+                .iter()
+                .map(|input| match input {
+                    Input::RecordWithDynamicID(sn, tag, _dynamic_id) => {
+                        // Strip dynamic_id by converting to a plain Record.
+                        Input::Record(*sn, *tag)
+                    }
+                    Input::ExternalRecordWithDynamicID(hash, _dynamic_id) => {
+                        // Strip dynamic_id by converting to a plain ExternalRecord.
+                        Input::ExternalRecord(*hash)
+                    }
+                    other => other.clone(),
+                })
+                .collect();
 
-    tampered_transitions[0] = tampered_child_transition;
-
-    let tampered_execution = Execution::from(
-        tampered_transitions.into_iter(),
-        transaction_consume.execution().unwrap().global_state_root(),
-        transaction_consume.execution().unwrap().proof().cloned(),
-    )
-    .unwrap();
-
-    let tampered_transaction =
-        Transaction::from_execution(tampered_execution, transaction_consume.fee_transition()).unwrap();
-
-    // Note: There are two relevant IDs here:
-    // - `transaction_id` (via `transaction.id()`): Uses `inclusion_id()`, does NOT include caller_metadata.
-    //   This is for inclusion proof compatibility. The transaction IDs will be identical.
-    // - `execution_id` (via `execution.to_execution_id()`): Uses `transition.id()`, DOES include caller_metadata.
-    //   This is for fee binding security. The execution IDs will be DIFFERENT when caller_metadata is stripped.
-    let original_execution_id = transaction_consume.execution().unwrap().to_execution_id().unwrap();
-    let tampered_execution_id = tampered_transaction.execution().unwrap().to_execution_id().unwrap();
-    assert_ne!(tampered_execution_id, original_execution_id, "Stripping caller_metadata should change execution_id");
-
-    // Make sure translation verification fails.
-    // With caller metadata included in the transition ID, the verification will fail
-    // because the tampered transaction has an incorrect transition ID.
-    let check_result = vm.check_transaction(&tampered_transaction, None, rng);
-    assert!(check_result.is_err(), "Expected verification to fail for tampered transaction");
-    let error_msg = check_result.unwrap_err().to_string();
-    // The error should indicate either missing dynamic-call data or incorrect transition ID.
-    assert!(
-        error_msg.contains("does not contain dynamic-call data")
-            || error_msg.contains("Transition ID")
-            || error_msg.contains("transition")
-            || error_msg.contains("incorrect"),
-        "Unexpected error message: {error_msg}"
-    );
-
-    // ********* Case 2: Tampering caller_inputs to avoid translation triggering *********
-
-    // In this subtler attack, a malicious prover leaves caller_inputs as Some,
-    // but replaces a dynamic record therein by a static one (as present in the
-    // callee's view of the inputs) to try and prevent the verifier from
-    // detecting the need to check a translation-circuit instance.
-
-    // We first modify the child transition
-    let honest_caller_inputs = child_transition.caller_inputs().unwrap().to_vec();
-    assert!(matches!(honest_caller_inputs[0], Input::DynamicRecord(..)));
-    let mut dishonest_caller_inputs = honest_caller_inputs;
-
-    let static_record_input = child_transition.inputs()[0].clone();
-    assert!(matches!(static_record_input, Input::Record(..)));
-
-    dishonest_caller_inputs[0] = static_record_input;
-
-    let input_tampered_child_transition = Transition::new(
-        *child_transition.program_id(),
-        *child_transition.function_name(),
-        child_transition.inputs().to_vec(),
-        child_transition.outputs().to_vec(),
-        *child_transition.tpk(),
-        *child_transition.tcm(),
-        *child_transition.scm(),
-        Some(
-            TransitionCallerMetadata::new_dynamic(
-                dishonest_caller_inputs,
-                child_transition.caller_outputs().unwrap().to_vec(),
+            // Reconstruct the transition with tampered inputs.
+            // Since RecordWithDynamicID and Record produce identical transition leaves,
+            // the function tree root and transition ID remain the same.
+            let tampered_transition = Transition::new(
+                *transition.program_id(),
+                *transition.function_name(),
+                tampered_inputs,
+                transition.outputs().to_vec(),
+                *transition.tpk(),
+                *transition.tcm(),
+                *transition.scm(),
             )
-            .unwrap(),
-        ),
-    )
-    .unwrap();
+            .unwrap();
 
-    let mut input_tampered_transitions = transaction_consume.transitions().cloned().collect_vec();
+            tampered_transitions.push(tampered_transition);
+        } else {
+            tampered_transitions.push(transition.clone());
+        }
+    }
 
-    // We remove the fee transition, which added separately when creating the transaction below.
-    input_tampered_transitions.pop().unwrap();
+    // Ensure we found and tampered with at least one transition.
+    assert!(found_dynamic_input, "Expected at least one transition with RecordWithDynamicID input");
 
-    input_tampered_transitions[0] = input_tampered_child_transition;
+    // Reconstruct the execution and transaction.
+    let tampered_execution = Execution::from(tampered_transitions.into_iter(), global_state_root, proof).unwrap();
+    let tampered_transaction = Transaction::from_execution(tampered_execution, fee).unwrap();
 
-    let input_tampered_execution = Execution::from(
-        input_tampered_transitions.into_iter(),
-        transaction_consume.execution().unwrap().global_state_root(),
-        transaction_consume.execution().unwrap().proof().cloned(),
-    )
-    .unwrap();
-
-    // Extra funds need to be added to the fee to account for the
-    // increased size of the modified execution: using the previously constructed
-    // transaction_consume.fee_transition() causes an earlier error than the one
-    // we want to test due to the fee being insufficient.
-    let fee_authorization = vm
-        .process()
-        .read()
-        .authorize_fee_public::<CurrentAleo, _>(
-            &caller_private_key,
-            10000,
-            0,
-            input_tampered_execution.to_execution_id().unwrap(),
-            rng,
-        )
-        .unwrap();
-
-    let fee = vm.execute_fee_authorization(fee_authorization, None, rng).unwrap();
-
-    // The full transaction can now be reconstructed using the modified child
-    // and fee transitions.
-    let transaction = Transaction::from_execution(input_tampered_execution, Some(fee)).unwrap();
-
-    println!("Attempting to execute transaction with malicious caller_inputs...");
-
+    // The tampered transaction should fail verification.
     assert!(
-        vm.check_transaction(&transaction, None, rng)
-            .unwrap_err()
-            .to_string()
-            .contains("Caller input 0 in dynamic call to decolor_glass_statically should be of type")
-    );
-
-    // ********* Case 3: Tampering caller_outputs to avoid translation triggering ********
-
-    // This is analogous to case 2 but with the dishonest prover tampering with
-    // caller_outputs instead of caller_inputs
-
-    let honest_caller_outputs = child_transition.caller_outputs().unwrap().to_vec();
-    assert!(matches!(honest_caller_outputs[0], Output::DynamicRecord(..)));
-    let mut dishonest_caller_outputs = honest_caller_outputs;
-
-    let static_record_output = child_transition.outputs()[0].clone();
-    assert!(matches!(static_record_output, Output::Record(..)));
-
-    dishonest_caller_outputs[0] = static_record_output;
-
-    let output_tampered_child_transition = Transition::new(
-        *child_transition.program_id(),
-        *child_transition.function_name(),
-        child_transition.inputs().to_vec(),
-        child_transition.outputs().to_vec(),
-        *child_transition.tpk(),
-        *child_transition.tcm(),
-        *child_transition.scm(),
-        Some(
-            TransitionCallerMetadata::new_dynamic(
-                child_transition.caller_inputs().unwrap().to_vec(),
-                dishonest_caller_outputs,
-            )
-            .unwrap(),
-        ),
-    )
-    .unwrap();
-
-    let mut output_tampered_transitions = transaction_consume.transitions().cloned().collect_vec();
-
-    // We remove the fee transition, which added separately when creating the transaction below.
-    output_tampered_transitions.pop().unwrap();
-
-    output_tampered_transitions[0] = output_tampered_child_transition;
-
-    let output_tampered_execution = Execution::from(
-        output_tampered_transitions.into_iter(),
-        transaction_consume.execution().unwrap().global_state_root(),
-        transaction_consume.execution().unwrap().proof().cloned(),
-    )
-    .unwrap();
-
-    // Extra funds need to be added to the fee to account for the
-    // increased size of the modified execution: using the previously constructed
-    // transaction_consume.fee_transition() causes an earlier error than the one
-    // we want to test due to the fee being insufficient.
-    let fee_authorization = vm
-        .process()
-        .read()
-        .authorize_fee_public::<CurrentAleo, _>(
-            &caller_private_key,
-            10000,
-            0,
-            output_tampered_execution.to_execution_id().unwrap(),
-            rng,
-        )
-        .unwrap();
-
-    let fee = vm.execute_fee_authorization(fee_authorization, None, rng).unwrap();
-
-    // The full transaction can now be reconstructed using the modified child
-    // and fee transitions.
-    let transaction = Transaction::from_execution(output_tampered_execution, Some(fee)).unwrap();
-
-    println!("Attempting to execute transaction with malicious caller_outputs...");
-
-    assert!(
-        vm.check_transaction(&transaction, None, rng)
-            .unwrap_err()
-            .to_string()
-            .contains("Caller output 0 in dynamic call to decolor_glass_statically should be of type")
+        vm.check_transaction(&tampered_transaction, None, rng).is_err(),
+        "Stripping dynamic_id from RecordWithDynamicID should cause verification failure"
     );
 }
 
