@@ -27,7 +27,7 @@ use snarkvm_console::{
 use snarkvm_synthesizer::{
     Process,
     Stack,
-    process::{TranslationAssignment, compute_console_external_record_id},
+    process::{TranslationAssignment, compute_console_nonlocal_record_id},
     program::StackTrait,
 };
 
@@ -98,7 +98,7 @@ pub fn sample_assignment<N: Network, A: Aleo<Network = N>>(
     let record_view_key: Field<N> = Uniform::rand(rng);
     let gamma = None;
     let id_dynamic =
-        compute_console_external_record_id(function_id, record_dynamic.to_fields().unwrap(), tvk, U16::new(input_output_index))
+        compute_console_nonlocal_record_id(function_id, record_dynamic.to_fields().unwrap(), tvk, U16::new(input_output_index))
             .unwrap();
     let is_input = false;
     let static_is_external = false;

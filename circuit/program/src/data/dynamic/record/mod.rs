@@ -264,7 +264,7 @@ mod tests {
             assert_eq!(circuit_dynamic.version().eject_value(), *console_dynamic.version());
 
             // Verify circuit constraint counts.
-            assert_scope!(<=1200, <=0, <=4700, <=4700);
+            assert_scope!(<=1152, <=0, <=4666, <=4666);
         });
 
         Circuit::reset();
@@ -296,7 +296,7 @@ mod tests {
             );
 
             // Verify circuit constraint counts.
-            assert_scope!(<=1100, <=0, <=0, <=0);
+            assert_scope!(<=1076, <=0, <=0, <=0);
         });
 
         Circuit::reset();
@@ -343,7 +343,7 @@ mod tests {
             );
 
             // Verify circuit constraint counts.
-            assert_scope!(<=1200, <=0, <=3200, <=3200);
+            assert_scope!(<=1181, <=0, <=3181, <=3181);
         });
 
         Circuit::reset();

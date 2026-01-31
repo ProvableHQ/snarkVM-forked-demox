@@ -884,6 +884,198 @@ fn test_malicious_dynamic_id_tampering() {
     );
 }
 
+// Tests that stripping or altering `dynamic_id` from `ExternalRecordWithDynamicID` inputs causes verification failure.
+#[test]
+fn test_malicious_external_record_dynamic_id_tampering() {
+    use snarkvm_ledger_block::{Execution, Input, Output, Transition};
+
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_view_key = ViewKey::<CurrentNetwork>::try_from(&caller_private_key).unwrap();
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
+
+    // Parameters for dynamic calls.
+    let program_a_name_str = "flow_external";
+    let program_b_name_str = "gas_manager_external";
+    let program_a_name_field = Identifier::<CurrentNetwork>::from_str(program_a_name_str).unwrap().to_field().unwrap();
+    let network_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+    let get_external_liters_function_field =
+        Identifier::<CurrentNetwork>::from_str("get_external_liters").unwrap().to_field().unwrap();
+
+    // Define program_a which accepts an external record from program_b.
+    let program_a_str = format!(
+        r"
+    import {program_b_name_str}.aleo;
+
+    program {program_a_name_str}.aleo;
+
+    // Get the liters in an external gas_container record from program_b.
+    function get_external_liters:
+        input r0 as {program_b_name_str}.aleo/gas_container.record;
+        output r0.liters as u64.public;
+
+    constructor:
+        assert.eq true true;
+    "
+    );
+
+    // Define program_b which mints records and calls program_a dynamically with an external record.
+    let gas_owner = caller_address.to_string();
+    let program_b_str = format!(
+        r"
+    import {program_a_name_str}.aleo;
+
+    program {program_b_name_str}.aleo;
+
+    record gas_container:
+        owner as address.private;
+        liters as u64.public;
+        flammable as boolean.private;
+
+    function hardcoded_gas_pump:
+        cast {gas_owner} 100u64 false into r0 as gas_container.record;
+        output r0 as gas_container.record;
+
+    // Calls get_external_liters dynamically, passing the gas record as an external record.
+    function call_external_liters:
+        input r0 as record.dynamic;
+
+        call.dynamic {program_a_name_field} {network_field} {get_external_liters_function_field}
+            with r0 (as record.dynamic)
+            into r1 (as u64.public);
+
+        output r1 as u64.public;
+
+    constructor:
+        assert.eq true true;
+    "
+    );
+
+    let program_a = Program::<CurrentNetwork>::from_str(&program_a_str).unwrap();
+    let program_b = Program::<CurrentNetwork>::from_str(&program_b_str).unwrap();
+
+    // Initialize the VM.
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    // Deploy both programs.
+    let transaction_a = vm.deploy(&caller_private_key, &program_a, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[transaction_a], rng);
+
+    let transaction_b = vm.deploy(&caller_private_key, &program_b, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[transaction_b], rng);
+
+    // Mint a gas_container record.
+    let transaction_mint = vm
+        .execute(
+            &caller_private_key,
+            (format!("{program_b_name_str}.aleo"), "hardcoded_gas_pump"),
+            Vec::<Value<CurrentNetwork>>::new().iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    let mint_output = transaction_mint.transitions().next().unwrap().outputs().iter().next().unwrap();
+    let output_gas_record = match mint_output {
+        Output::Record(_, _, record_ciphertext, _) => {
+            record_ciphertext.as_ref().unwrap().decrypt(&caller_view_key).unwrap()
+        }
+        _ => panic!("Minted record is not a record"),
+    };
+
+    let block_mint = sample_next_block(&vm, &caller_private_key, &[transaction_mint], rng).unwrap();
+    assert_eq!(block_mint.transactions().num_accepted(), 1);
+    vm.add_next_block(&block_mint).unwrap();
+
+    // Convert the static record to a dynamic record.
+    let dynamic_record = DynamicRecord::from_record(&output_gas_record).unwrap();
+
+    // Execute a dynamic call that uses an external record (program_b calls program_a with external record).
+    let transaction = vm
+        .execute(
+            &caller_private_key,
+            (format!("{program_b_name_str}.aleo"), "call_external_liters"),
+            [Value::<CurrentNetwork>::DynamicRecord(dynamic_record)].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    // Verify the valid transaction passes.
+    vm.check_transaction(&transaction, None, rng).unwrap();
+
+    // Extract the execution.
+    let (execution, fee) = match &transaction {
+        Transaction::Execute(_, _, execution, fee) => (execution.as_ref().clone(), fee.clone()),
+        _ => panic!("Expected an execution transaction"),
+    };
+
+    // Find a transition containing ExternalRecordWithDynamicID inputs.
+    let transitions: Vec<_> = execution.transitions().cloned().collect();
+    let global_state_root = execution.global_state_root();
+    let proof = execution.proof().cloned();
+
+    let mut found_external_dynamic_input = false;
+    let mut tampered_transitions = Vec::new();
+
+    for transition in &transitions {
+        // Check if this transition has an ExternalRecordWithDynamicID input.
+        let has_external_dynamic_input =
+            transition.inputs().iter().any(|input| matches!(input, Input::ExternalRecordWithDynamicID(..)));
+
+        if has_external_dynamic_input && !found_external_dynamic_input {
+            found_external_dynamic_input = true;
+
+            // Tamper: strip the dynamic ID from `ExternalRecordWithDynamicID` inputs.
+            let tampered_inputs: Vec<Input<CurrentNetwork>> = transition
+                .inputs()
+                .iter()
+                .map(|input| match input {
+                    Input::ExternalRecordWithDynamicID(hash, _dynamic_id) => {
+                        // Strip dynamic_id by converting to a plain ExternalRecord.
+                        Input::ExternalRecord(*hash)
+                    }
+                    other => other.clone(),
+                })
+                .collect();
+
+            // Reconstruct the transition with tampered inputs.
+            let tampered_transition = Transition::new(
+                *transition.program_id(),
+                *transition.function_name(),
+                tampered_inputs,
+                transition.outputs().to_vec(),
+                *transition.tpk(),
+                *transition.tcm(),
+                *transition.scm(),
+            )
+            .unwrap();
+
+            tampered_transitions.push(tampered_transition);
+        } else {
+            tampered_transitions.push(transition.clone());
+        }
+    }
+
+    // Ensure we found and tampered with at least one transition.
+    assert!(found_external_dynamic_input, "Expected at least one transition with ExternalRecordWithDynamicID input");
+
+    // Reconstruct the execution and transaction.
+    let tampered_execution = Execution::from(tampered_transitions.into_iter(), global_state_root, proof).unwrap();
+    let tampered_transaction = Transaction::from_execution(tampered_execution, fee).unwrap();
+
+    // The tampered transaction should fail verification.
+    assert!(
+        vm.check_transaction(&tampered_transaction, None, rng).is_err(),
+        "Stripping dynamic_id from ExternalRecordWithDynamicID should cause verification failure"
+    );
+}
+
 // Checks that translation keys for the same record name but different programs are different and vice versa.
 // Run with `snark-print` feature to explore Varuna batch sizes and locate translation keys in verification batches.
 #[test]

@@ -21,7 +21,7 @@ use console::{
 
 use crate::{
     TranslationAssignment,
-    compute_console_external_record_id,
+    compute_console_nonlocal_record_id,
     tests::test_utils::{CurrentAleo, CurrentNetwork},
 };
 
@@ -50,7 +50,7 @@ fn translation_assignment_from_record_str(
     // Dependent fields
     let record_dynamic = DynamicRecord::<CurrentNetwork>::from_record(&record_static).unwrap();
 
-    let id_dynamic = compute_console_external_record_id(
+    let id_dynamic = compute_console_nonlocal_record_id(
         function_id,
         record_dynamic.to_fields().unwrap(),
         tvk,
@@ -630,7 +630,7 @@ fn test_external_translation() {
     // We specifically set the external-record flag to true
     let static_is_external = true;
     let translation_index = Uniform::rand(&mut rng);
-    let id_dynamic = compute_console_external_record_id(
+    let id_dynamic = compute_console_nonlocal_record_id(
         function_id,
         record_dynamic.to_fields().unwrap(),
         tvk,

@@ -403,7 +403,7 @@ mod tests {
         program_id: &str,
         function_name: &str,
         set_program_checksum: bool,
-        dynamic: bool,
+        is_dynamic: bool,
         use_record: bool,
         i: usize,
         rng: &mut TestRng,
@@ -477,7 +477,7 @@ mod tests {
             root_tvk,
             is_root,
             program_checksum,
-            dynamic,
+            is_dynamic,
             rng,
         )?;
         assert!(request.verify(&input_types, is_root, program_checksum));

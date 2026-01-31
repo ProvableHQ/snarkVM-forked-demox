@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{TranslationAssignment, compute_console_external_record_id};
+use crate::{TranslationAssignment, compute_console_nonlocal_record_id};
 
 use super::*;
 
@@ -274,7 +274,7 @@ impl<N: Network> Stack<N> {
                     let input_output_index = Uniform::rand(rng);
                     let record_view_key: Option<Field<N>> = Uniform::rand(rng);
                     let gamma: Option<Group<N>> = Uniform::rand(rng);
-                    let id_dynamic = compute_console_external_record_id(
+                    let id_dynamic = compute_console_nonlocal_record_id(
                         function_id,
                         record_dynamic.to_fields()?,
                         tvk,

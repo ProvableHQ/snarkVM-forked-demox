@@ -52,18 +52,6 @@ mod tests {
         DynamicFuture::new(mode, console_future)
     }
 
-    /// Creates a mismatched dynamic future for testing.
-    fn sample_mismatched_dynamic_future(mode: Mode, rng: &mut TestRng) -> DynamicFuture<Circuit> {
-        // Create a different future with different fields.
-        let program_name = console::Field::<CurrentNetwork>::rand(rng);
-        let program_network = console::Field::<CurrentNetwork>::rand(rng);
-        let function_name = console::Field::<CurrentNetwork>::rand(rng);
-        let root = console::Field::<CurrentNetwork>::rand(rng);
-        let console_future =
-            console::DynamicFuture::new_unchecked(program_name, program_network, function_name, root, None);
-        DynamicFuture::new(mode, console_future)
-    }
-
     fn check_is_equal(
         mode: Mode,
         num_constants: u64,
@@ -75,7 +63,7 @@ mod tests {
 
         // Sample the dynamic futures.
         let future = sample_dynamic_future(mode, rng);
-        let mismatched_future = sample_mismatched_dynamic_future(mode, rng);
+        let mismatched_future = sample_dynamic_future(mode, rng);
 
         Circuit::scope(format!("{mode}"), || {
             let candidate = future.is_equal(&future);
@@ -104,7 +92,7 @@ mod tests {
 
         // Sample the dynamic futures.
         let future = sample_dynamic_future(mode, rng);
-        let mismatched_future = sample_mismatched_dynamic_future(mode, rng);
+        let mismatched_future = sample_dynamic_future(mode, rng);
 
         Circuit::scope(format!("{mode}"), || {
             let candidate = future.is_not_equal(&mismatched_future);
@@ -124,31 +112,31 @@ mod tests {
 
     #[test]
     fn test_is_equal_constant() -> Result<(), console::Error> {
-        check_is_equal(Mode::Constant, 10, 0, 15, 15)
+        check_is_equal(Mode::Constant, 4, 0, 0, 0)
     }
 
     #[test]
     fn test_is_equal_public() -> Result<(), console::Error> {
-        check_is_equal(Mode::Public, 10, 0, 15, 15)
+        check_is_equal(Mode::Public, 4, 0, 11, 11)
     }
 
     #[test]
     fn test_is_equal_private() -> Result<(), console::Error> {
-        check_is_equal(Mode::Private, 10, 0, 15, 15)
+        check_is_equal(Mode::Private, 4, 0, 11, 11)
     }
 
     #[test]
     fn test_is_not_equal_constant() -> Result<(), console::Error> {
-        check_is_not_equal(Mode::Constant, 10, 0, 15, 15)
+        check_is_not_equal(Mode::Constant, 4, 0, 0, 0)
     }
 
     #[test]
     fn test_is_not_equal_public() -> Result<(), console::Error> {
-        check_is_not_equal(Mode::Public, 10, 0, 15, 15)
+        check_is_not_equal(Mode::Public, 4, 0, 11, 11)
     }
 
     #[test]
     fn test_is_not_equal_private() -> Result<(), console::Error> {
-        check_is_not_equal(Mode::Private, 10, 0, 15, 15)
+        check_is_not_equal(Mode::Private, 4, 0, 11, 11)
     }
 }

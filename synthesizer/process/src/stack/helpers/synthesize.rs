@@ -15,7 +15,7 @@
 
 use console::program::{DynamicRecord, ToFields};
 
-use crate::{TranslationAssignment, compute_console_external_record_id};
+use crate::{TranslationAssignment, compute_console_nonlocal_record_id};
 
 use super::*;
 
@@ -139,7 +139,7 @@ impl<N: Network> Stack<N> {
         let input_output_index = Uniform::rand(rng);
         let record_view_key = Uniform::rand(rng);
         let gamma = Uniform::rand(rng);
-        let id_dynamic = compute_console_external_record_id(
+        let id_dynamic = compute_console_nonlocal_record_id(
             function_id,
             record_dynamic.to_fields()?,
             tvk,

@@ -52,17 +52,6 @@ mod tests {
         DynamicRecord::new(mode, console_record)
     }
 
-    /// Creates a mismatched dynamic record for testing.
-    fn sample_mismatched_dynamic_record(mode: Mode, rng: &mut TestRng) -> DynamicRecord<Circuit> {
-        // Create a different record with different owner.
-        let owner = console::Address::<CurrentNetwork>::rand(rng);
-        let root = console::Field::<CurrentNetwork>::rand(rng);
-        let nonce = console::Group::<CurrentNetwork>::rand(rng);
-        let version = console::U8::<CurrentNetwork>::rand(rng);
-        let console_record = console::DynamicRecord::new_unchecked(owner, root, nonce, version, None);
-        DynamicRecord::new(mode, console_record)
-    }
-
     fn check_is_equal(
         mode: Mode,
         num_constants: u64,
@@ -74,7 +63,7 @@ mod tests {
 
         // Sample the dynamic records.
         let record = sample_dynamic_record(mode, rng);
-        let mismatched_record = sample_mismatched_dynamic_record(mode, rng);
+        let mismatched_record = sample_dynamic_record(mode, rng);
 
         Circuit::scope(format!("{mode}"), || {
             let candidate = record.is_equal(&record);
@@ -103,7 +92,7 @@ mod tests {
 
         // Sample the dynamic records.
         let record = sample_dynamic_record(mode, rng);
-        let mismatched_record = sample_mismatched_dynamic_record(mode, rng);
+        let mismatched_record = sample_dynamic_record(mode, rng);
 
         Circuit::scope(format!("{mode}"), || {
             let candidate = record.is_not_equal(&mismatched_record);
@@ -123,31 +112,31 @@ mod tests {
 
     #[test]
     fn test_is_equal_constant() -> Result<()> {
-        check_is_equal(Mode::Constant, 10, 0, 20, 20)
+        check_is_equal(Mode::Constant, 6, 0, 17, 17)
     }
 
     #[test]
     fn test_is_equal_public() -> Result<()> {
-        check_is_equal(Mode::Public, 10, 0, 20, 20)
+        check_is_equal(Mode::Public, 6, 0, 17, 17)
     }
 
     #[test]
     fn test_is_equal_private() -> Result<()> {
-        check_is_equal(Mode::Private, 10, 0, 20, 20)
+        check_is_equal(Mode::Private, 6, 0, 17, 17)
     }
 
     #[test]
     fn test_is_not_equal_constant() -> Result<()> {
-        check_is_not_equal(Mode::Constant, 10, 0, 20, 20)
+        check_is_not_equal(Mode::Constant, 6, 0, 17, 17)
     }
 
     #[test]
     fn test_is_not_equal_public() -> Result<()> {
-        check_is_not_equal(Mode::Public, 10, 0, 20, 20)
+        check_is_not_equal(Mode::Public, 6, 0, 17, 17)
     }
 
     #[test]
     fn test_is_not_equal_private() -> Result<()> {
-        check_is_not_equal(Mode::Private, 10, 0, 20, 20)
+        check_is_not_equal(Mode::Private, 6, 0, 17, 17)
     }
 }

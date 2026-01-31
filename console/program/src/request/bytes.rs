@@ -55,7 +55,7 @@ impl<N: Network> FromBytes for Request<N> {
         let dynamic = match version {
             1 => false,
             2 => bool::read_le(&mut reader)?,
-            // SAFETY: Version is validated above to be 1 or 2.
+            // Note that the version is validated above to be 1 or 2.
             _ => unreachable!(),
         };
 
@@ -80,6 +80,7 @@ impl<N: Network> ToBytes for Request<N> {
     /// Writes the request to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         // Always write version 2.
+        // This is safe because `Request` is not persisted to the ledger so its serialized format can be changed.
         2u8.write_le(&mut writer)?;
         // Write the signer.
         self.signer.write_le(&mut writer)?;

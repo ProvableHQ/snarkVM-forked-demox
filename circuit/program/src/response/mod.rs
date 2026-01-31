@@ -33,7 +33,7 @@ pub enum OutputID<A: Aleo> {
     ExternalRecord(Field<A>),
     /// The hash of the future output.
     Future(Field<A>),
-    /// The hash of the dynamic record's (function_id, record, tvk, output index).
+    /// The hash of the dynamic record's (function_id, dynamic record, tvk, output index).
     DynamicRecord(Field<A>),
     // The hash of the dynamic future output.
     DynamicFuture(Field<A>),

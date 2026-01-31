@@ -210,4 +210,31 @@ mod tests {
         let result = future.find(&[Access::Index(U32::new(5))]);
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_dynamic_future_fields_cannot_be_accessed() {
+        // Create a future with a plaintext argument and convert to dynamic.
+        let inner = Future::<CurrentNetwork>::new(
+            ProgramID::from_str("inner.aleo").unwrap(),
+            Identifier::from_str("bar").unwrap(),
+            vec![Argument::Plaintext(Plaintext::from_str("42u64").unwrap())],
+        );
+        let dynamic_inner = DynamicFuture::from_future(&inner).unwrap();
+
+        // Create an outer future with the dynamic future as an argument.
+        let outer = Future::<CurrentNetwork>::new(
+            ProgramID::from_str("outer.aleo").unwrap(),
+            Identifier::from_str("baz").unwrap(),
+            vec![Argument::DynamicFuture(dynamic_inner)],
+        );
+
+        // Accessing the dynamic future itself should succeed.
+        let value = outer.find(&[Access::Index(U32::new(0))]).unwrap();
+        assert!(matches!(value, Value::DynamicFuture(_)));
+
+        // Attempting to access fields within the dynamic future should fail.
+        // Dynamic futures are opaque and do not expose their internal structure.
+        let result = outer.find(&[Access::Index(U32::new(0)), Access::Index(U32::new(0))]);
+        assert!(result.is_err());
+    }
 }

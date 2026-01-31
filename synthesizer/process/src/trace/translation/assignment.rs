@@ -18,7 +18,7 @@ use circuit::{Aleo, Field as CircuitField, traits::ToFields};
 use super::*;
 
 /// Computes the ID of a console record (dynamic or external) given its field representation.
-pub fn compute_console_external_record_id<N: Network>(
+pub fn compute_console_nonlocal_record_id<N: Network>(
     function_id: Field<N>,
     record_fields: Vec<Field<N>>,
     tvk: Field<N>,
@@ -34,7 +34,7 @@ pub fn compute_console_external_record_id<N: Network>(
 }
 
 /// Computes the ID of a circuit record (dynamic or external) given its field representation.
-fn compute_record_id<A: Aleo>(
+fn compute_circuit_nonlocal_record_id<A: Aleo>(
     function_id: CircuitField<A>,
     record_fields: Vec<CircuitField<A>>,
     tvk: CircuitField<A>,
@@ -199,7 +199,7 @@ impl<N: Network> TranslationAssignment<N> {
         // ******** Computing the IDs of the dynamic and static records
 
         // Compute the ID of the dynamic record.
-        let actual_id_dynamic = compute_record_id(
+        let actual_id_dynamic = compute_circuit_nonlocal_record_id(
             circuit_function_id.clone(),
             circuit_record_dynamic.to_fields(),
             circuit_tvk.clone(),
@@ -220,7 +220,7 @@ impl<N: Network> TranslationAssignment<N> {
 
         // Input/output ID of the static record if it is external.
         // Note: External records have the same InputID and OutputID formula.
-        let actual_id_static_external = compute_record_id(
+        let actual_id_static_external = compute_circuit_nonlocal_record_id(
             circuit_function_id,
             circuit_record_static.to_fields(),
             circuit_tvk,
