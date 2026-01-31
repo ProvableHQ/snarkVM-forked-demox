@@ -292,14 +292,14 @@ impl<N: Network> PartialEq for Authorization<N> {
 impl<N: Network> Eq for Authorization<N> {}
 
 impl<N: Network> Authorization<N> {
-    /// Returns the total number of inputs to the passed `Transition`s that are of
-    /// type `Input::Record`.
+    /// Returns the total number of inputs to the passed `Transition`s that have
+    /// a serial number (i.e., `Input::Record` or `Input::RecordWithDynamicID`).
     // This method is used to ensure consistency between `prepare_verifier_inputs`
     // and the batch-size calculation used in `execution_cost_for_authorization`.
     #[inline]
     pub fn number_of_input_records<'a>(transitions: impl ExactSizeIterator<Item = &'a Transition<N>>) -> usize {
         transitions
-            .map(|transition| transition.inputs().iter().filter(|input| matches!(input, Input::Record(_, _))).count())
+            .map(|transition| transition.inputs().iter().filter(|input| input.serial_number().is_some()).count())
             .sum()
     }
 

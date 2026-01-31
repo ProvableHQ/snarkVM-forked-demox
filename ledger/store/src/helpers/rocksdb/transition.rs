@@ -139,7 +139,7 @@ pub struct InputDB<N: Network> {
     external_record: DataMap<Field<N>, ()>,
     /// The mapping of `dynamic hash` to `()`. Note: This is **not** the record commitment.
     dynamic_record: DataMap<Field<N>, ()>,
-    /// The mapping of `input ID` to `dynamic_id` for inputs with dynamic IDs.
+    /// The mapping of `input ID` to `dynamic ID` for inputs with dynamic IDs.
     dynamic_id: DataMap<Field<N>, Field<N>>,
     /// The storage mode.
     storage_mode: StorageMode,
@@ -258,7 +258,7 @@ pub struct OutputDB<N: Network> {
     future: DataMap<Field<N>, Option<Future<N>>>,
     /// The mapping of `dynamic hash` to `()`. Note: This is **not** the record commitment.
     dynamic_record: DataMap<Field<N>, ()>,
-    /// The mapping of `output ID` to `dynamic_id` for outputs with dynamic IDs.
+    /// The mapping of `output ID` to `dynamic ID` for outputs with dynamic IDs.
     dynamic_id: DataMap<Field<N>, Field<N>>,
     /// The storage mode.
     storage_mode: StorageMode,

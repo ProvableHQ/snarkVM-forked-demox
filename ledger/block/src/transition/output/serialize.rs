@@ -166,7 +166,7 @@ impl<'de, N: Network> Deserialize<'de> for Output<N> {
                     Some("record_with_dynamic_id") => {
                         // Retrieve the checksum.
                         let checksum: Field<N> = DeserializeExt::take_from_value::<D>(&mut output, "checksum")?;
-                        // Retrieve the dynamic_id.
+                        // Retrieve the dynamic ID.
                         let dynamic_id: Field<N> = DeserializeExt::take_from_value::<D>(&mut output, "dynamic_id")?;
                         // Return the record with dynamic ID.
                         Output::RecordWithDynamicID(
@@ -186,7 +186,7 @@ impl<'de, N: Network> Deserialize<'de> for Output<N> {
                         )
                     }
                     Some("external_record_with_dynamic_id") => {
-                        // Retrieve the dynamic_id.
+                        // Retrieve the dynamic ID.
                         let dynamic_id: Field<N> = DeserializeExt::take_from_value::<D>(&mut output, "dynamic_id")?;
                         Output::ExternalRecordWithDynamicID(id, dynamic_id)
                     }

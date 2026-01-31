@@ -833,7 +833,7 @@ fn test_malicious_dynamic_id_tampering() {
         if has_dynamic_input && !found_dynamic_input {
             found_dynamic_input = true;
 
-            // Tamper: strip dynamic_id from RecordWithDynamicID inputs.
+            // Tamper: strip the dynamic ID from `RecordWithDynamicID` inputs.
             let tampered_inputs: Vec<Input<CurrentNetwork>> = transition
                 .inputs()
                 .iter()
@@ -851,8 +851,8 @@ fn test_malicious_dynamic_id_tampering() {
                 .collect();
 
             // Reconstruct the transition with tampered inputs.
-            // Since RecordWithDynamicID and Record produce identical transition leaves,
-            // the function tree root and transition ID remain the same.
+            // RecordWithDynamicID and Record produce different transition leaves (version 2 vs 1),
+            // so tampering changes the transition ID and causes verification to fail.
             let tampered_transition = Transition::new(
                 *transition.program_id(),
                 *transition.function_name(),

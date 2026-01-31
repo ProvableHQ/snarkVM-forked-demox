@@ -167,7 +167,7 @@ impl<N: Network> Translation<N> {
             for (input_output_index, (input, callee_input_type)) in
                 transition.inputs().iter().zip(callee_input_types.iter()).enumerate()
             {
-                // Only process inputs that have a dynamic_id.
+                // Only process inputs that have a dynamic ID.
                 let Some(dynamic_id) = input.dynamic_id() else { continue };
 
                 // Construct the translation count as a field element.
@@ -228,11 +228,10 @@ impl<N: Network> Translation<N> {
             let callee_output_types = callee_function_core.output_types();
 
             // Prepare the output translation tasks.
-            // Detect outputs that carry a dynamic_id (RecordWithDynamicID, ExternalRecordWithDynamicID).
             for (input_output_index, (output, callee_output_type)) in
                 transition.outputs().iter().zip(callee_output_types.iter()).enumerate()
             {
-                // Only process outputs that have a dynamic_id.
+                // Only process outputs that have a dynamic ID.
                 let Some(dynamic_id) = output.dynamic_id() else { continue };
 
                 // Construct the translation count as a field element.

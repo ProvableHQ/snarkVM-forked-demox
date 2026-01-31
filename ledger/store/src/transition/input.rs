@@ -48,7 +48,7 @@ pub trait InputStorage<N: Network>: Clone + Send + Sync {
     type ExternalRecordMap: for<'a> Map<'a, Field<N>, ()>;
     /// The mapping of `dynamic hash` to `()`. Note: This is **not** the record commitment.
     type DynamicRecordMap: for<'a> Map<'a, Field<N>, ()>;
-    /// The mapping of `input ID` to `dynamic_id` for inputs with dynamic IDs.
+    /// The mapping of `input ID` to `dynamic ID` for inputs with dynamic IDs.
     type DynamicIDMap: for<'a> Map<'a, Field<N>, Field<N>>;
 
     /// Initializes the transition input storage.
@@ -310,7 +310,7 @@ pub trait InputStorage<N: Network>: Clone + Send + Sync {
                 (None, None, Some(private), None, None, None) => into_input!(Input::Private(input_id, private)),
                 (None, None, None, Some(record), None, None) => {
                     match dynamic_id {
-                        // If a dynamic_id is present, this is a RecordWithDynamicID.
+                        // If a dynamic ID is present, this is a RecordWithDynamicID.
                         Some(dynamic_id) => {
                             let tag = match record {
                                 Cow::Borrowed(tag) => *tag,
@@ -327,7 +327,7 @@ pub trait InputStorage<N: Network>: Clone + Send + Sync {
                 }
                 (None, None, None, None, Some(_), None) => {
                     match dynamic_id {
-                        // If a dynamic_id is present, this is an ExternalRecordWithDynamicID.
+                        // If a dynamic ID is present, this is an ExternalRecordWithDynamicID.
                         Some(dynamic_id) => {
                             let dynamic_id = match dynamic_id {
                                 Cow::Borrowed(id) => *id,

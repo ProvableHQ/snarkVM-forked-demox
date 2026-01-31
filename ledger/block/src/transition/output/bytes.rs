@@ -125,7 +125,7 @@ impl<N: Network> FromBytes for Output<N> {
                     },
                     None => None,
                 };
-                // Read the dynamic_id.
+                // Read the dynamic ID.
                 let dynamic_id: Field<N> = FromBytes::read_le(&mut reader)?;
                 // Return the record with dynamic ID.
                 Self::RecordWithDynamicID(commitment, checksum, record_ciphertext, sender_ciphertext, dynamic_id)
@@ -133,7 +133,7 @@ impl<N: Network> FromBytes for Output<N> {
             8 => {
                 // Read the external record hash.
                 let external_hash: Field<N> = FromBytes::read_le(&mut reader)?;
-                // Read the dynamic_id.
+                // Read the dynamic ID.
                 let dynamic_id: Field<N> = FromBytes::read_le(&mut reader)?;
                 // Return the external record with dynamic ID.
                 Self::ExternalRecordWithDynamicID(external_hash, dynamic_id)
@@ -252,7 +252,7 @@ impl<N: Network> ToBytes for Output<N> {
                     }
                     None => false.write_le(&mut writer)?,
                 }
-                // Write the dynamic_id.
+                // Write the dynamic ID.
                 dynamic_id.write_le(&mut writer)
             }
             Self::ExternalRecordWithDynamicID(external_hash, dynamic_id) => {

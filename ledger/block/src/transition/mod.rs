@@ -339,7 +339,7 @@ impl<N: Network> Transition<N> {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        // If the request is dynamic, augment the callee's inputs/outputs with dynamic_ids.
+        // If the request is dynamic, augment the callee's inputs/outputs with dynamic IDs.
         if request.is_dynamic() {
             // Construct the caller input IDs to extract dynamic_ids.
             let caller_input_ids = request.caller_input_ids()?;
@@ -350,14 +350,12 @@ impl<N: Network> Transition<N> {
                 inputs.len()
             );
 
-            // Replace callee inputs with WithDynamicID variants where the caller sees a DynamicRecord.
+            // Replace callee inputs with the appropriate variant when the caller sees a dynamic record and the callee sees a static one.
             for (i, caller_input_id) in caller_input_ids.iter().enumerate() {
                 match (caller_input_id, &inputs[i]) {
-                    // Caller sees DynamicRecord, callee sees Record → RecordWithDynamicID.
                     (InputID::DynamicRecord(dynamic_id), Input::Record(sn, tag)) => {
                         inputs[i] = Input::RecordWithDynamicID(*sn, *tag, *dynamic_id);
                     }
-                    // Caller sees DynamicRecord, callee sees ExternalRecord → ExternalRecordWithDynamicID.
                     (InputID::DynamicRecord(dynamic_id), Input::ExternalRecord(hash)) => {
                         inputs[i] = Input::ExternalRecordWithDynamicID(*hash, *dynamic_id);
                     }
@@ -366,7 +364,7 @@ impl<N: Network> Transition<N> {
                 }
             }
 
-            // Extract caller output values to detect DynamicRecord outputs.
+            // Extract caller output values to detect dynamic record outputs.
             let caller_output_values = response.caller_outputs()?;
             ensure!(
                 caller_output_values.len() == outputs.len(),
@@ -375,14 +373,13 @@ impl<N: Network> Transition<N> {
                 outputs.len()
             );
 
-            // Replace callee outputs with WithDynamicID variants where the caller sees a DynamicRecord.
+            // Replace callee outputs with the appropriate variant when the caller sees a dynamic record and the callee sees a static one.
             for (i, (caller_value, callee_output_type)) in
                 caller_output_values.iter().zip(output_types.iter()).enumerate()
             {
                 match (caller_value, callee_output_type, &outputs[i]) {
-                    // Caller sees DynamicRecord, callee sees Record → RecordWithDynamicID.
                     (Value::DynamicRecord(_), ValueType::Record(..), Output::Record(cm, cs, rec, sc)) => {
-                        // Compute the dynamic_id for the output.
+                        // Compute the dynamic ID for the output.
                         let output_index = Field::from_u16(u16::try_from(num_inputs + i)?);
                         let mut preimage = Vec::new();
                         preimage.push(function_id);
@@ -390,11 +387,11 @@ impl<N: Network> Transition<N> {
                         preimage.push(*request.tvk());
                         preimage.push(output_index);
                         let dynamic_id = N::hash_psd8(&preimage)?;
+                        // Replace the output.
                         outputs[i] = Output::RecordWithDynamicID(*cm, *cs, rec.clone(), *sc, dynamic_id);
                     }
-                    // Caller sees DynamicRecord, callee sees ExternalRecord → ExternalRecordWithDynamicID.
                     (Value::DynamicRecord(_), ValueType::ExternalRecord(..), Output::ExternalRecord(hash)) => {
-                        // Compute the dynamic_id for the output.
+                        // Compute the dynamic ID for the output.
                         let output_index = Field::from_u16(u16::try_from(num_inputs + i)?);
                         let mut preimage = Vec::new();
                         preimage.push(function_id);
@@ -402,6 +399,7 @@ impl<N: Network> Transition<N> {
                         preimage.push(*request.tvk());
                         preimage.push(output_index);
                         let dynamic_id = N::hash_psd8(&preimage)?;
+                        // Replace the output.
                         outputs[i] = Output::ExternalRecordWithDynamicID(*hash, dynamic_id);
                     }
                     // All other cases: keep the callee's output as-is.

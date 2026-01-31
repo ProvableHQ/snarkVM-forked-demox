@@ -40,9 +40,9 @@ pub enum Input<N: Network> {
     ExternalRecord(Field<N>),
     /// The hash of the dynamic record's (function_id, record, tvk, input index).
     DynamicRecord(Field<N>),
-    /// The serial number, tag, and dynamic_id of a record input called dynamically.
+    /// The serial number, tag, and dynamic ID of a record input called dynamically.
     RecordWithDynamicID(Field<N>, Field<N>, Field<N>),
-    /// The external record hash and dynamic_id of an external record input called dynamically.
+    /// The external record hash and dynamic ID of an external record input called dynamically.
     ExternalRecordWithDynamicID(Field<N>, Field<N>),
 }
 
@@ -76,14 +76,14 @@ impl<N: Network> Input<N> {
     }
 
     /// Returns the input as a transition leaf.
-    /// Note: RecordWithDynamicID uses leaf variant 3 (same as Record),
-    /// and ExternalRecordWithDynamicID uses leaf variant 4 (same as ExternalRecord).
+    /// Note: RecordWithDynamicID uses leaf variant 3 (same as Record) with version 2.
+    /// Note: ExternalRecordWithDynamicID uses leaf variant 4 (same as ExternalRecord) with version 2.
     pub fn to_transition_leaf(&self, index: u8) -> TransitionLeaf<N> {
         match self {
-            // RecordWithDynamicID produces the same leaf as Record (variant 3, id = sn).
-            Input::RecordWithDynamicID(sn, ..) => TransitionLeaf::new_with_version(index, 3, *sn),
-            // ExternalRecordWithDynamicID produces the same leaf as ExternalRecord (variant 4, id = hash).
-            Input::ExternalRecordWithDynamicID(hash, ..) => TransitionLeaf::new_with_version(index, 4, *hash),
+            // RecordWithDynamicID produces leaf with version 2, variant 3, id = sn.
+            Input::RecordWithDynamicID(sn, ..) => TransitionLeaf::new_dynamic_with_version(index, 3, *sn),
+            // ExternalRecordWithDynamicID produces leaf with version 2, variant 4, id = hash.
+            Input::ExternalRecordWithDynamicID(hash, ..) => TransitionLeaf::new_dynamic_with_version(index, 4, *hash),
             // All other variants use their serialization variant byte.
             _ => TransitionLeaf::new_with_version(index, self.variant(), *self.id()),
         }
@@ -135,6 +135,20 @@ impl<N: Network> Input<N> {
                 Some(dynamic_id)
             }
             _ => None,
+        }
+    }
+
+    /// Returns the input from the caller's perspective.
+    /// This converts internal variants (like RecordWithDynamicID) to what
+    /// the caller would see (like DynamicRecord).
+    pub fn to_caller_input(&self) -> Self {
+        match self {
+            // RecordWithDynamicID becomes DynamicRecord from caller's view.
+            Self::RecordWithDynamicID(_, _, dynamic_id) => Self::DynamicRecord(*dynamic_id),
+            // ExternalRecordWithDynamicID becomes DynamicRecord from caller's view.
+            Self::ExternalRecordWithDynamicID(_, dynamic_id) => Self::DynamicRecord(*dynamic_id),
+            // All other variants are unchanged.
+            other => other.clone(),
         }
     }
 

@@ -580,7 +580,7 @@ fn test_compare_transfer_public_to_private() {
     // Assert execution costs.
     let (static_exec_costs, dynamic_exec_costs) = get_execution_costs(&vm, &static_tx, &dynamic_tx, consensus_version);
     assert_eq!(static_exec_costs, (3_376, 2_704, 672), "Static execution costs (total, storage, finalize)");
-    assert_eq!(dynamic_exec_costs, (4_205, 3_533, 672), "Dynamic execution costs (total, storage, finalize)");
+    assert_eq!(dynamic_exec_costs, (3_932, 3_260, 672), "Dynamic execution costs (total, storage, finalize)");
 
     // Verify static transaction only (dynamic outputs record.dynamic).
     add_and_test(&vm, &caller_private_key, &[static_tx], rng);
@@ -759,7 +759,7 @@ fn test_compare_transfer_private() {
     // Assert execution costs.
     let (static_exec_costs, dynamic_exec_costs) = get_execution_costs(&vm, &static_tx, &dynamic_tx, consensus_version);
     assert_eq!(static_exec_costs, (3_236, 3_236, 0), "Static execution costs (total, storage, finalize)");
-    assert_eq!(dynamic_exec_costs, (4_280, 4_280, 0), "Dynamic execution costs (total, storage, finalize)");
+    assert_eq!(dynamic_exec_costs, (4_108, 4_108, 0), "Dynamic execution costs (total, storage, finalize)");
 
     // Verify static transaction only (dynamic outputs record.dynamic).
     add_and_test(&vm, &caller_private_key, &[static_tx], rng);
@@ -914,7 +914,7 @@ fn test_compare_transfer_private_to_public() {
     // Assert execution costs.
     let (static_exec_costs, dynamic_exec_costs) = get_execution_costs(&vm, &static_tx, &dynamic_tx, consensus_version);
     assert_eq!(static_exec_costs, (3_900, 3_228, 672), "Static execution costs (total, storage, finalize)");
-    assert_eq!(dynamic_exec_costs, (4_875, 4_203, 672), "Dynamic execution costs (total, storage, finalize)");
+    assert_eq!(dynamic_exec_costs, (4_632, 3_960, 672), "Dynamic execution costs (total, storage, finalize)");
 
     // Verify static transaction.
     add_and_test(&vm, &caller_private_key, &[static_tx], rng);
@@ -1052,7 +1052,7 @@ fn test_compare_join() {
     // Assert execution costs.
     let (static_exec_costs, dynamic_exec_costs) = get_execution_costs(&vm, &static_tx, &dynamic_tx, consensus_version);
     assert_eq!(static_exec_costs, (2_856, 2_856, 0), "Static execution costs (total, storage, finalize)");
-    assert_eq!(dynamic_exec_costs, (3_732, 3_732, 0), "Dynamic execution costs (total, storage, finalize)");
+    assert_eq!(dynamic_exec_costs, (3_728, 3_728, 0), "Dynamic execution costs (total, storage, finalize)");
 
     // Verify static transaction only.
     add_and_test(&vm, &caller_private_key, &[static_tx], rng);
@@ -1186,7 +1186,7 @@ fn test_compare_split() {
     // Assert execution costs.
     let (static_exec_costs, dynamic_exec_costs) = get_execution_costs(&vm, &static_tx, &dynamic_tx, consensus_version);
     assert_eq!(static_exec_costs, (3_003, 3_003, 0), "Static execution costs (total, storage, finalize)");
-    assert_eq!(dynamic_exec_costs, (3_947, 3_947, 0), "Dynamic execution costs (total, storage, finalize)");
+    assert_eq!(dynamic_exec_costs, (3_875, 3_875, 0), "Dynamic execution costs (total, storage, finalize)");
 
     // Verify static transaction only.
     add_and_test(&vm, &caller_private_key, &[static_tx], rng);

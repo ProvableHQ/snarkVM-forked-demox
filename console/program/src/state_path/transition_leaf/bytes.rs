@@ -21,7 +21,7 @@ impl<N: Network> FromBytes for TransitionLeaf<N> {
         // Read the version.
         let version = FromBytes::read_le(&mut reader)?;
         // Ensure the version is valid.
-        if version != TRANSITION_LEAF_VERSION {
+        if version != TRANSITION_LEAF_VERSION && version != TRANSITION_LEAF_VERSION_DYNAMIC {
             return Err(error("Invalid transition leaf version"));
         }
         // Read the index.
@@ -60,12 +60,19 @@ mod tests {
         let mut rng = TestRng::default();
 
         for _ in 0..ITERATIONS {
-            // Sample the leaf.
+            // Sample a static leaf (version 1).
             let expected = test_helpers::sample_leaf(&mut rng);
 
             // Check the byte representation.
             let expected_bytes = expected.to_bytes_le()?;
             assert_eq!(expected, TransitionLeaf::read_le(&expected_bytes[..])?);
+
+            // Sample a dynamic leaf (version 2).
+            let expected_dynamic = test_helpers::sample_dynamic_leaf(&mut rng);
+
+            // Check the byte representation.
+            let expected_dynamic_bytes = expected_dynamic.to_bytes_le()?;
+            assert_eq!(expected_dynamic, TransitionLeaf::read_le(&expected_dynamic_bytes[..])?);
         }
         Ok(())
     }

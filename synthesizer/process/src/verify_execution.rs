@@ -378,14 +378,15 @@ impl<N: Network> Process<N> {
                 let operand_types = call_dynamic_instruction.operand_types();
                 for (i, (input, input_type)) in child_transition.inputs().iter().zip(operand_types.iter()).enumerate() {
                     // Ensure the input type matches the caller's expectation.
+                    // Use the caller's view of the input (e.g., RecordWithDynamicID -> DynamicRecord).
                     ensure!(
-                        input.is_type(input_type),
+                        input.to_caller_input().is_type(input_type),
                         "Input {i} in dynamic call to {} should be of type {}, found: {}",
                         child_transition.function_name(),
                         input_type,
                         input,
                     );
-                    // Use the dynamic_id if present, otherwise use normal verifier inputs.
+                    // Use the dynamic ID if present, otherwise use normal verifier inputs.
                     match input.dynamic_id() {
                         Some(dynamic_id) => verifier_inputs.push(**dynamic_id),
                         None => verifier_inputs.extend(input.verifier_inputs()),
@@ -431,14 +432,15 @@ impl<N: Network> Process<N> {
                         }
                         _ => {
                             // Ensure the output type matches the caller's expectation.
+                            // Use the caller's view of the output (e.g., RecordWithDynamicID -> DynamicRecord).
                             ensure!(
-                                output.is_type(destination_type),
+                                output.to_caller_output().is_type(destination_type),
                                 "Output {index} in dynamic call to {} should be of type {}, found: {}",
                                 child_transition.function_name(),
                                 destination_type,
                                 output,
                             );
-                            // Use the dynamic_id if present, otherwise use the output id.
+                            // Use the dynamic ID if present, otherwise use the output id.
                             match output.dynamic_id() {
                                 Some(dynamic_id) => verifier_inputs.push(**dynamic_id),
                                 None => verifier_inputs.push(**output.id()),

@@ -63,7 +63,7 @@ impl<N: Network> FromBytes for Input<N> {
                 let serial_number: Field<N> = FromBytes::read_le(&mut reader)?;
                 // Read the tag.
                 let tag: Field<N> = FromBytes::read_le(&mut reader)?;
-                // Read the dynamic_id.
+                // Read the dynamic ID.
                 let dynamic_id: Field<N> = FromBytes::read_le(&mut reader)?;
                 // Return the record with dynamic ID.
                 Self::RecordWithDynamicID(serial_number, tag, dynamic_id)
@@ -71,7 +71,7 @@ impl<N: Network> FromBytes for Input<N> {
             7 => {
                 // Read the external record hash.
                 let external_hash: Field<N> = FromBytes::read_le(&mut reader)?;
-                // Read the dynamic_id.
+                // Read the dynamic ID.
                 let dynamic_id: Field<N> = FromBytes::read_le(&mut reader)?;
                 // Return the external record with dynamic ID.
                 Self::ExternalRecordWithDynamicID(external_hash, dynamic_id)

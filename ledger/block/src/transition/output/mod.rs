@@ -43,9 +43,9 @@ pub enum Output<N: Network> {
     Future(Field<N>, Option<Future<N>>),
     /// The hash of the dynamic record's (function id, record, tvk, output index).
     DynamicRecord(Field<N>),
-    /// The commitment, checksum, (optional) record ciphertext, (optional) sender ciphertext, and dynamic_id.
+    /// The commitment, checksum, (optional) record ciphertext, (optional) sender ciphertext, and dynamic ID.
     RecordWithDynamicID(Field<N>, Field<N>, Option<Record<N, Ciphertext<N>>>, Option<Field<N>>, Field<N>),
-    /// The external record hash and dynamic_id.
+    /// The external record hash and dynamic ID.
     ExternalRecordWithDynamicID(Field<N>, Field<N>),
 }
 
@@ -81,14 +81,14 @@ impl<N: Network> Output<N> {
     }
 
     /// Returns the output as a transition leaf.
-    /// Note: RecordWithDynamicID uses leaf variant 3 (same as Record),
-    /// and ExternalRecordWithDynamicID uses leaf variant 4 (same as ExternalRecord).
+    /// Note: RecordWithDynamicID uses leaf variant 3 (same as Record) with version 2.
+    /// Note: ExternalRecordWithDynamicID uses leaf variant 4 (same as ExternalRecord) with version 2.
     pub fn to_transition_leaf(&self, index: u8) -> TransitionLeaf<N> {
         match self {
-            // RecordWithDynamicID produces the same leaf as Record (variant 3, id = cm).
-            Output::RecordWithDynamicID(cm, ..) => TransitionLeaf::new_with_version(index, 3, *cm),
-            // ExternalRecordWithDynamicID produces the same leaf as ExternalRecord (variant 4, id = hash).
-            Output::ExternalRecordWithDynamicID(hash, ..) => TransitionLeaf::new_with_version(index, 4, *hash),
+            // RecordWithDynamicID produces leaf with version 2, variant 3, id = cm.
+            Output::RecordWithDynamicID(cm, ..) => TransitionLeaf::new_dynamic_with_version(index, 3, *cm),
+            // ExternalRecordWithDynamicID produces leaf with version 2, variant 4, id = hash.
+            Output::ExternalRecordWithDynamicID(hash, ..) => TransitionLeaf::new_dynamic_with_version(index, 4, *hash),
             // All other variants use their serialization variant byte.
             _ => TransitionLeaf::new_with_version(index, self.variant(), *self.id()),
         }
@@ -254,12 +254,24 @@ impl<N: Network> Output<N> {
             .chain([self.checksum().map(|sum| **sum), self.sender_ciphertext().map(|sender| **sender)].into_iter().flatten())
     }
 
-    /// Returns the dynamic_id, if the output carries one.
+    /// Returns the dynamic ID, if the output carries one.
     pub const fn dynamic_id(&self) -> Option<&Field<N>> {
         match self {
             Output::RecordWithDynamicID(_, _, _, _, dynamic_id)
             | Output::ExternalRecordWithDynamicID(_, dynamic_id) => Some(dynamic_id),
             _ => None,
+        }
+    }
+
+    /// Returns the output from the caller's perspective.
+    pub fn to_caller_output(&self) -> Self {
+        match self {
+            // `RecordWithDynamicID` becomes `DynamicRecord` from caller's view.
+            Self::RecordWithDynamicID(_, _, _, _, dynamic_id) => Self::DynamicRecord(*dynamic_id),
+            // `ExternalRecordWithDynamicID` becomes `DynamicRecord` from caller's view.
+            Self::ExternalRecordWithDynamicID(_, dynamic_id) => Self::DynamicRecord(*dynamic_id),
+            // All other variants are unchanged.
+            other => other.clone(),
         }
     }
 
