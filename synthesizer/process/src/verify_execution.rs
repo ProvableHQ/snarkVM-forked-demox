@@ -379,6 +379,11 @@ impl<N: Network> Process<N> {
                 for (i, (input, input_type)) in child_transition.inputs().iter().zip(operand_types.iter()).enumerate() {
                     // Ensure the input type matches the caller's expectation.
                     // Use the caller's view of the input (e.g., RecordWithDynamicID -> DynamicRecord).
+                    // Note: This check also ensures that record/external-record inputs in dynamic calls
+                    // use the `*WithDynamicID` variants (RecordWithDynamicID, ExternalRecordWithDynamicID),
+                    // because: (1) CallDynamic requires `DynamicRecord` type for record operands,
+                    // (2) `to_caller_input()` converts `*WithDynamicID` -> `DynamicRecord`, and
+                    // (3) plain `Record`/`ExternalRecord` remain unchanged by `to_caller_input()`.
                     ensure!(
                         input.to_caller_input().is_type(input_type),
                         "Input {i} in dynamic call to {} should be of type {}, found: {}",
@@ -433,6 +438,8 @@ impl<N: Network> Process<N> {
                         _ => {
                             // Ensure the output type matches the caller's expectation.
                             // Use the caller's view of the output (e.g., RecordWithDynamicID -> DynamicRecord).
+                            // Note: This check also ensures that record/external-record outputs in dynamic calls
+                            // use the `*WithDynamicID` variants, by the same reasoning as for inputs above.
                             ensure!(
                                 output.to_caller_output().is_type(destination_type),
                                 "Output {index} in dynamic call to {} should be of type {}, found: {}",

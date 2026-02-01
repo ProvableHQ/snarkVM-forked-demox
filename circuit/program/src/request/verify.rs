@@ -118,8 +118,9 @@ impl<A: Aleo> Request<A> {
     ///
     /// The `function_id` parameter is optional for backwards compatibility. When `None`, the
     /// function ID is computed from the network ID, program ID, and function name. When `Some`,
-    /// the provided function ID is used directly (used for dynamic dispatch where the function ID
-    /// may differ from what would be computed from the static program/function names).
+    /// the provided function ID is used directly. This is used for dynamic dispatch where the
+    /// caller passes the callee's function ID to ensure input hashes are computed correctly for
+    /// the callee's actual function, not the caller's static view of the program/function names.
     pub fn check_input_ids<const CREATE_MESSAGE: bool>(
         network_id: &U16<A>,
         program_id: &ProgramID<A>,
@@ -491,14 +492,14 @@ mod tests {
         function_name: &str,
         count: UpdatableCount,
         set_program_checksum: bool,
-        dynamic: bool,
+        is_dynamic: bool,
         use_record: bool,
     ) -> Result<()> {
         let rng = &mut TestRng::default();
 
         for i in 0..ITERATIONS {
             let (request, input_types, is_root, program_checksum) =
-                create_request(program_id, function_name, set_program_checksum, dynamic, use_record, i, rng)?;
+                create_request(program_id, function_name, set_program_checksum, is_dynamic, use_record, i, rng)?;
 
             // Inject the request into a circuit.
             let tpk = Group::<Circuit>::new(mode, request.to_tpk());
@@ -528,20 +529,20 @@ mod tests {
         function_name: &str,
         expected_count: UpdatableCount,
         set_program_checksum: bool,
-        dynamic: bool,
+        is_dynamic: bool,
         use_record: bool,
     ) -> Result<()> {
         let rng = &mut TestRng::default();
 
         for i in 0..ITERATIONS {
             let (request, input_types, _, _) =
-                create_request(program_id, function_name, set_program_checksum, dynamic, use_record, i, rng)?;
+                create_request(program_id, function_name, set_program_checksum, is_dynamic, use_record, i, rng)?;
 
             // Inject the request into a circuit.
             let request = Request::<Circuit>::new(mode, request);
 
             // If the request is dynamic, compute the function ID.
-            let function_id = if dynamic {
+            let function_id = if is_dynamic {
                 Some(compute_function_id(request.network_id(), request.program_id(), request.function_name()))
             } else {
                 None

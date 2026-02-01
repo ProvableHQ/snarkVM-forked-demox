@@ -37,7 +37,7 @@ impl<A: Aleo> Equal<Self> for DynamicRecord<A> {
 mod tests {
     use super::*;
     use crate::Circuit;
-    use snarkvm_circuit_types::environment::{Inject, Mode, assert_scope};
+    use snarkvm_circuit_types::environment::{Eject, Inject, Mode, assert_scope};
     use snarkvm_utilities::{TestRng, Uniform};
 
     type CurrentNetwork = <Circuit as Environment>::Network;
@@ -52,7 +52,8 @@ mod tests {
         DynamicRecord::new(mode, console_record)
     }
 
-    fn check_is_equal(
+    /// Tests that `is_equal` returns true when comparing a record to itself.
+    fn check_is_equal_on_equal(
         mode: Mode,
         num_constants: u64,
         num_public: u64,
@@ -61,27 +62,21 @@ mod tests {
     ) -> Result<()> {
         let rng = &mut TestRng::default();
 
-        // Sample the dynamic records.
+        // Sample a dynamic record.
         let record = sample_dynamic_record(mode, rng);
-        let mismatched_record = sample_dynamic_record(mode, rng);
 
         Circuit::scope(format!("{mode}"), || {
             let candidate = record.is_equal(&record);
             assert!(candidate.eject_value());
-            assert_scope!(<=num_constants, <=num_public, <=num_private, <=num_constraints);
-        });
-
-        Circuit::scope(format!("{mode}"), || {
-            let candidate = record.is_equal(&mismatched_record);
-            assert!(!candidate.eject_value());
-            assert_scope!(<=num_constants, <=num_public, <=num_private, <=num_constraints);
+            assert_scope!(num_constants, num_public, num_private, num_constraints);
         });
 
         Circuit::reset();
         Ok(())
     }
 
-    fn check_is_not_equal(
+    /// Tests that `is_equal` returns false when comparing two different records.
+    fn check_is_equal_on_unequal(
         mode: Mode,
         num_constants: u64,
         num_public: u64,
@@ -90,53 +85,132 @@ mod tests {
     ) -> Result<()> {
         let rng = &mut TestRng::default();
 
-        // Sample the dynamic records.
+        // Sample two distinct dynamic records for comparison.
+        let record = sample_dynamic_record(mode, rng);
+        let mismatched_record = sample_dynamic_record(mode, rng);
+
+        Circuit::scope(format!("{mode}"), || {
+            let candidate = record.is_equal(&mismatched_record);
+            assert!(!candidate.eject_value());
+            assert_scope!(num_constants, num_public, num_private, num_constraints);
+        });
+
+        Circuit::reset();
+        Ok(())
+    }
+
+    /// Tests that `is_not_equal` returns true when comparing two different records.
+    fn check_is_not_equal_on_unequal(
+        mode: Mode,
+        num_constants: u64,
+        num_public: u64,
+        num_private: u64,
+        num_constraints: u64,
+    ) -> Result<()> {
+        let rng = &mut TestRng::default();
+
+        // Sample two distinct dynamic records for comparison.
         let record = sample_dynamic_record(mode, rng);
         let mismatched_record = sample_dynamic_record(mode, rng);
 
         Circuit::scope(format!("{mode}"), || {
             let candidate = record.is_not_equal(&mismatched_record);
             assert!(candidate.eject_value());
-            assert_scope!(<=num_constants, <=num_public, <=num_private, <=num_constraints);
-        });
-
-        Circuit::scope(format!("{mode}"), || {
-            let candidate = record.is_not_equal(&record);
-            assert!(!candidate.eject_value());
-            assert_scope!(<=num_constants, <=num_public, <=num_private, <=num_constraints);
+            assert_scope!(num_constants, num_public, num_private, num_constraints);
         });
 
         Circuit::reset();
         Ok(())
     }
 
+    /// Tests that `is_not_equal` returns false when comparing a record to itself.
+    fn check_is_not_equal_on_equal(
+        mode: Mode,
+        num_constants: u64,
+        num_public: u64,
+        num_private: u64,
+        num_constraints: u64,
+    ) -> Result<()> {
+        let rng = &mut TestRng::default();
+
+        // Sample a dynamic record.
+        let record = sample_dynamic_record(mode, rng);
+
+        Circuit::scope(format!("{mode}"), || {
+            let candidate = record.is_not_equal(&record);
+            assert!(!candidate.eject_value());
+            assert_scope!(num_constants, num_public, num_private, num_constraints);
+        });
+
+        Circuit::reset();
+        Ok(())
+    }
+
+    // Tests for `is_equal` on equal values (self-comparison).
+
     #[test]
-    fn test_is_equal_constant() -> Result<()> {
-        check_is_equal(Mode::Constant, 6, 0, 17, 17)
+    fn test_is_equal_on_equal_constant() -> Result<()> {
+        check_is_equal_on_equal(Mode::Constant, 6, 0, 11, 17)
     }
 
     #[test]
-    fn test_is_equal_public() -> Result<()> {
-        check_is_equal(Mode::Public, 6, 0, 17, 17)
+    fn test_is_equal_on_equal_public() -> Result<()> {
+        check_is_equal_on_equal(Mode::Public, 6, 0, 11, 17)
     }
 
     #[test]
-    fn test_is_equal_private() -> Result<()> {
-        check_is_equal(Mode::Private, 6, 0, 17, 17)
+    fn test_is_equal_on_equal_private() -> Result<()> {
+        check_is_equal_on_equal(Mode::Private, 6, 0, 11, 17)
+    }
+
+    // Tests for `is_equal` on unequal values (different records).
+
+    #[test]
+    fn test_is_equal_on_unequal_constant() -> Result<()> {
+        check_is_equal_on_unequal(Mode::Constant, 0, 0, 17, 17)
     }
 
     #[test]
-    fn test_is_not_equal_constant() -> Result<()> {
-        check_is_not_equal(Mode::Constant, 6, 0, 17, 17)
+    fn test_is_equal_on_unequal_public() -> Result<()> {
+        check_is_equal_on_unequal(Mode::Public, 0, 0, 17, 17)
     }
 
     #[test]
-    fn test_is_not_equal_public() -> Result<()> {
-        check_is_not_equal(Mode::Public, 6, 0, 17, 17)
+    fn test_is_equal_on_unequal_private() -> Result<()> {
+        check_is_equal_on_unequal(Mode::Private, 0, 0, 17, 17)
+    }
+
+    // Tests for `is_not_equal` on unequal values (different records).
+
+    #[test]
+    fn test_is_not_equal_on_unequal_constant() -> Result<()> {
+        check_is_not_equal_on_unequal(Mode::Constant, 0, 0, 17, 17)
     }
 
     #[test]
-    fn test_is_not_equal_private() -> Result<()> {
-        check_is_not_equal(Mode::Private, 6, 0, 17, 17)
+    fn test_is_not_equal_on_unequal_public() -> Result<()> {
+        check_is_not_equal_on_unequal(Mode::Public, 0, 0, 17, 17)
+    }
+
+    #[test]
+    fn test_is_not_equal_on_unequal_private() -> Result<()> {
+        check_is_not_equal_on_unequal(Mode::Private, 0, 0, 17, 17)
+    }
+
+    // Tests for `is_not_equal` on equal values (self-comparison).
+
+    #[test]
+    fn test_is_not_equal_on_equal_constant() -> Result<()> {
+        check_is_not_equal_on_equal(Mode::Constant, 6, 0, 11, 17)
+    }
+
+    #[test]
+    fn test_is_not_equal_on_equal_public() -> Result<()> {
+        check_is_not_equal_on_equal(Mode::Public, 6, 0, 11, 17)
+    }
+
+    #[test]
+    fn test_is_not_equal_on_equal_private() -> Result<()> {
+        check_is_not_equal_on_equal(Mode::Private, 6, 0, 11, 17)
     }
 }

@@ -203,6 +203,48 @@ mod tests {
     type CurrentNetwork = <Circuit as Environment>::Network;
     type ConsoleRecord = console::Record<CurrentNetwork, console::Plaintext<CurrentNetwork>>;
 
+    /// Verifies circuit/console equivalence for a record parsed from a string.
+    /// This helper enables easier testing of various record structures.
+    fn check_circuit_console_equivalence(
+        record_str: &str,
+        num_constants: u64,
+        num_public: u64,
+        num_private: u64,
+        num_constraints: u64,
+    ) {
+        // Parse the record from the string.
+        let console_record = ConsoleRecord::from_str(record_str).unwrap();
+
+        // Convert to console DynamicRecord.
+        let console_dynamic = console::DynamicRecord::from_record(&console_record).unwrap();
+
+        // Inject the console record into the circuit.
+        let circuit_record = Record::<Circuit, Plaintext<Circuit>>::new(Mode::Private, console_record);
+
+        Circuit::scope("check_circuit_console_equivalence", || {
+            // Convert to circuit DynamicRecord.
+            let circuit_dynamic = DynamicRecord::<Circuit>::from_record(&circuit_record).unwrap();
+
+            // Verify the circuit root matches the console root.
+            let circuit_root = circuit_dynamic.root().eject_value();
+            let console_root = *console_dynamic.root();
+            assert_eq!(
+                circuit_root, console_root,
+                "Circuit and console DynamicRecord should produce the same Merkle root"
+            );
+
+            // Verify other fields match.
+            assert_eq!(circuit_dynamic.owner().eject_value(), *console_dynamic.owner());
+            assert_eq!(circuit_dynamic.nonce().eject_value(), *console_dynamic.nonce());
+            assert_eq!(circuit_dynamic.version().eject_value(), *console_dynamic.version());
+
+            // Verify circuit constraint counts.
+            assert_scope!(num_constants, num_public, num_private, num_constraints);
+        });
+
+        Circuit::reset();
+    }
+
     /// Creates a console record with the given data for testing.
     fn create_console_record(
         rng: &mut TestRng,
@@ -219,10 +261,57 @@ mod tests {
     }
 
     #[test]
-    fn test_circuit_console_equivalence() {
+    fn test_circuit_console_equivalence_empty_record() {
+        // Empty record with public owner.
+        let record_str = r#"{
+          owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.public,
+          _nonce: 0group.public,
+          _version: 0u8.public
+        }"#;
+        check_circuit_console_equivalence(record_str, 1075, 0, 0, 0);
+    }
+
+    #[test]
+    fn test_circuit_console_equivalence_single_private_field() {
+        // Record with a single private u64 field.
+        let record_str = r#"{
+          owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.public,
+          amount: 100u64.private,
+          _nonce: 0group.public,
+          _version: 0u8.public
+        }"#;
+        check_circuit_console_equivalence(record_str, 1100, 0, 3175, 3175);
+    }
+
+    #[test]
+    fn test_circuit_console_equivalence_single_public_field() {
+        // Record with a single public u64 field.
+        let record_str = r#"{
+          owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.public,
+          amount: 100u64.public,
+          _nonce: 0group.public,
+          _version: 0u8.public
+        }"#;
+        check_circuit_console_equivalence(record_str, 1100, 0, 3175, 3175);
+    }
+
+    #[test]
+    fn test_circuit_console_equivalence_single_constant_field() {
+        // Record with a single constant u64 field.
+        let record_str = r#"{
+          owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.public,
+          amount: 100u64.constant,
+          _nonce: 0group.public,
+          _version: 0u8.public
+        }"#;
+        check_circuit_console_equivalence(record_str, 1100, 0, 3175, 3175);
+    }
+
+    #[test]
+    fn test_circuit_console_equivalence_mixed_entry_types() {
         let rng = &mut TestRng::default();
 
-        // Create test data with mixed entry types.
+        // Create test data with mixed entry types (private, public, constant).
         let mut data = IndexMap::new();
         data.insert(
             console::Identifier::from_str("a").unwrap(),
@@ -237,69 +326,11 @@ mod tests {
             console::Entry::Constant(console::Plaintext::from(console::Literal::U64(console::U64::rand(rng)))),
         );
 
-        // Create a console record.
+        // Create the record and convert to string for consistent testing.
         let console_record = create_console_record(rng, data, true);
+        let record_str = console_record.to_string();
 
-        // Convert to console DynamicRecord.
-        let console_dynamic = console::DynamicRecord::from_record(&console_record).unwrap();
-
-        // Inject the console record into the circuit.
-        let circuit_record = Record::<Circuit, Plaintext<Circuit>>::new(Mode::Private, console_record.clone());
-
-        Circuit::scope("test_circuit_console_equivalence", || {
-            // Convert to circuit DynamicRecord.
-            let circuit_dynamic = DynamicRecord::<Circuit>::from_record(&circuit_record).unwrap();
-
-            // Verify the circuit root matches the console root.
-            let circuit_root = circuit_dynamic.root().eject_value();
-            let console_root = *console_dynamic.root();
-            assert_eq!(
-                circuit_root, console_root,
-                "Circuit and console DynamicRecord should produce the same Merkle root"
-            );
-
-            // Also verify other fields match.
-            assert_eq!(circuit_dynamic.owner().eject_value(), *console_dynamic.owner());
-            assert_eq!(circuit_dynamic.nonce().eject_value(), *console_dynamic.nonce());
-            assert_eq!(circuit_dynamic.version().eject_value(), *console_dynamic.version());
-
-            // Verify circuit constraint counts.
-            assert_scope!(<=1152, <=0, <=4666, <=4666);
-        });
-
-        Circuit::reset();
-    }
-
-    #[test]
-    fn test_circuit_console_equivalence_empty_record() {
-        let rng = &mut TestRng::default();
-
-        // Create an empty record.
-        let console_record = create_console_record(rng, IndexMap::new(), false);
-
-        // Convert to console DynamicRecord.
-        let console_dynamic = console::DynamicRecord::from_record(&console_record).unwrap();
-
-        // Inject the console record into the circuit.
-        let circuit_record = Record::<Circuit, Plaintext<Circuit>>::new(Mode::Private, console_record.clone());
-
-        Circuit::scope("test_circuit_console_equivalence_empty", || {
-            // Convert to circuit DynamicRecord.
-            let circuit_dynamic = DynamicRecord::<Circuit>::from_record(&circuit_record).unwrap();
-
-            // Verify the circuit root matches the console root.
-            let circuit_root = circuit_dynamic.root().eject_value();
-            let console_root = *console_dynamic.root();
-            assert_eq!(
-                circuit_root, console_root,
-                "Circuit and console DynamicRecord should produce the same Merkle root for empty records"
-            );
-
-            // Verify circuit constraint counts.
-            assert_scope!(<=1076, <=0, <=0, <=0);
-        });
-
-        Circuit::reset();
+        check_circuit_console_equivalence(&record_str, 1151, 0, 4665, 4665);
     }
 
     #[test]
@@ -321,31 +352,59 @@ mod tests {
         let mut data = IndexMap::new();
         data.insert(console::Identifier::from_str("point").unwrap(), console::Entry::Private(inner));
 
-        // Create a console record.
+        // Create the record and convert to string for consistent testing.
         let console_record = create_console_record(rng, data, false);
+        let record_str = console_record.to_string();
 
-        // Convert to console DynamicRecord.
-        let console_dynamic = console::DynamicRecord::from_record(&console_record).unwrap();
+        check_circuit_console_equivalence(&record_str, 1180, 0, 3180, 3180);
+    }
 
-        // Inject the console record into the circuit.
-        let circuit_record = Record::<Circuit, Plaintext<Circuit>>::new(Mode::Private, console_record.clone());
+    #[test]
+    fn test_circuit_console_equivalence_private_owner() {
+        // Record with private owner.
+        let record_str = r#"{
+          owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.private,
+          _nonce: 0group.public,
+          _version: 0u8.public
+        }"#;
+        check_circuit_console_equivalence(record_str, 1075, 0, 0, 0);
+    }
 
-        Circuit::scope("test_circuit_console_equivalence_nested", || {
-            // Convert to circuit DynamicRecord.
-            let circuit_dynamic = DynamicRecord::<Circuit>::from_record(&circuit_record).unwrap();
+    #[test]
+    fn test_circuit_console_equivalence_multiple_fields() {
+        // Record with multiple fields of the same visibility.
+        let record_str = r#"{
+          owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.public,
+          x: 1u64.private,
+          y: 2u64.private,
+          z: 3u64.private,
+          _nonce: 0group.public,
+          _version: 0u8.public
+        }"#;
+        check_circuit_console_equivalence(record_str, 1151, 0, 4665, 4665);
+    }
 
-            // Verify the circuit root matches the console root.
-            let circuit_root = circuit_dynamic.root().eject_value();
-            let console_root = *console_dynamic.root();
-            assert_eq!(
-                circuit_root, console_root,
-                "Circuit and console DynamicRecord should produce the same Merkle root for nested structs"
-            );
+    #[test]
+    fn test_circuit_console_equivalence_boolean_field() {
+        // Record with a boolean field.
+        let record_str = r#"{
+          owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.public,
+          flag: true.private,
+          _nonce: 0group.public,
+          _version: 0u8.public
+        }"#;
+        check_circuit_console_equivalence(record_str, 1100, 0, 3175, 3175);
+    }
 
-            // Verify circuit constraint counts.
-            assert_scope!(<=1181, <=0, <=3181, <=3181);
-        });
-
-        Circuit::reset();
+    #[test]
+    fn test_circuit_console_equivalence_address_field() {
+        // Record with an address field.
+        let record_str = r#"{
+          owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.public,
+          recipient: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.private,
+          _nonce: 0group.public,
+          _version: 0u8.public
+        }"#;
+        check_circuit_console_equivalence(record_str, 1100, 0, 3685, 3687);
     }
 }

@@ -52,7 +52,8 @@ mod tests {
         DynamicFuture::new(mode, console_future)
     }
 
-    fn check_is_equal(
+    /// Tests that `is_equal` returns true when comparing a future to itself.
+    fn check_is_equal_on_equal(
         mode: Mode,
         num_constants: u64,
         num_public: u64,
@@ -61,27 +62,21 @@ mod tests {
     ) -> Result<(), console::Error> {
         let rng = &mut TestRng::default();
 
-        // Sample the dynamic futures.
+        // Sample a dynamic future.
         let future = sample_dynamic_future(mode, rng);
-        let mismatched_future = sample_dynamic_future(mode, rng);
 
         Circuit::scope(format!("{mode}"), || {
             let candidate = future.is_equal(&future);
             assert!(candidate.eject_value());
-            assert_scope!(<=num_constants, <=num_public, <=num_private, <=num_constraints);
-        });
-
-        Circuit::scope(format!("{mode}"), || {
-            let candidate = future.is_equal(&mismatched_future);
-            assert!(!candidate.eject_value());
-            assert_scope!(<=num_constants, <=num_public, <=num_private, <=num_constraints);
+            assert_scope!(num_constants, num_public, num_private, num_constraints);
         });
 
         Circuit::reset();
         Ok(())
     }
 
-    fn check_is_not_equal(
+    /// Tests that `is_equal` returns false when comparing two different futures.
+    fn check_is_equal_on_unequal(
         mode: Mode,
         num_constants: u64,
         num_public: u64,
@@ -90,53 +85,132 @@ mod tests {
     ) -> Result<(), console::Error> {
         let rng = &mut TestRng::default();
 
-        // Sample the dynamic futures.
+        // Sample two distinct dynamic futures for comparison.
+        let future = sample_dynamic_future(mode, rng);
+        let mismatched_future = sample_dynamic_future(mode, rng);
+
+        Circuit::scope(format!("{mode}"), || {
+            let candidate = future.is_equal(&mismatched_future);
+            assert!(!candidate.eject_value());
+            assert_scope!(num_constants, num_public, num_private, num_constraints);
+        });
+
+        Circuit::reset();
+        Ok(())
+    }
+
+    /// Tests that `is_not_equal` returns true when comparing two different futures.
+    fn check_is_not_equal_on_unequal(
+        mode: Mode,
+        num_constants: u64,
+        num_public: u64,
+        num_private: u64,
+        num_constraints: u64,
+    ) -> Result<(), console::Error> {
+        let rng = &mut TestRng::default();
+
+        // Sample two distinct dynamic futures for comparison.
         let future = sample_dynamic_future(mode, rng);
         let mismatched_future = sample_dynamic_future(mode, rng);
 
         Circuit::scope(format!("{mode}"), || {
             let candidate = future.is_not_equal(&mismatched_future);
             assert!(candidate.eject_value());
-            assert_scope!(<=num_constants, <=num_public, <=num_private, <=num_constraints);
-        });
-
-        Circuit::scope(format!("{mode}"), || {
-            let candidate = future.is_not_equal(&future);
-            assert!(!candidate.eject_value());
-            assert_scope!(<=num_constants, <=num_public, <=num_private, <=num_constraints);
+            assert_scope!(num_constants, num_public, num_private, num_constraints);
         });
 
         Circuit::reset();
         Ok(())
     }
 
+    /// Tests that `is_not_equal` returns false when comparing a future to itself.
+    fn check_is_not_equal_on_equal(
+        mode: Mode,
+        num_constants: u64,
+        num_public: u64,
+        num_private: u64,
+        num_constraints: u64,
+    ) -> Result<(), console::Error> {
+        let rng = &mut TestRng::default();
+
+        // Sample a dynamic future.
+        let future = sample_dynamic_future(mode, rng);
+
+        Circuit::scope(format!("{mode}"), || {
+            let candidate = future.is_not_equal(&future);
+            assert!(!candidate.eject_value());
+            assert_scope!(num_constants, num_public, num_private, num_constraints);
+        });
+
+        Circuit::reset();
+        Ok(())
+    }
+
+    // Tests for `is_equal` on equal values (self-comparison).
+
     #[test]
-    fn test_is_equal_constant() -> Result<(), console::Error> {
-        check_is_equal(Mode::Constant, 4, 0, 0, 0)
+    fn test_is_equal_on_equal_constant() -> Result<(), console::Error> {
+        check_is_equal_on_equal(Mode::Constant, 4, 0, 0, 0)
     }
 
     #[test]
-    fn test_is_equal_public() -> Result<(), console::Error> {
-        check_is_equal(Mode::Public, 4, 0, 11, 11)
+    fn test_is_equal_on_equal_public() -> Result<(), console::Error> {
+        check_is_equal_on_equal(Mode::Public, 4, 0, 7, 11)
     }
 
     #[test]
-    fn test_is_equal_private() -> Result<(), console::Error> {
-        check_is_equal(Mode::Private, 4, 0, 11, 11)
+    fn test_is_equal_on_equal_private() -> Result<(), console::Error> {
+        check_is_equal_on_equal(Mode::Private, 4, 0, 7, 11)
+    }
+
+    // Tests for `is_equal` on unequal values (different futures).
+
+    #[test]
+    fn test_is_equal_on_unequal_constant() -> Result<(), console::Error> {
+        check_is_equal_on_unequal(Mode::Constant, 4, 0, 0, 0)
     }
 
     #[test]
-    fn test_is_not_equal_constant() -> Result<(), console::Error> {
-        check_is_not_equal(Mode::Constant, 4, 0, 0, 0)
+    fn test_is_equal_on_unequal_public() -> Result<(), console::Error> {
+        check_is_equal_on_unequal(Mode::Public, 0, 0, 11, 11)
     }
 
     #[test]
-    fn test_is_not_equal_public() -> Result<(), console::Error> {
-        check_is_not_equal(Mode::Public, 4, 0, 11, 11)
+    fn test_is_equal_on_unequal_private() -> Result<(), console::Error> {
+        check_is_equal_on_unequal(Mode::Private, 0, 0, 11, 11)
+    }
+
+    // Tests for `is_not_equal` on unequal values (different futures).
+
+    #[test]
+    fn test_is_not_equal_on_unequal_constant() -> Result<(), console::Error> {
+        check_is_not_equal_on_unequal(Mode::Constant, 4, 0, 0, 0)
     }
 
     #[test]
-    fn test_is_not_equal_private() -> Result<(), console::Error> {
-        check_is_not_equal(Mode::Private, 4, 0, 11, 11)
+    fn test_is_not_equal_on_unequal_public() -> Result<(), console::Error> {
+        check_is_not_equal_on_unequal(Mode::Public, 0, 0, 11, 11)
+    }
+
+    #[test]
+    fn test_is_not_equal_on_unequal_private() -> Result<(), console::Error> {
+        check_is_not_equal_on_unequal(Mode::Private, 0, 0, 11, 11)
+    }
+
+    // Tests for `is_not_equal` on equal values (self-comparison).
+
+    #[test]
+    fn test_is_not_equal_on_equal_constant() -> Result<(), console::Error> {
+        check_is_not_equal_on_equal(Mode::Constant, 4, 0, 0, 0)
+    }
+
+    #[test]
+    fn test_is_not_equal_on_equal_public() -> Result<(), console::Error> {
+        check_is_not_equal_on_equal(Mode::Public, 4, 0, 7, 11)
+    }
+
+    #[test]
+    fn test_is_not_equal_on_equal_private() -> Result<(), console::Error> {
+        check_is_not_equal_on_equal(Mode::Private, 4, 0, 7, 11)
     }
 }

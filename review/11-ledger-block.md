@@ -214,22 +214,36 @@ pub struct TransitionCallerMetadata<N: Network> {
 ### Input/Output Types
 
 #### `transition/input/mod.rs`
-**Input Variants:** `Constant`, `Public`, `Private`, `Record`, `ExternalRecord`, `DynamicRecord`
+**Input Variants:** `Constant`, `Public`, `Private`, `Record`, `ExternalRecord`, `DynamicRecord`, `RecordWithDynamicID`, `ExternalRecordWithDynamicID`
 
-No versioning changes - used by both transition and caller metadata.
+The `*WithDynamicID` variants are used for record inputs in dynamic calls:
+- `RecordWithDynamicID(serial_number, tag, dynamic_id)` - A record input that was passed dynamically
+- `ExternalRecordWithDynamicID(hash, dynamic_id)` - An external record input that was passed dynamically
+
+These variants:
+- Use the same transition leaf variant as their non-dynamic counterparts (3 for Record, 4 for ExternalRecord) but with version 2
+- Convert to `DynamicRecord` when viewed from the caller's perspective via `to_caller_input()`
+- Include a `dynamic_id` field that links to the translation proof
 
 #### `transition/input/bytes.rs`, `transition/input/serialize.rs`
-Standard serialization for all 6 input types.
+Standard serialization for all 8 input types.
 
 ---
 
 #### `transition/output/mod.rs`
-**Output Variants:** `Constant`, `Public`, `Private`, `Record`, `ExternalRecord`, `Future`, `DynamicRecord`
+**Output Variants:** `Constant`, `Public`, `Private`, `Record`, `ExternalRecord`, `Future`, `DynamicRecord`, `DynamicFuture`, `RecordWithDynamicID`, `ExternalRecordWithDynamicID`
 
-No versioning changes - used by both transition and caller metadata.
+The `*WithDynamicID` variants are used for record outputs in dynamic calls:
+- `RecordWithDynamicID(commitment, checksum, sender_ciphertext, dynamic_id)` - A record output from a dynamic call
+- `ExternalRecordWithDynamicID(hash, dynamic_id)` - An external record output from a dynamic call
+
+These variants:
+- Use the same transition leaf variant as their non-dynamic counterparts but with version 2
+- Convert to `DynamicRecord` when viewed from the caller's perspective via `to_caller_output()`
+- Include a `dynamic_id` field that links to the translation proof
 
 #### `transition/output/bytes.rs`, `transition/output/serialize.rs`
-Standard serialization for all 7 output types.
+Standard serialization for all 10 output types.
 
 ---
 
