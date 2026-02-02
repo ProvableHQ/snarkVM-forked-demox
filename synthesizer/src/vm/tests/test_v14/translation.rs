@@ -924,8 +924,6 @@ fn test_malicious_external_record_dynamic_id_tampering() {
     let gas_owner = caller_address.to_string();
     let program_b_str = format!(
         r"
-    import {program_a_name_str}.aleo;
-
     program {program_b_name_str}.aleo;
 
     record gas_container:
@@ -958,12 +956,12 @@ fn test_malicious_external_record_dynamic_id_tampering() {
     // Initialize the VM.
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
-    // Deploy both programs.
-    let transaction_a = vm.deploy(&caller_private_key, &program_a, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[transaction_a], rng);
-
+    // Deploy both programs (program_b first since program_a imports it).
     let transaction_b = vm.deploy(&caller_private_key, &program_b, None, 0, None, rng).unwrap();
     add_and_test(&vm, &caller_private_key, &[transaction_b], rng);
+
+    let transaction_a = vm.deploy(&caller_private_key, &program_a, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[transaction_a], rng);
 
     // Mint a gas_container record.
     let transaction_mint = vm
