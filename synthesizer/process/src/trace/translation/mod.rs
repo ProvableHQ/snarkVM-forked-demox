@@ -163,7 +163,6 @@ impl<N: Network> Translation<N> {
             let num_inputs = transition.inputs().len();
 
             // Prepare the input translation tasks.
-            // Detect inputs that carry a dynamic_id (RecordWithDynamicID, ExternalRecordWithDynamicID).
             for (input_output_index, (input, callee_input_type)) in
                 transition.inputs().iter().zip(callee_input_types.iter()).enumerate()
             {

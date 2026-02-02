@@ -319,7 +319,7 @@ impl<N: Network> Authorization<N> {
             let input_types = function.input_types();
             let output_types = function.output_types();
 
-            // Input translation: detect inputs with dynamic IDs.
+            // Account for input translations.
             for (input, input_type) in transition.inputs().iter().zip(input_types.iter()) {
                 if input.dynamic_id().is_some() {
                     match (input, input_type) {
@@ -334,7 +334,7 @@ impl<N: Network> Authorization<N> {
                 }
             }
 
-            // Output translation: detect outputs with dynamic IDs.
+            // Account for output translations.
             for (output, output_type) in transition.outputs().iter().zip(output_types.iter()) {
                 if output.dynamic_id().is_some() {
                     match (output, output_type) {

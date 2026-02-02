@@ -114,7 +114,7 @@ impl<N: Network> Inclusion<N> {
 
             // Process the outputs.
             for (index, output) in transition.outputs().iter().enumerate() {
-                // Filter the outputs for records (including RecordWithDynamicID).
+                // Filter the outputs for records.
                 if let Some(commitment) = output.commitment() {
                     // Compute the output index.
                     let output_index = u8::try_from(input_ids.len().saturating_add(index))?;
@@ -166,7 +166,7 @@ impl<N: Network> Inclusion<N> {
 
             // Iterate through the inputs.
             for input in transition.inputs() {
-                // Filter the inputs for records (including RecordWithDynamicID).
+                // Filter the inputs for records.
                 if let Some(serial_number) = input.serial_number() {
                     // Add the public inputs to the batch verifier inputs.
                     let mut verifier_inputs =

@@ -118,9 +118,9 @@ impl<A: Aleo> Request<A> {
     ///
     /// The `function_id` parameter is optional for backwards compatibility. When `None`, the
     /// function ID is computed from the network ID, program ID, and function name. When `Some`,
-    /// the provided function ID is used directly. This is used for dynamic dispatch where the
-    /// caller passes the callee's function ID to ensure input hashes are computed correctly for
-    /// the callee's actual function, not the caller's static view of the program/function names.
+    /// the provided function ID is used directly. This is critical for dynamic dispatch where the
+    /// function ID must be passed in to ensure circuit size does not depend on the length of the
+    /// program or function name.
     pub fn check_input_ids<const CREATE_MESSAGE: bool>(
         network_id: &U16<A>,
         program_id: &ProgramID<A>,

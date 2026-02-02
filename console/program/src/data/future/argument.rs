@@ -232,89 +232,54 @@ mod tests {
         assert!(dynamic_first_12.iter().all(|&b| !b), "Dynamic future should have all-zero disambiguation prefix");
     }
 
-    #[test]
-    fn test_argument_equality_plaintext() {
-        // Create identical plaintext arguments.
-        let plaintext1 = Plaintext::<CurrentNetwork>::from_str("42u64").unwrap();
-        let plaintext2 = Plaintext::<CurrentNetwork>::from_str("42u64").unwrap();
-        let arg1 = Argument::Plaintext(plaintext1);
-        let arg2 = Argument::Plaintext(plaintext2);
-
-        // They should be equal.
-        assert!(*arg1.is_equal(&arg2));
-        assert!(!*arg1.is_not_equal(&arg2));
-
-        // Create different plaintext arguments.
-        let plaintext3 = Plaintext::<CurrentNetwork>::from_str("100u64").unwrap();
-        let arg3 = Argument::Plaintext(plaintext3);
-
-        // They should not be equal.
-        assert!(!*arg1.is_equal(&arg3));
-        assert!(*arg1.is_not_equal(&arg3));
+    /// Verifies equality semantics: same values are equal, different values are not.
+    fn check_equality(
+        same1: &Argument<CurrentNetwork>,
+        same2: &Argument<CurrentNetwork>,
+        different: &Argument<CurrentNetwork>,
+    ) {
+        // Same values should be equal.
+        assert!(*same1.is_equal(same2));
+        assert!(!*same1.is_not_equal(same2));
+        // Different values should not be equal.
+        assert!(!*same1.is_equal(different));
+        assert!(*same1.is_not_equal(different));
     }
 
     #[test]
-    fn test_argument_equality_future() {
-        // Create identical future arguments.
-        let future1 = Future::<CurrentNetwork>::new(
-            ProgramID::from_str("test.aleo").unwrap(),
-            Identifier::from_str("foo").unwrap(),
-            vec![Argument::Plaintext(Plaintext::from_str("100u64").unwrap())],
-        );
-        let future2 = Future::<CurrentNetwork>::new(
-            ProgramID::from_str("test.aleo").unwrap(),
-            Identifier::from_str("foo").unwrap(),
-            vec![Argument::Plaintext(Plaintext::from_str("100u64").unwrap())],
-        );
-        let arg1 = Argument::Future(future1);
-        let arg2 = Argument::Future(future2);
+    fn test_argument_equality() {
+        // Test plaintext equality.
+        let p1 = Argument::Plaintext(Plaintext::from_str("42u64").unwrap());
+        let p2 = Argument::Plaintext(Plaintext::from_str("42u64").unwrap());
+        let p3 = Argument::Plaintext(Plaintext::from_str("100u64").unwrap());
+        check_equality(&p1, &p2, &p3);
 
-        // They should be equal.
-        assert!(*arg1.is_equal(&arg2));
-        assert!(!*arg1.is_not_equal(&arg2));
+        // Test future equality.
+        let make_future = |name: &str| {
+            Future::<CurrentNetwork>::new(
+                ProgramID::from_str("test.aleo").unwrap(),
+                Identifier::from_str(name).unwrap(),
+                vec![Argument::Plaintext(Plaintext::from_str("100u64").unwrap())],
+            )
+        };
+        let f1 = Argument::Future(make_future("foo"));
+        let f2 = Argument::Future(make_future("foo"));
+        let f3 = Argument::Future(make_future("bar"));
+        check_equality(&f1, &f2, &f3);
 
-        // Create a different future argument.
-        let future3 = Future::<CurrentNetwork>::new(
-            ProgramID::from_str("test.aleo").unwrap(),
-            Identifier::from_str("bar").unwrap(),
-            vec![Argument::Plaintext(Plaintext::from_str("100u64").unwrap())],
-        );
-        let arg3 = Argument::Future(future3);
-
-        // They should not be equal.
-        assert!(!*arg1.is_equal(&arg3));
-        assert!(*arg1.is_not_equal(&arg3));
-    }
-
-    #[test]
-    fn test_argument_equality_dynamic_future() {
-        // Create identical dynamic future arguments.
-        let future = Future::<CurrentNetwork>::new(
-            ProgramID::from_str("test.aleo").unwrap(),
-            Identifier::from_str("foo").unwrap(),
-            vec![Argument::Plaintext(Plaintext::from_str("100u64").unwrap())],
-        );
-        let dynamic1 = DynamicFuture::from_future(&future).unwrap();
-        let dynamic2 = DynamicFuture::from_future(&future).unwrap();
-        let arg1 = Argument::DynamicFuture(dynamic1);
-        let arg2 = Argument::DynamicFuture(dynamic2);
-
-        // They should be equal.
-        assert!(*arg1.is_equal(&arg2));
-        assert!(!*arg1.is_not_equal(&arg2));
-
-        // Create a different dynamic future argument.
-        let other_future = Future::<CurrentNetwork>::new(
-            ProgramID::from_str("other.aleo").unwrap(),
-            Identifier::from_str("foo").unwrap(),
-            vec![Argument::Plaintext(Plaintext::from_str("100u64").unwrap())],
-        );
-        let dynamic3 = DynamicFuture::from_future(&other_future).unwrap();
-        let arg3 = Argument::DynamicFuture(dynamic3);
-
-        // They should not be equal.
-        assert!(!*arg1.is_equal(&arg3));
-        assert!(*arg1.is_not_equal(&arg3));
+        // Test dynamic future equality.
+        let make_dynamic = |program: &str| {
+            let future = Future::<CurrentNetwork>::new(
+                ProgramID::from_str(program).unwrap(),
+                Identifier::from_str("foo").unwrap(),
+                vec![Argument::Plaintext(Plaintext::from_str("100u64").unwrap())],
+            );
+            DynamicFuture::from_future(&future).unwrap()
+        };
+        let d1 = Argument::DynamicFuture(make_dynamic("test.aleo"));
+        let d2 = Argument::DynamicFuture(make_dynamic("test.aleo"));
+        let d3 = Argument::DynamicFuture(make_dynamic("other.aleo"));
+        check_equality(&d1, &d2, &d3);
     }
 
     #[test]

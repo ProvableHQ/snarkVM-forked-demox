@@ -80,10 +80,10 @@ impl<N: Network> Input<N> {
     /// Note: ExternalRecordWithDynamicID uses leaf variant 4 (same as ExternalRecord) with version 2.
     pub fn to_transition_leaf(&self, index: u8) -> TransitionLeaf<N> {
         match self {
-            // RecordWithDynamicID produces leaf with version 2, variant 3, id = sn.
-            Input::RecordWithDynamicID(sn, ..) => TransitionLeaf::new_dynamic_with_version(index, 3, *sn),
-            // ExternalRecordWithDynamicID produces leaf with version 2, variant 4, id = hash.
-            Input::ExternalRecordWithDynamicID(hash, ..) => TransitionLeaf::new_dynamic_with_version(index, 4, *hash),
+            // RecordWithDynamicID produces leaf with version 2, variant 3.
+            Input::RecordWithDynamicID(..) => TransitionLeaf::new_dynamic_with_version(index, 3, *self.id()),
+            // ExternalRecordWithDynamicID produces leaf with version 2, variant 4.
+            Input::ExternalRecordWithDynamicID(..) => TransitionLeaf::new_dynamic_with_version(index, 4, *self.id()),
             // All other variants use their serialization variant byte.
             _ => TransitionLeaf::new_with_version(index, self.variant(), *self.id()),
         }
@@ -122,13 +122,11 @@ impl<N: Network> Input<N> {
     }
 
     /// Returns the public verifier inputs for the proof.
-    /// Note: RecordWithDynamicID returns [sn, tag] (same as Record),
-    /// and ExternalRecordWithDynamicID returns [hash] (same as ExternalRecord).
     pub fn verifier_inputs(&self) -> impl '_ + Iterator<Item = N::Field> {
         [Some(self.id()), self.tag()].into_iter().flatten().map(|id| **id)
     }
 
-    /// Returns the dynamic_id, if the input carries one.
+    /// Returns the dynamic ID, if the input carries one.
     pub const fn dynamic_id(&self) -> Option<&Field<N>> {
         match self {
             Input::RecordWithDynamicID(_, _, dynamic_id) | Input::ExternalRecordWithDynamicID(_, dynamic_id) => {
@@ -226,25 +224,6 @@ impl<N: Network> Input<N> {
                 false
             }
         }
-    }
-
-    /// Returns `true` if the two inputs match on their variants.
-    pub fn variants_match(&self, other: &Self) -> bool {
-        matches!(
-            (self, other),
-            (Self::Constant(..), Self::Constant(..))
-                | (Self::Public(..), Self::Public(..))
-                | (Self::Private(..), Self::Private(..))
-                | (Self::Record(..), Self::Record(..))
-                | (Self::Record(..), Self::RecordWithDynamicID(..))
-                | (Self::RecordWithDynamicID(..), Self::Record(..))
-                | (Self::RecordWithDynamicID(..), Self::RecordWithDynamicID(..))
-                | (Self::ExternalRecord(_), Self::ExternalRecord(_))
-                | (Self::ExternalRecord(_), Self::ExternalRecordWithDynamicID(..))
-                | (Self::ExternalRecordWithDynamicID(..), Self::ExternalRecord(_))
-                | (Self::ExternalRecordWithDynamicID(..), Self::ExternalRecordWithDynamicID(..))
-                | (Self::DynamicRecord(_), Self::DynamicRecord(_))
-        )
     }
 
     /// Returns `true` if the input matches the expected value type.

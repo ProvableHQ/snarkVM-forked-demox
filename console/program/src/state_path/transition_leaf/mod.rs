@@ -45,7 +45,7 @@ impl<N: Network> TransitionLeaf<N> {
         Self { version: TRANSITION_LEAF_VERSION, index, variant, id }
     }
 
-    /// Initializes a new instance of `TransitionLeaf` for dynamic dispatch variants.
+    /// Initializes a new instance of `TransitionLeaf` for inputs and outputs of a dynamic call to a transition.
     pub const fn new_dynamic_with_version(index: u8, variant: u8, id: Field<N>) -> Self {
         Self { version: TRANSITION_LEAF_VERSION_DYNAMIC, index, variant, id }
     }
@@ -90,8 +90,11 @@ mod test_helpers {
     }
 
     /// Samples a transition leaf with version 2 (dynamic).
+    /// Dynamic version is only allowed for Record (3) and ExternalRecord (4) variants.
     pub(super) fn sample_dynamic_leaf(rng: &mut TestRng) -> TransitionLeaf<CurrentNetwork> {
+        // Dynamic version is only allowed for Record (variant 3) and ExternalRecord (variant 4).
+        let variant = if rng.r#gen() { 3 } else { 4 };
         // Construct a new dynamic leaf.
-        TransitionLeaf::new_dynamic_with_version(rng.r#gen(), rng.r#gen(), Uniform::rand(rng))
+        TransitionLeaf::new_dynamic_with_version(rng.r#gen(), variant, Uniform::rand(rng))
     }
 }

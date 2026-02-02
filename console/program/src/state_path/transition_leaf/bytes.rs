@@ -28,6 +28,13 @@ impl<N: Network> FromBytes for TransitionLeaf<N> {
         let index = FromBytes::read_le(&mut reader)?;
         // Read the variant.
         let variant = FromBytes::read_le(&mut reader)?;
+        // Ensure the version and variant are compatible.
+        // Dynamic version (2) is only allowed for Record (3) and ExternalRecord (4) variants.
+        if version == TRANSITION_LEAF_VERSION_DYNAMIC && variant != 3 && variant != 4 {
+            return Err(error(
+                "Dynamic transition leaf version is only allowed for Record and ExternalRecord variants",
+            ));
+        }
         // Read the ID.
         let id = FromBytes::read_le(&mut reader)?;
         // Return the transition leaf.
@@ -52,6 +59,9 @@ impl<N: Network> ToBytes for TransitionLeaf<N> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use snarkvm_console_network::MainnetV0;
+
+    type CurrentNetwork = MainnetV0;
 
     const ITERATIONS: u64 = 1000;
 
@@ -74,6 +84,35 @@ mod tests {
             let expected_dynamic_bytes = expected_dynamic.to_bytes_le()?;
             assert_eq!(expected_dynamic, TransitionLeaf::read_le(&expected_dynamic_bytes[..])?);
         }
+        Ok(())
+    }
+
+    #[test]
+    fn test_version_variant_validation() -> Result<()> {
+        let mut rng = TestRng::default();
+        let id = Uniform::rand(&mut rng);
+
+        // Test that version 1 (static) works with any variant.
+        for variant in 0..=7 {
+            let leaf = TransitionLeaf::<CurrentNetwork>::new_with_version(0, variant, id);
+            let bytes = leaf.to_bytes_le()?;
+            assert!(TransitionLeaf::<CurrentNetwork>::read_le(&bytes[..]).is_ok());
+        }
+
+        // Test that version 2 (dynamic) only works with Record (3) and ExternalRecord (4).
+        for variant in [3u8, 4u8] {
+            let leaf = TransitionLeaf::<CurrentNetwork>::new_dynamic_with_version(0, variant, id);
+            let bytes = leaf.to_bytes_le()?;
+            assert!(TransitionLeaf::<CurrentNetwork>::read_le(&bytes[..]).is_ok());
+        }
+
+        // Test that version 2 (dynamic) fails with other variants.
+        for variant in [0u8, 1, 2, 5, 6, 7] {
+            let leaf = TransitionLeaf::<CurrentNetwork>::from(TRANSITION_LEAF_VERSION_DYNAMIC, 0, variant, id);
+            let bytes = leaf.to_bytes_le()?;
+            assert!(TransitionLeaf::<CurrentNetwork>::read_le(&bytes[..]).is_err());
+        }
+
         Ok(())
     }
 }

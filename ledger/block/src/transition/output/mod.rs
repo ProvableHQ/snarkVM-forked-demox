@@ -85,10 +85,10 @@ impl<N: Network> Output<N> {
     /// Note: ExternalRecordWithDynamicID uses leaf variant 4 (same as ExternalRecord) with version 2.
     pub fn to_transition_leaf(&self, index: u8) -> TransitionLeaf<N> {
         match self {
-            // RecordWithDynamicID produces leaf with version 2, variant 3, id = cm.
-            Output::RecordWithDynamicID(cm, ..) => TransitionLeaf::new_dynamic_with_version(index, 3, *cm),
-            // ExternalRecordWithDynamicID produces leaf with version 2, variant 4, id = hash.
-            Output::ExternalRecordWithDynamicID(hash, ..) => TransitionLeaf::new_dynamic_with_version(index, 4, *hash),
+            // RecordWithDynamicID produces leaf with version 2, variant 3.
+            Output::RecordWithDynamicID(..) => TransitionLeaf::new_dynamic_with_version(index, 3, *self.id()),
+            // ExternalRecordWithDynamicID produces leaf with version 2, variant 4.
+            Output::ExternalRecordWithDynamicID(..) => TransitionLeaf::new_dynamic_with_version(index, 4, *self.id()),
             // All other variants use their serialization variant byte.
             _ => TransitionLeaf::new_with_version(index, self.variant(), *self.id()),
         }
@@ -245,8 +245,6 @@ impl<N: Network> Output<N> {
 
 impl<N: Network> Output<N> {
     /// Returns the public verifier inputs for the proof.
-    /// Note: RecordWithDynamicID returns [cm, cs, sc] (same as Record),
-    /// and ExternalRecordWithDynamicID returns [hash] (same as ExternalRecord).
     pub fn verifier_inputs(&self) -> impl '_ + Iterator<Item = N::Field> {
         // Append the output ID.
         [**self.id()].into_iter()
@@ -399,26 +397,6 @@ impl<N: Network> Output<N> {
                 false
             }
         }
-    }
-
-    /// Returns `true` if the two outputs match on their variants.
-    pub fn variants_match(&self, other: &Self) -> bool {
-        matches!(
-            (self, other),
-            (Self::Constant(..), Self::Constant(..))
-                | (Self::Public(..), Self::Public(..))
-                | (Self::Private(..), Self::Private(..))
-                | (Self::Record(..), Self::Record(..))
-                | (Self::Record(..), Self::RecordWithDynamicID(..))
-                | (Self::RecordWithDynamicID(..), Self::Record(..))
-                | (Self::RecordWithDynamicID(..), Self::RecordWithDynamicID(..))
-                | (Self::ExternalRecord(_), Self::ExternalRecord(_))
-                | (Self::ExternalRecord(_), Self::ExternalRecordWithDynamicID(..))
-                | (Self::ExternalRecordWithDynamicID(..), Self::ExternalRecord(_))
-                | (Self::ExternalRecordWithDynamicID(..), Self::ExternalRecordWithDynamicID(..))
-                | (Self::Future(..), Self::Future(..))
-                | (Self::DynamicRecord(_), Self::DynamicRecord(_))
-        )
     }
 
     /// Returns `true` if the output matches the expected value type.

@@ -74,11 +74,22 @@ mod tests {
 
     type CurrentNetwork = MainnetV0;
 
+    /// Verifies that a dynamic record round-trips through byte serialization.
+    fn check_bytes(record: &Record<CurrentNetwork, Plaintext<CurrentNetwork>>) {
+        let expected = DynamicRecord::from_record(record).unwrap();
+        let expected_bytes = expected.to_bytes_le().unwrap();
+        let candidate = DynamicRecord::<CurrentNetwork>::read_le(&expected_bytes[..]).unwrap();
+        assert_eq!(expected.owner(), candidate.owner());
+        assert_eq!(expected.root(), candidate.root());
+        assert_eq!(expected.nonce(), candidate.nonce());
+        assert_eq!(expected.version(), candidate.version());
+    }
+
     #[test]
     fn test_bytes() {
         let rng = &mut TestRng::default();
 
-        // Create a simple record.
+        // Test with a simple record (one entry).
         let data = indexmap::indexmap! {
             Identifier::from_str("amount").unwrap() => Entry::Private(Plaintext::from(Literal::U64(U64::rand(rng)))),
         };
@@ -90,26 +101,9 @@ mod tests {
             U8::new(0),
         )
         .unwrap();
+        check_bytes(&record);
 
-        // Convert to dynamic record.
-        let expected = DynamicRecord::from_record(&record).unwrap();
-
-        // Check the byte representation.
-        let expected_bytes = expected.to_bytes_le().unwrap();
-        let candidate = DynamicRecord::<CurrentNetwork>::read_le(&expected_bytes[..]).unwrap();
-
-        // Verify the fields match.
-        assert_eq!(expected.owner(), candidate.owner());
-        assert_eq!(expected.root(), candidate.root());
-        assert_eq!(expected.nonce(), candidate.nonce());
-        assert_eq!(expected.version(), candidate.version());
-    }
-
-    #[test]
-    fn test_bytes_empty_data() {
-        let rng = &mut TestRng::default();
-
-        // Create an empty record.
+        // Test with an empty record.
         let owner = Owner::Public(Address::rand(rng));
         let record = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_plaintext(
             owner,
@@ -118,26 +112,9 @@ mod tests {
             U8::new(0),
         )
         .unwrap();
+        check_bytes(&record);
 
-        // Convert to dynamic record.
-        let expected = DynamicRecord::from_record(&record).unwrap();
-
-        // Check the byte representation.
-        let expected_bytes = expected.to_bytes_le().unwrap();
-        let candidate = DynamicRecord::<CurrentNetwork>::read_le(&expected_bytes[..]).unwrap();
-
-        // Verify the fields match.
-        assert_eq!(expected.owner(), candidate.owner());
-        assert_eq!(expected.root(), candidate.root());
-        assert_eq!(expected.nonce(), candidate.nonce());
-        assert_eq!(expected.version(), candidate.version());
-    }
-
-    #[test]
-    fn test_bytes_multiple_entries() {
-        let rng = &mut TestRng::default();
-
-        // Create a record with multiple entries.
+        // Test with multiple entries.
         let data = indexmap::indexmap! {
             Identifier::from_str("a").unwrap() => Entry::Private(Plaintext::from(Literal::U64(U64::rand(rng)))),
             Identifier::from_str("b").unwrap() => Entry::Public(Plaintext::from(Literal::U64(U64::rand(rng)))),
@@ -151,18 +128,6 @@ mod tests {
             U8::new(0),
         )
         .unwrap();
-
-        // Convert to dynamic record.
-        let expected = DynamicRecord::from_record(&record).unwrap();
-
-        // Check the byte representation.
-        let expected_bytes = expected.to_bytes_le().unwrap();
-        let candidate = DynamicRecord::<CurrentNetwork>::read_le(&expected_bytes[..]).unwrap();
-
-        // Verify the fields match.
-        assert_eq!(expected.owner(), candidate.owner());
-        assert_eq!(expected.root(), candidate.root());
-        assert_eq!(expected.nonce(), candidate.nonce());
-        assert_eq!(expected.version(), candidate.version());
+        check_bytes(&record);
     }
 }
