@@ -138,7 +138,7 @@ impl<N: Network> DynamicFuture<N> {
         Ok(Self::new_unchecked(program_name, program_network, function_name, root, Some(arguments)))
     }
 
-    /// Creates a static record from a dynamic record.
+    /// Creates a static future from a dynamic future.
     pub fn to_future(&self) -> Result<Future<N>> {
         // Ensure that the arguments are present.
         let Some(arguments) = &self.arguments else {

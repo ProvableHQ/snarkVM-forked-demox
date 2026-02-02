@@ -49,8 +49,8 @@ impl<N: Network> Parser for DynamicRecord<N> {
         let (string, _) = tag(":")(string)?;
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
-        // Parse the nonce from the string.
-        let (string, (root, _)) = pair(Field::parse, tag(".private"))(string)?;
+        // Parse the root from the string.
+        let (string, root) = Field::parse(string)?;
         // Parse the "," from the string.
         let (string, _) = tag(",")(string)?;
 
@@ -65,7 +65,7 @@ impl<N: Network> Parser for DynamicRecord<N> {
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
         // Parse the nonce from the string.
-        let (string, (nonce, _)) = pair(Group::parse, tag(".public"))(string)?;
+        let (string, nonce) = Group::parse(string)?;
 
         // There may be an optional "_version" tag. Parse the "," from the string if it exists.
         let string = match opt(tag(","))(string)? {
@@ -90,7 +90,7 @@ impl<N: Network> Parser for DynamicRecord<N> {
                 // Parse the whitespace and comments from the string.
                 let (string, _) = Sanitizer::parse(string)?;
                 // Parse the version from the string.
-                terminated(U8::parse, tag(".public"))(string)?
+                U8::parse(string)?
             }
         };
 
@@ -144,13 +144,108 @@ impl<N: Network> DynamicRecord<N> {
         write!(f, "{{")?;
         // Print the owner with a comma.
         write!(f, "\n{:indent$}owner: {},", "", self.owner, indent = (depth + 1) * INDENT)?;
-        // Print the root woth a comma.
-        write!(f, "\n{:indent$}_root: {}.private,", "", self.root, indent = (depth + 1) * INDENT)?;
+        // Print the root with a comma.
+        write!(f, "\n{:indent$}_root: {},", "", self.root, indent = (depth + 1) * INDENT)?;
         // Print the nonce with a comma.
-        write!(f, "\n{:indent$}_nonce: {}.public,", "", self.nonce, indent = (depth + 1) * INDENT)?;
+        write!(f, "\n{:indent$}_nonce: {},", "", self.nonce, indent = (depth + 1) * INDENT)?;
         // Print the version without a comma.
-        write!(f, "\n{:indent$}_version: {}.public", "", self.version, indent = (depth + 1) * INDENT)?;
+        write!(f, "\n{:indent$}_version: {}", "", self.version, indent = (depth + 1) * INDENT)?;
         // Print the closing brace.
         write!(f, "\n{:indent$}}}", "", indent = depth * INDENT)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Entry, Literal, Owner, Record};
+    use snarkvm_console_network::MainnetV0;
+    use snarkvm_console_types::U64;
+    use snarkvm_utilities::{TestRng, Uniform};
+
+    use core::str::FromStr;
+
+    type CurrentNetwork = MainnetV0;
+
+    #[test]
+    fn test_parse_display_roundtrip() {
+        let rng = &mut TestRng::default();
+
+        // Create a simple record.
+        let data = indexmap::indexmap! {
+            Identifier::from_str("amount").unwrap() => Entry::Private(Plaintext::from(Literal::U64(U64::rand(rng)))),
+        };
+        let owner = Owner::Public(Address::rand(rng));
+        let record = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_plaintext(
+            owner,
+            data,
+            Group::rand(rng),
+            U8::new(0),
+        )
+        .unwrap();
+
+        // Convert to dynamic record.
+        let expected = DynamicRecord::from_record(&record).unwrap();
+
+        // Convert to string.
+        let expected_string = expected.to_string();
+
+        // Parse the string.
+        let candidate = DynamicRecord::<CurrentNetwork>::from_str(&expected_string).unwrap();
+
+        // Verify the fields match.
+        assert_eq!(expected.owner(), candidate.owner());
+        assert_eq!(expected.root(), candidate.root());
+        assert_eq!(expected.nonce(), candidate.nonce());
+        assert_eq!(expected.version(), candidate.version());
+    }
+
+    #[test]
+    fn test_parse() {
+        // Parse a dynamic record from a string.
+        let string = "{ owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah, _root: 0field, _nonce: 0group, _version: 0u8 }";
+        let (remainder, candidate) = DynamicRecord::<CurrentNetwork>::parse(string).unwrap();
+        assert!(remainder.is_empty());
+        assert_eq!(
+            *candidate.owner(),
+            Address::from_str("aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah").unwrap()
+        );
+        assert_eq!(*candidate.root(), Field::from_u64(0));
+        assert_eq!(*candidate.nonce(), Group::zero());
+        assert_eq!(*candidate.version(), U8::new(0));
+    }
+
+    #[test]
+    fn test_parse_without_version() {
+        // Parse a dynamic record without a version (should default to 0).
+        let string = "{ owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah, _root: 123field, _nonce: 0group }";
+        let (remainder, candidate) = DynamicRecord::<CurrentNetwork>::parse(string).unwrap();
+        assert!(remainder.is_empty());
+        assert_eq!(*candidate.version(), U8::new(0));
+    }
+
+    #[test]
+    fn test_display() {
+        let rng = &mut TestRng::default();
+
+        // Create a simple record.
+        let owner = Owner::Public(Address::rand(rng));
+        let record = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_plaintext(
+            owner,
+            indexmap::IndexMap::new(),
+            Group::rand(rng),
+            U8::new(1),
+        )
+        .unwrap();
+
+        // Convert to dynamic record.
+        let dynamic = DynamicRecord::from_record(&record).unwrap();
+
+        // Check that the display contains expected fields.
+        let display = dynamic.to_string();
+        assert!(display.contains("owner:"));
+        assert!(display.contains("_root:"));
+        assert!(display.contains("_nonce:"));
+        assert!(display.contains("_version:"));
     }
 }

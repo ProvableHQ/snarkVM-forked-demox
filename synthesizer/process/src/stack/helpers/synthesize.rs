@@ -13,9 +13,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use console::program::DynamicRecord;
+use console::program::{DynamicRecord, ToFields};
 
-use crate::TranslationAssignment;
+use crate::{TranslationAssignment, compute_console_nonlocal_record_id};
 
 use super::*;
 
@@ -67,7 +67,7 @@ impl<N: Network> Stack<N> {
         let caller = None;
 
         // Compute the request, with a burner private key.
-        let request = Request::sign_static(
+        let request = Request::sign(
             &burner_private_key,
             *program_id,
             *function_name,
@@ -76,6 +76,7 @@ impl<N: Network> Stack<N> {
             root_tvk,
             is_root,
             program_checksum,
+            false,
             rng,
         )?;
 
@@ -138,7 +139,12 @@ impl<N: Network> Stack<N> {
         let input_output_index = Uniform::rand(rng);
         let record_view_key = Uniform::rand(rng);
         let gamma = Uniform::rand(rng);
-        let id_dynamic = record_dynamic.to_id(function_id, tvk, U16::new(input_output_index)).unwrap();
+        let id_dynamic = compute_console_nonlocal_record_id(
+            function_id,
+            record_dynamic.to_fields()?,
+            tvk,
+            U16::new(input_output_index),
+        )?;
         let is_input = Uniform::rand(rng);
         let static_is_external = Uniform::rand(rng);
         let id_static = Uniform::rand(rng);

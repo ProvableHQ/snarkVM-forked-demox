@@ -48,7 +48,7 @@ impl<N: Network> Stack<N> {
         // This is the root request and we do not have a root_tvk to pass on.
         let root_tvk = None;
         // Compute the request.
-        let request = Request::sign_static(
+        let request = Request::sign(
             private_key,
             program_id,
             function_name,
@@ -57,6 +57,7 @@ impl<N: Network> Stack<N> {
             root_tvk,
             is_root,
             program_checksum,
+            false,
             rng,
         )?;
         lap!(timer, "Compute the request");
@@ -104,7 +105,7 @@ impl<N: Network> Stack<N> {
             false => None,
         };
         // Compute the request.
-        let request = Request::sign_static(
+        let request = Request::sign(
             private_key,
             program_id,
             function_name,
@@ -113,6 +114,7 @@ impl<N: Network> Stack<N> {
             root_tvk,
             is_root,
             program_checksum,
+            false,
             rng,
         )?;
         lap!(timer, "Compute the request");

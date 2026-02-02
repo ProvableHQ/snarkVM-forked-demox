@@ -20,14 +20,7 @@ impl<N: Network> Serialize for Transition<N> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match serializer.is_human_readable() {
             true => {
-                let num_fields = match self.caller_metadata() {
-                    None => 8,
-                    Some(metadata) => match metadata.is_dynamic() {
-                        true => 9,
-                        false => 11,
-                    },
-                };
-                let mut transition = serializer.serialize_struct("Transition", num_fields)?;
+                let mut transition = serializer.serialize_struct("Transition", 8)?;
                 transition.serialize_field("id", &self.id)?;
                 transition.serialize_field("program", &self.program_id)?;
                 transition.serialize_field("function", &self.function_name)?;
@@ -36,14 +29,6 @@ impl<N: Network> Serialize for Transition<N> {
                 transition.serialize_field("tpk", &self.tpk)?;
                 transition.serialize_field("tcm", &self.tcm)?;
                 transition.serialize_field("scm", &self.scm)?;
-                if let Some(caller_metadata) = &self.caller_metadata {
-                    transition.serialize_field("is_dynamic", &caller_metadata.is_dynamic())?;
-                    if caller_metadata.is_dynamic() {
-                        // Note that the unwraps are safe, since `is_dynamic()` implies the presence of inputs and outputs.
-                        transition.serialize_field("caller_inputs", caller_metadata.inputs().unwrap())?;
-                        transition.serialize_field("caller_outputs", caller_metadata.outputs().unwrap())?;
-                    }
-                }
                 transition.end()
             }
             false => ToBytesSerializer::serialize_with_size_encoding(self, serializer),
@@ -61,25 +46,6 @@ impl<'de, N: Network> Deserialize<'de> for Transition<N> {
                 // Retrieve the ID.
                 let id: N::TransitionID = DeserializeExt::take_from_value::<D>(&mut transition, "id")?;
 
-                // Retrieve the optional caller metadata fields.
-                let is_dynamic: Option<bool> = DeserializeExt::take_from_value::<D>(&mut transition, "is_dynamic").ok();
-                let caller_metadata = match is_dynamic {
-                    Some(is_dynamic) => {
-                        if is_dynamic {
-                            Some(
-                                TransitionCallerMetadata::new_dynamic(
-                                    DeserializeExt::take_from_value::<D>(&mut transition, "caller_inputs")?,
-                                    DeserializeExt::take_from_value::<D>(&mut transition, "caller_outputs")?,
-                                )
-                                .map_err(de::Error::custom)?,
-                            )
-                        } else {
-                            Some(TransitionCallerMetadata::new_static())
-                        }
-                    }
-                    None => None,
-                };
-
                 // Recover the transition.
                 let transition = Self::new(
                     // Retrieve the program ID.
@@ -96,8 +62,6 @@ impl<'de, N: Network> Deserialize<'de> for Transition<N> {
                     DeserializeExt::take_from_value::<D>(&mut transition, "tcm")?,
                     // Retrieve the `scm`.
                     DeserializeExt::take_from_value::<D>(&mut transition, "scm")?,
-                    // Use the constructed caller metadata.
-                    caller_metadata,
                 )
                 .map_err(de::Error::custom)?;
 

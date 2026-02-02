@@ -93,13 +93,7 @@ impl<N: Network> Process<N> {
         for transition in execution.transitions() {
             dev_println!("Verifying transition for {}/{}...", transition.program_id(), transition.function_name());
             // Debug-mode only, as the `Transition` constructor recomputes the transition ID at initialization.
-            // Note: The transition ID includes the caller metadata when present.
-            let expected_id = match transition.caller_metadata() {
-                Some(caller_metadata) => {
-                    N::hash_bhp512(&(transition.to_root()?, *transition.tcm(), caller_metadata.clone()).to_bits_le())?
-                }
-                None => N::hash_bhp512(&(transition.to_root()?, *transition.tcm()).to_bits_le())?,
-            };
+            let expected_id = N::hash_bhp512(&(transition.to_root()?, *transition.tcm()).to_bits_le())?;
             debug_assert_eq!(**transition.id(), expected_id, "The transition ID is incorrect");
 
             // Ensure the transition is not a fee transition.
@@ -362,14 +356,6 @@ impl<N: Network> Process<N> {
                 _ => None,
             };
 
-            ensure!(
-                is_dynamic == child_transition.is_dynamic(),
-                "Function {} contains a dynamic call to {}, but the corresponding child transition {} does not contain dynamic-call data.",
-                transition.function_name(),
-                child_transition.function_name(),
-                child_transition_id,
-            );
-
             // [Inputs] Extend the verifier inputs with the program ID and function name if the child transition is dynamic.
             if is_dynamic {
                 verifier_inputs.extend(child_transition.program_id().to_fields()?.into_iter().map(|field| *field));
@@ -384,66 +370,50 @@ impl<N: Network> Process<N> {
             verifier_inputs.extend([**child_transition.tcm()]);
 
             // [Inputs] Extend the verifier inputs with the input IDs of the external call.
-            let child_inputs = if is_dynamic {
-                // Since is_dynamic has been checked to match child_transition.is_dynamic(),
-                // which guarantees caller_inputs.is_some() when true, this ? always
-                // unwraps successfully.
-                let caller_inputs = child_transition.caller_inputs().ok_or_else(|| {
-                    anyhow!(
-                        "Dynamic-call transition {} (function: {}) has no caller_inputs",
-                        child_transition.id(),
-                        child_transition.function_name(),
-                    )
-                })?;
-
-                // Note call_dynamic_instruction_opt.unwrap().operand_types() cannot
-                // panic by construction as is_dynamic is true
-                for (i, (input, input_type)) in caller_inputs
-                    .iter()
-                    .zip(call_dynamic_instruction_opt.clone().unwrap().operand_types().iter())
-                    .enumerate()
-                {
+            let num_inputs = child_transition.inputs().len();
+            if is_dynamic {
+                // For dynamic calls, use the dynamic_id when present, otherwise use normal verifier inputs.
+                // Note: call_dynamic_instruction_opt.unwrap() cannot panic by construction (is_dynamic is true).
+                let call_dynamic_instruction = call_dynamic_instruction_opt.clone().unwrap();
+                let operand_types = call_dynamic_instruction.operand_types();
+                for (i, (input, input_type)) in child_transition.inputs().iter().zip(operand_types.iter()).enumerate() {
+                    // Ensure the input type matches the caller's expectation.
+                    // Use the caller's view of the input (e.g., RecordWithDynamicID -> DynamicRecord).
+                    // Note: This check also ensures that record/external-record inputs in dynamic calls
+                    // use the `*WithDynamicID` variants (RecordWithDynamicID, ExternalRecordWithDynamicID),
+                    // because: (1) CallDynamic requires `DynamicRecord` type for record operands,
+                    // (2) `to_caller_input()` converts `*WithDynamicID` -> `DynamicRecord`, and
+                    // (3) plain `Record`/`ExternalRecord` remain unchanged by `to_caller_input()`.
                     ensure!(
-                        input.is_type(input_type),
-                        "Caller input {i} in dynamic call to {} should be of type {}, found: {}",
+                        input.to_caller_input().is_type(input_type),
+                        "Input {i} in dynamic call to {} should be of type {}, found: {}",
                         child_transition.function_name(),
                         input_type,
                         input,
                     );
+                    // Use the dynamic ID if present, otherwise use normal verifier inputs.
+                    match input.dynamic_id() {
+                        Some(dynamic_id) => verifier_inputs.push(**dynamic_id),
+                        None => verifier_inputs.extend(input.verifier_inputs()),
+                    }
                 }
-
-                caller_inputs
             } else {
-                child_transition.inputs()
-            };
-            let num_inputs = child_transition.inputs().len();
-
-            verifier_inputs.extend(child_inputs.iter().flat_map(|input| input.verifier_inputs()));
+                verifier_inputs.extend(child_transition.inputs().iter().flat_map(|input| input.verifier_inputs()));
+            }
 
             // [Inputs] Extend the verifier inputs with the output IDs of the external call.
-            let output_ids = if is_dynamic {
-                // This ? should always unwrap successfully for the same reason as in the definition of
-                // child_inputs above.
-                let caller_outputs = child_transition.caller_outputs().ok_or_else(|| {
-                    anyhow!(
-                        "Dynamic-call transition {} (function: {}) has no caller_outputs",
-                        child_transition.id(),
-                        child_transition.function_name(),
-                    )
-                })?;
-
-                // As above, this unwrap cannot panic by construction (is_dynamic is true)
+            if is_dynamic {
+                // As above, this unwrap cannot panic by construction (is_dynamic is true).
                 let call_dynamic_instruction = call_dynamic_instruction_opt.unwrap();
-
-                let mut caller_output_ids = vec![];
+                let destination_types = call_dynamic_instruction.destination_types();
                 ensure!(
-                    caller_outputs.len() == call_dynamic_instruction.destination_types().len(),
-                    "The number of caller outputs and dynamic call outputs do not match"
+                    child_transition.outputs().len() == destination_types.len(),
+                    "The number of outputs and dynamic call destination types do not match"
                 );
-                for (index, (caller_output, caller_destination_type)) in
-                    caller_outputs.iter().zip(call_dynamic_instruction.destination_types().iter()).enumerate()
+                for (index, (output, destination_type)) in
+                    child_transition.outputs().iter().zip(destination_types.iter()).enumerate()
                 {
-                    match (caller_output, caller_destination_type) {
+                    match (output, destination_type) {
                         // In the case of a `DynamicFuture`, the verifier computes the hash of the dynamic future directly.
                         (Output::Future(_id, future), ValueType::DynamicFuture) => {
                             let Some(future) = future else {
@@ -463,27 +433,31 @@ impl<N: Network> Process<N> {
                                 // Hash the output to a field element.
                                 N::hash_psd8(&preimage)?
                             };
-                            caller_output_ids.push(*dynamic_future_id);
+                            verifier_inputs.push(*dynamic_future_id);
                         }
                         _ => {
+                            // Ensure the output type matches the caller's expectation.
+                            // Use the caller's view of the output (e.g., RecordWithDynamicID -> DynamicRecord).
+                            // Note: This check also ensures that record/external-record outputs in dynamic calls
+                            // use the `*WithDynamicID` variants, by the same reasoning as for inputs above.
                             ensure!(
-                                caller_output.is_type(caller_destination_type),
-                                "Caller output {index} in dynamic call to {} should be of type {}, found: {}",
+                                output.to_caller_output().is_type(destination_type),
+                                "Output {index} in dynamic call to {} should be of type {}, found: {}",
                                 child_transition.function_name(),
-                                caller_destination_type,
-                                caller_output,
+                                destination_type,
+                                output,
                             );
-
-                            caller_output_ids.push(**caller_output.id());
+                            // Use the dynamic ID if present, otherwise use the output id.
+                            match output.dynamic_id() {
+                                Some(dynamic_id) => verifier_inputs.push(**dynamic_id),
+                                None => verifier_inputs.push(**output.id()),
+                            }
                         }
                     }
                 }
-
-                caller_output_ids
             } else {
-                child_transition.output_ids().map(|id| **id).collect::<Vec<_>>()
-            };
-            verifier_inputs.extend(output_ids);
+                verifier_inputs.extend(child_transition.output_ids().map(|id| **id));
+            }
         }
 
         // [Inputs] Extend the verifier inputs with the output IDs.

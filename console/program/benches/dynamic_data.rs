@@ -50,7 +50,7 @@ fn bench_dynamic_future(c: &mut Criterion) {
 fn bench_dynamic_record(c: &mut Criterion) {
     let rng = &mut TestRng::default();
 
-    for num_entries in [1, 4, 8, 16] {
+    for num_entries in [1, 4, 8, 16, 32] {
         let mut data = indexmap::IndexMap::new();
         for i in 0..num_entries {
             let name = Identifier::from_str(&format!("entry_{i}")).unwrap();

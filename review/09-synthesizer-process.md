@@ -78,6 +78,76 @@ Executes dynamic call with full circuit constraint generation.
 
 ---
 
+### Detailed: stack/call/dynamic.rs Execution Flow
+
+This section provides additional detail on the `call.dynamic` instruction implementation.
+
+#### Data Flow Diagram
+
+```
++----------------+     +------------------+     +----------------+
+|   Caller       | --> | call.dynamic     | --> |   Callee       |
+|   Function     |     | Instruction      |     |   Function     |
++----------------+     +------------------+     +----------------+
+        |                      |                       |
+        v                      v                       v
+  DynamicRecord          Resolve Target           Record
+  (caller view)          program/function        (callee view)
+        |                      |                       |
+        |              +-------+-------+               |
+        |              |               |               |
+        v              v               v               v
+   caller_inputs  convert inputs   callee_inputs   execute
+        |              |               |               |
+        |              v               v               |
+        |         Translation     Translation          |
+        |         Data (input)    Proof data           |
+        |              |               |               |
+        v              v               v               v
+   caller_outputs <-- convert <-- callee_outputs <--+
+        |              |
+        v              v
+   DynamicRecord  Translation
+   (caller view)  Data (output)
+```
+
+#### Call Stack Mode Handling
+
+| Mode | Behavior |
+|------|----------|
+| Authorize | Sign request, push to stack, execute callee |
+| Synthesize | Generate dummy inputs/outputs (no real execution) |
+| CheckDeployment | Same as Synthesize |
+| PackageRun | Sign and execute once |
+| Evaluate | Error (not allowed) |
+| Execute | Full verification: console == circuit outputs |
+
+#### Translation Data Collection
+
+For each DynamicRecord ↔ Record conversion:
+
+1. **Input translations** (caller DynamicRecord → callee Record):
+   - Collected via `collect_input_translations()`
+   - Stores: record_static, record_dynamic, program_id, function_id,
+     record_name, is_input=true, static_is_external, tvk, gamma,
+     serial_number (id_static), dynamic_hash (id_dynamic)
+
+2. **Output translations** (callee Record → caller DynamicRecord):
+   - Collected via `collect_output_translations()`
+   - Same fields but is_input=false, commitment (id_static)
+
+These are later used to generate translation proofs verifying equivalence.
+
+#### Security Constraints
+
+- Cannot call closures dynamically (enforced at target resolution)
+- Cannot pass/return Futures or DynamicFutures (type system check)
+- Cannot return Records (must use DynamicRecord for caller context)
+- Cannot call `credits.aleo/fee_private` or `credits.aleo/fee_public`
+- Acyclic call graph enforced (no recursion in dynamic calls)
+
+---
+
 ### New Module: trace/translation/ (4 files)
 **Purpose:** Translation proofs verify Record ↔ DynamicRecord equivalence. **High priority for review.**
 
@@ -131,9 +201,20 @@ pub struct RecordTranslationData<N: Network> {
 
 **Note:** `translation_index` is injected as a public input for verifier synchronization but is intentionally unused in circuit constraint logic (indicated by `_` prefix in code).
 
-**Constraint Counts:**
-- Simple record: ~24K constraints
-- Complex record (32 fields): ~68K constraints
+**Constraint Counts** (from `trace/translation/tests.rs`):
+
+| Test | Record Type | is_input | Constants | Public | Private | Constraints |
+|------|-------------|----------|-----------|--------|---------|-------------|
+| `test_translation_simple` | 8 fields | false | ≤36085 | 8 | 24131 | 24156 |
+| `test_translation_simple` | 8 fields | true | ≤6160 | 8 | 24131 | 24156 |
+| `test_translation_recursive` | nested structs | false | ≤38785 | 8 | 32721 | 32750 |
+| `test_translation_recursive` | nested structs | true | ≤8860 | 8 | 32721 | 32750 |
+| `test_translation_complex` | 32 fields | false | ≤41330 | 8 | 68798 | 68844 |
+| `test_translation_complex` | 32 fields | true | ≤11405 | 8 | 68798 | 68844 |
+| `test_definition_invariance` | invariance check | - | ≤37800 | 8 | 31043 | 31070 |
+| `test_external_translation` | external record | - | ≤38800 | 8 | 32562 | 32591 |
+
+Note: Constants are higher for outputs (is_input=false) due to commitment computation vs serial number
 
 ---
 

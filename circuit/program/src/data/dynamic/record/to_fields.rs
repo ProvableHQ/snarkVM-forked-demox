@@ -30,7 +30,7 @@ impl<A: Aleo> ToFields for DynamicRecord<A> {
         // Ensure the number of field elements does not exceed the maximum allowed size.
         match fields.len() <= A::MAX_DATA_SIZE_IN_FIELDS as usize {
             true => fields,
-            false => A::halt("DynamicRecord<Plaintext> exceeds maximum allowed size"),
+            false => A::halt("DynamicRecord exceeds maximum allowed size"),
         }
     }
 }

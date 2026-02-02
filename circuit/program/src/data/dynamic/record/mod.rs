@@ -17,15 +17,13 @@ mod equal;
 mod find;
 mod to_bits;
 mod to_fields;
-mod to_id;
-pub use to_id::compute_record_id;
 
 use crate::{Access, Aleo, Entry, Equal, Identifier, Literal, Plaintext, Record, ToBits, ToFields, Value};
 
 use console::RECORD_DATA_TREE_DEPTH;
 use snarkvm_circuit_algorithms::{Poseidon2, Poseidon8};
 use snarkvm_circuit_collections::merkle_tree::MerkleTree;
-use snarkvm_circuit_types::{Address, Boolean, Field, Group, U8, U16, environment::prelude::*};
+use snarkvm_circuit_types::{Address, Boolean, Field, Group, U8, environment::prelude::*};
 
 type CircuitLH<A> = Poseidon8<A>;
 type CircuitPH<A> = Poseidon2<A>;
@@ -190,5 +188,223 @@ impl<A: Aleo> DynamicRecord<A> {
 
         // Construct the merkle tree
         RecordDataTree::<A>::new(circuit_leaf_hasher, circuit_path_hasher, &leaves)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Circuit;
+    use snarkvm_circuit_types::environment::{Inject, assert_scope};
+    use snarkvm_utilities::{TestRng, Uniform};
+
+    use core::str::FromStr;
+
+    type CurrentNetwork = <Circuit as Environment>::Network;
+    type ConsoleRecord = console::Record<CurrentNetwork, console::Plaintext<CurrentNetwork>>;
+
+    /// Verifies circuit/console equivalence for a record parsed from a string.
+    /// This helper enables easier testing of various record structures.
+    fn check_circuit_console_equivalence(
+        record_str: &str,
+        num_constants: u64,
+        num_public: u64,
+        num_private: u64,
+        num_constraints: u64,
+    ) {
+        // Parse the record from the string.
+        let console_record = ConsoleRecord::from_str(record_str).unwrap();
+
+        // Convert to console DynamicRecord.
+        let console_dynamic = console::DynamicRecord::from_record(&console_record).unwrap();
+
+        // Inject the console record into the circuit.
+        let circuit_record = Record::<Circuit, Plaintext<Circuit>>::new(Mode::Private, console_record);
+
+        Circuit::scope("check_circuit_console_equivalence", || {
+            // Convert to circuit DynamicRecord.
+            let circuit_dynamic = DynamicRecord::<Circuit>::from_record(&circuit_record).unwrap();
+
+            // Verify the circuit root matches the console root.
+            let circuit_root = circuit_dynamic.root().eject_value();
+            let console_root = *console_dynamic.root();
+            assert_eq!(
+                circuit_root, console_root,
+                "Circuit and console DynamicRecord should produce the same Merkle root"
+            );
+
+            // Verify other fields match.
+            assert_eq!(circuit_dynamic.owner().eject_value(), *console_dynamic.owner());
+            assert_eq!(circuit_dynamic.nonce().eject_value(), *console_dynamic.nonce());
+            assert_eq!(circuit_dynamic.version().eject_value(), *console_dynamic.version());
+
+            // Verify circuit constraint counts.
+            assert_scope!(num_constants, num_public, num_private, num_constraints);
+        });
+
+        Circuit::reset();
+    }
+
+    /// Creates a console record with the given data for testing.
+    fn create_console_record(
+        rng: &mut TestRng,
+        data: console::RecordData<CurrentNetwork>,
+        owner_is_private: bool,
+    ) -> ConsoleRecord {
+        let owner = match owner_is_private {
+            true => console::Owner::Private(console::Plaintext::from(console::Literal::Address(
+                console::Address::rand(rng),
+            ))),
+            false => console::Owner::Public(console::Address::rand(rng)),
+        };
+        ConsoleRecord::from_plaintext(owner, data, console::Group::rand(rng), console::U8::new(0)).unwrap()
+    }
+
+    #[test]
+    fn test_circuit_console_equivalence_empty_record() {
+        // Empty record with public owner.
+        let record_str = r#"{
+          owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.public,
+          _nonce: 0group.public,
+          _version: 0u8.public
+        }"#;
+        check_circuit_console_equivalence(record_str, 1075, 0, 0, 0);
+    }
+
+    #[test]
+    fn test_circuit_console_equivalence_single_private_field() {
+        // Record with a single private u64 field.
+        let record_str = r#"{
+          owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.public,
+          amount: 100u64.private,
+          _nonce: 0group.public,
+          _version: 0u8.public
+        }"#;
+        check_circuit_console_equivalence(record_str, 1100, 0, 3175, 3175);
+    }
+
+    #[test]
+    fn test_circuit_console_equivalence_single_public_field() {
+        // Record with a single public u64 field.
+        let record_str = r#"{
+          owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.public,
+          amount: 100u64.public,
+          _nonce: 0group.public,
+          _version: 0u8.public
+        }"#;
+        check_circuit_console_equivalence(record_str, 1100, 0, 3175, 3175);
+    }
+
+    #[test]
+    fn test_circuit_console_equivalence_single_constant_field() {
+        // Record with a single constant u64 field.
+        let record_str = r#"{
+          owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.public,
+          amount: 100u64.constant,
+          _nonce: 0group.public,
+          _version: 0u8.public
+        }"#;
+        check_circuit_console_equivalence(record_str, 1100, 0, 3175, 3175);
+    }
+
+    #[test]
+    fn test_circuit_console_equivalence_mixed_entry_types() {
+        let rng = &mut TestRng::default();
+
+        // Create test data with mixed entry types (private, public, constant).
+        let mut data = IndexMap::new();
+        data.insert(
+            console::Identifier::from_str("a").unwrap(),
+            console::Entry::Private(console::Plaintext::from(console::Literal::U64(console::U64::rand(rng)))),
+        );
+        data.insert(
+            console::Identifier::from_str("b").unwrap(),
+            console::Entry::Public(console::Plaintext::from(console::Literal::U64(console::U64::rand(rng)))),
+        );
+        data.insert(
+            console::Identifier::from_str("c").unwrap(),
+            console::Entry::Constant(console::Plaintext::from(console::Literal::U64(console::U64::rand(rng)))),
+        );
+
+        // Create the record and convert to string for consistent testing.
+        let console_record = create_console_record(rng, data, true);
+        let record_str = console_record.to_string();
+
+        check_circuit_console_equivalence(&record_str, 1151, 0, 4665, 4665);
+    }
+
+    #[test]
+    fn test_circuit_console_equivalence_nested_struct() {
+        let rng = &mut TestRng::default();
+
+        // Create a nested struct entry.
+        let mut inner_map = IndexMap::new();
+        inner_map.insert(
+            console::Identifier::from_str("x").unwrap(),
+            console::Plaintext::from(console::Literal::U64(console::U64::rand(rng))),
+        );
+        inner_map.insert(
+            console::Identifier::from_str("y").unwrap(),
+            console::Plaintext::from(console::Literal::U64(console::U64::rand(rng))),
+        );
+        let inner = console::Plaintext::Struct(inner_map, Default::default());
+
+        let mut data = IndexMap::new();
+        data.insert(console::Identifier::from_str("point").unwrap(), console::Entry::Private(inner));
+
+        // Create the record and convert to string for consistent testing.
+        let console_record = create_console_record(rng, data, false);
+        let record_str = console_record.to_string();
+
+        check_circuit_console_equivalence(&record_str, 1180, 0, 3180, 3180);
+    }
+
+    #[test]
+    fn test_circuit_console_equivalence_private_owner() {
+        // Record with private owner.
+        let record_str = r#"{
+          owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.private,
+          _nonce: 0group.public,
+          _version: 0u8.public
+        }"#;
+        check_circuit_console_equivalence(record_str, 1075, 0, 0, 0);
+    }
+
+    #[test]
+    fn test_circuit_console_equivalence_multiple_fields() {
+        // Record with multiple fields of the same visibility.
+        let record_str = r#"{
+          owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.public,
+          x: 1u64.private,
+          y: 2u64.private,
+          z: 3u64.private,
+          _nonce: 0group.public,
+          _version: 0u8.public
+        }"#;
+        check_circuit_console_equivalence(record_str, 1151, 0, 4665, 4665);
+    }
+
+    #[test]
+    fn test_circuit_console_equivalence_boolean_field() {
+        // Record with a boolean field.
+        let record_str = r#"{
+          owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.public,
+          flag: true.private,
+          _nonce: 0group.public,
+          _version: 0u8.public
+        }"#;
+        check_circuit_console_equivalence(record_str, 1100, 0, 3175, 3175);
+    }
+
+    #[test]
+    fn test_circuit_console_equivalence_address_field() {
+        // Record with an address field.
+        let record_str = r#"{
+          owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.public,
+          recipient: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.private,
+          _nonce: 0group.public,
+          _version: 0u8.public
+        }"#;
+        check_circuit_console_equivalence(record_str, 1100, 0, 3685, 3687);
     }
 }

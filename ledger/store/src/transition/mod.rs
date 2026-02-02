@@ -28,7 +28,7 @@ use console::{
     program::{Ciphertext, Identifier, Plaintext, ProgramID, Record},
     types::{Field, Group},
 };
-use snarkvm_ledger_block::{Input, Output, Transition, TransitionCallerMetadata};
+use snarkvm_ledger_block::{Input, Output, Transition};
 
 use aleo_std_storage::StorageMode;
 use anyhow::Result;
@@ -52,12 +52,6 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
     type ReverseTCMMap: for<'a> Map<'a, Field<N>, N::TransitionID>;
     /// The signer commitments.
     type SCMMap: for<'a> Map<'a, N::TransitionID, Field<N>>;
-    /// The mapping of `transition ID` to its optional `is_dynamic` flag.
-    type IsDynamicMap: for<'a> Map<'a, N::TransitionID, bool>;
-    /// The mapping of `transition ID` to its optional caller inputs.
-    type CallerInputsMap: for<'a> Map<'a, N::TransitionID, Vec<Input<N>>>;
-    /// The mapping of `transition ID` to its optional caller outputs.
-    type CallerOutputsMap: for<'a> Map<'a, N::TransitionID, Vec<Output<N>>>;
 
     /// Initializes the transition storage.
     fn open<S: Into<StorageMode>>(storage: S) -> Result<Self>;
@@ -78,12 +72,6 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
     fn reverse_tcm_map(&self) -> &Self::ReverseTCMMap;
     /// Returns the signer commitments map.
     fn scm_map(&self) -> &Self::SCMMap;
-    /// Returns the `is_dynamic` map.
-    fn is_dynamic_map(&self) -> &Self::IsDynamicMap;
-    /// Returns the caller inputs map.
-    fn caller_inputs_map(&self) -> &Self::CallerInputsMap;
-    /// Returns the caller outputs map.
-    fn caller_outputs_map(&self) -> &Self::CallerOutputsMap;
 
     /// Returns the storage mode.
     fn storage_mode(&self) -> &StorageMode {
@@ -101,9 +89,6 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
         self.tcm_map().start_atomic();
         self.reverse_tcm_map().start_atomic();
         self.scm_map().start_atomic();
-        self.is_dynamic_map().start_atomic();
-        self.caller_inputs_map().start_atomic();
-        self.caller_outputs_map().start_atomic();
     }
 
     /// Checks if an atomic batch is in progress.
@@ -116,9 +101,6 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
             || self.tcm_map().is_atomic_in_progress()
             || self.reverse_tcm_map().is_atomic_in_progress()
             || self.scm_map().is_atomic_in_progress()
-            || self.is_dynamic_map().is_atomic_in_progress()
-            || self.caller_inputs_map().is_atomic_in_progress()
-            || self.caller_outputs_map().is_atomic_in_progress()
     }
 
     /// Checkpoints the atomic batch.
@@ -131,9 +113,6 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
         self.tcm_map().atomic_checkpoint();
         self.reverse_tcm_map().atomic_checkpoint();
         self.scm_map().atomic_checkpoint();
-        self.is_dynamic_map().atomic_checkpoint();
-        self.caller_inputs_map().atomic_checkpoint();
-        self.caller_outputs_map().atomic_checkpoint();
     }
 
     /// Clears the latest atomic batch checkpoint.
@@ -146,9 +125,6 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
         self.tcm_map().clear_latest_checkpoint();
         self.reverse_tcm_map().clear_latest_checkpoint();
         self.scm_map().clear_latest_checkpoint();
-        self.is_dynamic_map().clear_latest_checkpoint();
-        self.caller_inputs_map().clear_latest_checkpoint();
-        self.caller_outputs_map().clear_latest_checkpoint();
     }
 
     /// Rewinds the atomic batch to the previous checkpoint.
@@ -161,9 +137,6 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
         self.tcm_map().atomic_rewind();
         self.reverse_tcm_map().atomic_rewind();
         self.scm_map().atomic_rewind();
-        self.is_dynamic_map().atomic_rewind();
-        self.caller_inputs_map().atomic_rewind();
-        self.caller_outputs_map().atomic_rewind();
     }
 
     /// Aborts an atomic batch write operation.
@@ -176,9 +149,6 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
         self.tcm_map().abort_atomic();
         self.reverse_tcm_map().abort_atomic();
         self.scm_map().abort_atomic();
-        self.is_dynamic_map().abort_atomic();
-        self.caller_inputs_map().abort_atomic();
-        self.caller_outputs_map().abort_atomic();
     }
 
     /// Finishes an atomic batch write operation.
@@ -190,10 +160,7 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
         self.reverse_tpk_map().finish_atomic()?;
         self.tcm_map().finish_atomic()?;
         self.reverse_tcm_map().finish_atomic()?;
-        self.scm_map().finish_atomic()?;
-        self.is_dynamic_map().finish_atomic()?;
-        self.caller_inputs_map().finish_atomic()?;
-        self.caller_outputs_map().finish_atomic()
+        self.scm_map().finish_atomic()
     }
 
     /// Stores the given `transition` into storage.
@@ -217,16 +184,6 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
             self.reverse_tcm_map().insert(*transition.tcm(), transition_id)?;
             // Store `scm`.
             self.scm_map().insert(transition_id, *transition.scm())?;
-            // Store the optional caller metadata.
-            if let Some(caller_metadata) = transition.caller_metadata() {
-                self.is_dynamic_map().insert(transition_id, caller_metadata.is_dynamic())?;
-                // If the caller metadata is dynamic, store the caller inputs and outputs.
-                // Note that the unwraps are safe, since `is_dynamic()` implies the presence of inputs and outputs.
-                if caller_metadata.is_dynamic() {
-                    self.caller_inputs_map().insert(transition_id, caller_metadata.inputs().unwrap().to_vec())?;
-                    self.caller_outputs_map().insert(transition_id, caller_metadata.outputs().unwrap().to_vec())?;
-                }
-            }
             Ok(())
         })
     }
@@ -259,10 +216,6 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
             self.reverse_tcm_map().remove(&tcm)?;
             // Remove `scm`.
             self.scm_map().remove(transition_id)?;
-            // Remove the optional caller metadata.
-            self.is_dynamic_map().remove(transition_id)?;
-            self.caller_inputs_map().remove(transition_id)?;
-            self.caller_outputs_map().remove(transition_id)?;
 
             Ok(())
         })
@@ -286,21 +239,6 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
         let tcm = self.tcm_map().get_confirmed(transition_id)?;
         // Retrieve `scm`.
         let scm = self.scm_map().get_confirmed(transition_id)?;
-        // Retrieve the optional caller metadata.
-        let is_dynamic = self.is_dynamic_map().get_confirmed(transition_id)?.map(Cow::into_owned);
-        let caller_metadata = match is_dynamic {
-            Some(false) => Some(TransitionCallerMetadata::new_static()),
-            Some(true) => {
-                let Some(caller_inputs) = self.caller_inputs_map().get_confirmed(transition_id)? else {
-                    bail!("Expected caller inputs to be present for dynamic transition '{transition_id}'");
-                };
-                let Some(caller_outputs) = self.caller_outputs_map().get_confirmed(transition_id)? else {
-                    bail!("Expected caller outputs to be present for dynamic transition '{transition_id}'");
-                };
-                Some(TransitionCallerMetadata::new_dynamic(caller_inputs.into_owned(), caller_outputs.into_owned())?)
-            }
-            None => None,
-        };
 
         match (tpk, tcm, scm) {
             (Some(tpk), Some(tcm), Some(scm)) => {
@@ -313,7 +251,6 @@ pub trait TransitionStorage<N: Network>: Clone + Send + Sync {
                     tpk.into_owned(),
                     tcm.into_owned(),
                     scm.into_owned(),
-                    caller_metadata,
                 )?;
                 // Ensure the transition ID matches.
                 match transition.id() == transition_id {
@@ -345,12 +282,6 @@ pub struct TransitionStore<N: Network, T: TransitionStorage<N>> {
     reverse_tcm: T::ReverseTCMMap,
     /// The map of signer commitments.
     scm: T::SCMMap,
-    /// The `is_dynamic` map.
-    is_dynamic: T::IsDynamicMap,
-    /// The caller inputs map.
-    caller_inputs: T::CallerInputsMap,
-    /// The caller outputs map.
-    caller_outputs: T::CallerOutputsMap,
     /// The transition storage.
     storage: T,
 }
@@ -370,9 +301,6 @@ impl<N: Network, T: TransitionStorage<N>> TransitionStore<N, T> {
             tcm: storage.tcm_map().clone(),
             reverse_tcm: storage.reverse_tcm_map().clone(),
             scm: storage.scm_map().clone(),
-            is_dynamic: storage.is_dynamic_map().clone(),
-            caller_inputs: storage.caller_inputs_map().clone(),
-            caller_outputs: storage.caller_outputs_map().clone(),
             storage,
         })
     }
@@ -388,9 +316,6 @@ impl<N: Network, T: TransitionStorage<N>> TransitionStore<N, T> {
             tcm: storage.tcm_map().clone(),
             reverse_tcm: storage.reverse_tcm_map().clone(),
             scm: storage.scm_map().clone(),
-            is_dynamic: storage.is_dynamic_map().clone(),
-            caller_inputs: storage.caller_inputs_map().clone(),
-            caller_outputs: storage.caller_outputs_map().clone(),
             storage,
         }
     }
@@ -511,37 +436,6 @@ impl<N: Network, T: TransitionStorage<N>> TransitionStore<N, T> {
     /// If the record does not exist, `Err(error)` is returned.
     pub fn get_record(&self, commitment: &Field<N>) -> Result<Option<Record<N, Ciphertext<N>>>> {
         self.outputs.get_record(commitment)
-    }
-
-    /// Returns the caller metadata for the given `transition ID`.
-    pub fn get_caller_metadata(&self, transition_id: &N::TransitionID) -> Result<Option<TransitionCallerMetadata<N>>> {
-        let is_dynamic = self.is_dynamic.get_confirmed(transition_id)?.map(Cow::into_owned);
-        match is_dynamic {
-            None => Ok(None),
-            Some(false) => Ok(Some(TransitionCallerMetadata::new_static())),
-            Some(true) => {
-                let Some(caller_inputs) = self.caller_inputs.get_confirmed(transition_id)? else {
-                    bail!("Expected caller inputs to be present for dynamic transition '{transition_id}'");
-                };
-                let Some(caller_outputs) = self.caller_outputs.get_confirmed(transition_id)? else {
-                    bail!("Expected caller outputs to be present for dynamic transition '{transition_id}'");
-                };
-                Ok(Some(TransitionCallerMetadata::new_dynamic(
-                    caller_inputs.into_owned(),
-                    caller_outputs.into_owned(),
-                )?))
-            }
-        }
-    }
-
-    /// Returns the caller inputs for the given `transition ID`.
-    pub fn get_caller_inputs(&self, transition_id: &N::TransitionID) -> Result<Option<Vec<Input<N>>>> {
-        Ok(self.caller_inputs.get_confirmed(transition_id)?.map(Cow::into_owned))
-    }
-
-    /// Returns the caller outputs for the given `transition ID`.
-    pub fn get_caller_outputs(&self, transition_id: &N::TransitionID) -> Result<Option<Vec<Output<N>>>> {
-        Ok(self.caller_outputs.get_confirmed(transition_id)?.map(Cow::into_owned))
     }
 }
 

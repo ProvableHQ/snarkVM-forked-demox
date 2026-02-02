@@ -27,7 +27,7 @@ impl<A: Aleo> Future<A> {
             Plaintext(&'a Plaintext<A>),
             /// A future.
             Future(&'a Future<A>),
-            /// A dynamic future
+            /// A dynamic future.
             DynamicFuture(&'a DynamicFuture<A>),
         }
 
