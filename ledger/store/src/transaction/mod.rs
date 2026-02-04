@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -723,7 +723,10 @@ mod tests {
             snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, rng),
             snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, false, rng),
             snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, true, rng),
-            // Note: V3 deployments (amendments) are not tested here as they require a proper base deployment setup.
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 0, true, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 1, false, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 2, true, rng),
+            // Note: V4 deployments (amendments) are not tested here as they require a proper base deployment setup.
             // See test_v14.rs and deployment.rs tests for amendment coverage.
             snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(true, rng, 0),
             snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(false, rng, 0),
@@ -771,7 +774,10 @@ mod tests {
             snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, rng),
             snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, false, rng),
             snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, true, rng),
-            // Note: V3 deployments (amendments) are not tested here as they require a proper base deployment setup.
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 0, true, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 1, false, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 2, true, rng),
+            // Note: V4 deployments (amendments) are not tested here as they require a proper base deployment setup.
             // See test_v14.rs and deployment.rs tests for amendment coverage.
             snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(true, rng, 0),
             snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(true, rng, 1),

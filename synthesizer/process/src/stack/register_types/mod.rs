@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -140,6 +140,8 @@ impl<N: Network> RegisterTypes<N> {
             Plaintext(PlaintextType<N>),
             /// A future.
             Future(Locator<N>),
+            // A dynamic future.
+            DynamicFuture,
         }
 
         // A literal address type.
@@ -204,6 +206,23 @@ impl<N: Network> RegisterTypes<N> {
                 }
             }
             RegisterType::Future(locator) => RegisterAccessType::Future(*locator),
+            // A dynamic record cannot be accessed directly.
+            RegisterType::DynamicRecord => {
+                // Retrieve the first access.
+                // Note: this unwrap is safe since the path is checked to be non-empty above.
+                let access = path_iter.next().unwrap();
+                // Retrieve the member type from the external record.
+                if access == &Access::Member(Identifier::from_str("owner")?) {
+                    // If the member is the owner, then output the address type.
+                    RegisterAccessType::Plaintext(literal_address_type)
+                } else {
+                    bail!(
+                        "Only the 'owner' of a dynamic record can be accessed directly, use 'get.record.dynamic' instead."
+                    )
+                }
+            }
+            // A dynamic future cannot be accessed directly.
+            RegisterType::DynamicFuture => bail!("Cannot access a dynamic future value directly"),
         };
 
         // Traverse the path to find the register type.
@@ -267,6 +286,7 @@ impl<N: Network> RegisterTypes<N> {
                                     RegisterAccessType::Plaintext(plaintext_type.clone())
                                 }
                                 FinalizeType::Future(locator) => RegisterAccessType::Future(*locator),
+                                FinalizeType::DynamicFuture => RegisterAccessType::DynamicFuture,
                             }
                         }
                         // Halts if the index is out of bounds.
@@ -278,7 +298,8 @@ impl<N: Network> RegisterTypes<N> {
                     Access::Index(..),
                 )
                 | (RegisterAccessType::Plaintext(PlaintextType::Array(..)), Access::Member(..))
-                | (RegisterAccessType::Future(..), Access::Member(..)) => {
+                | (RegisterAccessType::Future(..), Access::Member(..))
+                | (RegisterAccessType::DynamicFuture, _) => {
                     bail!("Invalid access `{access}`")
                 }
             }
@@ -288,6 +309,7 @@ impl<N: Network> RegisterTypes<N> {
         Ok(match register_type {
             RegisterAccessType::Plaintext(plaintext_type) => RegisterType::Plaintext(plaintext_type.clone()),
             RegisterAccessType::Future(locator) => RegisterType::Future(locator),
+            RegisterAccessType::DynamicFuture => RegisterType::DynamicFuture,
         })
     }
 }

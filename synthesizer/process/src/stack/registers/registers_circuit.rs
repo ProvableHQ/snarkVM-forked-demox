@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -138,6 +138,12 @@ impl<N: Network, A: circuit::Aleo<Network = N>> RegistersCircuit<N, A> for Regis
                     },
                     // Retrieve the argument from the future.
                     circuit::Value::Future(future) => future.find(&path)?,
+                    // A dynamic record cannot be accessed directly.
+                    circuit::Value::DynamicRecord(dynamic_record) => dynamic_record.find(&path)?,
+                    // A dynamic future cannot be accessed directly.
+                    circuit::Value::DynamicFuture(_) => {
+                        bail!("Cannot invoke `find` on a dynamic future value")
+                    }
                 }
             }
         };

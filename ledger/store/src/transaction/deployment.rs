@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -59,9 +59,9 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     /// The mapping of `(program ID, edition)` to `checksum`.
     /// This was introduced in `ConsensusVersion::V9`.
     type ChecksumMap: for<'a> Map<'a, (ProgramID<N>, u16), [U8<N>; 32]>;
-    /// The mapping of `(program ID, function name, edition)` to `verifying key`.
+    /// The mapping of `(program ID, name, edition)` to `verifying key`.
     type VerifyingKeyMap: for<'a> Map<'a, (ProgramID<N>, Identifier<N>, u16), VerifyingKey<N>>;
-    /// The mapping of `(program ID, function name, edition)` to `certificate`.
+    /// The mapping of `(program ID, name, edition)` to `certificate`.
     type CertificateMap: for<'a> Map<'a, (ProgramID<N>, Identifier<N>, u16), Certificate<N>>;
     /// The fee storage.
     type FeeStorage: FeeStorage<N>;
@@ -282,7 +282,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         // Retrieve the checksum.
         let checksum = deployment.program_checksum();
         // Check if this is an amendment.
-        let is_amendment = deployment.version()? == DeploymentVersion::V3;
+        let is_amendment = deployment.version()? == DeploymentVersion::V4;
 
         // Handle amendments separately from regular deployments.
         if is_amendment {
@@ -369,6 +369,16 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
                     self.verifying_key_map().insert((program_id, *function_name, edition), verifying_key.clone())?;
                     // Store the certificate.
                     self.certificate_map().insert((program_id, *function_name, edition), certificate.clone())?;
+                }
+
+                // Store the translation verifying keys and certificates, if they exist.
+                if let Some(translation_verifying_keys) = deployment.translation_verifying_keys() {
+                    for (record_name, (verifying_key, certificate)) in translation_verifying_keys {
+                        // Store the verifying key.
+                        self.verifying_key_map().insert((program_id, *record_name, edition), verifying_key.clone())?;
+                        // Store the certificate.
+                        self.certificate_map().insert((program_id, *record_name, edition), certificate.clone())?;
+                    }
                 }
 
                 // Store the fee transition.
@@ -498,6 +508,14 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
                     self.verifying_key_map().remove(&(program_id, *function_name, edition))?;
                     // Remove the certificate.
                     self.certificate_map().remove(&(program_id, *function_name, edition))?;
+                }
+
+                // Remove the translation verifying keys and certificates.
+                for record_name in program.records().keys() {
+                    // Remove the verifying key.
+                    self.verifying_key_map().remove(&(program_id, *record_name, edition))?;
+                    // Remove the certificate.
+                    self.certificate_map().remove(&(program_id, *record_name, edition))?;
                 }
 
                 // Remove the fee transition.
@@ -679,19 +697,19 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.program_map().get_confirmed(&(*program_id, edition)).map(|p| p.map(|p| p.into_owned()))
     }
 
-    /// Returns the latest verifying key for the given `program ID` and `function name`.
+    /// Returns the latest verifying key for the given `program ID` and `resource name`.
     /// If amendments exist, returns the verifying key from the latest amendment.
     fn get_latest_verifying_key(
         &self,
         program_id: &ProgramID<N>,
-        function_name: &Identifier<N>,
+        resource_name: &Identifier<N>,
     ) -> Result<Option<VerifyingKey<N>>> {
         // Check if the program ID is for 'credits.aleo'.
         // This case is handled separately, as it is a default program of the VM.
         // TODO (howardwu): After we update 'fee' rules and 'Ratify' in genesis, we can remove this.
         if program_id == &ProgramID::from_str("credits.aleo")? {
             // Load the verifying key.
-            let verifying_key = N::get_credits_verifying_key(function_name.to_string())?;
+            let verifying_key = N::get_credits_verifying_key(resource_name.to_string())?;
             // Retrieve the number of public and private variables.
             // Note: This number does *NOT* include the number of constants. This is safe because
             // this program is never deployed, as it is a first-class citizen of the protocol.
@@ -713,13 +731,13 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
                 let latest_index = count.saturating_sub(1);
                 let Some(verifying_key) = self.amendment_verifying_key_map().get_confirmed(&(
                     *program_id,
-                    *function_name,
+                    *resource_name,
                     edition,
                     latest_index,
                 ))?
                 else {
                     bail!(
-                        "Failed to get the amendment verifying key for '{program_id}/{function_name}' (edition {edition}, amendment {latest_index})"
+                        "Failed to get the amendment verifying key for '{program_id}/{resource_name}' (edition {edition}, amendment {latest_index})"
                     );
                 };
                 return Ok(Some(verifying_key.into_owned()));
@@ -727,19 +745,19 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         }
 
         // No amendments, retrieve from regular verifying key map.
-        let Some(verifying_key) = self.verifying_key_map().get_confirmed(&(*program_id, *function_name, edition))?
+        let Some(verifying_key) = self.verifying_key_map().get_confirmed(&(*program_id, *resource_name, edition))?
         else {
-            bail!("Failed to get the verifying key for '{program_id}/{function_name}' (edition {edition})");
+            bail!("Failed to get the verifying key for '{program_id}/{resource_name}' (edition {edition})");
         };
         Ok(Some(verifying_key.into_owned()))
     }
 
-    /// Returns the verifying key for the given `program ID`, `function name` and `edition`.
+    /// Returns the verifying key for the given `program ID`, `resource name` and `edition`.
     /// If amendments exist for the given edition, returns the verifying key from the latest amendment.
     fn get_verifying_key_with_edition(
         &self,
         program_id: &ProgramID<N>,
-        function_name: &Identifier<N>,
+        resource_name: &Identifier<N>,
         edition: u16,
     ) -> Result<Option<VerifyingKey<N>>> {
         // Check if the program ID is for 'credits.aleo'.
@@ -747,7 +765,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         // TODO (howardwu): After we update 'fee' rules and 'Ratify' in genesis, we can remove this.
         if program_id == &ProgramID::from_str("credits.aleo")? {
             // Load the verifying key.
-            let verifying_key = N::get_credits_verifying_key(function_name.to_string())?;
+            let verifying_key = N::get_credits_verifying_key(resource_name.to_string())?;
             // Retrieve the number of public and private variables.
             // Note: This number does *NOT* include the number of constants. This is safe because
             // this program is never deployed, as it is a first-class citizen of the protocol.
@@ -764,13 +782,13 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
                 let latest_index = count.saturating_sub(1);
                 let Some(verifying_key) = self.amendment_verifying_key_map().get_confirmed(&(
                     *program_id,
-                    *function_name,
+                    *resource_name,
                     edition,
                     latest_index,
                 ))?
                 else {
                     bail!(
-                        "Failed to get the amendment verifying key for '{program_id}/{function_name}' (edition {edition}, amendment {latest_index})"
+                        "Failed to get the amendment verifying key for '{program_id}/{resource_name}' (edition {edition}, amendment {latest_index})"
                     );
                 };
                 return Ok(Some(verifying_key.into_owned()));
@@ -778,9 +796,9 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         }
 
         // No amendments, retrieve from regular verifying key map.
-        match self.verifying_key_map().get_confirmed(&(*program_id, *function_name, edition))? {
+        match self.verifying_key_map().get_confirmed(&(*program_id, *resource_name, edition))? {
             Some(verifying_key) => Ok(Some(verifying_key.into_owned())),
-            None => bail!("Failed to get the verifying key for '{program_id}/{function_name}' (edition {edition})"),
+            None => bail!("Failed to get the verifying key for '{program_id}/{resource_name}' (edition {edition})"),
         }
     }
 
@@ -810,12 +828,12 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         }
     }
 
-    /// Returns the latest certificate for the given `program ID` and `function name`.
+    /// Returns the latest certificate for the given `program ID` and `resource name`.
     /// If amendments exist, returns the certificate from the latest amendment.
     fn get_latest_certificate(
         &self,
         program_id: &ProgramID<N>,
-        function_name: &Identifier<N>,
+        resource_name: &Identifier<N>,
     ) -> Result<Option<Certificate<N>>> {
         // Check if the program ID is for 'credits.aleo'.
         // This case is handled separately, as it is a default program of the VM.
@@ -837,13 +855,13 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
                 let latest_index = count.saturating_sub(1);
                 let Some(certificate) = self.amendment_certificate_map().get_confirmed(&(
                     *program_id,
-                    *function_name,
+                    *resource_name,
                     edition,
                     latest_index,
                 ))?
                 else {
                     bail!(
-                        "Failed to get the amendment certificate for '{program_id}/{function_name}' (edition {edition}, amendment {latest_index})"
+                        "Failed to get the amendment certificate for '{program_id}/{resource_name}' (edition {edition}, amendment {latest_index})"
                     );
                 };
                 return Ok(Some(certificate.into_owned()));
@@ -851,18 +869,18 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         }
 
         // No amendments, retrieve from regular certificate map.
-        let Some(certificate) = self.certificate_map().get_confirmed(&(*program_id, *function_name, edition))? else {
-            bail!("Failed to get the certificate for '{program_id}/{function_name}' (edition {edition})");
+        let Some(certificate) = self.certificate_map().get_confirmed(&(*program_id, *resource_name, edition))? else {
+            bail!("Failed to get the certificate for '{program_id}/{resource_name}' (edition {edition})");
         };
         Ok(Some(certificate.into_owned()))
     }
 
-    /// Returns the certificate for the given `program ID`, `function name`, and `edition`.
+    /// Returns the certificate for the given `program ID`, `resource name`, and `edition`.
     /// If amendments exist for the given edition, returns the certificate from the latest amendment.
     fn get_certificate_with_edition(
         &self,
         program_id: &ProgramID<N>,
-        function_name: &Identifier<N>,
+        resource_name: &Identifier<N>,
         edition: u16,
     ) -> Result<Option<Certificate<N>>> {
         // Check if the program ID is for 'credits.aleo'.
@@ -880,13 +898,13 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
                 let latest_index = count.saturating_sub(1);
                 let Some(certificate) = self.amendment_certificate_map().get_confirmed(&(
                     *program_id,
-                    *function_name,
+                    *resource_name,
                     edition,
                     latest_index,
                 ))?
                 else {
                     bail!(
-                        "Failed to get the amendment certificate for '{program_id}/{function_name}' (edition {edition}, amendment {latest_index})"
+                        "Failed to get the amendment certificate for '{program_id}/{resource_name}' (edition {edition}, amendment {latest_index})"
                     );
                 };
                 return Ok(Some(certificate.into_owned()));
@@ -894,9 +912,9 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         }
 
         // No amendments, retrieve from regular certificate map.
-        match self.certificate_map().get_confirmed(&(*program_id, *function_name, edition))? {
+        match self.certificate_map().get_confirmed(&(*program_id, *resource_name, edition))? {
             Some(certificate) => Ok(Some(certificate.into_owned())),
-            None => bail!("Failed to get the certificate for '{program_id}/{function_name}' (edition {edition})"),
+            None => bail!("Failed to get the certificate for '{program_id}/{resource_name}' (edition {edition})"),
         }
     }
 
@@ -965,7 +983,8 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
                 verifying_keys.push((*function_name, (verifying_key, certificate)));
             }
 
-            return Ok(Some(Deployment::new(edition, program, verifying_keys, program_checksum, program_owner)?));
+            // Amendments do not have translation verifying keys.
+            return Ok(Some(Deployment::new(edition, program, verifying_keys, program_checksum, program_owner, None)?));
         }
 
         // Retrieve the program ID.
@@ -1015,8 +1034,49 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             verifying_keys.push((*function_name, (verifying_key, certificate)));
         }
 
+        // Initialize a vector for the translation verifying keys and certificates.
+        let mut translation_verifying_keys = Vec::with_capacity(program.records().len());
+
+        // Retrieve the verifying keys and certificates.
+        for record_name in program.records().keys() {
+            // Retrieve the verifying key.
+            let Some(translation_verifying_key) =
+                self.verifying_key_map().get_confirmed(&(program_id, *record_name, edition))?.map(|x| x.into_owned())
+            else {
+                continue;
+            };
+            // Retrieve the translation certificate.
+            let Some(certificate) =
+                self.certificate_map().get_confirmed(&(program_id, *record_name, edition))?.map(|x| x.into_owned())
+            else {
+                bail!("Failed to get the translation certificate for '{program_id}/{record_name}' (edition {edition})");
+            };
+            // Add the verifying key and certificate to the deployment.
+            translation_verifying_keys.push((*record_name, (translation_verifying_key, certificate)));
+        }
+
+        // Check that the number of translation verifying keys is consistent.
+        let translation_verifying_keys = match translation_verifying_keys.is_empty() {
+            true => None,
+            false => {
+                // Check that the number of translation verifying keys matches the number of records.
+                ensure!(
+                    translation_verifying_keys.len() == program.records().len(),
+                    "The number of translation verifying keys does not match the number of records for program '{program_id}' (edition {edition})"
+                );
+                Some(translation_verifying_keys)
+            }
+        };
+
         // Return the deployment.
-        Ok(Some(Deployment::new(edition, program, verifying_keys, program_checksum, program_owner)?))
+        Ok(Some(Deployment::new(
+            edition,
+            program,
+            verifying_keys,
+            program_checksum,
+            program_owner,
+            translation_verifying_keys,
+        )?))
     }
 
     /// Returns the fee for the given `transaction ID`.
@@ -1217,7 +1277,8 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         }
 
         // Return the deployment.
-        Ok(Some(Deployment::new(edition, program, verifying_keys, program_checksum, program_owner)?))
+        // Amendments do not have translation verifying keys.
+        Ok(Some(Deployment::new(edition, program, verifying_keys, program_checksum, program_owner, None)?))
     }
 }
 
@@ -1624,7 +1685,20 @@ mod tests {
         let transaction_2 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, rng);
         let transaction_3 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, false, rng);
         let transaction_4 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, true, rng);
-        let transactions = vec![transaction_0, transaction_1, transaction_2, transaction_3, transaction_4];
+        let transaction_5 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 0, true, rng);
+        let transaction_6 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 1, false, rng);
+        let transaction_7 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 2, true, rng);
+
+        let transactions = vec![
+            transaction_0,
+            transaction_1,
+            transaction_2,
+            transaction_3,
+            transaction_4,
+            transaction_5,
+            transaction_6,
+            transaction_7,
+        ];
 
         for transaction in transactions {
             let transaction_id = transaction.id();
@@ -1714,7 +1788,20 @@ mod tests {
         let transaction_2 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, rng);
         let transaction_3 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, false, rng);
         let transaction_4 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, true, rng);
-        let transactions = vec![transaction_0, transaction_1, transaction_2, transaction_3, transaction_4];
+        let transaction_5 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 0, true, rng);
+        let transaction_6 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 1, false, rng);
+        let transaction_7 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 2, true, rng);
+
+        let transactions = vec![
+            transaction_0,
+            transaction_1,
+            transaction_2,
+            transaction_3,
+            transaction_4,
+            transaction_5,
+            transaction_6,
+            transaction_7,
+        ];
 
         for transaction in transactions {
             let transaction_id = transaction.id();

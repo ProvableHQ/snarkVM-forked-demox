@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -153,6 +153,8 @@ pub trait Network:
     const MAX_DEPLOYMENT_VARIABLES: u64 = 1 << 21; // 2,097,152 variables
     /// The maximum number of constraints in a deployment.
     const MAX_DEPLOYMENT_CONSTRAINTS: u64 = 1 << 21; // 2,097,152 constraints
+    /// The maximum number of instances to verify in a batch proof.
+    const MAX_BATCH_PROOF_INSTANCES: usize = 128;
     /// The maximum number of microcredits that can be spent as a fee.
     const MAX_FEE: u64 = 1_000_000_000_000_000;
     /// A list of consensus versions and their corresponding transaction spend limits in microcredits.
@@ -210,6 +212,8 @@ pub trait Network:
     /// The maximum number of structs in a program.
     const MAX_STRUCTS: usize = 10 * Self::MAX_FUNCTIONS;
     /// The maximum number of records in a program.
+    // TODO (@reviewers): Do we want to reduce the maximum number of records allowed?
+    // We have other constraints in place the limit the size of deployments.
     const MAX_RECORDS: usize = 10 * Self::MAX_FUNCTIONS;
     /// The maximum number of closures in a program.
     const MAX_CLOSURES: usize = 2 * Self::MAX_FUNCTIONS;
@@ -350,6 +354,17 @@ pub trait Network:
 
     /// Returns the `verifying key` for the inclusion circuit.
     fn inclusion_verifying_key() -> &'static Arc<VarunaVerifyingKey<Self>>;
+
+    #[cfg(not(feature = "wasm"))]
+    /// Returns the `proving key` for the translation circuit.
+    fn translation_credits_proving_key() -> &'static Arc<VarunaProvingKey<Self>>;
+
+    #[cfg(feature = "wasm")]
+    /// Returns the `proving key` for the translation circuit.
+    fn translation_credits_proving_key(bytes: Option<Vec<u8>>) -> &'static Arc<VarunaProvingKey<Self>>;
+
+    /// Returns the `verifying key` for the translation circuit.
+    fn translation_credits_verifying_key() -> &'static Arc<VarunaVerifyingKey<Self>>;
 
     /// Returns the powers of `G`.
     fn g_powers() -> &'static Vec<Group<Self>>;

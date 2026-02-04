@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -159,8 +159,9 @@ function test_serde_equivalence:
 
             // Execute the function.
             let trace = Trace::new();
+            let translations = Arc::new(RwLock::new(Vec::new()));
             let res_exec = stack.execute_function::<CurrentAleo, _>(
-                CallStack::execute(authorization.replicate(), Arc::new(RwLock::new(trace))).unwrap(),
+                CallStack::execute(authorization.replicate(), Arc::new(RwLock::new(trace)), translations).unwrap(),
                 None,
                 None,
                 rng,

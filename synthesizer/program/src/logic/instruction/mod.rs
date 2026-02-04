@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -77,6 +77,8 @@ pub enum Instruction<N: Network> {
     Async(Async<N>),
     /// Calls a closure or function on the operands.
     Call(Call<N>),
+    /// Dynamically calls a function on the operands.
+    CallDynamic(CallDynamic<N>),
     /// Casts the operands into the declared type.
     Cast(Cast<N>),
     /// Casts the operands into the declared type, with lossy truncation if applicable.
@@ -143,6 +145,8 @@ pub enum Instruction<N: Network> {
     ECDSAVerifySha3_512Raw(ECDSAVerifySha3_512Raw<N>),
     /// Computes whether `signature` is valid for the given Ethereum `address` and `message` using ECDSA with SHA3-512 and raw inputs.
     ECDSAVerifySha3_512Eth(ECDSAVerifySha3_512Eth<N>),
+    /// Gets a dynamic record entry.
+    GetRecordDynamic(GetRecordDynamic<N>),
     /// Computes whether `first` is greater than `second` as a boolean, storing the outcome in `destination`.
     GreaterThan(GreaterThan<N>),
     /// Computes whether `first` is greater than or equal to `second` as a boolean, storing the outcome in `destination`.
@@ -450,6 +454,10 @@ macro_rules! instruction {
             SerializeBits,
             SerializeBitsRaw,
 
+            // Dynamic calls are introduced in `ConsensusVersion::V14`
+            CallDynamic,
+            GetRecordDynamic,
+
             // New opcodes should be added here, with a comment on which consensus version they were added in.
         }}
     };
@@ -659,7 +667,7 @@ mod tests {
         // Sanity check the number of instructions is unchanged.
         // Note that the number of opcodes **MUST NOT** exceed u16::MAX.
         assert_eq!(
-            119,
+            121,
             Instruction::<CurrentNetwork>::OPCODES.len(),
             "Update me if the number of instructions changes."
         );

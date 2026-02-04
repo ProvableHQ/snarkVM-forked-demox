@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,6 +24,8 @@ impl<N: Network> ToFieldsRaw for Value<N> {
             // Note: We use the standard `to_fields` for records and futures because they are Aleo-specific types.
             Self::Record(record) => record.to_fields(),
             Self::Future(future) => future.to_fields(),
+            Self::DynamicRecord(dynamic_record) => dynamic_record.to_fields(),
+            Self::DynamicFuture(dynamic_future) => dynamic_future.to_fields(),
         }
     }
 }

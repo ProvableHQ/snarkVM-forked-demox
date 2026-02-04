@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -37,12 +37,14 @@ mod evaluate;
 mod execute;
 mod helpers;
 
-use crate::{CallMetrics, Process, Trace};
+use crate::{CallMetrics, Process, Trace, trace::RecordTranslationData};
 use console::{
     account::{Address, PrivateKey},
     network::prelude::*,
     program::{
         Argument,
+        DynamicFuture,
+        DynamicRecord,
         Entry,
         EntryType,
         FinalizeType,
@@ -94,9 +96,14 @@ use std::sync::{Arc, Weak};
 use rayon::prelude::*;
 
 pub type Assignments<N> = Arc<RwLock<Vec<(circuit::Assignment<<N as Environment>::Field>, CallMetrics<N>)>>>;
+/// A stack of translation buckets. Each function execution level pushes a new bucket,
+/// and translations for dynamic calls made at that level are pushed to the top bucket.
+/// When the transition is inserted, the top bucket is popped and its translations are
+/// associated with that transition (the caller's transition ID).
+pub type Translations<N> = Arc<RwLock<Vec<Vec<RecordTranslationData<N>>>>>;
 
 /// The `CallStack` is used to track the current state of the program execution.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum CallStack<N: Network> {
     /// Authorize an `Execute` transaction.
     Authorize(Vec<Request<N>>, Option<PrivateKey<N>>, Authorization<N>),
@@ -107,9 +114,23 @@ pub enum CallStack<N: Network> {
     /// Evaluate a function.
     Evaluate(Authorization<N>),
     /// Execute a function and produce a proof.
-    Execute(Authorization<N>, Arc<RwLock<Trace<N>>>),
+    Execute(Authorization<N>, Arc<RwLock<Trace<N>>>, Translations<N>),
     /// Execute a function and create the circuit assignment.
     PackageRun(Vec<Request<N>>, PrivateKey<N>, Assignments<N>),
+}
+
+// impl to_string for CallStack<N>
+impl<N: Network> CallStack<N> {
+    fn type_as_string(&self) -> String {
+        match self {
+            CallStack::Authorize(..) => "Authorize".to_string(),
+            CallStack::Synthesize(..) => "Synthesize".to_string(),
+            CallStack::CheckDeployment(..) => "CheckDeployment".to_string(),
+            CallStack::Evaluate(..) => "Evaluate".to_string(),
+            CallStack::Execute(..) => "Execute".to_string(),
+            CallStack::PackageRun(..) => "PackageRun".to_string(),
+        }
+    }
 }
 
 impl<N: Network> CallStack<N> {
@@ -119,8 +140,12 @@ impl<N: Network> CallStack<N> {
     }
 
     /// Initializes a call stack as `Self::Execute`.
-    pub fn execute(authorization: Authorization<N>, trace: Arc<RwLock<Trace<N>>>) -> Result<Self> {
-        Ok(CallStack::Execute(authorization, trace))
+    pub fn execute(
+        authorization: Authorization<N>,
+        trace: Arc<RwLock<Trace<N>>>,
+        translations: Translations<N>,
+    ) -> Result<Self> {
+        Ok(CallStack::Execute(authorization, trace, translations))
     }
 }
 
@@ -144,9 +169,11 @@ impl<N: Network> CallStack<N> {
                 )
             }
             CallStack::Evaluate(authorization) => CallStack::Evaluate(authorization.replicate()),
-            CallStack::Execute(authorization, trace) => {
-                CallStack::Execute(authorization.replicate(), Arc::new(RwLock::new(trace.read().clone())))
-            }
+            CallStack::Execute(authorization, trace, translations) => CallStack::Execute(
+                authorization.replicate(),
+                Arc::new(RwLock::new(trace.read().clone())),
+                Arc::new(RwLock::new(translations.read().clone())),
+            ),
             CallStack::PackageRun(requests, private_key, assignments) => {
                 CallStack::PackageRun(requests.clone(), *private_key, Arc::new(RwLock::new(assignments.read().clone())))
             }
@@ -190,7 +217,7 @@ impl<N: Network> CallStack<N> {
     }
 
     /// Peeks at the next request from the stack.
-    pub fn peek(&mut self) -> Result<Request<N>> {
+    pub fn peek(&self) -> Result<Request<N>> {
         match self {
             CallStack::Authorize(requests, ..)
             | CallStack::Synthesize(requests, ..)
@@ -222,6 +249,10 @@ pub struct Stack<N: Network> {
     proving_keys: Arc<RwLock<IndexMap<Identifier<N>, ProvingKey<N>>>>,
     /// The mapping of function name to verifying key.
     verifying_keys: Arc<RwLock<IndexMap<Identifier<N>, VerifyingKey<N>>>>,
+    /// The mapping of record name to translation proving key.
+    translation_proving_keys: Arc<RwLock<IndexMap<Identifier<N>, ProvingKey<N>>>>,
+    /// The mapping of record name to translation verifying key.
+    translation_verifying_keys: Arc<RwLock<IndexMap<Identifier<N>, VerifyingKey<N>>>>,
     /// The program address.
     program_address: Address<N>,
     /// The program checksum.
@@ -339,9 +370,9 @@ impl<N: Network> Stack<N> {
 
         // Check that the functions are valid.
         for function in self.program.functions().values() {
-            // Determine the number of calls for the function.
-            // This includes a safety check for the maximum number of calls.
-            self.get_number_of_calls(function.name())?;
+            // Determine the minimum number of calls for the function.
+            // This includes a safety check against maximum allowed number of calls.
+            self.get_minimum_number_of_calls(function.name())?;
         }
         Ok(())
     }

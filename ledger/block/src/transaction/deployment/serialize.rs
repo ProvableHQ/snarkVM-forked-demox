@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,11 +20,12 @@ impl<N: Network> Serialize for Deployment<N> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match serializer.is_human_readable() {
             true => {
-                // Note that `Deployment::version` checks that the optional fields are well-formed.
+                // Note: `Deployment::version` checks optional fields to determine the version.
                 let len = match self.version().map_err(ser::Error::custom)? {
                     DeploymentVersion::V1 => 3,
                     DeploymentVersion::V2 => 5,
-                    DeploymentVersion::V3 => 4,
+                    DeploymentVersion::V3 => 6,
+                    DeploymentVersion::V4 => 4,
                 };
                 let mut deployment = serializer.serialize_struct("Deployment", len)?;
                 deployment.serialize_field("edition", &self.edition)?;
@@ -35,6 +36,9 @@ impl<N: Network> Serialize for Deployment<N> {
                 }
                 if let Some(program_owner) = &self.program_owner {
                     deployment.serialize_field("program_owner", program_owner)?;
+                }
+                if let Some(translation_verifying_keys) = &self.translation_verifying_keys {
+                    deployment.serialize_field("translation_verifying_keys", translation_verifying_keys)?;
                 }
                 deployment.end()
             }
@@ -69,6 +73,11 @@ impl<'de, N: Network> Deserialize<'de> for Deployment<N> {
                         deployment.get_mut("program_owner").unwrap_or(&mut serde_json::Value::Null).take(),
                     )
                     .map_err(de::Error::custom)?,
+                    // Retrieve the translation verifying keys, if it exists.
+                    serde_json::from_value(
+                        deployment.get_mut("translation_verifying_keys").unwrap_or(&mut serde_json::Value::Null).take(),
+                    )
+                    .map_err(de::Error::custom)?,
                 )
                 .map_err(de::Error::custom)?;
 
@@ -92,6 +101,7 @@ mod tests {
             test_helpers::sample_deployment_v1(Uniform::rand(rng), rng),
             test_helpers::sample_deployment_v2(Uniform::rand(rng), rng),
             test_helpers::sample_deployment_v3(Uniform::rand(rng), rng),
+            test_helpers::sample_deployment_v4(Uniform::rand(rng), rng),
         ] {
             // Serialize
             let expected_string = &expected.to_string();
@@ -115,6 +125,7 @@ mod tests {
             test_helpers::sample_deployment_v1(Uniform::rand(rng), rng),
             test_helpers::sample_deployment_v2(Uniform::rand(rng), rng),
             test_helpers::sample_deployment_v3(Uniform::rand(rng), rng),
+            test_helpers::sample_deployment_v4(Uniform::rand(rng), rng),
         ] {
             // Serialize
             let expected_bytes = expected.to_bytes_le()?;

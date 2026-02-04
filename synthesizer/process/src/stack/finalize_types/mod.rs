@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -41,9 +41,12 @@ use snarkvm_synthesizer_program::{
     Command,
     Constructor,
     Contains,
+    ContainsDynamic,
     Finalize,
     Get,
+    GetDynamic,
     GetOrUse,
+    GetOrUseDynamic,
     Instruction,
     MAX_ADDITIONAL_SEEDS,
     Opcode,
@@ -211,7 +214,8 @@ impl<N: Network> FinalizeTypes<N> {
                     Access::Index(..),
                 )
                 | (FinalizeType::Plaintext(PlaintextType::Array(..)), Access::Member(..))
-                | (FinalizeType::Future(..), Access::Member(..)) => {
+                | (FinalizeType::Future(..), Access::Member(..))
+                | (FinalizeType::DynamicFuture, _) => {
                     bail!("Invalid access `{access}`")
                 }
             }
@@ -233,6 +237,7 @@ pub fn finalize_types_equivalent<N: Network>(
             types_equivalent(stack0, plaintext0, stack1, plaintext1)
         }
         (FinalizeType::Future(future0), FinalizeType::Future(future1)) => Ok(future0 == future1),
+        (FinalizeType::DynamicFuture, FinalizeType::DynamicFuture) => Ok(true),
         _ => Ok(false),
     }
 }

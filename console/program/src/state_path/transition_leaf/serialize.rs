@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -66,7 +66,7 @@ mod tests {
     fn test_serde_json() -> Result<()> {
         let mut rng = TestRng::default();
 
-        // Sample the leaf.
+        // Sample a static leaf (version 1).
         let expected = test_helpers::sample_leaf(&mut rng);
 
         // Serialize
@@ -78,6 +78,18 @@ mod tests {
         assert_eq!(expected, TransitionLeaf::from_str(expected_string)?);
         assert_eq!(expected, serde_json::from_str(&candidate_string)?);
 
+        // Sample a dynamic leaf (version 2).
+        let expected_dynamic = test_helpers::sample_dynamic_leaf(&mut rng);
+
+        // Serialize
+        let expected_dynamic_string = &expected_dynamic.to_string();
+        let candidate_dynamic_string = serde_json::to_string(&expected_dynamic)?;
+        assert_eq!(expected_dynamic, serde_json::from_str(&candidate_dynamic_string)?);
+
+        // Deserialize
+        assert_eq!(expected_dynamic, TransitionLeaf::from_str(expected_dynamic_string)?);
+        assert_eq!(expected_dynamic, serde_json::from_str(&candidate_dynamic_string)?);
+
         Ok(())
     }
 
@@ -85,7 +97,7 @@ mod tests {
     fn test_bincode() -> Result<()> {
         let mut rng = TestRng::default();
 
-        // Sample the leaf.
+        // Sample a static leaf (version 1).
         let expected = test_helpers::sample_leaf(&mut rng);
 
         // Serialize
@@ -96,6 +108,18 @@ mod tests {
         // Deserialize
         assert_eq!(expected, TransitionLeaf::read_le(&expected_bytes[..])?);
         assert_eq!(expected, bincode::deserialize(&expected_bytes_with_size_encoding[..])?);
+
+        // Sample a dynamic leaf (version 2).
+        let expected_dynamic = test_helpers::sample_dynamic_leaf(&mut rng);
+
+        // Serialize
+        let expected_dynamic_bytes = expected_dynamic.to_bytes_le()?;
+        let expected_dynamic_bytes_with_size_encoding = bincode::serialize(&expected_dynamic)?;
+        assert_eq!(&expected_dynamic_bytes[..], &expected_dynamic_bytes_with_size_encoding[8..]);
+
+        // Deserialize
+        assert_eq!(expected_dynamic, TransitionLeaf::read_le(&expected_dynamic_bytes[..])?);
+        assert_eq!(expected_dynamic, bincode::deserialize(&expected_dynamic_bytes_with_size_encoding[..])?);
 
         Ok(())
     }

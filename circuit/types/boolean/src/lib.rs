@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -58,6 +58,7 @@ impl<E: Environment> Inject for Boolean<E> {
     type Primitive = bool;
 
     /// Initializes a new instance of a boolean from a primitive boolean value.
+    /// Note. If the mode is `Constant`, a new variable is created. This makes it distinct from `Self::constant`.
     fn new(mode: Mode, value: Self::Primitive) -> Self {
         let variable = E::new_variable(mode, match value {
             true => E::BaseField::one(),

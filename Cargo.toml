@@ -158,6 +158,7 @@ serial = [
   "snarkvm-utilities/serial",
   "snarkvm-ledger?/serial"
 ]
+snark-print = [ "snarkvm-algorithms?/snark-print" ]
 
 dev-print = [ 
   "snarkvm-utilities/dev-print",

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Identifier, ProgramID, Register, Value, ValueType, compute_function_id};
+use crate::{DynamicFuture, DynamicRecord, Identifier, ProgramID, Register, Value, ValueType, compute_function_id};
 use snarkvm_console_network::Network;
 use snarkvm_console_types::prelude::*;
 
@@ -31,6 +31,10 @@ pub enum OutputID<N: Network> {
     ExternalRecord(Field<N>),
     /// The hash of the future output.
     Future(Field<N>),
+    /// The hash of the dynamic record output.
+    DynamicRecord(Field<N>),
+    /// The hash of the dynamic future output.
+    DynamicFuture(Field<N>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -131,6 +135,12 @@ impl<N: Network> Response<N> {
                             // Ensure the output is a plaintext.
                             Value::Record(..) => bail!("Expected a plaintext output, found a record output"),
                             Value::Future(..) => bail!("Expected a plaintext output, found a future output"),
+                            Value::DynamicRecord(..) => {
+                                bail!("Expected a plaintext output, found a dynamic record output")
+                            }
+                            Value::DynamicFuture(..) => {
+                                bail!("Expected a plaintext output, found a dynamic future output")
+                            }
                         };
                         // Hash the ciphertext to a field element.
                         let output_hash = N::hash_psd8(&ciphertext.to_fields()?)?;
@@ -145,6 +155,12 @@ impl<N: Network> Response<N> {
                             // Ensure the input is a record.
                             Value::Plaintext(..) => bail!("Expected a record output, found a plaintext output"),
                             Value::Future(..) => bail!("Expected a record output, found a future output"),
+                            Value::DynamicRecord(..) => {
+                                bail!("Expected a record output, found a dynamic record output")
+                            }
+                            Value::DynamicFuture(..) => {
+                                bail!("Expected a record output, found a dynamic future output")
+                            }
                         };
 
                         // Retrieve the output register.
@@ -175,7 +191,7 @@ impl<N: Network> Response<N> {
                         // Return the output ID.
                         Ok(OutputID::Record(commitment, checksum, sender_ciphertext))
                     }
-                    // For a locator output, compute the hash (using `tvk`) of the output.
+                    // For an external record, compute the hash (using `tvk`) of the output.
                     ValueType::ExternalRecord(..) => {
                         // Ensure the output is a record.
                         ensure!(matches!(output, Value::Record(..)), "Expected a record output");
@@ -217,6 +233,48 @@ impl<N: Network> Response<N> {
                         // Return the output ID.
                         Ok(OutputID::Future(output_hash))
                     }
+                    // For a dynamic record, compute the hash (using `tvk`) of the output.
+                    ValueType::DynamicRecord => {
+                        // Ensure the output is a record.
+                        ensure!(matches!(output, Value::DynamicRecord(..)), "Expected a dynamic record output");
+
+                        // Construct the (console) output index as a field element.
+                        let index = Field::from_u16(
+                            u16::try_from(num_inputs + index).or_halt_with::<N>("Output index exceeds u16"),
+                        );
+                        // Construct the preimage as `(function ID || output || tvk || index)`.
+                        let mut preimage = Vec::new();
+                        preimage.push(function_id);
+                        preimage.extend(output.to_fields()?);
+                        preimage.push(*tvk);
+                        preimage.push(index);
+                        // Hash the output to a field element.
+                        let output_hash = N::hash_psd8(&preimage)?;
+
+                        // Return the output ID.
+                        Ok(OutputID::DynamicRecord(output_hash))
+                    }
+                    // For a dynamic future output, compute the hash (using `tcm`) of the output.
+                    ValueType::DynamicFuture => {
+                        // Ensure the output is a future.
+                        ensure!(matches!(output, Value::DynamicFuture(..)), "Expected a future output");
+
+                        // Construct the (console) output index as a field element.
+                        let index = Field::from_u16(
+                            u16::try_from(num_inputs + index).or_halt_with::<N>("Output index exceeds u16"),
+                        );
+                        // Construct the preimage as `(function ID || output || tcm || index)`.
+                        let mut preimage = Vec::new();
+                        preimage.push(function_id);
+                        preimage.extend(output.to_fields()?);
+                        preimage.push(*tcm);
+                        preimage.push(index);
+                        // Hash the output to a field element.
+                        let output_hash = N::hash_psd8(&preimage)?;
+
+                        // Return the output ID.
+                        Ok(OutputID::DynamicFuture(output_hash))
+                    }
                 }
             })
             .collect::<Result<Vec<_>>>()?;
@@ -232,5 +290,95 @@ impl<N: Network> Response<N> {
     /// Returns the function outputs.
     pub fn outputs(&self) -> &[Value<N>] {
         &self.outputs
+    }
+
+    /// Returns the expected caller outputs for a dynamic call by:
+    /// - converting all record outputs to dynamic record outputs
+    /// - converting all future outputs to dynamic future outputs.
+    /// - leaving all other outputs unchanged.
+    pub fn caller_outputs(&self) -> Result<Vec<Value<N>>> {
+        self.outputs
+            .iter()
+            .map(|output| match output {
+                Value::Record(record) => {
+                    // This covers both the non-external and external record cases.
+                    Ok(Value::DynamicRecord(DynamicRecord::from_record(record)?))
+                }
+                Value::Future(future) => Ok(Value::DynamicFuture(DynamicFuture::from_future(future)?)),
+                Value::DynamicFuture(_) => bail!("A dynamic future cannot be a response output"),
+                _ => Ok(output.clone()),
+            })
+            .collect::<Result<Vec<_>>>()
+    }
+
+    /// Returns the expected caller output IDs for a dynamic call by:
+    /// - converting all record output IDs to dynamic record output IDs
+    /// - converting all future output IDs to dynamic future output IDs.
+    /// - leaving all other output IDs unchanged.
+    pub fn caller_output_ids(
+        &self,
+        network_id: &U16<N>,
+        program_id: &ProgramID<N>,
+        function_name: &Identifier<N>,
+        num_inputs: usize,
+        tvk: &Field<N>,
+        tcm: &Field<N>,
+    ) -> Result<Vec<OutputID<N>>> {
+        // Compute the function ID.
+        let function_id = compute_function_id(network_id, program_id, function_name)?;
+        // Get the caller outputs.
+        let caller_outputs = self.caller_outputs()?;
+        // Compute the caller output IDs for the caller outputs.
+        caller_outputs
+            .iter()
+            .zip_eq(self.output_ids.iter())
+            .enumerate()
+            .map(|(index, (output, callee_output_id))| {
+                match callee_output_id {
+                    OutputID::Record(_, _, _) | OutputID::ExternalRecord(_) => {
+                        // Ensure the caller output is a dynamic record.
+                        ensure!(matches!(output, Value::DynamicRecord(..)), "Expected a dynamic record output");
+
+                        // Construct the (console) output index as a field element.
+                        let index = Field::from_u16(
+                            u16::try_from(num_inputs + index).or_halt_with::<N>("Output index exceeds u16"),
+                        );
+                        // Construct the preimage as `(function ID || output || tvk || index)`.
+                        let mut preimage = Vec::new();
+                        preimage.push(function_id);
+                        preimage.extend(output.to_fields()?);
+                        preimage.push(*tvk);
+                        preimage.push(index);
+                        // Hash the output to a field element.
+                        let output_hash = N::hash_psd8(&preimage)?;
+
+                        // Return the output ID.
+                        Ok(OutputID::DynamicRecord(output_hash))
+                    }
+                    OutputID::Future(_) => {
+                        // Ensure the caller output is a dynamic future.
+                        ensure!(matches!(output, Value::DynamicFuture(..)), "Expected a dynamic future output");
+
+                        // Construct the (console) output index as a field element.
+                        let index = Field::from_u16(
+                            u16::try_from(num_inputs + index).or_halt_with::<N>("Output index exceeds u16"),
+                        );
+                        // Construct the preimage as `(function ID || output || tcm || index)`.
+                        let mut preimage = Vec::new();
+                        preimage.push(function_id);
+                        preimage.extend(output.to_fields()?);
+                        preimage.push(*tcm);
+                        preimage.push(index);
+                        // Hash the output to a field element.
+                        let output_hash = N::hash_psd8(&preimage)?;
+
+                        // Return the output ID.
+                        Ok(OutputID::DynamicFuture(output_hash))
+                    }
+                    // Otherwise, return the output ID unchanged.
+                    _ => Ok(callee_output_id.clone()),
+                }
+            })
+            .collect::<Result<Vec<_>>>()
     }
 }

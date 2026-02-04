@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,7 +31,7 @@ impl<N: Network, A: circuit::Aleo<Network = N>> RegistersSigner<N> for Registers
     /// Returns the root transition view key.
     #[inline]
     fn root_tvk(&self) -> Result<Field<N>> {
-        self.root_tvk.ok_or_else(|| anyhow!("Root tvk (console) is not set in the registers."))
+        self.root_tvk.ok_or_else(|| anyhow!("Root tvk  (console) is not set in the registers."))
     }
 
     /// Sets the root transition view key.
@@ -62,6 +62,18 @@ impl<N: Network, A: circuit::Aleo<Network = N>> RegistersSigner<N> for Registers
     #[inline]
     fn set_tvk(&mut self, tvk: Field<N>) {
         self.tvk = Some(tvk);
+    }
+
+    /// Returns the request.
+    #[inline]
+    fn request(&self) -> Result<&crate::Request<N>> {
+        self.request.as_ref().ok_or_else(|| anyhow!("Caller request is not set in the registers."))
+    }
+
+    /// Sets the caller request.
+    #[inline]
+    fn set_request(&mut self, request: crate::Request<N>) {
+        self.request = Some(request);
     }
 }
 
@@ -121,6 +133,10 @@ impl<N: Network, A: circuit::Aleo<Network = N>> RegistersTrait<N> for Registers<
                     },
                     // Retrieve the argument from the future.
                     Value::Future(future) => future.find(path)?,
+                    // A dynamic record cannot be accessed directly.
+                    Value::DynamicRecord(dynamic_record) => dynamic_record.find(path)?,
+                    // A dynamic future cannot be accessed directly.
+                    Value::DynamicFuture(_) => bail!("Cannot invoke `find` on a dynamic future value"),
                 }
             }
         };

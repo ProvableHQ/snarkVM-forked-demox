@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -80,6 +80,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let speculation_aborted_transaction_ids = speculation_aborted_transactions.iter().map(|(tx, e)| (tx.id(), e));
         let unordered_aborted_transaction_ids: IndexMap<N::TransactionID, &String> =
             verification_aborted_transaction_ids.chain(speculation_aborted_transaction_ids).collect();
+
+        dev_eprintln!("Unordered aborted transactions: {unordered_aborted_transaction_ids:?}");
 
         // Filter and order the aborted transaction ids according to candidate_transactions
         let aborted_transaction_ids: Vec<_> = candidate_transaction_ids
@@ -426,6 +428,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                 }
                                 // Construct the rejected deploy transaction.
                                 Err(error) => {
+                                    dev_eprintln!("Failed to finalize deploy tx {} - {error}", transaction.id());
                                     trace!("Failed to finalize deploy tx {} - {error}", transaction.id());
                                     match process_rejected_deployment(fee, *deployment.clone()) {
                                         Ok(result) => result,
@@ -456,6 +459,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             }
                             // Construct the rejected execute transaction.
                             Err(error) => {
+                                dev_eprintln!("Failed to finalize execute tx {} - {error}", transaction.id());
                                 trace!("Failed to finalize execute tx {} - {error}", transaction.id());
                                 match fee {
                                     // Finalize the fee, to ensure it is valid.
@@ -2632,26 +2636,21 @@ finalize compute:
         // Add the deployment block to the VM.
         vm.add_next_block(&deployment_block).unwrap();
 
-        // Generate more records to use for the next block.
-        let splits_block =
-            generate_splits(&vm, &caller_private_key, &deployment_block, &mut unspent_records, rng).unwrap();
-
-        // Add the splits block to the VM.
-        vm.add_next_block(&splits_block).unwrap();
-
-        // Generate more records to use for the next block.
-        let splits_block = generate_splits(&vm, &caller_private_key, &splits_block, &mut unspent_records, rng).unwrap();
-
-        // Add the splits block to the VM.
-        vm.add_next_block(&splits_block).unwrap();
-
-        // Generate the transactions.
         let mut transactions = Vec::new();
         let mut excess_transaction_ids = Vec::new();
 
         for _ in 0..VM::<CurrentNetwork, LedgerType>::MAXIMUM_CONFIRMED_TRANSACTIONS + 1 {
-            let transaction =
-                sample_mint_public(&vm, caller_private_key, &program_id, caller_address, 10, &mut unspent_records, rng);
+            let inputs = vec![
+                Value::<CurrentNetwork>::from_str(&caller_address.to_string()).unwrap(),
+                Value::<CurrentNetwork>::from_str("10u64").unwrap(),
+            ];
+
+            let transaction = vm
+                .execute(&caller_private_key, (&program_id, "mint_public"), inputs.into_iter(), None, 1, None, rng)
+                .unwrap();
+            // Verify.
+            vm.check_transaction(&transaction, None, rng).unwrap();
+
             // Abort the transaction if the block is full.
             if transactions.len() >= VM::<CurrentNetwork, LedgerType>::MAXIMUM_CONFIRMED_TRANSACTIONS {
                 excess_transaction_ids.push(transaction.id());
@@ -2662,7 +2661,7 @@ finalize compute:
 
         // Construct the next block.
         let next_block =
-            sample_next_block(&vm, &caller_private_key, &transactions, &splits_block, &mut unspent_records, rng)
+            sample_next_block(&vm, &caller_private_key, &transactions, &deployment_block, &mut unspent_records, rng)
                 .unwrap();
 
         // Ensure that the excess transactions were aborted.

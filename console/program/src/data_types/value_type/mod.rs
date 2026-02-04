@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -38,6 +38,10 @@ pub enum ValueType<N: Network> {
     ExternalRecord(Locator<N>),
     /// A publicly-visible future.
     Future(Locator<N>),
+    /// A dynamic record.
+    DynamicRecord,
+    /// A dynamic future.
+    DynamicFuture,
 }
 
 impl<N: Network> ValueType<N> {
@@ -50,6 +54,8 @@ impl<N: Network> ValueType<N> {
             ValueType::Record(..) => 3,
             ValueType::ExternalRecord(..) => 4,
             ValueType::Future(..) => 5,
+            ValueType::DynamicRecord => 6,
+            ValueType::DynamicFuture => 7,
         }
     }
 

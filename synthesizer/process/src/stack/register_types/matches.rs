@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -66,6 +66,14 @@ impl<N: Network> RegisterTypes<N> {
                         // Ensure the register type is not a future.
                         RegisterType::Future(..) => {
                             bail!("Casting a future into a struct entry is illegal")
+                        }
+                        // Ensure the register type is not a dynamic record.
+                        RegisterType::DynamicRecord => {
+                            bail!("Casting a dynamic record into a struct entry is illegal")
+                        }
+                        // Ensure the register type is not a dynamic future.
+                        RegisterType::DynamicFuture => {
+                            bail!("Casting a dynamic future into a struct entry is illegal")
                         }
                         // Ensure the register type matches the member type.
                         RegisterType::Plaintext(type_) => {
@@ -165,6 +173,14 @@ impl<N: Network> RegisterTypes<N> {
                         // Ensure the register type is not a future.
                         RegisterType::Future(..) => {
                             bail!("Casting a future into an array element is illegal")
+                        }
+                        // Ensure the register type is not a dynamic record.
+                        RegisterType::DynamicRecord => {
+                            bail!("Casting a dynamic record into an array element is illegal")
+                        }
+                        // Ensure the register type is not a dynamic future.
+                        RegisterType::DynamicFuture => {
+                            bail!("Casting a dynamic future into an array element is illegal")
                         }
                         // Ensure the register type matches the element type.
                         RegisterType::Plaintext(type_) => {
@@ -310,6 +326,14 @@ impl<N: Network> RegisterTypes<N> {
                                 // Ensure the register type is not a future.
                                 RegisterType::Future(..) => {
                                     bail!("Casting a future into a record entry is illegal")
+                                }
+                                // Ensure the register type is not a dynamic record.
+                                RegisterType::DynamicRecord => {
+                                    bail!("Casting a dynamic record into a record entry is illegal")
+                                }
+                                // Ensure the register type is not a dynamic future.
+                                RegisterType::DynamicFuture => {
+                                    bail!("Casting a dynamic future into a record entry is illegal")
                                 }
                                 // Ensure the register type matches the entry type.
                                 RegisterType::Plaintext(type_) => {

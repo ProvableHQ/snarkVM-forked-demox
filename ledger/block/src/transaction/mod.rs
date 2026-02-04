@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -87,10 +87,10 @@ impl<N: Network> Transaction<N> {
     pub fn from_execution(execution: Execution<N>, fee: Option<Fee<N>>) -> Result<Self> {
         // Ensure the transaction is not empty.
         ensure!(!execution.is_empty(), "Attempted to create an empty execution transaction");
+        // Compute the execution ID.
+        let execution_id = execution.to_execution_id()?;
         // Compute the execution tree.
         let execution_tree = Self::execution_tree(&execution)?;
-        // Compute the execution ID.
-        let execution_id = *execution_tree.root();
         // Compute the transaction ID.
         let transaction_id = *Self::transaction_tree(execution_tree, fee.as_ref())?.root();
         // Construct the execution transaction.
@@ -467,19 +467,24 @@ pub mod test_helpers {
             1 => crate::transaction::deployment::test_helpers::sample_deployment_v1(edition, rng),
             2 => {
                 let mut deployment = crate::transaction::deployment::test_helpers::sample_deployment_v2(edition, rng);
-                // Set the program checksum.
-                deployment.set_program_checksum_raw(Some(deployment.program().to_checksum()));
                 // Set the program owner to the address of the private key.
                 deployment.set_program_owner_raw(Some(Address::try_from(&private_key).unwrap()));
                 // Return the deployment.
                 deployment
             }
             3 => {
-                // V3 is an amendment - uses the same program as V2 but with new VKs and no program_owner.
                 let mut deployment = crate::transaction::deployment::test_helpers::sample_deployment_v3(edition, rng);
+                // Set the program owner to the address of the private key.
+                deployment.set_program_owner_raw(Some(Address::try_from(&private_key).unwrap()));
+                // Return the deployment.
+                deployment
+            }
+            4 => {
+                // V4 is an amendment - uses the same program as V2 but with new VKs and no program_owner.
+                let mut deployment = crate::transaction::deployment::test_helpers::sample_deployment_v4(edition, rng);
                 // Ensure the checksum is set.
                 deployment.set_program_checksum_raw(Some(deployment.program().to_checksum()));
-                // Amendments have no program owner .
+                // Amendments have no program owner.
                 deployment.set_program_owner_raw(None);
                 // Return the deployment.
                 deployment
@@ -579,7 +584,7 @@ mod tests {
                 Transaction::Execute(transaction_id, execution_id, ref execution, _) => {
                     let expected_transaction_id = *expected.clone().to_tree()?.root();
                     assert_eq!(expected_transaction_id, *transaction_id);
-                    let expected_execution_id = *Transaction::execution_tree(execution)?.root();
+                    let expected_execution_id = execution.to_execution_id()?;
                     assert_eq!(expected_execution_id, execution_id);
                 }
                 _ => panic!("Unexpected test case."),

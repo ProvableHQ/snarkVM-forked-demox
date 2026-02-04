@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -392,6 +392,7 @@ function dummy:
         deployment_0.verifying_keys().clone(),
         deployment_0.program_checksum(),
         deployment_0.program_owner(),
+        deployment_0.translation_verifying_keys().clone(),
     )?;
     let fee_authorization = vm.authorize_fee_public(
         &other_private_key,
@@ -437,6 +438,7 @@ function dummy:
         deployment_0.verifying_keys().clone(),
         Some(deployment_0.program().to_checksum()),
         Some(address),
+        deployment_0.translation_verifying_keys().clone(),
     )?;
     // Note: This needs to be recalculated since the new deployment contains a checksum and owner.
     let (base_fee_amount, _) = deployment_cost_v1(&vm.process.read(), &deployment)?;

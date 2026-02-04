@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -39,8 +39,10 @@ impl<N: Network> Process<N> {
         let root_tvk = None;
         // Initialize the trace.
         let trace = Arc::new(RwLock::new(Trace::new()));
+        // Initialize the translations.
+        let translations = Arc::new(RwLock::new(Vec::new()));
         // Initialize the call stack.
-        let call_stack = CallStack::execute(authorization, trace.clone())?;
+        let call_stack = CallStack::execute(authorization, trace.clone(), translations)?;
         lap!(timer, "Initialize call stack");
 
         // Retrieve the stack.
@@ -50,11 +52,13 @@ impl<N: Network> Process<N> {
         lap!(timer, "Execute the function");
 
         // Extract the trace.
-        let trace = Arc::try_unwrap(trace).unwrap().into_inner();
+        let mut trace = Arc::try_unwrap(trace).unwrap().into_inner();
         // Ensure the trace is not empty.
         if trace.transitions().is_empty() {
             return Err(anyhow!("Execution of '{locator}' is empty").into());
         }
+        // Construct the call graph.
+        trace.construct_call_graph(self)?;
 
         finish!(timer);
         Ok((response, trace))

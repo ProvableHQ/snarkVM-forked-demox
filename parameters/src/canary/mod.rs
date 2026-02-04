@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -192,6 +192,17 @@ lazy_static! {
     pub static ref INCLUSION_PROVING_KEY: Vec<u8> = InclusionProver::load_bytes().expect("Failed to load inclusion proving key");
     pub static ref INCLUSION_VERIFYING_KEY: Vec<u8> =
         InclusionVerifier::load_bytes().expect("Failed to load inclusion verifying key");
+}
+
+// Translation
+impl_remote!(TranslationCreditsProver, REMOTE_URLS, "resources/", "translation_credits", "prover", "credits");
+impl_local!(TranslationCreditsVerifier, "resources/", "translation_credits", "verifier", "credits");
+
+lazy_static! {
+    pub static ref TRANSLATION_CREDITS_PROVING_KEY: Vec<u8> =
+        TranslationCreditsProver::load_bytes().expect("Failed to load translation proving key");
+    pub static ref TRANSLATION_CREDITS_VERIFYING_KEY: Vec<u8> =
+        TranslationCreditsVerifier::load_bytes().expect("Failed to load translation verifying key");
 }
 
 #[cfg(test)]

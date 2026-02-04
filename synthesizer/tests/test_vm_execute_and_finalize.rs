@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -237,24 +237,16 @@ fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
                     }
                 };
 
+            let consensus_version = CurrentNetwork::CONSENSUS_VERSION(vm.block_store().current_block_height()).unwrap();
+            let execution = transaction.execution().unwrap();
+
             // Test cost computation for Authorization
-            if transaction.is_execute() {
-                let consensus_version =
-                    CurrentNetwork::CONSENSUS_VERSION(vm.block_store().current_block_height()).unwrap();
-
-                if consensus_version >= ConsensusVersion::V4 {
-                    let execution = transaction.execution().unwrap();
-
-                    let actual_cost = execution_cost(&vm.process().read(), execution, consensus_version).unwrap();
-
-                    let authorization =
-                        Authorization::from_unchecked((vec![], execution.transitions().cloned().collect()));
-                    let expected_cost =
-                        execution_cost_for_authorization(&vm.process().read(), &authorization, consensus_version)
-                            .unwrap();
-
-                    assert_eq!(actual_cost, expected_cost);
-                }
+            if consensus_version >= ConsensusVersion::V4 {
+                let actual_cost = execution_cost(&vm.process().read(), execution, consensus_version).unwrap();
+                let authorization = Authorization::from_unchecked((vec![], execution.transitions().cloned().collect()));
+                let expected_cost =
+                    execution_cost_for_authorization(&vm.process().read(), &authorization, consensus_version).unwrap();
+                assert_eq!(actual_cost, expected_cost);
             }
 
             // Attempt to verify the transaction.

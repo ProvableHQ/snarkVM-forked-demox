@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,14 +16,15 @@
 use crate::{CallOperator, FinalizeStoreTrait, Opcode, Operand, RegistersTrait, StackTrait};
 use console::{
     network::prelude::*,
-    program::{Register, Value},
+    program::{Literal, Register, Value},
+    types::Boolean,
 };
 
-/// A get command, e.g. `get accounts[r0] into r1;`.
-/// Gets the value stored at `operand` in `mapping` and stores the result in `destination`.
+/// A contains command, e.g. `contains accounts[r0] into r1;`.
+/// Contains is `true` if a (`key`, `value`) entry exists in `mapping`, stores the result in `destination`.
 #[derive(Clone, PartialEq, Eq, Hash)]
-pub struct Get<N: Network> {
-    /// The mapping.
+pub struct Contains<N: Network> {
+    /// The mapping name.
     mapping: CallOperator<N>,
     /// The operands.
     operands: [Operand<N>; 1],
@@ -31,11 +32,11 @@ pub struct Get<N: Network> {
     destination: Register<N>,
 }
 
-impl<N: Network> Get<N> {
+impl<N: Network> Contains<N> {
     /// Returns the opcode.
     #[inline]
     pub const fn opcode() -> Opcode {
-        Opcode::Command("get")
+        Opcode::Command("contains")
     }
 
     /// Returns the operands in the operation.
@@ -69,9 +70,8 @@ impl<N: Network> Get<N> {
     }
 }
 
-impl<N: Network> Get<N> {
+impl<N: Network> Contains<N> {
     /// Finalizes the command.
-    #[inline]
     pub fn finalize(
         &self,
         stack: &impl StackTrait<N>,
@@ -92,25 +92,18 @@ impl<N: Network> Get<N> {
         // Load the operand as a plaintext.
         let key = registers.load_plaintext(stack, self.key())?;
 
-        // Retrieve the value from storage as a literal.
-        let value = match store.get_value_speculative(program_id, mapping_name, &key)? {
-            Some(Value::Plaintext(plaintext)) => Value::Plaintext(plaintext),
-            Some(Value::Record(..)) => bail!("Cannot 'get' a 'record'"),
-            Some(Value::Future(..)) => bail!("Cannot 'get' a 'future'",),
-            // If a key does not exist, then bail.
-            None => bail!("Key '{key}' does not exist in mapping '{program_id}/{mapping_name}'"),
-        };
+        // Determine if the key exists in the mapping.
+        let contains_key = store.contains_key_speculative(program_id, mapping_name, &key)?;
 
         // Assign the value to the destination register.
-        registers.store(stack, &self.destination, value)?;
+        registers.store(stack, &self.destination, Value::from(Literal::Boolean(Boolean::new(contains_key))))?;
 
         Ok(())
     }
 }
 
-impl<N: Network> Parser for Get<N> {
+impl<N: Network> Parser for Contains<N> {
     /// Parses a string into an operation.
-    #[inline]
     fn parse(string: &str) -> ParserResult<Self> {
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
@@ -150,7 +143,7 @@ impl<N: Network> Parser for Get<N> {
     }
 }
 
-impl<N: Network> FromStr for Get<N> {
+impl<N: Network> FromStr for Contains<N> {
     type Err = Error;
 
     /// Parses a string into the command.
@@ -168,14 +161,14 @@ impl<N: Network> FromStr for Get<N> {
     }
 }
 
-impl<N: Network> Debug for Get<N> {
+impl<N: Network> Debug for Contains<N> {
     /// Prints the command as a string.
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         Display::fmt(self, f)
     }
 }
 
-impl<N: Network> Display for Get<N> {
+impl<N: Network> Display for Contains<N> {
     /// Prints the command to a string.
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         // Print the command.
@@ -187,7 +180,7 @@ impl<N: Network> Display for Get<N> {
     }
 }
 
-impl<N: Network> FromBytes for Get<N> {
+impl<N: Network> FromBytes for Contains<N> {
     /// Reads the command from a buffer.
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
         // Read the mapping name.
@@ -201,8 +194,8 @@ impl<N: Network> FromBytes for Get<N> {
     }
 }
 
-impl<N: Network> ToBytes for Get<N> {
-    /// Writes the command to a buffer.
+impl<N: Network> ToBytes for Contains<N> {
+    /// Writes the operation to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         // Write the mapping name.
         self.mapping.write_le(&mut writer)?;
@@ -222,27 +215,28 @@ mod tests {
 
     #[test]
     fn test_parse() {
-        let (string, get) = Get::<CurrentNetwork>::parse("get account[r0] into r1;").unwrap();
+        let (string, contains) = Contains::<CurrentNetwork>::parse("contains account[r0] into r1;").unwrap();
         assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
-        assert_eq!(get.mapping, CallOperator::from_str("account").unwrap());
-        assert_eq!(get.operands().len(), 1, "The number of operands is incorrect");
-        assert_eq!(get.key(), &Operand::Register(Register::Locator(0)), "The first operand is incorrect");
-        assert_eq!(get.destination, Register::Locator(1), "The second operand is incorrect");
+        assert_eq!(contains.mapping, CallOperator::from_str("account").unwrap());
+        assert_eq!(contains.operands().len(), 1, "The number of operands is incorrect");
+        assert_eq!(contains.key(), &Operand::Register(Register::Locator(0)), "The first operand is incorrect");
+        assert_eq!(contains.destination, Register::Locator(1), "The second operand is incorrect");
 
-        let (string, get) = Get::<CurrentNetwork>::parse("get token.aleo/balances[r0] into r1;").unwrap();
+        let (string, contains) =
+            Contains::<CurrentNetwork>::parse("contains credits.aleo/account[r0] into r1;").unwrap();
         assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
-        assert_eq!(get.mapping, CallOperator::from_str("token.aleo/balances").unwrap());
-        assert_eq!(get.operands().len(), 1, "The number of operands is incorrect");
-        assert_eq!(get.key(), &Operand::Register(Register::Locator(0)), "The first operand is incorrect");
-        assert_eq!(get.destination, Register::Locator(1), "The second operand is incorrect");
+        assert_eq!(contains.mapping, CallOperator::from_str("credits.aleo/account").unwrap());
+        assert_eq!(contains.operands().len(), 1, "The number of operands is incorrect");
+        assert_eq!(contains.key(), &Operand::Register(Register::Locator(0)), "The first operand is incorrect");
+        assert_eq!(contains.destination, Register::Locator(1), "The second operand is incorrect");
     }
 
     #[test]
     fn test_from_bytes() {
-        let (string, get) = Get::<CurrentNetwork>::parse("get account[r0] into r1;").unwrap();
+        let (string, contains) = Contains::<CurrentNetwork>::parse("contains account[r0] into r1;").unwrap();
         assert!(string.is_empty());
-        let bytes_le = get.to_bytes_le().unwrap();
-        let result = Get::<CurrentNetwork>::from_bytes_le(&bytes_le[..]);
+        let bytes_le = contains.to_bytes_le().unwrap();
+        let result = Contains::<CurrentNetwork>::from_bytes_le(&bytes_le[..]);
         assert!(result.is_ok())
     }
 }

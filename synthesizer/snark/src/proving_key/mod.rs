@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -103,5 +103,11 @@ impl<N: Network> Deref for ProvingKey<N> {
 
     fn deref(&self) -> &Self::Target {
         &self.proving_key
+    }
+}
+
+impl<N: Network> PartialEq for ProvingKey<N> {
+    fn eq(&self, other: &Self) -> bool {
+        self.proving_key == other.proving_key
     }
 }

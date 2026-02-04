@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -122,7 +122,10 @@ impl<N: Network> InclusionAssignment<N> {
         // Check that the height is valid if the record is from a global state path.
         A::assert(is_global.not().bitor(is_block_height_check_valid))?;
 
-        Stack::log_circuit::<A>(format_args!("State Path for {}", self.serial_number));
+        Stack::log_circuit::<A>(
+            format_args!("State Path for {}", self.serial_number),
+            "InclusionAssignment".to_string(),
+        );
 
         // Eject the assignment and reset the circuit environment.
         Ok(A::eject_assignment_and_reset())

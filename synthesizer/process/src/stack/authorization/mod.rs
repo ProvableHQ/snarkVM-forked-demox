@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,8 +17,14 @@ mod bytes;
 mod serialize;
 mod string;
 
-use console::{network::prelude::*, program::Request, types::Field};
-use snarkvm_ledger_block::{Input, Transaction, Transition};
+use crate::{Output, Process};
+
+use console::{
+    network::prelude::*,
+    program::{Request, ValueType},
+    types::Field,
+};
+use snarkvm_ledger_block::{Execution, Input, Transaction, Transition};
 use snarkvm_synthesizer_program::StackTrait;
 
 use indexmap::IndexMap;
@@ -267,7 +273,7 @@ impl<N: Network> Authorization<N> {
         if transitions.is_empty() {
             bail!("Cannot compute the execution ID for an empty authorization.");
         }
-        Ok(*Transaction::transitions_tree(transitions.values())?.root())
+        Execution::compute_execution_id(transitions.values())
     }
 }
 
@@ -286,15 +292,65 @@ impl<N: Network> PartialEq for Authorization<N> {
 impl<N: Network> Eq for Authorization<N> {}
 
 impl<N: Network> Authorization<N> {
-    /// Returns the total number of inputs to the passed `Transition`s that are of
-    /// type `Input::Record`.
+    /// Returns the total number of inputs to the passed `Transition`s that have
+    /// a serial number (i.e., `Input::Record` or `Input::RecordWithDynamicID`).
     // This method is used to ensure consistency between `prepare_verifier_inputs`
     // and the batch-size calculation used in `execution_cost_for_authorization`.
     #[inline]
     pub fn number_of_input_records<'a>(transitions: impl ExactSizeIterator<Item = &'a Transition<N>>) -> usize {
         transitions
-            .map(|transition| transition.inputs().iter().filter(|input| matches!(input, Input::Record(_, _))).count())
+            .map(|transition| transition.inputs().iter().filter(|input| input.serial_number().is_some()).count())
             .sum()
+    }
+
+    /// Computes the number of different translation circuits resulting from the
+    /// given `Transition`s as well as the number of translations for each such
+    /// circuit.
+    pub fn translation_batches<'a>(
+        process: &Process<N>,
+        transitions: impl ExactSizeIterator<Item = &'a Transition<N>>,
+    ) -> Result<Vec<usize>> {
+        let mut batches = HashMap::new();
+
+        for transition in transitions {
+            let stack = process.get_stack(transition.program_id())?;
+            let function = stack.get_function(transition.function_name())?;
+
+            let input_types = function.input_types();
+            let output_types = function.output_types();
+
+            // Account for input translations.
+            for (input, input_type) in transition.inputs().iter().zip(input_types.iter()) {
+                if input.dynamic_id().is_some() {
+                    match (input, input_type) {
+                        (Input::RecordWithDynamicID(..), ValueType::Record(record_name)) => {
+                            *batches.entry((*transition.program_id(), *record_name)).or_insert(0) += 1;
+                        }
+                        (Input::ExternalRecordWithDynamicID(..), ValueType::ExternalRecord(locator)) => {
+                            *batches.entry((*locator.program_id(), *locator.resource())).or_insert(0) += 1;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+
+            // Account for output translations.
+            for (output, output_type) in transition.outputs().iter().zip(output_types.iter()) {
+                if output.dynamic_id().is_some() {
+                    match (output, output_type) {
+                        (Output::RecordWithDynamicID(..), ValueType::Record(record_name)) => {
+                            *batches.entry((*transition.program_id(), *record_name)).or_insert(0) += 1;
+                        }
+                        (Output::ExternalRecordWithDynamicID(..), ValueType::ExternalRecord(locator)) => {
+                            *batches.entry((*locator.program_id(), *locator.resource())).or_insert(0) += 1;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        Ok(batches.into_values().collect())
     }
 }
 

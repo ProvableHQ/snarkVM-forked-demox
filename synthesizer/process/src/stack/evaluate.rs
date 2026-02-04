@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -46,6 +46,7 @@ impl<N: Network> Stack<N> {
         registers.set_caller(caller);
         // Set the transition view key.
         registers.set_tvk(tvk);
+        // TODO(@vicsn) should closures set the function name, for use in dynamic record translations?
         lap!(timer, "Initialize the registers");
 
         // Store the inputs.
@@ -124,7 +125,7 @@ impl<N: Network> Stack<N> {
                 CallStack::Evaluate(authorization) => (authorization.next()?, call_stack),
                 // If the evaluation is performed in the `Execute` mode, create a new `Evaluate` mode.
                 // This is done to ensure that evaluation during execution is performed consistently.
-                CallStack::Execute(authorization, _) => {
+                CallStack::Execute(authorization, _, _) => {
                     // Note: We need to replicate the authorization, so that 'execute' can call 'authorization.next()?'.
                     // This way, the authorization remains unmodified in this 'evaluate' scope.
                     let authorization = authorization.replicate();
@@ -155,7 +156,7 @@ impl<N: Network> Stack<N> {
             None => (true, signer),
         };
         let tvk = *request.tvk();
-        // Retrieve the program checksum, if the program has a constructor.
+        // Retrieve the program checksum, if the program has a constructor or if the request is dynamic.
         let program_checksum = match self.program().contains_constructor() {
             true => Some(self.program_checksum_as_field()?),
             false => None,
@@ -210,6 +211,9 @@ impl<N: Network> Stack<N> {
             let result = match instruction {
                 // If the instruction is a `call` instruction, we need to handle it separately.
                 Instruction::Call(call) => CallTrait::evaluate(call, self, &mut registers, rng)
+                    .map_err(|e| InstructionEvalError::Call(Box::new(e))),
+                // If the instruction is a `call.dynamic` instruction, we need to handle it separately.
+                Instruction::CallDynamic(call_dynamic) => CallTrait::evaluate(call_dynamic, self, &mut registers, rng)
                     .map_err(|e| InstructionEvalError::Call(Box::new(e))),
                 // Otherwise, evaluate the instruction normally.
                 _ => instruction.evaluate(self, &mut registers).map_err(Into::into),

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -83,7 +83,10 @@ impl<N: Network> InclusionV0Assignment<N> {
         // Enforce the state path from leaf to root is correct.
         A::assert(state_path.verify(&is_global, &local_state_root))?;
 
-        Stack::log_circuit::<A>(format_args!("State Path for {}", self.serial_number));
+        Stack::log_circuit::<A>(
+            format_args!("State Path for {}", self.serial_number),
+            "InclusionV0Assignment".to_string(),
+        );
 
         // Eject the assignment and reset the circuit environment.
         Ok(A::eject_assignment_and_reset())

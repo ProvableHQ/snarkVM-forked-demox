@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -52,10 +52,6 @@ impl<E: Environment, I: IntegerType, M: Magnitude> PowChecked<Integer<E, M>> for
         } else {
             let mut result = Self::one();
 
-            // TODO (@pranav) In each step, we check that we have not overflowed,
-            //  yet we know that in the first step, we do not need to check and
-            //  in general we do not need to check for overflow until we have found
-            //  the second bit that has been set. Optimize.
             for bit in other.bits_le.iter().rev() {
                 result = result.mul_checked(&result);
 

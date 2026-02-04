@@ -28,6 +28,7 @@ workspace = true
 
 [dependencies.snarkvm-ledger-block]
 workspace = true
+features = ["test"]
 
 [dependencies.snarkvm-ledger-query]
 workspace = true

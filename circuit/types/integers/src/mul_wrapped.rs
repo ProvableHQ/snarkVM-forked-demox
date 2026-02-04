@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -124,8 +124,6 @@ mod tests {
         let rng = &mut TestRng::default();
 
         for i in 0..ITERATIONS {
-            // TODO (@pranav) Uniform random sampling almost always produces arguments that result in an overflow.
-            //  Is there a better method for sampling arguments?
             let first = Uniform::rand(rng);
             let second = Uniform::rand(rng);
 

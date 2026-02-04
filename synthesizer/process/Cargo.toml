@@ -59,6 +59,11 @@ name = "check_deployment"
 path = "benches/check_deployment.rs"
 harness = false
 
+[[bench]]
+name = "call_graph"
+path = "benches/call_graph.rs"
+harness = false
+
 [dependencies.snarkvm-algorithms]
 workspace = true
 
@@ -100,6 +105,9 @@ workspace = true
 [dependencies.indexmap]
 workspace = true
 features = [ "serde" ]
+
+[dependencies.itertools]
+workspace = true
 
 [dependencies.locktick]
 workspace = true

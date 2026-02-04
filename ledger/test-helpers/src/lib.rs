@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -166,11 +166,7 @@ function compute:
             // Construct the process.
             let process = Process::load().unwrap();
             // Compute the deployment.
-            let mut deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
-            // Unset the checksum.
-            deployment.set_program_checksum_raw(None);
-            // Unset the owner.
-            deployment.set_program_owner_raw(None);
+            let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
             // Return the deployment.
             // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
             Deployment::from_str(&deployment.to_string()).unwrap()
@@ -181,8 +177,9 @@ function compute:
         edition % 2,
         deployment.program().clone(),
         deployment.verifying_keys().clone(),
-        deployment.program_checksum(),
-        deployment.program_owner(),
+        None,
+        None,
+        None,
     )
     .unwrap()
 }
@@ -210,11 +207,7 @@ function compute:
             // Construct the process.
             let process = Process::load().unwrap();
             // Compute the deployment.
-            let mut deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
-            // Set the program checksum.
-            deployment.set_program_checksum_raw(Some(deployment.program().to_checksum()));
-            // Set the program owner.
-            deployment.set_program_owner_raw(Some(Address::rand(rng)));
+            let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
             // Return the deployment.
             // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
             Deployment::from_str(&deployment.to_string()).unwrap()
@@ -226,14 +219,61 @@ function compute:
         deployment.program().clone(),
         deployment.verifying_keys().clone(),
         deployment.program_checksum(),
-        deployment.program_owner(),
+        Some(Address::rand(rng)),
+        None,
     )
     .unwrap()
 }
 
-/// Samples a V3 deployment (amendment) for the same program as V2.
-/// The edition must match an existing deployment's edition.
 pub fn sample_deployment_v3(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
+    static INSTANCE: OnceLock<Deployment<CurrentNetwork>> = OnceLock::new();
+    let deployment = INSTANCE
+        .get_or_init(|| {
+            // Initialize a new program.
+            let (string, program) = Program::<CurrentNetwork>::parse(
+                r"
+program testing_three.aleo;
+
+record data:
+    owner as address.private;
+    one as field.private;
+    two as group.public;
+
+mapping store:
+    key as u32.public;
+    value as u32.public;
+
+function compute:
+    input r0 as u32.private;
+    add r0 r0 into r1;
+    output r1 as u32.public;",
+            )
+            .unwrap();
+            assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
+            // Construct the process.
+            let process = Process::load().unwrap();
+            // Compute the deployment.
+            let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
+            // Return the deployment.
+            // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
+            Deployment::from_str(&deployment.to_string()).unwrap()
+        })
+        .clone();
+    // Create a new deployment with the desired edition.
+    Deployment::<CurrentNetwork>::new(
+        edition,
+        deployment.program().clone(),
+        deployment.verifying_keys().clone(),
+        deployment.program_checksum(),
+        Some(Address::rand(rng)),
+        deployment.translation_verifying_keys().clone(),
+    )
+    .unwrap()
+}
+
+/// Samples a V4 deployment (amendment) for the same program as V2.
+/// The edition must match an existing deployment's edition.
+pub fn sample_deployment_v4(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
     static INSTANCE: OnceLock<Deployment<CurrentNetwork>> = OnceLock::new();
     let deployment = INSTANCE
         .get_or_init(|| {
@@ -259,7 +299,7 @@ function compute:
             let mut deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
             // Set the program checksum.
             deployment.set_program_checksum_raw(Some(deployment.program().to_checksum()));
-            // V3 deployments have no program owner.
+            // V4 deployments (amendments) have no program owner.
             deployment.set_program_owner_raw(None);
             // Return the deployment.
             // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
@@ -267,12 +307,14 @@ function compute:
         })
         .clone();
     // Create a new deployment with the desired edition.
+    // V4 deployments (amendments) have no translation verifying keys.
     Deployment::<CurrentNetwork>::new(
         edition,
         deployment.program().clone(),
         deployment.verifying_keys().clone(),
         deployment.program_checksum(),
         deployment.program_owner(),
+        None,
     )
     .unwrap()
 }
@@ -378,7 +420,7 @@ pub fn sample_fee_private(deployment_or_execution_id: Field<CurrentNetwork>, rng
     block_store.insert(&FromStr::from_str(&block.to_string()).unwrap()).unwrap();
 
     // Prepare the assignments.
-    trace.prepare(&Query::from(block_store)).unwrap();
+    trace.prepare(&process, &Query::from(block_store)).unwrap();
     // Compute the proof and construct the fee.
     let fee = trace.prove_fee::<CurrentAleo, _>(VarunaVersion::V1, rng).unwrap();
 
@@ -431,7 +473,7 @@ pub fn sample_fee_public(deployment_or_execution_id: Field<CurrentNetwork>, rng:
     block_store.insert(&FromStr::from_str(&block.to_string()).unwrap()).unwrap();
 
     // Prepare the assignments.
-    trace.prepare(&Query::from(block_store)).unwrap();
+    trace.prepare(&process, &Query::from(block_store)).unwrap();
     // Compute the proof and construct the fee.
     let fee = trace.prove_fee::<CurrentAleo, _>(VarunaVersion::V1, rng).unwrap();
 
@@ -490,19 +532,24 @@ pub fn sample_deployment_transaction(
         1 => sample_deployment_v1(edition, rng),
         2 => {
             let mut deployment = sample_deployment_v2(edition, rng);
-            // Set the program checksum.
-            deployment.set_program_checksum_raw(Some(deployment.program().to_checksum()));
             // Set the program owner to the address of the private key.
             deployment.set_program_owner_raw(Some(Address::try_from(&private_key).unwrap()));
             // Return the deployment.
             deployment
         }
         3 => {
-            // V3 is an amendment - uses the same program as V2 but with new VKs and no program_owner.
             let mut deployment = sample_deployment_v3(edition, rng);
+            // Set the program owner to the address of the private key.
+            deployment.set_program_owner_raw(Some(Address::try_from(&private_key).unwrap()));
+            // Return the deployment.
+            deployment
+        }
+        4 => {
+            // V4 is an amendment - uses the same program as V2 but with new VKs and no program_owner.
+            let mut deployment = sample_deployment_v4(edition, rng);
             // Ensure the checksum is set.
             deployment.set_program_checksum_raw(Some(deployment.program().to_checksum()));
-            // V3 deployments have no program owner.
+            // V4 deployments (amendments) have no program owner.
             deployment.set_program_owner_raw(None);
             // Return the deployment.
             deployment
@@ -584,7 +631,7 @@ pub fn sample_large_execution_transaction(rng: &mut TestRng) -> Transaction<Curr
             .unwrap();
 
             // Prepare the assignments.
-            trace.prepare(&snarkvm_ledger_query::Query::from(block_store)).unwrap();
+            trace.prepare(&process, &snarkvm_ledger_query::Query::from(block_store)).unwrap();
             // Compute the proof and construct the execution.
             let execution = trace.prove_execution::<CurrentAleo, _>("testing.aleo", VarunaVersion::V1, rng).unwrap();
             // Reconstruct the execution from bytes.
@@ -694,7 +741,7 @@ pub fn sample_genesis_block_and_components_uncached(
             let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
 
             // Prepare the assignments.
-            trace.prepare(&Query::from(block_store)).unwrap();
+            trace.prepare(&process, &Query::from(block_store)).unwrap();
             // Compute the proof and construct the execution.
             let execution = trace.prove_execution::<CurrentAleo, _>(locator.0, VarunaVersion::V1, rng).unwrap();
             // Convert the execution.

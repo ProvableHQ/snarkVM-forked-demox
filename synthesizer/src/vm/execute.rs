@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -80,7 +80,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             true => {
                 // Compute the minimum execution cost.
                 let consensus_version = N::CONSENSUS_VERSION(query.current_block_height()?)?;
-                let (minimum_execution_cost, (_, _)) =
+                let (minimum_execution_cost, _) =
                     execution_cost(&self.process().read(), &execution, consensus_version)?;
                 // Compute the execution ID.
                 let execution_id = execution.to_execution_id()?;
@@ -205,8 +205,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 let (response, mut trace) = $process.execute::<$aleo, _>(authorization.clone(), rng)?;
                 lap!(timer, "Execute the call");
 
+                let process_ref = &*$process;
+                let process = cast_ref!(&process_ref as Process<N>);
+
                 // Prepare the assignments.
-                cast_mut_ref!(trace as Trace<N>).prepare(query)?;
+                cast_mut_ref!(trace as Trace<N>).prepare(process, query)?;
                 lap!(timer, "Prepare the assignments");
 
                 // Compute the proof and construct the execution.
@@ -254,8 +257,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 let (_, mut trace) = $process.execute::<$aleo, _>(authorization.clone(), rng)?;
                 lap!(timer, "Execute the call");
 
+                let process_deref = &*$process;
+                let process = cast_ref!(&process_deref as Process<N>);
+
                 // Prepare the assignments.
-                cast_mut_ref!(trace as Trace<N>).prepare(query)?;
+                cast_mut_ref!(trace as Trace<N>).prepare(process, query)?;
                 lap!(timer, "Prepare the assignments");
 
                 // Compute the proof and construct the fee.

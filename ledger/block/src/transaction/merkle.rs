@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -146,7 +146,10 @@ impl<N: Network> Transaction<N> {
         match deployment.version() {
             Ok(DeploymentVersion::V1) => Self::deployment_tree_v1(deployment),
             Ok(DeploymentVersion::V2) => Self::deployment_tree_v2(deployment),
+            // Note: We use the same method for computing the deployment tree for V2, V3, and V4.
+            // This is safe because the tree root contains a hash of all bytes in the deployment.
             Ok(DeploymentVersion::V3) => Self::deployment_tree_v2(deployment),
+            Ok(DeploymentVersion::V4) => Self::deployment_tree_v2(deployment),
             Err(e) => bail!("Malformed deployment - {e}"),
         }
     }

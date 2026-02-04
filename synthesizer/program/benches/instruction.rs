@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -58,8 +58,8 @@
 // use criterion::{BatchSize, Criterion};
 // use std::{fmt::Display, iter, str::FromStr};
 //
-// // TODO (d0cd): Add benchmarks using `Address` once random sampling for `Address` is supported.
-// // TODO (d0cd): Generalize macros to support arbitrary arity instructions (low priority).
+// // TODO: Add benchmarks using `Address`.
+// // TODO: Generalize macros to support arbitrary arity instructions (low priority).
 //
 // /// A helper function to construct a set of `FinalizeRegisters` with the given arguments.
 // fn setup_finalize_registers(

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -218,7 +218,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
                 // Perform additional checks based on the deployment version.
                 match version {
-                    DeploymentVersion::V1 | DeploymentVersion::V2 => {
+                    DeploymentVersion::V1 | DeploymentVersion::V2 | DeploymentVersion::V3 => {
                         // For `V1` and `V2` deployments,
                         // If the edition is zero, then check that:
                         //  - The program does not exist in the store or process.
@@ -337,8 +337,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         // Note: This is safe to check for programs deployed before `ConsensusVersion::V8` because `credits.aleo/upgrade` was not yet introduced.
                         deployment.program().check_external_calls_to_credits_upgrade()?;
                     }
-                    DeploymentVersion::V3 => {
-                        // For `V3` (amendment) deployments, check that:
+                    DeploymentVersion::V4 => {
+                        // For `V4` (amendment) deployments, check that:
                         // - The program is not `credits.aleo`.
                         // - The program already exists in the store and process.
                         // - The existing program, checksum, and edition matches the one in the deployment.
@@ -366,7 +366,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             "Invalid deployment transaction '{id}' - new program does not match the existing program"
                         );
                         // Ensure the existing program checksum matches the deployment checksum.
-                        // Note that this unwrap is safe since `V3` deployments always have a program checksum.
+                        // Note that this unwrap is safe since `V4` deployments always have a program checksum.
                         ensure!(
                             existing_program.to_checksum() == deployment.program_checksum().unwrap(),
                             "Invalid deployment transaction '{id}' - program checksum does not match the existing program checksum"
@@ -377,24 +377,50 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             "Invalid deployment transaction '{id}' - program edition does not match the existing program edition"
                         );
 
-                        // Ensure at least one VK has changed or been added.
+                        // Ensure at least one VK (function or translation) has changed or been added.
+                        // This prevents spam amendments that don't actually modify anything.
                         let mut has_vk_change = false;
+
+                        // Check if any function verifying key changed or was added.
                         for (function_name, (new_vk, _)) in deployment.verifying_keys() {
                             match stack.get_verifying_key(function_name) {
                                 Ok(existing_vk) => {
-                                    // VK exists - check if it changed.
                                     if *new_vk != existing_vk {
                                         has_vk_change = true;
                                         break;
                                     }
                                 }
                                 Err(_) => {
-                                    // New function added.
+                                    // New function VK added.
                                     has_vk_change = true;
                                     break;
                                 }
                             }
                         }
+
+                        // Check if any translation verifying key changed or was added.
+                        // This handles the case where a V2 deployment (no translation VKs) is amended
+                        // with a V4 deployment that adds translation VKs for programs with records.
+                        if !has_vk_change {
+                            if let Some(translation_vks) = deployment.translation_verifying_keys() {
+                                for (record_name, (new_vk, _)) in translation_vks {
+                                    match stack.get_translation_verifying_key(record_name) {
+                                        Ok(existing_vk) => {
+                                            if *new_vk != existing_vk {
+                                                has_vk_change = true;
+                                                break;
+                                            }
+                                        }
+                                        Err(_) => {
+                                            // New translation VK added.
+                                            has_vk_change = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         ensure!(
                             has_vk_change,
                             "Invalid deployment transaction '{id}' - amendment must add or modify at least one verifying key"
@@ -467,7 +493,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // Ensure the fee is sufficient to cover the cost.
                 if *fee.base_amount()? < minimum_cost {
                     bail!(
-                        "Transaction '{id}' has an insufficient base fee (deployment) - requires {minimum_cost} microcredits"
+                        "Transaction '{id}' has an insufficient base fee (deployment) - has {}, requires {minimum_cost} microcredits",
+                        *fee.base_amount()?
                     )
                 }
                 // Verify the fee.
@@ -498,7 +525,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         // Ensure the fee is sufficient to cover the cost.
                         if *fee.base_amount()? < minimum_cost {
                             bail!(
-                                "Transaction '{id}' has an insufficient base fee (execution) - requires {minimum_cost} microcredits"
+                                "Transaction '{id}' has an insufficient base fee (execution) - has {}, requires {minimum_cost} microcredits",
+                                *fee.base_amount()?
                             )
                         }
                     } else {
@@ -748,14 +776,14 @@ fn validate_deployment_for_consensus_version<N: Network>(
     }
     if consensus_version >= ConsensusVersion::V9 {
         ensure!(
-            version == DeploymentVersion::V2 || version == DeploymentVersion::V3,
-            "Invalid deployment transaction '{id}' - the deployment version should be `V2` or `V3` at `ConsensusVersion::V9` and beyond"
+            matches!(version, DeploymentVersion::V2 | DeploymentVersion::V3 | DeploymentVersion::V4),
+            "Invalid deployment transaction '{id}' - the deployment version should be `V2`, `V3`, or `V4` at `ConsensusVersion::V9` and beyond"
         );
     }
     if consensus_version < ConsensusVersion::V14 {
         ensure!(
-            version != DeploymentVersion::V3,
-            "Invalid deployment transaction '{id}' - the deployment version cannot be `V3` before `ConsensusVersion::V14`"
+            !matches!(version, DeploymentVersion::V3 | DeploymentVersion::V4),
+            "Invalid deployment transaction '{id}' - the deployment version cannot be `V3` or `V4` before `ConsensusVersion::V14`"
         );
     }
 
@@ -1689,7 +1717,7 @@ function compute:
         // Construct the deployment transaction.
         let deployment = vm.deploy(&private_key, &program, None, 0, None, rng).unwrap();
 
-        // Advance the ledger past ConsensusV12 where the new varuna version starts to take place.
+        // Advance the ledger past ConsensusVersion::V12, when the `block.timestamp` operand is supported.
         let transactions: [Transaction<CurrentNetwork>; 0] = [];
         while vm.block_store().current_block_height() < CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap()
         {

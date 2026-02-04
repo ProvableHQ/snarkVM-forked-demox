@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -50,7 +50,7 @@ impl<N: Network> Process<N> {
 
         // Load the deployment based on its version.
         let stack = match version {
-            DeploymentVersion::V1 | DeploymentVersion::V2 => {
+            DeploymentVersion::V1 | DeploymentVersion::V2 | DeploymentVersion::V3 => {
                 // Compute the program stack.
                 let mut stack = Stack::new(self, deployment.program())?;
                 lap!(timer, "Compute the stack");
@@ -58,15 +58,23 @@ impl<N: Network> Process<N> {
                 // Set the program owner.
                 stack.set_program_owner(deployment.program_owner());
 
-                // Insert the verifying keys.
+                // Insert the function verifying keys.
                 for (function_name, (verifying_key, _)) in deployment.verifying_keys() {
                     stack.insert_verifying_key(function_name, verifying_key.clone())?;
                 }
-                lap!(timer, "Insert the verifying keys");
+                lap!(timer, "Insert the function verifying keys");
+
+                // Insert the translation verifying keys.
+                if let Some(translation_verifying_keys) = deployment.translation_verifying_keys() {
+                    for (record_name, (verifying_key, _)) in translation_verifying_keys {
+                        stack.insert_translation_verifying_key(record_name, verifying_key.clone())?;
+                    }
+                }
+                lap!(timer, "Insert the translation verifying keys");
 
                 stack
             }
-            DeploymentVersion::V3 => {
+            DeploymentVersion::V4 => {
                 // Get the existing stack.
                 let existing_stack = self.get_stack(deployment.program_id())?;
 

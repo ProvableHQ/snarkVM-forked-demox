@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -269,7 +269,8 @@ impl<N: Network> ProgramCore<N> {
     /// the keywords in the list should be restricted.
     #[rustfmt::skip]
     pub const RESTRICTED_KEYWORDS: &'static [(ConsensusVersion, &'static [&'static str])] = &[
-        (ConsensusVersion::V6, &["constructor"])
+        (ConsensusVersion::V6, &["constructor"]),
+        (ConsensusVersion::V14, &["dynamic"]),
     ];
 
     /// Initializes an empty program.
@@ -1218,8 +1219,8 @@ function swap:
         assert_eq!(function.instructions().len(), 2);
 
         // Ensure the instructions are calls.
-        assert_eq!(function.instructions()[0].opcode(), Opcode::Call);
-        assert_eq!(function.instructions()[1].opcode(), Opcode::Call);
+        assert_eq!(function.instructions()[0].opcode(), Opcode::Call("call"));
+        assert_eq!(function.instructions()[1].opcode(), Opcode::Call("call"));
 
         // Ensure there are two outputs.
         assert_eq!(function.outputs().len(), 2);

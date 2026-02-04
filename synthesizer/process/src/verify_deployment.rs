@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,15 +28,18 @@ impl<N: Network> Process<N> {
 
         // Retrieve the program ID.
         let program_id = deployment.program().id();
-        // Check if this is an amendment.
-        let is_amendment = deployment.version()? == DeploymentVersion::V3;
-        // If this is an amendment, verify that the program exists.
-        // If the edition is zero (and not an amendment), verify that the program does not exist.
+        // Check if this deployment version requires the program to already exist.
+        // - V3: Deployments with translation VKs (used for upgrades at V14+).
+        // - V4: Amendments that update VKs without changing edition or owner.
+        let version = deployment.version()?;
+        let requires_existing_program = matches!(version, DeploymentVersion::V3 | DeploymentVersion::V4);
+        // If the deployment requires an existing program, verify that it exists.
+        // If the edition is zero (and no existing program required), verify that the program does not exist.
         // Otherwise, verify that the program exists.
-        if is_amendment {
+        if requires_existing_program {
             ensure!(
                 self.contains_program(program_id),
-                "Program '{program_id}' does not exist, but deployment is an amendment (V3)"
+                "Program '{program_id}' does not exist, but deployment requires an existing program (V3/V4)"
             );
         } else {
             match deployment.edition().is_zero() {
@@ -54,8 +57,8 @@ impl<N: Network> Process<N> {
         // Ensure the program is well-formed, by computing the stack.
         // Note: The program owner is intentionally not set, since `program_owner` is an operand
         //   that is only available in a finalize scope.
-        let stack = if is_amendment {
-            // For amendments, use the existing edition instead of incrementing.
+        let stack = if requires_existing_program {
+            // For V3/V4 deployments, use the existing edition instead of incrementing.
             let existing_stack = self.get_stack(program_id)?;
             let stack = Stack::new_raw(self, deployment.program(), *existing_stack.program_edition())?;
             stack.initialize_and_check(self)?;

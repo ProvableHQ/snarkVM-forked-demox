@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -180,6 +180,13 @@ impl<N: Network> Stack<N> {
         // Retrieve the next request.
         let console_request = call_stack.pop()?;
 
+        // If in Execute mode, push a new translation bucket for this execution level.
+        // Translations from dynamic calls made at this level will be pushed to this bucket,
+        // and the bucket will be popped when the transition is inserted.
+        if let CallStack::Execute(_, _, translations) = &call_stack {
+            translations.write().push(Vec::new());
+        }
+
         // Ensure the network ID matches.
         if **console_request.network_id() != N::ID {
             return Err(
@@ -232,6 +239,8 @@ impl<N: Network> Stack<N> {
             false => None,
         };
 
+        let call_stack_type = call_stack.type_as_string();
+
         // Ensure the request is well-formed.
         if !console_request.verify(&input_types, console_is_root, program_checksum) {
             return Err(anyhow!("[Execute] Request is invalid").into());
@@ -252,6 +261,9 @@ impl<N: Network> Stack<N> {
 
         // If a program checksum was passed in, Inject it as `Mode::Public`.
         let program_checksum = program_checksum.map(|c| circuit::Field::<A>::new(circuit::Mode::Public, c));
+
+        // Set the request.
+        registers.set_request(console_request.clone());
 
         use circuit::{Eject, Inject};
 
@@ -288,7 +300,7 @@ impl<N: Network> Stack<N> {
 
         lap!(timer, "Initialize the registers");
 
-        Self::log_circuit::<A>("Request");
+        Self::log_circuit::<A>("Request", call_stack_type.clone());
 
         // Retrieve the number of constraints for verifying the request in the circuit.
         let num_request_constraints = A::num_constraints();
@@ -320,6 +332,12 @@ impl<N: Network> Stack<N> {
                     // If the instruction is a `call` instruction, we need to handle it separately.
                     Instruction::Call(call) => CallTrait::evaluate(call, self, &mut registers, rng)
                         .map_err(|e| InstructionEvalError::Call(Box::new(e))),
+                    // If the instruction is a `call.dynamic` instruction, we need to handle it separately.
+                    Instruction::CallDynamic(call_dynamic) => {
+                        // Evaluate the dynamic call.
+                        CallTrait::evaluate(call_dynamic, self, &mut registers, rng)
+                            .map_err(|e| InstructionEvalError::Call(Box::new(e)))
+                    }
                     // Otherwise, evaluate the instruction normally.
                     _ => instruction.evaluate(self, &mut registers).map_err(Into::into),
                 };
@@ -335,6 +353,12 @@ impl<N: Network> Stack<N> {
                 // If the instruction is a `call` instruction, we need to handle it separately.
                 Instruction::Call(call) => CallTrait::execute(call, self, &mut registers, rng)
                     .map_err(|e| InstructionExecError::Call(Box::new(e))),
+                // If the instruction is a `call.dynamic` instruction, we need to handle it separately.
+                Instruction::CallDynamic(call_dynamic) => {
+                    // Execute the dynamic call.
+                    CallTrait::execute(call_dynamic, self, &mut registers, rng)
+                        .map_err(|e| InstructionExecError::Call(Box::new(e)))
+                }
                 // Otherwise, execute the instruction normally.
                 _ => instruction.execute(self, &mut registers).map_err(InstructionExecError::Exec),
             };
@@ -345,11 +369,17 @@ impl<N: Network> Stack<N> {
             }
 
             // If the instruction was a function call, then set the tracker to `true`.
-            if let Instruction::Call(call) = instruction {
-                // Check if the call is a function call.
-                if call.is_function_call(self)? {
+            match instruction {
+                Instruction::Call(call) => {
+                    if call.is_function_call(self)? {
+                        contains_function_call = true;
+                    }
+                }
+                // A dynamic call is always a function call.
+                Instruction::CallDynamic(_) => {
                     contains_function_call = true;
                 }
+                _ => {}
             }
         }
         lap!(timer, "Execute the instructions");
@@ -418,7 +448,7 @@ impl<N: Network> Stack<N> {
             })
             .collect::<Vec<_>>();
 
-        Self::log_circuit::<A>(format!("Function '{}()'", function.name()));
+        Self::log_circuit::<A>(format!("Function '{}()'", function.name()), call_stack_type.clone());
 
         // Retrieve the number of constraints for executing the function in the circuit.
         let num_function_constraints = A::num_constraints().saturating_sub(num_request_constraints);
@@ -444,13 +474,13 @@ impl<N: Network> Stack<N> {
         );
         lap!(timer, "Construct the response");
 
-        Self::log_circuit::<A>("Response");
+        Self::log_circuit::<A>("Response", call_stack_type.clone());
 
         // Retrieve the number of constraints for verifying the response in the circuit.
         let num_response_constraints =
             A::num_constraints().saturating_sub(num_request_constraints).saturating_sub(num_function_constraints);
 
-        Self::log_circuit::<A>("Complete");
+        Self::log_circuit::<A>("Complete", call_stack_type.clone());
 
         // Eject the response.
         let response = response.eject_value();
@@ -491,6 +521,7 @@ impl<N: Network> Stack<N> {
         if let CallStack::Authorize(_, _, authorization) = registers.call_stack_ref() {
             // Construct the transition.
             let transition = Transition::from(&console_request, &response, &output_types, &output_registers)?;
+
             // Add the transition to the authorization.
             authorization.insert_transition(transition)?;
             lap!(timer, "Save the transition");
@@ -511,10 +542,11 @@ impl<N: Network> Stack<N> {
             lap!(timer, "Save the circuit assignment");
         }
         // If the circuit is in `Execute` mode, then execute the circuit into a transition.
-        else if let CallStack::Execute(_, trace) = registers.call_stack_ref() {
+        else if let CallStack::Execute(_, trace, translations) = registers.call_stack_ref() {
             registers.ensure_console_and_circuit_registers_match()?;
 
             // Construct the transition.
+            // TODO(perf): we already have the transition from the Authorization at this point.
             let transition = Transition::from(&console_request, &response, &output_types, &output_registers)?;
 
             // Retrieve the proving key.
@@ -529,11 +561,17 @@ impl<N: Network> Stack<N> {
                 num_response_constraints,
             };
 
+            // Pop the translation bucket for this execution level.
+            // This bucket contains translations from dynamic calls made at this level.
+            let translation_bucket =
+                translations.write().pop().ok_or_else(|| anyhow!("Translation stack underflow: no bucket to pop"))?;
+
             // Add the transition to the trace.
             trace.write().insert_transition(
                 console_request.input_ids(),
                 &transition,
                 (proving_key, assignment),
+                &translation_bucket,
                 metrics,
             )?;
         }
@@ -563,7 +601,7 @@ impl<N: Network> Stack<N> {
 impl<N: Network> Stack<N> {
     /// Prints the current state of the circuit.
     #[allow(unused_variables)]
-    pub(crate) fn log_circuit<A: circuit::Aleo<Network = N>>(scope: impl std::fmt::Display) {
+    pub(crate) fn log_circuit<A: circuit::Aleo<Network = N>>(scope: impl std::fmt::Display, call_stack_type: String) {
         #[cfg(debug_assertions)]
         {
             use snarkvm_utilities::dev_println;
@@ -579,7 +617,7 @@ impl<N: Network> Stack<N> {
 
             // Print the log.
             dev_println!(
-                "{is_satisfied} {scope:width$} (Constant: {num_constant}, Public: {num_public}, Private: {num_private}, Constraints: {num_constraints}, NonZeros: {num_nonzeros:?})",
+                "{is_satisfied} {call_stack_type:width$} {scope:width$} (Constant: {num_constant}, Public: {num_public}, Private: {num_private}, Constraints: {num_constraints}, NonZeros: {num_nonzeros:?})",
                 width = 20
             );
         }

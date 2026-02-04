@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -266,7 +266,7 @@ pub mod test_helpers {
         block_store.insert(&FromStr::from_str(&block.to_string()).unwrap()).unwrap();
 
         // Prepare the assignments.
-        trace.prepare(&Query::from(block_store)).unwrap();
+        trace.prepare(&process, &Query::from(block_store)).unwrap();
         // Compute the proof and construct the fee.
         let fee = trace.prove_fee::<CurrentAleo, _>(VarunaVersion::V1, rng).unwrap();
 
@@ -322,7 +322,7 @@ pub mod test_helpers {
         block_store.insert(&FromStr::from_str(&block.to_string()).unwrap()).unwrap();
 
         // Prepare the assignments.
-        trace.prepare(&Query::from(block_store)).unwrap();
+        trace.prepare(&process, &Query::from(block_store)).unwrap();
         // Compute the proof and construct the fee.
         let fee = trace.prove_fee::<CurrentAleo, _>(VarunaVersion::V1, rng).unwrap();
 

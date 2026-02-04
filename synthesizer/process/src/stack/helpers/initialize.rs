@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -55,6 +55,8 @@ impl<N: Network> Stack<N> {
             universal_srs: process.universal_srs().clone(),
             proving_keys: Default::default(),
             verifying_keys: Default::default(),
+            translation_proving_keys: Default::default(),
+            translation_verifying_keys: Default::default(),
             program_address: program.id().to_address()?,
             program_checksum: program.to_checksum(),
             program_edition: U16::new(edition),

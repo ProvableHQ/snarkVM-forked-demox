@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -330,7 +330,7 @@ fn execute_function<F: FinalizeStorage<CurrentNetwork>>(
     let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None))?;
 
     // Prepare the trace.
-    trace.prepare(&Query::from(&block_store))?;
+    trace.prepare(process, &Query::from(&block_store))?;
 
     // Prove the execution.
     let execution = trace.prove_execution::<CurrentAleo, _>(function, VarunaVersion::V1, rng)?;
@@ -2861,6 +2861,7 @@ mod sanity_checks {
             root_tvk,
             is_root,
             program_checksum,
+            false,
             rng,
         )
         .unwrap();

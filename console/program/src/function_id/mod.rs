@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,7 +19,10 @@ use snarkvm_console_algorithms::Result;
 use snarkvm_console_network::Network;
 use snarkvm_console_types::{Field, U8, U16};
 
-/// Compute the function ID as `Hash(network_id, program_id.len(), program_id, function_name.len(), function_name)`.
+/// Compute the function ID.
+///
+/// `Hash(network_id, program_id.len(), program_id, function_name.len(), function_name)`.
+///
 pub fn compute_function_id<N: Network>(
     network_id: &U16<N>,
     program_id: &ProgramID<N>,
@@ -37,4 +40,16 @@ pub fn compute_function_id<N: Network>(
         )
             .to_bits_le(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn check_field_size_in_bits() {
+        // Ensure that the field size in bits is less than or equal to `u8::MAX`.
+        // This is a sanity check for the above encoding.
+        assert!(Field::<snarkvm_console_network::MainnetV0>::SIZE_IN_BITS <= u8::MAX as usize);
+    }
 }
