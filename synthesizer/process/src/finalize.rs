@@ -218,7 +218,7 @@ impl<N: Network> Process<N> {
                 lap!(timer, "Insert the verifying keys");
 
                 // Insert the translation verifying keys if present.
-                // V4 amendments may add translation VKs to programs that were deployed before V14
+                // Amendments may add translation VKs to programs that were deployed before V14
                 // (when translation VKs were introduced for programs with records).
                 if let Some(translation_verifying_keys) = deployment.translation_verifying_keys() {
                     for (record_name, (verifying_key, _)) in translation_verifying_keys {
@@ -227,7 +227,7 @@ impl<N: Network> Process<N> {
                 }
                 lap!(timer, "Insert the translation verifying keys");
 
-                // Finalize the fee (V4 amendments don't initialize mappings or run constructors).
+                // Finalize the fee (amendments don't initialize mappings or run constructors).
                 atomic_batch_scope!(store, {
                     let mut finalize_operations = Vec::new();
 

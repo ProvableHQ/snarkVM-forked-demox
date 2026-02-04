@@ -1893,7 +1893,8 @@ mod tests {
         assert!(!deployment_store.is_amendment(&original_transaction_id).unwrap());
 
         // Now insert an amendment for the same program.
-        let amendment_transaction = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 0, false, rng);
+        // V4 is the amendment version (uses same program as V2).
+        let amendment_transaction = snarkvm_ledger_test_helpers::sample_deployment_transaction(4, 0, false, rng);
         let amendment_id = amendment_transaction.id();
         let amendment_deployment = amendment_transaction.deployment().unwrap();
         assert_eq!(original_program_id, *amendment_deployment.program_id());
@@ -1960,8 +1961,8 @@ mod tests {
         let original_program_id = *original_transaction.deployment().unwrap().program_id();
         deployment_store.insert(&original_transaction).unwrap();
 
-        // Insert multiple amendments sequentially.
-        let amendment_1 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 0, false, rng);
+        // Insert multiple amendments sequentially (V4 is the amendment version).
+        let amendment_1 = snarkvm_ledger_test_helpers::sample_deployment_transaction(4, 0, false, rng);
         let amendment_1_id = amendment_1.id();
         let amendment_1_deployment = amendment_1.deployment().unwrap();
         deployment_store.insert(&amendment_1).unwrap();
@@ -1971,7 +1972,7 @@ mod tests {
         assert_eq!(Some((original_program_id, 0, 0)), deployment_store.get_amendment_info(&amendment_1_id).unwrap());
 
         // Insert second amendment.
-        let amendment_2 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 0, true, rng);
+        let amendment_2 = snarkvm_ledger_test_helpers::sample_deployment_transaction(4, 0, true, rng);
         let amendment_2_id = amendment_2.id();
         let amendment_2_deployment = amendment_2.deployment().unwrap();
         deployment_store.insert(&amendment_2).unwrap();
@@ -2026,8 +2027,8 @@ mod tests {
             assert_eq!(Some(vk.clone()), latest_vk, "original VK should be retrievable");
         }
 
-        // Insert an amendment.
-        let amendment_transaction = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 0, false, rng);
+        // Insert an amendment (V4 is the amendment version).
+        let amendment_transaction = snarkvm_ledger_test_helpers::sample_deployment_transaction(4, 0, false, rng);
         let amendment_deployment = amendment_transaction.deployment().unwrap();
         deployment_store.insert(&amendment_transaction).unwrap();
 
@@ -2082,8 +2083,8 @@ mod tests {
         let original_program_id = *original_transaction.deployment().unwrap().program_id();
         deployment_store.insert(&original_transaction).unwrap();
 
-        // Insert an amendment.
-        let amendment_transaction = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 0, false, rng);
+        // Insert an amendment (V4 is the amendment version).
+        let amendment_transaction = snarkvm_ledger_test_helpers::sample_deployment_transaction(4, 0, false, rng);
         let amendment_transaction_id = amendment_transaction.id();
         deployment_store.insert(&amendment_transaction).unwrap();
 
@@ -2125,13 +2126,13 @@ mod tests {
         let original_program_id = *original_transaction.deployment().unwrap().program_id();
         deployment_store.insert(&original_transaction).unwrap();
 
-        // Insert first amendment (index 0).
-        let amendment_0 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 0, false, rng);
+        // Insert first amendment (index 0). V4 is the amendment version.
+        let amendment_0 = snarkvm_ledger_test_helpers::sample_deployment_transaction(4, 0, false, rng);
         let amendment_0_id = amendment_0.id();
         deployment_store.insert(&amendment_0).unwrap();
 
         // Insert second amendment (index 1).
-        let amendment_1 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 0, true, rng);
+        let amendment_1 = snarkvm_ledger_test_helpers::sample_deployment_transaction(4, 0, true, rng);
         let amendment_1_id = amendment_1.id();
         deployment_store.insert(&amendment_1).unwrap();
 

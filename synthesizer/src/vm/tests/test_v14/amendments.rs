@@ -64,7 +64,7 @@ fn create_v4_deployment_transaction<C: ConsensusStorage<CurrentNetwork>, R: Rng 
 //
 // Test flow:
 // 1. V9: Deploy a program with records as V2 (checksum + owner, NO translation VKs)
-// 2. V14: Create V4 amendment (checksum, no owner, WITH translation VKs for records)
+// 2. V14: Create an amendment (checksum, no owner, WITH translation VKs for records)
 // 3. Validation passes because translation VKs were added (didn't exist in original V2)
 #[test]
 fn test_v4_deployment_requires_v14() -> Result<()> {
@@ -160,7 +160,7 @@ constructor:
 // Test flow:
 // 1. Deploy a program with records at V9 (V2: checksum + owner, NO translation VKs)
 // 2. Execute the program to verify it works
-// 3. Advance to V14 and create V4 amendment (adds translation VKs)
+// 3. Advance to V14 and create an amendment (adds translation VKs)
 // 4. Execute the program again to verify it still works with the new VKs
 #[test]
 fn test_amendment_updates_vks() -> Result<()> {
@@ -239,14 +239,14 @@ constructor:
     let v4_transaction = create_v4_deployment_transaction(&vm, &caller_private_key, &deployed_program, 0, rng)?;
 
     let block = sample_next_block(&vm, &caller_private_key, &[v4_transaction], rng)?;
-    assert_eq!(block.transactions().num_accepted(), 1, "V4 amendment should be accepted");
+    assert_eq!(block.transactions().num_accepted(), 1, "Amendment should be accepted");
     vm.add_next_block(&block)?;
 
     // Verify the translation VK was added by the amendment.
     let stack = vm.process().read().get_stack("vk_test.aleo")?;
     assert!(
         stack.get_translation_verifying_key(&Identifier::from_str("token")?).is_ok(),
-        "V4 amendment should have added translation VKs"
+        "Amendment should have added translation VKs"
     );
 
     // Verify the edition is still 0.
@@ -402,7 +402,7 @@ constructor:
 // Test flow:
 // 1. Deploy a program with records at V9 as the original owner
 // 2. Advance to V14
-// 3. Another user submits a V4 amendment (adds translation VKs)
+// 3. Another user submits a amendment (adds translation VKs)
 // 4. Verify the program owner hasn't changed
 #[test]
 fn test_amendment_permissionless() -> Result<()> {
