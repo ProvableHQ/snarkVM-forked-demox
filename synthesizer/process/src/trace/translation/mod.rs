@@ -14,7 +14,7 @@
 // limitations under the License.
 
 mod assignment;
-pub use assignment::{TranslationAssignment, compute_console_nonlocal_record_id};
+pub use assignment::{TranslationAssignment, compute_console_dynamic_or_external_record_id};
 
 mod prepare;
 
@@ -52,15 +52,15 @@ pub struct RecordTranslationData<N: Network> {
     pub record_name: Identifier<N>,
     /// True if translation is happening for an input to `dynamic.call` (static record is being produced)
     /// or an output of `dynamic.call` (static record is being consumed).
-    pub is_input: bool,
+    pub is_to_static: bool,
     /// Whether the value type corresponding to the static record is `Record` or `ExternalRecord`.
-    pub static_is_external: bool,
+    pub is_external_record: bool,
     /// The view key of the transition containing the dynamic call.
     pub tvk: Field<N>,
-    /// The record view key of the static record. Irrelevant if `static_is_external` is true.
+    /// The record view key of the static record. Irrelevant if `is_external_record` is true.
     pub record_view_key: Option<Field<N>>,
     /// The additional point used to produce the serial number.
-    /// Irrelevant if `is_input` is false or `static_is_external` is true.
+    /// Irrelevant if `is_to_static` is false or `is_external_record` is true.
     pub gamma: Option<Group<N>>,
     /// Index of the input operand or output destination that contains the (dynamic and static) record.
     /// Note: The first three dynamic.call operands are reserved for call-related data,
@@ -85,8 +85,8 @@ impl<N: Network> RecordTranslationData<N> {
         program_id: ProgramID<N>,
         function_id: Field<N>,
         record_name: Identifier<N>,
-        is_input: bool,
-        static_is_external: bool,
+        is_to_static: bool,
+        is_external_record: bool,
         tvk: Field<N>,
         record_view_key: Option<Field<N>>,
         gamma: Option<Group<N>>,
@@ -100,8 +100,8 @@ impl<N: Network> RecordTranslationData<N> {
             program_id,
             function_id,
             record_name,
-            is_input,
-            static_is_external,
+            is_to_static,
+            is_external_record,
             tvk,
             record_view_key,
             gamma,
@@ -141,7 +141,7 @@ impl<N: Network> Translation<N> {
         transitions: impl ExactSizeIterator<Item = &'a Transition<N>>,
         // Used to retrieve record names
         transition_map: &HashMap<N::TransitionID, (&Transition<N>, Function<N>)>,
-        get_translation_verifying_key: &F,
+        get_verifying_key: &F,
     ) -> Result<Vec<(VerifyingKey<N>, Vec<Vec<N::Field>>)>>
     where
         F: Fn(&(ProgramID<N>, Identifier<N>)) -> Result<VerifyingKey<N>>,
@@ -174,18 +174,18 @@ impl<N: Network> Translation<N> {
                 // Construct the input output index as a field element.
                 let field_input_output_index = *Field::<N>::from_u128(input_output_index as u128);
 
-                let field_is_input = N::Field::one();
+                let field_is_to_static = N::Field::one();
                 let field_function_id = *callee_function_id;
                 let field_id_static = **input.id();
                 let field_id_dynamic = **dynamic_id;
 
                 match (input, callee_input_type) {
                     (Input::RecordWithDynamicID(..), ValueType::Record(record_name)) => {
-                        let field_static_is_external = N::Field::zero();
+                        let field_is_external_record = N::Field::zero();
                         let verifier_inputs = vec![
                             N::Field::one(),
-                            field_is_input,
-                            field_static_is_external,
+                            field_is_to_static,
+                            field_is_external_record,
                             field_function_id,
                             field_translation_index,
                             field_input_output_index,
@@ -199,11 +199,11 @@ impl<N: Network> Translation<N> {
                         translation_index += 1;
                     }
                     (Input::ExternalRecordWithDynamicID(..), ValueType::ExternalRecord(record_locator)) => {
-                        let field_static_is_external = N::Field::one();
+                        let field_is_external_record = N::Field::one();
                         let verifier_inputs = vec![
                             N::Field::one(),
-                            field_is_input,
-                            field_static_is_external,
+                            field_is_to_static,
+                            field_is_external_record,
                             field_function_id,
                             field_translation_index,
                             field_input_output_index,
@@ -238,18 +238,18 @@ impl<N: Network> Translation<N> {
                 // Construct the input output index as a field element.
                 let field_input_output_index = *Field::<N>::from_u128((num_inputs + input_output_index) as u128);
 
-                let field_is_input = N::Field::zero();
+                let field_is_to_static = N::Field::zero();
                 let field_function_id = *callee_function_id;
                 let field_id_static = **output.id();
                 let field_id_dynamic = **dynamic_id;
 
                 match (output, callee_output_type) {
                     (Output::RecordWithDynamicID(..), ValueType::Record(record_name)) => {
-                        let field_static_is_external = N::Field::zero();
+                        let field_is_external_record = N::Field::zero();
                         let verifier_inputs = vec![
                             N::Field::one(),
-                            field_is_input,
-                            field_static_is_external,
+                            field_is_to_static,
+                            field_is_external_record,
                             field_function_id,
                             field_translation_index,
                             field_input_output_index,
@@ -263,11 +263,11 @@ impl<N: Network> Translation<N> {
                         translation_index += 1;
                     }
                     (Output::ExternalRecordWithDynamicID(..), ValueType::ExternalRecord(record_locator)) => {
-                        let field_static_is_external = N::Field::one();
+                        let field_is_external_record = N::Field::one();
                         let verifier_inputs = vec![
                             N::Field::one(),
-                            field_is_input,
-                            field_static_is_external,
+                            field_is_to_static,
+                            field_is_external_record,
                             field_function_id,
                             field_translation_index,
                             field_input_output_index,
@@ -291,7 +291,7 @@ impl<N: Network> Translation<N> {
 
         let batch_with_verifying_keys = batch_verifier_inputs
             .into_iter()
-            .map(|(key, inputs)| Ok((get_translation_verifying_key(&key)?, inputs)))
+            .map(|(key, inputs)| Ok((get_verifying_key(&key)?, inputs)))
             .collect::<Result<Vec<(VerifyingKey<N>, Vec<Vec<N::Field>>)>>>()?;
 
         Ok(batch_with_verifying_keys)

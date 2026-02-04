@@ -15,14 +15,11 @@
 
 use super::*;
 
-use itertools::izip;
-use snarkvm_utilities::dev_eprintln;
-
 impl<N: Network> Request<N> {
     /// Returns `true` if the request is valid, and `false` otherwise.
     ///
     /// Verifies (challenge == challenge') && (address == address') && (serial_numbers == serial_numbers') where:
-    ///     challenge' := HashToScalar(r * G, pk_sig, pr_sig, signer, \[tvk, tcm, function ID, is_root, program checksum?, input IDs, dynamic input IDs?\])
+    ///     challenge' := HashToScalar(r * G, pk_sig, pr_sig, signer, \[tvk, tcm, function ID, is_root, program checksum?, input IDs\])
     /// The program checksum must be provided if the program has a constructor and should not be provided otherwise.
     pub fn verify(&self, input_types: &[ValueType<N>], is_root: bool, program_checksum: Option<Field<N>>) -> bool {
         // Verify the transition public key, transition view key, and transition commitment are well-formed.
@@ -60,8 +57,8 @@ impl<N: Network> Request<N> {
         // Compute the 'is_root' field.
         let is_root = if is_root { Field::<N>::one() } else { Field::<N>::zero() };
 
-        // Construct the signature message as `[tvk, tcm, function ID, is_root, program_checksum?, input IDs]`.
-        let mut message = Vec::with_capacity(5 + self.input_ids.len());
+        // Construct the signature message as `[tvk, tcm, function ID, input IDs]`.
+        let mut message = Vec::with_capacity(3 + self.input_ids.len());
         message.push(self.tvk);
         message.push(self.tcm);
         message.push(function_id);
@@ -72,18 +69,8 @@ impl<N: Network> Request<N> {
             message.push(program_checksum);
         }
 
-        if self.input_ids.len() != self.inputs.len() || self.input_ids.len() != input_types.len() {
-            dev_eprintln!(
-                "Mismatched number of input IDs, inputs, and input types: {} vs. {} vs. {}",
-                self.input_ids.len(),
-                self.inputs.len(),
-                input_types.len(),
-            );
-            return false;
-        }
-
-        if let Err(error) = izip!(&self.input_ids, &self.inputs, input_types).enumerate().try_for_each(
-            |(index, (input_id, input, input_type))| {
+        if let Err(error) = self.input_ids.iter().zip_eq(&self.inputs).zip_eq(input_types).enumerate().try_for_each(
+            |(index, ((input_id, input), input_type))| {
                 // Convert index to u16.
                 let index = u16::try_from(index).or_halt_with::<N>("Input index exceeds u16");
 
@@ -92,10 +79,7 @@ impl<N: Network> Request<N> {
                     InputID::Constant(input_hash) => {
                         let candidate_hash = *InputID::constant(function_id, input, self.tcm, index)?.id();
                         // Ensure the input hash matches.
-                        ensure!(
-                            *input_hash == candidate_hash,
-                            "[console:Request::verify] Expected a constant input with the same hash"
-                        );
+                        ensure!(*input_hash == candidate_hash, "Expected a constant input with the same hash");
 
                         // Add the input hash to the message.
                         message.push(candidate_hash);
@@ -104,10 +88,7 @@ impl<N: Network> Request<N> {
                     InputID::Public(input_hash) => {
                         let candidate_hash = *InputID::public(function_id, input, self.tcm, index)?.id();
                         // Ensure the input hash matches.
-                        ensure!(
-                            *input_hash == candidate_hash,
-                            "[console:Request::verify] Expected a public input with the same hash"
-                        );
+                        ensure!(*input_hash == candidate_hash, "Expected a public input with the same hash");
 
                         // Add the input hash to the message.
                         message.push(candidate_hash);
@@ -116,10 +97,7 @@ impl<N: Network> Request<N> {
                     InputID::Private(input_hash) => {
                         let candidate_hash = *InputID::private(function_id, input, self.tvk, index)?.id();
                         // Ensure the input hash matches.
-                        ensure!(
-                            *input_hash == candidate_hash,
-                            "[console:Request::verify] Expected a private input with the same hash"
-                        );
+                        ensure!(*input_hash == candidate_hash, "Expected a private input with the same hash");
 
                         // Add the input hash to the message.
                         message.push(candidate_hash);
@@ -131,29 +109,26 @@ impl<N: Network> Request<N> {
                             Value::Record(record) => record,
                             // Ensure the input is a record.
                             Value::Plaintext(..) => {
-                                bail!("[console:Request::verify] Expected a record input, found a plaintext input")
+                                bail!("Expected a record input, found a plaintext input")
                             }
                             Value::Future(..) => {
-                                bail!("[console:Request::verify] Expected a record input, found a future input")
+                                bail!("Expected a record input, found a future input")
                             }
                             Value::DynamicRecord(..) => {
-                                bail!("[console:Request::verify] Expected a record input, found a dynamic record input")
+                                bail!("Expected a record input, found a dynamic record input")
                             }
                             Value::DynamicFuture(..) => {
-                                bail!("[console:Request::verify] Expected a record input, found a dynamic future input")
+                                bail!("Expected a record input, found a dynamic future input")
                             }
                         };
                         // Retrieve the record name.
                         let record_name = match input_type {
                             ValueType::Record(record_name) => record_name,
                             // Ensure the input type is a record.
-                            _ => bail!("[console:Request::verify] Expected a record type at input {index}"),
+                            _ => bail!("Expected a record type at input {index}"),
                         };
                         // Ensure the record belongs to the signer.
-                        ensure!(
-                            **record.owner() == self.signer,
-                            "[console:Request::verify] Input record does not belong to the signer"
-                        );
+                        ensure!(**record.owner() == self.signer, "Input record does not belong to the signer");
 
                         // Compute the record commitment.
                         let candidate_commitment =
@@ -161,16 +136,13 @@ impl<N: Network> Request<N> {
                         // Ensure the commitment matches.
                         ensure!(
                             *commitment == candidate_commitment,
-                            "[console:Request::verify] Expected a record input with the same commitment"
+                            "Expected a record input with the same commitment"
                         );
 
                         // Compute the `candidate_sn` from `gamma`.
                         let candidate_sn = Record::<N, Plaintext<N>>::serial_number_from_gamma(gamma, *commitment)?;
                         // Ensure the serial number matches.
-                        ensure!(
-                            *serial_number == candidate_sn,
-                            "[console:Request::verify] Expected a record input with the same serial number"
-                        );
+                        ensure!(*serial_number == candidate_sn, "Expected a record input with the same serial number");
 
                         // Compute the generator `H` as `HashToGroup(commitment)`.
                         let h = N::hash_to_group_psd2(&[N::serial_number_domain(), *commitment])?;
@@ -180,10 +152,7 @@ impl<N: Network> Request<N> {
                         // Compute the tag as `Hash(sk_tag || commitment)`.
                         let candidate_tag = N::hash_psd2(&[self.sk_tag, *commitment])?;
                         // Ensure the tag matches.
-                        ensure!(
-                            *tag == candidate_tag,
-                            "[console:Request::verify] Expected a record input with the same tag"
-                        );
+                        ensure!(*tag == candidate_tag, "Expected a record input with the same tag");
 
                         // Add (`H`, `r * H`, `gamma`, `tag`) to the message.
                         message.extend([h, h_r, *gamma].iter().map(|point| point.to_x_coordinate()));
@@ -193,10 +162,7 @@ impl<N: Network> Request<N> {
                     InputID::ExternalRecord(input_hash) => {
                         let candidate_hash = *InputID::external_record(function_id, input, self.tvk, index)?.id();
                         // Ensure the input hash matches.
-                        ensure!(
-                            *input_hash == candidate_hash,
-                            "[console:Request::verify] Expected a locator input with the same hash"
-                        );
+                        ensure!(*input_hash == candidate_hash, "Expected a locator input with the same hash");
 
                         // Add the input hash to the message.
                         message.push(candidate_hash);
@@ -205,10 +171,7 @@ impl<N: Network> Request<N> {
                     InputID::DynamicRecord(input_hash) => {
                         let candidate_hash = *InputID::dynamic_record(function_id, input, self.tvk, index)?.id();
                         // Ensure the input hash matches.
-                        ensure!(
-                            *input_hash == candidate_hash,
-                            "[console:Request::verify] Expected a locator input with the same hash"
-                        );
+                        ensure!(*input_hash == candidate_hash, "Expected a locator input with the same hash");
 
                         // Add the input hash to the message.
                         message.push(candidate_hash);
@@ -217,7 +180,7 @@ impl<N: Network> Request<N> {
                 Ok(())
             },
         ) {
-            eprintln!("[console:Request::verify] Request verification failed on input checks: {error}");
+            eprintln!("Request verification failed on input checks: {error}");
             return false;
         }
 

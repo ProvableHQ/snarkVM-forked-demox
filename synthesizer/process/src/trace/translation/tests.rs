@@ -21,7 +21,7 @@ use console::{
 
 use crate::{
     TranslationAssignment,
-    compute_console_nonlocal_record_id,
+    compute_console_dynamic_or_external_record_id,
     tests::test_utils::{CurrentAleo, CurrentNetwork},
 };
 
@@ -31,8 +31,8 @@ use std::str::FromStr;
 
 fn translation_assignment_from_record_str(
     record_str: &str,
-    is_input: bool,
-    static_is_external: bool,
+    is_to_static: bool,
+    is_external_record: bool,
     function_id_opt: Option<Field<CurrentNetwork>>,
     rng: &mut TestRng,
 ) -> TranslationAssignment<CurrentNetwork> {
@@ -50,7 +50,7 @@ fn translation_assignment_from_record_str(
     // Dependent fields
     let record_dynamic = DynamicRecord::<CurrentNetwork>::from_record(&record_static).unwrap();
 
-    let id_dynamic = compute_console_nonlocal_record_id(
+    let id_dynamic = compute_console_dynamic_or_external_record_id(
         function_id,
         record_dynamic.to_fields().unwrap(),
         tvk,
@@ -59,7 +59,7 @@ fn translation_assignment_from_record_str(
     .unwrap();
 
     let commitment = record_static.to_commitment(&program_id, &record_name, &record_view_key).unwrap();
-    let id_static = if is_input {
+    let id_static = if is_to_static {
         Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::serial_number_from_gamma(&gamma, commitment).unwrap()
     } else {
         commitment
@@ -71,8 +71,8 @@ fn translation_assignment_from_record_str(
         program_id,
         function_id,
         record_name,
-        is_input,
-        static_is_external,
+        is_to_static,
+        is_external_record,
         translation_index,
         tvk,
         input_output_index,
@@ -124,7 +124,7 @@ fn test_translation_simple() {
         <CurrentAleo as circuit::Environment>::num_constraints(),
     );
 
-    // is_input = true
+    // is_to_static = true
     <CurrentAleo as circuit::Environment>::reset();
     let translation_assignment = translation_assignment_from_record_str(record_static_str, true, false, None, &mut rng);
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
@@ -181,7 +181,7 @@ fn test_translation_recursive() {
         _version: 1u8.public
     }"#;
 
-    // is_input = false
+    // is_to_static = false
     let translation_assignment =
         translation_assignment_from_record_str(record_static_str, false, false, None, &mut rng);
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
@@ -195,7 +195,7 @@ fn test_translation_recursive() {
         <CurrentAleo as circuit::Environment>::num_constraints(),
     );
 
-    // is_input = true
+    // is_to_static = true
     <CurrentAleo as circuit::Environment>::reset();
     let translation_assignment = translation_assignment_from_record_str(record_static_str, true, false, None, &mut rng);
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
@@ -269,7 +269,7 @@ fn test_translation_complex() {
         _version: 1u8.public
     }"#;
 
-    // is_input = false
+    // is_to_static = false
     let translation_assignment =
         translation_assignment_from_record_str(record_static_str, false, false, None, &mut rng);
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
@@ -283,7 +283,7 @@ fn test_translation_complex() {
         <CurrentAleo as circuit::Environment>::num_constraints(),
     );
 
-    // is_input = true
+    // is_to_static = true
     <CurrentAleo as circuit::Environment>::reset();
     let translation_assignment = translation_assignment_from_record_str(record_static_str, true, false, None, &mut rng);
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>().unwrap();
@@ -400,7 +400,7 @@ fn test_definition_invariance() {
     // Other fields which the circuit should be independent of are generated
     // randomly inside translation_assignment_from_record_str
 
-    // We also play around with the flag is_input, which should not affect the circuit
+    // We also play around with the flag is_to_static, which should not affect the circuit
     let translation_assignments = [
         translation_assignment_from_record_str(record_strings[0], false, false, function_id, &mut rng),
         translation_assignment_from_record_str(record_strings[1], false, false, function_id, &mut rng),
@@ -626,11 +626,11 @@ fn test_external_translation() {
     let record_dynamic = DynamicRecord::<CurrentNetwork>::from_record(&record_static).unwrap();
     let program_id = ProgramID::<CurrentNetwork>::from_str("logistics.aleo").unwrap();
     let record_name = Identifier::<CurrentNetwork>::from_str("vehicle").unwrap();
-    let is_input = bool::rand(&mut rng);
-    // We specifically set the external-record flag to true
-    let static_is_external = true;
+    let is_to_static = bool::rand(&mut rng);
+    // We specifically set the external-record flag to true.
+    let is_external_record = true;
     let translation_index = Uniform::rand(&mut rng);
-    let id_dynamic = compute_console_nonlocal_record_id(
+    let id_dynamic = compute_console_dynamic_or_external_record_id(
         function_id,
         record_dynamic.to_fields().unwrap(),
         tvk,
@@ -647,8 +647,8 @@ fn test_external_translation() {
         program_id,
         function_id,
         record_name,
-        is_input,
-        static_is_external,
+        is_to_static,
+        is_external_record,
         translation_index,
         tvk,
         input_output_index,

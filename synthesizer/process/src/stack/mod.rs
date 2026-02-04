@@ -245,14 +245,12 @@ pub struct Stack<N: Network> {
     finalize_types: Arc<RwLock<IndexMap<Identifier<N>, FinalizeTypes<N>>>>,
     /// The universal SRS.
     universal_srs: UniversalSRS<N>,
-    /// The mapping of function name to proving key.
+    /// The mapping of function name or record name to proving key.
+    /// Function names map to function proving keys, record names map to translation proving keys.
     proving_keys: Arc<RwLock<IndexMap<Identifier<N>, ProvingKey<N>>>>,
-    /// The mapping of function name to verifying key.
+    /// The mapping of function name or record name to verifying key.
+    /// Function names map to function verifying keys, record names map to translation verifying keys.
     verifying_keys: Arc<RwLock<IndexMap<Identifier<N>, VerifyingKey<N>>>>,
-    /// The mapping of record name to translation proving key.
-    translation_proving_keys: Arc<RwLock<IndexMap<Identifier<N>, ProvingKey<N>>>>,
-    /// The mapping of record name to translation verifying key.
-    translation_verifying_keys: Arc<RwLock<IndexMap<Identifier<N>, VerifyingKey<N>>>>,
     /// The program address.
     program_address: Address<N>,
     /// The program checksum.

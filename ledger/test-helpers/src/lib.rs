@@ -131,13 +131,37 @@ pub fn sample_outputs() -> Vec<(<CurrentNetwork as Network>::TransitionID, Outpu
         (Uniform::rand(rng), Output::Public(Uniform::rand(rng), None)),
         (Uniform::rand(rng), Output::Public(plaintext_hash, Some(plaintext))),
         (Uniform::rand(rng), Output::Private(Uniform::rand(rng), None)),
-        (Uniform::rand(rng), Output::Private(ciphertext_hash, Some(ciphertext))),
+        (Uniform::rand(rng), Output::Private(ciphertext_hash, Some(ciphertext.clone()))),
         (Uniform::rand(rng), Output::Record(Uniform::rand(rng), Uniform::rand(rng), None, sender_ciphertext)),
         (
             Uniform::rand(rng),
-            Output::Record(Uniform::rand(rng), record_checksum, Some(record_ciphertext), sender_ciphertext),
+            Output::Record(Uniform::rand(rng), record_checksum, Some(record_ciphertext.clone()), sender_ciphertext),
         ),
         (Uniform::rand(rng), Output::ExternalRecord(Uniform::rand(rng))),
+        // RecordWithDynamicID with record ciphertext.
+        (
+            Uniform::rand(rng),
+            Output::RecordWithDynamicID(
+                Uniform::rand(rng),
+                record_checksum,
+                Some(record_ciphertext),
+                sender_ciphertext,
+                Uniform::rand(rng),
+            ),
+        ),
+        // RecordWithDynamicID without record ciphertext.
+        (
+            Uniform::rand(rng),
+            Output::RecordWithDynamicID(
+                Uniform::rand(rng),
+                Uniform::rand(rng),
+                None,
+                sender_ciphertext,
+                Uniform::rand(rng),
+            ),
+        ),
+        // ExternalRecordWithDynamicID.
+        (Uniform::rand(rng), Output::ExternalRecordWithDynamicID(Uniform::rand(rng), Uniform::rand(rng))),
     ]
 }
 

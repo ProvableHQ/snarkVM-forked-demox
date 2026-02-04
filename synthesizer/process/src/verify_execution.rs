@@ -14,7 +14,6 @@
 // limitations under the License.
 
 use super::*;
-use std::collections::HashSet;
 
 impl<N: Network> Process<N> {
     /// Verifies the given execution is valid.
@@ -70,14 +69,6 @@ impl<N: Network> Process<N> {
 
         // Construct the call graph of the execution.
         let call_graph = self.construct_call_graph(execution.transitions())?;
-        // Ensure the constructed call graph is acyclic from ConsensusVersion::V14 onwards.
-        if consensus_version >= ConsensusVersion::V14 {
-            let tid_to_locator = execution
-                .transitions()
-                .map(|t| (*t.id(), Locator::new(*t.program_id(), *t.function_name())))
-                .collect::<IndexMap<_, _>>();
-            Self::ensure_acyclic_call_graph(&call_graph, &tid_to_locator)?;
-        }
 
         // Construct the reverse call graph of the execution.
         // Note: This is a mapping of the child transition ID to the parent transition ID.
@@ -229,7 +220,7 @@ impl<N: Network> Process<N> {
             execution.transitions(),
             &transition_map,
             &|(program_id, record_name)| {
-                self.get_stack(program_id).and_then(|stack| stack.get_translation_verifying_key(record_name))
+                self.get_stack(program_id).and_then(|stack| stack.get_verifying_key(record_name))
             },
         )?;
 
@@ -689,49 +680,5 @@ impl<N: Network> Process<N> {
             }
         }
         reverse_call_graph
-    }
-
-    /// Ensures an execution call graph contains no recursion cycles by function
-    /// identity. This is done by first collapsing the transition-ID graph into
-    /// a graph of function locators, and then running DFS cycle detection from
-    /// the root.
-    ///
-    /// Input: A valid call graph as created by `fn construct_call_graph`.
-    /// Input: mapping from transition IDs to locators, in the same order of the transitions in the execution.
-    pub fn ensure_acyclic_call_graph(
-        call_graph: &HashMap<N::TransitionID, Vec<N::TransitionID>>,
-        tid_to_locator: &IndexMap<N::TransitionID, Locator<N>>,
-    ) -> Result<()> {
-        // Determine the root of the call graph (the last transition in the execution, by construction).
-        let (root_tid, root_locator) = tid_to_locator.iter().last().ok_or_else(|| anyhow!("No root found."))?;
-        // Track the transition child indices to explore next.
-        let mut stack: Vec<(N::TransitionID, usize)> = vec![(*root_tid, 0)];
-        // Track the locators in the *current call path* (push on descent, remove on backtrack).
-        let mut active_locators: HashSet<Locator<N>> = HashSet::from([*root_locator]);
-        // Perform an explicit-stack DFS; encountering an already-active locator indicates a cycle.
-        while let Some((node, next_child_index)) = stack.pop() {
-            let children_tids = call_graph.get(&node).ok_or_else(|| anyhow!("Missing node '{node}'"))?;
-
-            if next_child_index < children_tids.len() {
-                // Retrieve the locator of the `next_child_index`' transition.
-                let child_tid = children_tids[next_child_index];
-                let child_locator =
-                    tid_to_locator.get(&child_tid).ok_or_else(|| anyhow!("Missing locator for '{child_tid}'"))?;
-                // Bail if this locator is already in the active call path.
-                if !active_locators.insert(*child_locator) {
-                    bail!("Cycle detected in call graph at '{child_tid}'");
-                }
-                // Continue exploring the node.
-                stack.push((node, next_child_index + 1));
-                // But first, continue exploring the node's child.
-                stack.push((child_tid, 0));
-            } else {
-                // Done exploring this node; remove its locator from the active call path.
-                let node_locator = tid_to_locator.get(&node).ok_or_else(|| anyhow!("Missing locator for '{node}'"))?;
-                active_locators.remove(node_locator);
-            }
-        }
-
-        Ok(())
     }
 }

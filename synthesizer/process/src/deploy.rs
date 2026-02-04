@@ -64,7 +64,7 @@ impl<N: Network> Process<N> {
         // Insert the translation verifying keys.
         if let Some(translation_verifying_keys) = deployment.translation_verifying_keys() {
             for (record_name, (verifying_key, _)) in translation_verifying_keys {
-                stack.insert_translation_verifying_key(record_name, verifying_key.clone())?;
+                stack.insert_verifying_key(record_name, verifying_key.clone())?;
             }
         }
 

@@ -40,9 +40,13 @@ pub enum Input<N: Network> {
     ExternalRecord(Field<N>),
     /// The hash of the dynamic record's (function_id, record, tvk, input index).
     DynamicRecord(Field<N>),
-    /// The serial number, tag, and dynamic ID of a record input called dynamically.
+    /// The serial number, tag, and dynamic ID of a record input in a dynamic call transition.
+    /// The `dynamic_id` is computed from `hash(function_id, record, tvk, index)`.
+    /// From the caller's perspective, this appears as `DynamicRecord(dynamic_id)`.
     RecordWithDynamicID(Field<N>, Field<N>, Field<N>),
-    /// The external record hash and dynamic ID of an external record input called dynamically.
+    /// The external record hash and dynamic ID of an external record input in a dynamic call transition.
+    /// The `dynamic_id` is computed from `hash(function_id, record, tvk, index)`.
+    /// From the caller's perspective, this appears as `DynamicRecord(dynamic_id)`.
     ExternalRecordWithDynamicID(Field<N>, Field<N>),
 }
 

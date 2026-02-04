@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{TranslationAssignment, compute_console_nonlocal_record_id};
+use crate::{TranslationAssignment, compute_console_dynamic_or_external_record_id};
 
 use super::*;
 
@@ -60,10 +60,10 @@ impl<N: Network> Stack<N> {
             lap!(timer, "Synthesize key for translation circuit for {record_name}");
 
             // Retrieve the proving key.
-            let proving_key = self.get_translation_proving_key(record_name)?;
+            let proving_key = self.get_proving_key(record_name)?;
 
             // Retrieve the verifying key.
-            let verifying_key = self.get_translation_verifying_key(record_name)?;
+            let verifying_key = self.get_verifying_key(record_name)?;
             lap!(timer, "Retrieve the keys for translation circuit for {record_name}");
 
             // Certify the circuit.
@@ -274,14 +274,14 @@ impl<N: Network> Stack<N> {
                     let input_output_index = Uniform::rand(rng);
                     let record_view_key: Option<Field<N>> = Uniform::rand(rng);
                     let gamma: Option<Group<N>> = Uniform::rand(rng);
-                    let id_dynamic = compute_console_nonlocal_record_id(
+                    let id_dynamic = compute_console_dynamic_or_external_record_id(
                         function_id,
                         record_dynamic.to_fields()?,
                         tvk,
                         U16::new(input_output_index),
                     )?;
-                    let is_input = Uniform::rand(rng);
-                    let static_is_external = Uniform::rand(rng);
+                    let is_to_static = Uniform::rand(rng);
+                    let is_external_record = Uniform::rand(rng);
                     let id_static = Uniform::rand(rng);
 
                     lap!(timer, "Sample the inputs to the translation circuit for record {record_name}");
@@ -294,8 +294,8 @@ impl<N: Network> Stack<N> {
                             program_id,
                             function_id,
                             record_name,
-                            is_input,
-                            static_is_external,
+                            is_to_static,
+                            is_external_record,
                             translation_index,
                             tvk,
                             input_output_index,

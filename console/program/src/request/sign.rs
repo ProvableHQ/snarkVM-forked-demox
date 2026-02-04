@@ -16,7 +16,7 @@
 use super::*;
 
 impl<N: Network> Request<N> {
-    /// Returns the request for a given private key, program ID, function name, inputs, input types, is_dynamic and RNG, where:
+    /// Returns the request for a given private key, program ID, function name, inputs, input types, is_dynamic, and RNG, where:
     ///     challenge := HashToScalar(r * G, pk_sig, pr_sig, signer, \[tvk, tcm, function ID, is_root, program checksum?, input IDs\])
     ///     response := r - challenge * sk_sig
     /// The program checksum must be provided if the program has a constructor and should not be provided otherwise.

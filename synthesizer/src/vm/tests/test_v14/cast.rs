@@ -98,7 +98,7 @@ fn test_circuit_dynamic_record_from_record() {
     }
 }
 
-// Tests casting external and non-external records to `record.dynamic` using `get.record.dynamic` to access entries.
+// Tests casting external and non-external records to `dynamic.record` using `get.dynamic.record` to access entries.
 // Also verifies that double-spend errors occur when the static record is consumed by both caller and callee (via translation).
 #[test]
 fn test_cast_simple() {
@@ -162,8 +162,8 @@ fn test_cast_simple() {
         function get_age_in_years_by_casting:
             input r0 as fish.record;
             
-            cast r0 into r1 as record.dynamic;
-            get.record.dynamic r1.age_in_years into r2 as u16;
+            cast r0 into r1 as dynamic.record;
+            get.dynamic.record r1.age_in_years into r2 as u16;
 
             output r2 as u16.public;
 
@@ -173,8 +173,8 @@ fn test_cast_simple() {
         function get_age_in_years_stat_caller:
             input r0 as fish.record;
             
-            cast r0 into r1 as record.dynamic;
-            call.dynamic {program_b_field} {network_field} {function_get_age_in_years_stat_callee_field} with r1 (as record.dynamic) into r2 (as u16.public);
+            cast r0 into r1 as dynamic.record;
+            call.dynamic {program_b_field} {network_field} {function_get_age_in_years_stat_callee_field} with r1 (as dynamic.record) into r2 (as u16.public);
 
             output r2 as u16.public;
 
@@ -186,8 +186,8 @@ fn test_cast_simple() {
         function get_plant_age_by_casting:
             input r0 as garden_center.aleo/plant.record;
             
-            cast r0 into r1 as record.dynamic;
-            get.record.dynamic r1.age_in_years into r2 as u16;
+            cast r0 into r1 as dynamic.record;
+            get.dynamic.record r1.age_in_years into r2 as u16;
 
             output r2 as u16.public;
 

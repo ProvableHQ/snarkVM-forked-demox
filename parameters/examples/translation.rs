@@ -27,7 +27,7 @@ use snarkvm_console::{
 use snarkvm_synthesizer::{
     Process,
     Stack,
-    process::{TranslationAssignment, compute_console_nonlocal_record_id},
+    process::{TranslationAssignment, compute_console_dynamic_or_external_record_id},
     program::StackTrait,
 };
 
@@ -97,11 +97,15 @@ pub fn sample_assignment<N: Network, A: Aleo<Network = N>>(
     let input_output_index = Uniform::rand(rng);
     let record_view_key: Field<N> = Uniform::rand(rng);
     let gamma = None;
-    let id_dynamic =
-        compute_console_nonlocal_record_id(function_id, record_dynamic.to_fields().unwrap(), tvk, U16::new(input_output_index))
-            .unwrap();
-    let is_input = false;
-    let static_is_external = false;
+    let id_dynamic = compute_console_dynamic_or_external_record_id(
+        function_id,
+        record_dynamic.to_fields().unwrap(),
+        tvk,
+        U16::new(input_output_index),
+    )
+    .unwrap();
+    let is_to_static = false;
+    let is_external_record = false;
     let id_static = record_static.to_commitment(credits_program_id, credits_record_name, &record_view_key).unwrap();
 
     let translation_assignment = TranslationAssignment::new(
@@ -110,8 +114,8 @@ pub fn sample_assignment<N: Network, A: Aleo<Network = N>>(
         *credits_program_id,
         function_id,
         *credits_record_name,
-        is_input,
-        static_is_external,
+        is_to_static,
+        is_external_record,
         translation_index,
         tvk,
         input_output_index,
@@ -124,9 +128,9 @@ pub fn sample_assignment<N: Network, A: Aleo<Network = N>>(
     let verifier_inputs = vec![
         // constant 1
         *Field::<N>::one(),
-        // is_input
+        // is_to_static
         *Field::<N>::zero(),
-        // static_is_external
+        // is_external_record
         *Field::<N>::zero(),
         *function_id,
         *Field::<N>::from_u128(translation_index as u128),
@@ -145,8 +149,8 @@ pub fn translation<N: Network, A: Aleo<Network = N>>() -> Result<()> {
     let credits_stack = process.get_stack(ProgramID::<N>::from_str("credits.aleo").unwrap())?;
     let transfer_private_function_name = Identifier::<N>::from_str("transfer_private").unwrap();
     let credits_record_name = Identifier::<N>::from_str("credits").unwrap();
-    let proving_key = credits_stack.get_translation_proving_key(&credits_record_name)?;
-    let verifying_key = credits_stack.get_translation_verifying_key(&credits_record_name)?;
+    let proving_key = credits_stack.get_proving_key(&credits_record_name)?;
+    let verifying_key = credits_stack.get_verifying_key(&credits_record_name)?;
 
     // Sample a translation assignment for the credits record for the proving-
     // and verifying-key sanity check.

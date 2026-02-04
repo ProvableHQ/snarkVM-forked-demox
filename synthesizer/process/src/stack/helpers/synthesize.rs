@@ -15,7 +15,7 @@
 
 use console::program::{DynamicRecord, ToFields};
 
-use crate::{TranslationAssignment, compute_console_nonlocal_record_id};
+use crate::{TranslationAssignment, compute_console_dynamic_or_external_record_id};
 
 use super::*;
 
@@ -122,7 +122,7 @@ impl<N: Network> Stack<N> {
         rng: &mut R,
     ) -> Result<()> {
         // If the translation proving and verifying key already exist, skip the synthesis for this record.
-        if self.contains_translation_proving_key(record_name) && self.contains_translation_verifying_key(record_name) {
+        if self.contains_proving_key(record_name) && self.contains_verifying_key(record_name) {
             return Ok(());
         }
 
@@ -139,14 +139,15 @@ impl<N: Network> Stack<N> {
         let input_output_index = Uniform::rand(rng);
         let record_view_key = Uniform::rand(rng);
         let gamma = Uniform::rand(rng);
-        let id_dynamic = compute_console_nonlocal_record_id(
+        // Compute the dynamic ID for external or dynamic record inputs/outputs.
+        let id_dynamic = compute_console_dynamic_or_external_record_id(
             function_id,
             record_dynamic.to_fields()?,
             tvk,
             U16::new(input_output_index),
         )?;
-        let is_input = Uniform::rand(rng);
-        let static_is_external = Uniform::rand(rng);
+        let is_to_static = Uniform::rand(rng);
+        let is_external_record = Uniform::rand(rng);
         let id_static = Uniform::rand(rng);
 
         let translation_assignment = TranslationAssignment::new(
@@ -155,8 +156,8 @@ impl<N: Network> Stack<N> {
             program_id,
             function_id,
             record_name,
-            is_input,
-            static_is_external,
+            is_to_static,
+            is_external_record,
             translation_index,
             tvk,
             input_output_index,
@@ -173,8 +174,8 @@ impl<N: Network> Stack<N> {
         let (proving_key, verifying_key) =
             self.universal_srs.to_circuit_key(&record_name.to_string(), &circuit_assignment)?;
         // Insert the proving key.
-        self.insert_translation_proving_key(&record_name, proving_key)?;
+        self.insert_proving_key(&record_name, proving_key)?;
         // Insert the verifying key.
-        self.insert_translation_verifying_key(&record_name, verifying_key)
+        self.insert_verifying_key(&record_name, verifying_key)
     }
 }

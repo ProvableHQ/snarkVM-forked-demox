@@ -15,7 +15,7 @@
 
 use super::*;
 
-// Tests `get.record.dynamic` for extracting entries from dynamic records including polymorphic reads and failure modes.
+// Tests `get.dynamic.record` for extracting entries from dynamic records including polymorphic reads and failure modes.
 #[test]
 fn test_get_record_dynamic() {
     // Parameters for dynamic function calls
@@ -63,21 +63,21 @@ fn test_get_record_dynamic() {
             safety as safety_struct.public;
 
         function production_month:
-            input r0 as record.dynamic;
-            get.record.dynamic r0.production_date into r1 as [u8; 3u32];
+            input r0 as dynamic.record;
+            get.dynamic.record r0.production_date into r1 as [u8; 3u32];
             output r1[1u32] as u8.public;
 
         function production_month_as_u16:
-            input r0 as record.dynamic;
-            get.record.dynamic r0.production_date into r1 as [u16; 3u32];
+            input r0 as dynamic.record;
+            get.dynamic.record r0.production_date into r1 as [u16; 3u32];
             output r1[1u32] as u16.public;
         
         function production_year_difference:
-            call.dynamic {program_name_field} {network_field} {mint_nineties_bleach_function_field} into r0 (as record.dynamic);
-            call.dynamic {program_name_field} {network_field} {mint_fake_compliance_cert_function_field} into r1 (as record.dynamic);
+            call.dynamic {program_name_field} {network_field} {mint_nineties_bleach_function_field} into r0 (as dynamic.record);
+            call.dynamic {program_name_field} {network_field} {mint_fake_compliance_cert_function_field} into r1 (as dynamic.record);
             
-            get.record.dynamic r0.production_date into r2 as [u8; 3u32];
-            get.record.dynamic r1.production_date into r3 as [u8; 3u32];
+            get.dynamic.record r0.production_date into r2 as [u8; 3u32];
+            get.dynamic.record r1.production_date into r3 as [u8; 3u32];
 
             sub r2[2u32] r3[2u32] into r4;
 
@@ -100,8 +100,8 @@ fn test_get_record_dynamic() {
             output r2 as non_consumable.record;
 
         function read_producer_country:
-            input r0 as record.dynamic;
-            get.record.dynamic r0.producer_country_code into r1 as u16;
+            input r0 as dynamic.record;
+            get.dynamic.record r0.producer_country_code into r1 as u16;
             output r1 as u16.public;
 
         constructor:
@@ -192,7 +192,7 @@ fn test_get_record_dynamic() {
 
     /************** Case 3: Various incorrect readings **************/
 
-    // We trigger get.record.dynamic failures in various ways
+    // We trigger get.dynamic.record failures in various ways
 
     // Case 3.1: We attempt to read the field "producer_country_code" from a
     // dynamic record derived from a static consumable.record, which does not
@@ -321,9 +321,9 @@ fn translate_transfer_public_to_private() {
 
             call.dynamic {credits_field} {network_field} {transfer_function_field}
                 with self.caller r0 (as address.private u64.public)
-                into r1 r2 (as record.dynamic future.dynamic);
+                into r1 r2 (as dynamic.record dynamic.future);
 
-            get.record.dynamic r1.microcredits into r3 as u64;
+            get.dynamic.record r1.microcredits into r3 as u64;
 
             async transfer_pub_priv_and_inform r2 into r4;
 
@@ -331,7 +331,7 @@ fn translate_transfer_public_to_private() {
             output r4 as dynamic_credits.aleo/transfer_pub_priv_and_inform.future;
 
         finalize transfer_pub_priv_and_inform:
-            input r0 as future.dynamic;
+            input r0 as dynamic.future;
             await r0;
 
         constructor:
@@ -409,7 +409,7 @@ fn translate_transfer_public_to_private() {
     add_and_test(&vm, &caller_private_key, &[transaction_transfer], rng);
 }
 
-// Tests `record.dynamic` with 10 fields to verify the depth-5 Merkle tree handles larger records correctly.
+// Tests `dynamic.record` with 10 fields to verify the depth-5 Merkle tree handles larger records correctly.
 #[test]
 fn test_dynamic_record_with_many_fields() {
     let rng = &mut TestRng::default();
@@ -440,13 +440,13 @@ fn test_dynamic_record_with_many_fields() {
             output r0 as large_record.record;
 
         function read_field5:
-            input r0 as record.dynamic;
-            get.record.dynamic r0.field5 into r1 as u64;
+            input r0 as dynamic.record;
+            get.dynamic.record r0.field5 into r1 as u64;
             output r1 as u64.public;
 
         function read_field10:
-            input r0 as record.dynamic;
-            get.record.dynamic r0.field10 into r1 as u64;
+            input r0 as dynamic.record;
+            get.dynamic.record r0.field10 into r1 as u64;
             output r1 as u64.public;
 
         constructor:
@@ -569,13 +569,13 @@ fn test_dynamic_record_with_nested_structs() {
             output r2 as complex_record.record;
 
         function read_nested:
-            input r0 as record.dynamic;
-            get.record.dynamic r0.nested into r1 as outer_struct;
+            input r0 as dynamic.record;
+            get.dynamic.record r0.nested into r1 as outer_struct;
             output r1.extra as field.public;
 
         function read_simple:
-            input r0 as record.dynamic;
-            get.record.dynamic r0.simple_field into r1 as u64;
+            input r0 as dynamic.record;
+            get.dynamic.record r0.simple_field into r1 as u64;
             output r1 as u64.public;
 
         constructor:
@@ -665,7 +665,7 @@ fn test_dynamic_record_with_nested_structs() {
     add_and_test(&vm, &caller_private_key, &[transaction_read_simple], rng);
 }
 
-// Tests `record.dynamic` with minimal fields (owner only) to verify the smallest possible record structure works.
+// Tests `dynamic.record` with minimal fields (owner only) to verify the smallest possible record structure works.
 #[test]
 fn test_dynamic_record_minimal_fields() {
     let rng = &mut TestRng::default();
@@ -686,7 +686,7 @@ fn test_dynamic_record_minimal_fields() {
             output r0 as empty_record.record;
 
         function consume_minimal:
-            input r0 as record.dynamic;
+            input r0 as dynamic.record;
             // Just verify we can receive the dynamic record
             output true as boolean.public;
 
@@ -755,7 +755,7 @@ fn test_dynamic_record_minimal_fields() {
     add_and_test(&vm, &caller_private_key, &[transaction_consume], rng);
 }
 
-// Tests `record.dynamic` with 20 fields to verify near-maximum capacity for the depth-5 Merkle tree (max 32 entries).
+// Tests `dynamic.record` with 20 fields to verify near-maximum capacity for the depth-5 Merkle tree (max 32 entries).
 #[test]
 fn test_dynamic_record_near_maximum_fields() {
     let rng = &mut TestRng::default();
@@ -797,18 +797,18 @@ fn test_dynamic_record_near_maximum_fields() {
             output r0 as large_record.record;
 
         function read_first:
-            input r0 as record.dynamic;
-            get.record.dynamic r0.f1 into r1 as u64;
+            input r0 as dynamic.record;
+            get.dynamic.record r0.f1 into r1 as u64;
             output r1 as u64.public;
 
         function read_middle:
-            input r0 as record.dynamic;
-            get.record.dynamic r0.f10 into r1 as u64;
+            input r0 as dynamic.record;
+            get.dynamic.record r0.f10 into r1 as u64;
             output r1 as u64.public;
 
         function read_last:
-            input r0 as record.dynamic;
-            get.record.dynamic r0.f20 into r1 as u64;
+            input r0 as dynamic.record;
+            get.dynamic.record r0.f20 into r1 as u64;
             output r1 as u64.public;
 
         constructor:

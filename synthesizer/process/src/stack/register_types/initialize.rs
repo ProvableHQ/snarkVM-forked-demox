@@ -624,7 +624,7 @@ impl<N: Network> RegisterTypes<N> {
                 );
                 ensure!(
                     matches!(instruction, Instruction::GetRecordDynamic(..)),
-                    "Instruction '{instruction}' is not a get.record.dynamic operation."
+                    "Instruction '{instruction}' is not a get.dynamic.record operation."
                 );
             }
         }

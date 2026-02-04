@@ -495,7 +495,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             |program_id: &ProgramID<N>, record_name: &Identifier<N>, rng: &mut R| -> Result<()> {
                                 let record_stack = match program_id == stack.program_id() {
                                     true => stack,
-                                    false => &stack.get_stack_unchecked(program_id)?,
+                                    false => &stack.get_stack_global(program_id)?,
                                 };
 
                                 record_stack.synthesize_translation_key::<A, R>(record_name, rng)
@@ -932,7 +932,7 @@ fn resolve_dynamic_target<'a, N: Network>(
 
     // Retrieve the optional external stack.
     let external_stack = match stack.program().id() == &program_id {
-        false => match stack.get_stack_unchecked(&program_id) {
+        false => match stack.get_stack_global(&program_id) {
             Ok(ext_stack) => Some(ext_stack),
             Err(_) if in_dummy_mode => {
                 return Ok(None);
@@ -1046,8 +1046,8 @@ fn collect_input_translations<N: Network>(
                     program_id: *callee_program_id,
                     function_id,
                     record_name: *record_name,
-                    is_input: true,
-                    static_is_external: false,
+                    is_to_static: true,
+                    is_external_record: false,
                     tvk,
                     record_view_key: Some(*record_view_key),
                     gamma: Some(*gamma),
@@ -1072,8 +1072,8 @@ fn collect_input_translations<N: Network>(
                     program_id: *record_locator.program_id(),
                     function_id,
                     record_name: *record_locator.resource(),
-                    is_input: true,
-                    static_is_external: true,
+                    is_to_static: true,
+                    is_external_record: true,
                     tvk,
                     record_view_key: None,
                     gamma: None,
@@ -1143,8 +1143,8 @@ fn collect_output_translations<N: Network>(
                     program_id: *callee_program_id,
                     function_id,
                     record_name: *record_name,
-                    is_input: false,
-                    static_is_external: false,
+                    is_to_static: false,
+                    is_external_record: false,
                     tvk,
                     record_view_key,
                     gamma: None,
@@ -1169,8 +1169,8 @@ fn collect_output_translations<N: Network>(
                     program_id: *record_locator.program_id(),
                     function_id,
                     record_name: *record_locator.resource(),
-                    is_input: false,
-                    static_is_external: true,
+                    is_to_static: false,
+                    is_external_record: true,
                     tvk,
                     record_view_key: None,
                     gamma: None,

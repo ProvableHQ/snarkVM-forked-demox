@@ -22,7 +22,7 @@ impl<N: Network> DynamicRecord<N> {
         if path.len() == 1 && path[0].into() == Access::Member(Identifier::from_str("owner")?) {
             Ok(Value::Plaintext(Plaintext::from(Literal::Address(self.owner))))
         } else {
-            bail!("Only the 'owner' of a dynamic record can be accessed directly, use 'get.record.dynamic' instead.")
+            bail!("Only the 'owner' of a dynamic record can be accessed directly, use 'get.dynamic.record' instead.")
         }
     }
 }

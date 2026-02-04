@@ -13,10 +13,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Tests for casting static records to `record.dynamic`.
+// Tests for casting static records to `dynamic.record`.
 mod cast;
 
-// Tests for the `get.record.dynamic` instruction.
+// Tests for the `get.dynamic.record` instruction.
 mod get_record_dynamic;
 
 // Tests for `contains.dynamic`, `get.dynamic`, and `get.or_use.dynamic` in finalize blocks.
@@ -32,8 +32,7 @@ mod call_dynamic;
 mod dynamic_futures;
 
 // Tests for recursive dynamic function calls and double-spend detection.
-// NOTE: these tests can be re-enabled if we ever allow cycles, see `fn ensure_acyclic_call_graph`.
-// mod recursion;
+mod recursion;
 
 // Tests for record translation between static and dynamic representations.
 mod translation;
@@ -89,11 +88,11 @@ use snarkvm_utilities::TestRng;
 // - Input (dynamic, dynamic, dynamic) -> (static, static, static), output as static -> dynamic
 //   In: mixed.rs: test_execution_cost_for_authorization
 //
-// get.record.dynamic
-// - Record entries with different visibility but coinciding identifiers can be read with the same get.record.dynamic instruction
+// get.dynamic.record
+// - Record entries with different visibility but coinciding identifiers can be read with the same get.dynamic.record instruction
 //   In: mixed.rs::test_translation_get_dynamic_cast_to_dynamic
 //       note product_id is private in toy.record and public in ladder.record and both are read in manager.aleo/verify_signature
-// - Dynamic records coming from different static records can be read with the same get.record.dynamic instruction
+// - Dynamic records coming from different static records can be read with the same get.dynamic.record instruction
 //   In: mixed.rs::test_translation_get_dynamic_cast_to_dynamic (e. g. manager.aleo/verify_signature)
 //
 // Consumption/production

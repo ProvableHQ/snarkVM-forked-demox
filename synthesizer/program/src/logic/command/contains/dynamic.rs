@@ -112,7 +112,7 @@ impl<N: Network> ContainsDynamic<N> {
         let key = registers.load_plaintext(stack, self.key())?;
 
         // Get the mapping definition.
-        let mapping = stack.get_stack_unchecked(&program_id)?.program().get_mapping(&mapping_name)?;
+        let mapping = stack.get_stack_global(&program_id)?.program().get_mapping(&mapping_name)?;
         // Get the key type.
         let mapping_key_type = mapping.key().plaintext_type();
         // Ensure the key operand matches the mapping key type.

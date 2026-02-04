@@ -367,6 +367,7 @@ pub(super) enum DeploymentVersion {
     // Inactive after consensus version >= V9.
     V1 = 1,
     // Active after consensus version >= V9.
+    // Inactive after consensus version >= V14.
     V2 = 2,
     // Active after consensus version >= V14.
     V3 = 3,

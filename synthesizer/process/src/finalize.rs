@@ -52,7 +52,7 @@ impl<N: Network> Process<N> {
         // Insert the translation verifying keys.
         if let Some(translation_verifying_keys) = deployment.translation_verifying_keys() {
             for (record_name, (verifying_key, _)) in translation_verifying_keys {
-                stack.insert_translation_verifying_key(record_name, verifying_key.clone())?;
+                stack.insert_verifying_key(record_name, verifying_key.clone())?;
             }
         }
         lap!(timer, "Insert the translation verifying keys");
@@ -497,7 +497,7 @@ fn initialize_finalize_state<N: Network>(
     // Get the stack.
     let stack = match (stack.program_id() == future.program_id(), is_dynamic) {
         (true, _) => stack.clone(),
-        (false, true) => stack.get_stack_unchecked(future.program_id())?,
+        (false, true) => stack.get_stack_global(future.program_id())?,
         (false, false) => stack.get_external_stack(future.program_id())?,
     };
     // Get the finalize logic and check that it exists.

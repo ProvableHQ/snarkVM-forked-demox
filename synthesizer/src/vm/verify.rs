@@ -271,6 +271,22 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     self.process.read().mapping_types_exist(deployment.program())?;
                 }
 
+                // Enforce translation verifying key requirements based on consensus version.
+                // Before V14, translation verifying keys are not allowed.
+                // At/after V14, translation verifying keys are required if the program has records.
+                if consensus_version < ConsensusVersion::V14 {
+                    ensure!(
+                        deployment.translation_verifying_keys().is_none(),
+                        "Invalid deployment transaction '{id}' - translation verifying keys are not allowed before `ConsensusVersion::V14`"
+                    );
+                }
+                if consensus_version >= ConsensusVersion::V14 && !deployment.program().records().is_empty() {
+                    ensure!(
+                        deployment.translation_verifying_keys().is_some(),
+                        "Invalid deployment transaction '{id}' - missing translation verifying keys for program with records"
+                    );
+                }
+
                 // If the program owner exists in the deployment, then verify that it matches the owner in the transaction.
                 if let Some(given_owner) = deployment.program_owner() {
                     // Ensure the program owner matches the owner in the transaction.
