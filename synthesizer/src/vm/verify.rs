@@ -272,18 +272,17 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 }
 
                 // Enforce translation verifying key requirements based on consensus version.
-                // Before V14, translation verifying keys are not allowed.
-                // At/after V14, translation verifying keys are required if the program has records.
+                // Before V14: translation verifying keys are not allowed (V2 format).
+                // At/after V14: translation verifying keys are required (V3 format).
                 if consensus_version < ConsensusVersion::V14 {
                     ensure!(
                         deployment.translation_verifying_keys().is_none(),
                         "Invalid deployment transaction '{id}' - translation verifying keys are not allowed before `ConsensusVersion::V14`"
                     );
-                }
-                if consensus_version >= ConsensusVersion::V14 && !deployment.program().records().is_empty() {
+                } else {
                     ensure!(
                         deployment.translation_verifying_keys().is_some(),
-                        "Invalid deployment transaction '{id}' - missing translation verifying keys for program with records"
+                        "Invalid deployment transaction '{id}' - missing translation verifying keys after `ConsensusVersion::V14`"
                     );
                 }
 

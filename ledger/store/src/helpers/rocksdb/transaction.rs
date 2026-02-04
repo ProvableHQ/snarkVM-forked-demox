@@ -119,6 +119,8 @@ pub struct DeploymentDB<N: Network> {
     verifying_key_map: DataMap<(ProgramID<N>, Identifier<N>, u16), VerifyingKey<N>>,
     /// The certificate map.
     certificate_map: DataMap<(ProgramID<N>, Identifier<N>, u16), Certificate<N>>,
+    /// The contains-translation-keys map.
+    contains_translation_keys_map: DataMap<(ProgramID<N>, u16), ()>,
     /// The fee store.
     fee_store: FeeStore<N, FeeDB<N>>,
 }
@@ -134,6 +136,7 @@ impl<N: Network> DeploymentStorage<N> for DeploymentDB<N> {
     type ChecksumMap = DataMap<(ProgramID<N>, u16), [U8<N>; 32]>;
     type VerifyingKeyMap = DataMap<(ProgramID<N>, Identifier<N>, u16), VerifyingKey<N>>;
     type CertificateMap = DataMap<(ProgramID<N>, Identifier<N>, u16), Certificate<N>>;
+    type ContainsTranslationKeysMap = DataMap<(ProgramID<N>, u16), ()>;
     type FeeStorage = FeeDB<N>;
 
     /// Initializes the deployment storage.
@@ -150,6 +153,7 @@ impl<N: Network> DeploymentStorage<N> for DeploymentDB<N> {
             checksum_map: rocksdb::RocksDB::open_map(N::ID, storage_mode.clone(), MapID::Deployment(DeploymentMap::Checksum))?,
             verifying_key_map: rocksdb::RocksDB::open_map(N::ID, storage_mode.clone(), MapID::Deployment(DeploymentMap::VerifyingKey))?,
             certificate_map: rocksdb::RocksDB::open_map(N::ID, storage_mode.clone(), MapID::Deployment(DeploymentMap::Certificate))?,
+            contains_translation_keys_map: rocksdb::RocksDB::open_map(N::ID, storage_mode.clone(), MapID::Deployment(DeploymentMap::ContainsTranslationKeys))?,
             fee_store,
         })
     }
@@ -197,6 +201,11 @@ impl<N: Network> DeploymentStorage<N> for DeploymentDB<N> {
     /// Returns the certificate map.
     fn certificate_map(&self) -> &Self::CertificateMap {
         &self.certificate_map
+    }
+
+    /// Returns the contains-translation-keys map.
+    fn contains_translation_keys_map(&self) -> &Self::ContainsTranslationKeysMap {
+        &self.contains_translation_keys_map
     }
 
     /// Returns the fee store.

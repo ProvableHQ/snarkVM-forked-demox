@@ -63,6 +63,10 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     type VerifyingKeyMap: for<'a> Map<'a, (ProgramID<N>, Identifier<N>, u16), VerifyingKey<N>>;
     /// The mapping of `(program ID, name, edition)` to `certificate`.
     type CertificateMap: for<'a> Map<'a, (ProgramID<N>, Identifier<N>, u16), Certificate<N>>;
+    /// The mapping of `(program ID, edition)` to a marker indicating the deployment is V3.
+    /// The presence of an entry indicates V3; absence with no records indicates V2.
+    /// This was introduced in `ConsensusVersion::V14`.
+    type ContainsTranslationKeysMap: for<'a> Map<'a, (ProgramID<N>, u16), ()>;
     /// The fee storage.
     type FeeStorage: FeeStorage<N>;
 
@@ -87,6 +91,8 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     fn verifying_key_map(&self) -> &Self::VerifyingKeyMap;
     /// Returns the certificate map.
     fn certificate_map(&self) -> &Self::CertificateMap;
+    /// Returns the contains-translation-keys map.
+    fn contains_translation_keys_map(&self) -> &Self::ContainsTranslationKeysMap;
     /// Returns the fee storage.
     fn fee_store(&self) -> &FeeStore<N, Self::FeeStorage>;
 
@@ -106,6 +112,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.checksum_map().start_atomic();
         self.verifying_key_map().start_atomic();
         self.certificate_map().start_atomic();
+        self.contains_translation_keys_map().start_atomic();
         self.fee_store().start_atomic();
     }
 
@@ -120,6 +127,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             || self.checksum_map().is_atomic_in_progress()
             || self.verifying_key_map().is_atomic_in_progress()
             || self.certificate_map().is_atomic_in_progress()
+            || self.contains_translation_keys_map().is_atomic_in_progress()
             || self.fee_store().is_atomic_in_progress()
     }
 
@@ -134,6 +142,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.checksum_map().atomic_checkpoint();
         self.verifying_key_map().atomic_checkpoint();
         self.certificate_map().atomic_checkpoint();
+        self.contains_translation_keys_map().atomic_checkpoint();
         self.fee_store().atomic_checkpoint();
     }
 
@@ -148,6 +157,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.checksum_map().clear_latest_checkpoint();
         self.verifying_key_map().clear_latest_checkpoint();
         self.certificate_map().clear_latest_checkpoint();
+        self.contains_translation_keys_map().clear_latest_checkpoint();
         self.fee_store().clear_latest_checkpoint();
     }
 
@@ -162,6 +172,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.checksum_map().atomic_rewind();
         self.verifying_key_map().atomic_rewind();
         self.certificate_map().atomic_rewind();
+        self.contains_translation_keys_map().atomic_rewind();
         self.fee_store().atomic_rewind();
     }
 
@@ -176,6 +187,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.checksum_map().abort_atomic();
         self.verifying_key_map().abort_atomic();
         self.certificate_map().abort_atomic();
+        self.contains_translation_keys_map().abort_atomic();
         self.fee_store().abort_atomic();
     }
 
@@ -190,6 +202,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.checksum_map().finish_atomic()?;
         self.verifying_key_map().finish_atomic()?;
         self.certificate_map().finish_atomic()?;
+        self.contains_translation_keys_map().finish_atomic()?;
         self.fee_store().finish_atomic()
     }
 
@@ -260,6 +273,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             }
 
             // Store the translation verifying keys and certificates, if they exist.
+            // Also mark the deployment as V3 in the contains_translation_keys_map.
             if let Some(translation_verifying_keys) = deployment.translation_verifying_keys() {
                 for (record_name, (verifying_key, certificate)) in translation_verifying_keys {
                     // Store the verifying key.
@@ -267,6 +281,8 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
                     // Store the certificate.
                     self.certificate_map().insert((program_id, *record_name, edition), certificate.clone())?;
                 }
+                // Mark this deployment as V3.
+                self.contains_translation_keys_map().insert((program_id, edition), ())?;
             }
 
             // Store the fee transition.
@@ -344,6 +360,8 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
                 // Remove the certificate.
                 self.certificate_map().remove(&(program_id, *record_name, edition))?;
             }
+            // Remove the V3 marker if it exists.
+            self.contains_translation_keys_map().remove(&(program_id, edition))?;
 
             // Remove the fee transition.
             self.fee_store().remove(transaction_id)?;
@@ -603,38 +621,41 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             verifying_keys.push((*function_name, (verifying_key, certificate)));
         }
 
-        // Initialize a vector for the translation verifying keys and certificates.
-        let mut translation_verifying_keys = Vec::with_capacity(program.records().len());
+        // Check if this deployment is marked as V3 in the contains_translation_keys_map.
+        let contains_translation_keys =
+            self.contains_translation_keys_map().get_confirmed(&(program_id, edition))?.is_some();
 
-        // Retrieve the verifying keys and certificates.
-        for record_name in program.records().keys() {
-            // Retrieve the verifying key.
-            let Some(translation_verifying_key) =
-                self.verifying_key_map().get_confirmed(&(program_id, *record_name, edition))?.map(|x| x.into_owned())
-            else {
-                continue;
-            };
-            // Retrieve the translation certificate.
-            let Some(certificate) =
-                self.certificate_map().get_confirmed(&(program_id, *record_name, edition))?.map(|x| x.into_owned())
-            else {
-                bail!("Failed to get the translation certificate for '{program_id}/{record_name}' (edition {edition})");
-            };
-            // Add the verifying key and certificate to the deployment.
-            translation_verifying_keys.push((*record_name, (translation_verifying_key, certificate)));
-        }
-
-        // Check that the number of translation verifying keys is consistent.
-        let translation_verifying_keys = match translation_verifying_keys.is_empty() {
-            true => None,
-            false => {
-                // Check that the number of translation verifying keys matches the number of records.
-                ensure!(
-                    translation_verifying_keys.len() == program.records().len(),
-                    "The number of translation verifying keys does not match the number of records for program '{program_id}' (edition {edition})"
-                );
-                Some(translation_verifying_keys)
+        // Determine translation verifying keys based on V3 status.
+        let translation_verifying_keys = if contains_translation_keys {
+            // V3 deployment: load translation verifying keys (may be empty for programs without records).
+            let mut translation_verifying_keys = Vec::with_capacity(program.records().len());
+            for record_name in program.records().keys() {
+                // Retrieve the verifying key.
+                let Some(translation_verifying_key) = self
+                    .verifying_key_map()
+                    .get_confirmed(&(program_id, *record_name, edition))?
+                    .map(|x| x.into_owned())
+                else {
+                    bail!(
+                        "Failed to get the translation verifying key for '{program_id}/{record_name}' (edition {edition})"
+                    );
+                };
+                // Retrieve the translation certificate.
+                let Some(certificate) =
+                    self.certificate_map().get_confirmed(&(program_id, *record_name, edition))?.map(|x| x.into_owned())
+                else {
+                    bail!(
+                        "Failed to get the translation certificate for '{program_id}/{record_name}' (edition {edition})"
+                    );
+                };
+                // Add the verifying key and certificate to the deployment.
+                translation_verifying_keys.push((*record_name, (translation_verifying_key, certificate)));
             }
+            // V3 deployments always use Some, even if empty.
+            Some(translation_verifying_keys)
+        } else {
+            // V2 deployment (pre-V14): no translation verifying keys.
+            None
         };
 
         // Return the deployment.

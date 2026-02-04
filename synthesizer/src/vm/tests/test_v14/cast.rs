@@ -98,7 +98,7 @@ fn test_circuit_dynamic_record_from_record() {
     }
 }
 
-// Tests casting external and non-external records to `dynamic.record` using `get.dynamic.record` to access entries.
+// Tests casting external and non-external records to `dynamic.record` using `get.record.dynamic` to access entries.
 // Also verifies that double-spend errors occur when the static record is consumed by both caller and callee (via translation).
 #[test]
 fn test_cast_simple() {
@@ -163,7 +163,7 @@ fn test_cast_simple() {
             input r0 as fish.record;
             
             cast r0 into r1 as dynamic.record;
-            get.dynamic.record r1.age_in_years into r2 as u16;
+            get.record.dynamic r1.age_in_years into r2 as u16;
 
             output r2 as u16.public;
 
@@ -187,7 +187,7 @@ fn test_cast_simple() {
             input r0 as garden_center.aleo/plant.record;
             
             cast r0 into r1 as dynamic.record;
-            get.dynamic.record r1.age_in_years into r2 as u16;
+            get.record.dynamic r1.age_in_years into r2 as u16;
 
             output r2 as u16.public;
 

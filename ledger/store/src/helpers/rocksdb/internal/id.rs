@@ -114,6 +114,7 @@ pub enum DeploymentMap {
     Checksum = DataID::DeploymentChecksumMap as u16,
     VerifyingKey = DataID::DeploymentVerifyingKeyMap as u16,
     Certificate = DataID::DeploymentCertificateMap as u16,
+    ContainsTranslationKeys = DataID::DeploymentContainsTranslationKeysMap as u16,
 }
 
 /// The RocksDB map prefix for execution-related entries.
@@ -317,6 +318,9 @@ enum DataID {
     InputDynamicIDMap,
     // Track dynamic IDs for outputs.
     OutputDynamicIDMap,
+
+    // Track whether a deployment contains translation keys (V3 deployment).
+    DeploymentContainsTranslationKeysMap,
 
     // Testing
     #[cfg(test)]

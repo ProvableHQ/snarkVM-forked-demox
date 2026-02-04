@@ -148,12 +148,8 @@ impl<N: Network> Deployment<N> {
         );
 
         // If the translation verifying keys are present, ensure they are well-formed.
+        // Note: V3 deployments use `Some(vec![])` for programs without records.
         if let Some(translation_verifying_keys) = &self.translation_verifying_keys {
-            // Ensure the number of program records is non-zero.
-            ensure!(
-                !self.program.records().is_empty(),
-                "No records present in the deployment for program '{program_id}'"
-            );
             // Ensure the number of records matches the number of translation verifying keys.
             ensure!(
                 self.program.records().len() == translation_verifying_keys.len(),
@@ -173,10 +169,12 @@ impl<N: Network> Deployment<N> {
                 }
             }
             // Ensure there are no duplicate translation verifying keys.
-            ensure!(
-                !has_duplicates(translation_verifying_keys.iter().map(|(name, ..)| name)),
-                "A duplicate translation record name was found"
-            );
+            if !translation_verifying_keys.is_empty() {
+                ensure!(
+                    !has_duplicates(translation_verifying_keys.iter().map(|(name, ..)| name)),
+                    "A duplicate translation record name was found"
+                );
+            }
         }
 
         Ok(())

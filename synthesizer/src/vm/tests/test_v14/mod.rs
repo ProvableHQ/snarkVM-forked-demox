@@ -16,7 +16,7 @@
 // Tests for casting static records to `dynamic.record`.
 mod cast;
 
-// Tests for the `get.dynamic.record` instruction.
+// Tests for the `get.record.dynamic` instruction.
 mod get_record_dynamic;
 
 // Tests for `contains.dynamic`, `get.dynamic`, and `get.or_use.dynamic` in finalize blocks.
@@ -88,11 +88,11 @@ use snarkvm_utilities::TestRng;
 // - Input (dynamic, dynamic, dynamic) -> (static, static, static), output as static -> dynamic
 //   In: mixed.rs: test_execution_cost_for_authorization
 //
-// get.dynamic.record
-// - Record entries with different visibility but coinciding identifiers can be read with the same get.dynamic.record instruction
+// get.record.dynamic
+// - Record entries with different visibility but coinciding identifiers can be read with the same get.record.dynamic instruction
 //   In: mixed.rs::test_translation_get_dynamic_cast_to_dynamic
 //       note product_id is private in toy.record and public in ladder.record and both are read in manager.aleo/verify_signature
-// - Dynamic records coming from different static records can be read with the same get.dynamic.record instruction
+// - Dynamic records coming from different static records can be read with the same get.record.dynamic instruction
 //   In: mixed.rs::test_translation_get_dynamic_cast_to_dynamic (e. g. manager.aleo/verify_signature)
 //
 // Consumption/production
