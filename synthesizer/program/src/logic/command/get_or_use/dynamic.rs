@@ -19,7 +19,7 @@ use console::{
     program::{Identifier, Literal, Plaintext, PlaintextType, ProgramID, Register, Value},
 };
 
-/// A dynamic get command that uses the provided default in case of failure, e.g. `get.or_use.dynamic r0.r1/r2[r3] r4 into r5 as boolean;`.
+/// A dynamic get command that uses the provided default in case of failure, e.g. `get.or_use.dynamic r0 r1 r2[r3] r4 into r5 as boolean;`.
 /// Resolves the `program` and `mapping` operands, gets the value stored at the `key` operand in `mapping`, and stores the result into `destination`.
 /// If the key is not present, `default` is stored in `destination`.
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -115,7 +115,7 @@ impl<N: Network> GetOrUseDynamic<N> {
         // Get the mapping name.
         let mapping_name = match registers.load(stack, self.mapping_name())? {
             Value::Plaintext(Plaintext::Literal(Literal::Field(field), _)) => Identifier::from_field(&field)?,
-            _ => bail!("Expected the third operand of `call.dynamic` to be a field literal."),
+            _ => bail!("Expected the third operand of `get.or_use.dynamic` to be a field literal."),
         };
 
         // Ensure the mapping exists.
@@ -127,7 +127,7 @@ impl<N: Network> GetOrUseDynamic<N> {
         let key = registers.load_plaintext(stack, self.key())?;
 
         // Get the mapping definition.
-        let mapping = stack.get_stack_unchecked(&program_id)?.program().get_mapping(&mapping_name)?;
+        let mapping = stack.get_stack_global(&program_id)?.program().get_mapping(&mapping_name)?;
         // Get the key type.
         let mapping_key_type = mapping.key().plaintext_type();
         // Ensure the key operand matches the mapping key type.
@@ -149,8 +149,8 @@ impl<N: Network> GetOrUseDynamic<N> {
             Some(Value::Plaintext(plaintext)) => Value::Plaintext(plaintext),
             Some(Value::Record(..)) => bail!("Cannot 'get.or_use.dynamic' a 'record'"),
             Some(Value::Future(..)) => bail!("Cannot 'get.or_use.dynamic' a 'future'"),
-            Some(Value::DynamicRecord(..)) => bail!("Cannot 'get.or_use.dynamic' a 'record.dynamic'"),
-            Some(Value::DynamicFuture(..)) => bail!("Cannot 'get.or_use.dynamic' a 'future.dynamic'"),
+            Some(Value::DynamicRecord(..)) => bail!("Cannot 'get.or_use.dynamic' a 'dynamic.record'"),
+            Some(Value::DynamicFuture(..)) => bail!("Cannot 'get.or_use.dynamic' a 'dynamic.future'"),
             // If a key does not exist, then use the default value.
             None => Value::Plaintext(registers.load_plaintext(stack, self.default())?),
         };

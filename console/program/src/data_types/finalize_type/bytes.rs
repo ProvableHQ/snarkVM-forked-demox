@@ -74,7 +74,7 @@ mod tests {
     #[test]
     fn test_bytes_dynamic_future() {
         // Test a dynamic future finalize type.
-        let expected = FinalizeType::<CurrentNetwork>::from_str("future.dynamic").unwrap();
+        let expected = FinalizeType::<CurrentNetwork>::from_str("dynamic.future").unwrap();
 
         // Check the byte representation.
         let expected_bytes = expected.to_bytes_le().unwrap();
@@ -90,7 +90,7 @@ mod tests {
             FinalizeType::<CurrentNetwork>::from_str("address.public").unwrap(),
             FinalizeType::<CurrentNetwork>::from_str("signature.public").unwrap(),
             FinalizeType::<CurrentNetwork>::from_str("test.aleo/foo.future").unwrap(),
-            FinalizeType::<CurrentNetwork>::from_str("future.dynamic").unwrap(),
+            FinalizeType::<CurrentNetwork>::from_str("dynamic.future").unwrap(),
         ];
 
         for expected in types {

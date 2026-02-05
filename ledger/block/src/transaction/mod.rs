@@ -87,10 +87,10 @@ impl<N: Network> Transaction<N> {
     pub fn from_execution(execution: Execution<N>, fee: Option<Fee<N>>) -> Result<Self> {
         // Ensure the transaction is not empty.
         ensure!(!execution.is_empty(), "Attempted to create an empty execution transaction");
-        // Compute the execution ID.
-        let execution_id = execution.to_execution_id()?;
         // Compute the execution tree.
         let execution_tree = Self::execution_tree(&execution)?;
+        // Compute the execution ID.
+        let execution_id = *execution_tree.root();
         // Compute the transaction ID.
         let transaction_id = *Self::transaction_tree(execution_tree, fee.as_ref())?.root();
         // Construct the execution transaction.
@@ -584,7 +584,7 @@ mod tests {
                 Transaction::Execute(transaction_id, execution_id, ref execution, _) => {
                     let expected_transaction_id = *expected.clone().to_tree()?.root();
                     assert_eq!(expected_transaction_id, *transaction_id);
-                    let expected_execution_id = execution.to_execution_id()?;
+                    let expected_execution_id = *Transaction::execution_tree(execution)?.root();
                     assert_eq!(expected_execution_id, execution_id);
                 }
                 _ => panic!("Unexpected test case."),

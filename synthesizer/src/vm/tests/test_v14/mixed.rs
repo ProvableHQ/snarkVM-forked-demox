@@ -17,7 +17,7 @@ use console::types::Scalar;
 
 use super::*;
 
-// These tests mix translation, casting to `record.dynamic`, and `get.record.dynamic`.
+// These tests mix translation, casting to `dynamic.record`, and `get.record.dynamic`.
 
 // Tests that `execution_cost_for_authorization()` computes correct costs for transactions with inclusion and translation proofs.
 // Complements test cases in `synthesizer/tests/test_vm_execute_and_finalize.rs` which also verify cost estimation correctness.
@@ -119,20 +119,20 @@ fn test_execution_cost_for_authorization() {
 
         function weld_dynamically:
             // Expected type: base_metal.record
-            input r0 as record.dynamic;
+            input r0 as dynamic.record;
             // Expected type: base_metal.record
-            input r1 as record.dynamic;
+            input r1 as dynamic.record;
             // Expected type: accessory_metal.record
-            input r2 as record.dynamic;
+            input r2 as dynamic.record;
             // Expected type: welding_metal.record
-            input r3 as record.dynamic;
+            input r3 as dynamic.record;
 
             call.dynamic {program_a_field} {network_field} {weld_function_field}
-                with r0 r2 r3 (as record.dynamic record.dynamic record.dynamic)
-                into r4 (as record.dynamic);
+                with r0 r2 r3 (as dynamic.record dynamic.record dynamic.record)
+                into r4 (as dynamic.record);
 
             call.dynamic {program_b_field} {network_field} {check_tossed_coin_field}
-                with r1 (as record.dynamic);
+                with r1 (as dynamic.record);
 
             get.record.dynamic r4.grams into r5 as u32;
 
@@ -277,7 +277,7 @@ fn test_execution_cost_for_authorization() {
     assert_eq!(vm.transition_store().records().count(), count_before_weld_dynamically + 1);
 }
 
-// Tests an integration scenario combining translation, `get.record.dynamic`, and cast to `record.dynamic` with signature verification.
+// Tests an integration scenario combining translation, `get.record.dynamic`, and cast to `dynamic.record` with signature verification.
 #[test]
 fn test_translation_get_dynamic_cast_to_dynamic() {
     let rng = &mut TestRng::default();
@@ -324,7 +324,7 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
         // where s is a private value passed as the second input and G is the
         // generator of the distinguished subgroup inside the protocol curve.
         function {function_verify_signature_name}:
-            input r0 as record.dynamic;
+            input r0 as dynamic.record;
             input r1 as scalar.private;
 
             // Left-hand side (the group element is G)
@@ -396,10 +396,10 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
             input r0 as toy.record;
             input r1 as scalar.private;
 
-            cast r0 into r2 as record.dynamic;
+            cast r0 into r2 as dynamic.record;
 
             call.dynamic {program_a_field} {network_field} {function_verify_signature_field}
-                with r2 r1 (as record.dynamic scalar.private)
+                with r2 r1 (as dynamic.record scalar.private)
                 into r3 (as boolean.public);
 
             assert.eq r3 true;
@@ -409,10 +409,10 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
             input r0 as ladder.record;
             input r1 as scalar.private;
 
-            cast r0 into r2 as record.dynamic;
+            cast r0 into r2 as dynamic.record;
 
             call.dynamic {program_a_field} {network_field} {function_verify_signature_field}
-                with r2 r1 (as record.dynamic scalar.private)
+                with r2 r1 (as dynamic.record scalar.private)
                 into r3 (as boolean.public);
 
             assert.eq r3 true;

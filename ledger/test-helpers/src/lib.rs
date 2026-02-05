@@ -131,13 +131,37 @@ pub fn sample_outputs() -> Vec<(<CurrentNetwork as Network>::TransitionID, Outpu
         (Uniform::rand(rng), Output::Public(Uniform::rand(rng), None)),
         (Uniform::rand(rng), Output::Public(plaintext_hash, Some(plaintext))),
         (Uniform::rand(rng), Output::Private(Uniform::rand(rng), None)),
-        (Uniform::rand(rng), Output::Private(ciphertext_hash, Some(ciphertext))),
+        (Uniform::rand(rng), Output::Private(ciphertext_hash, Some(ciphertext.clone()))),
         (Uniform::rand(rng), Output::Record(Uniform::rand(rng), Uniform::rand(rng), None, sender_ciphertext)),
         (
             Uniform::rand(rng),
-            Output::Record(Uniform::rand(rng), record_checksum, Some(record_ciphertext), sender_ciphertext),
+            Output::Record(Uniform::rand(rng), record_checksum, Some(record_ciphertext.clone()), sender_ciphertext),
         ),
         (Uniform::rand(rng), Output::ExternalRecord(Uniform::rand(rng))),
+        // RecordWithDynamicID with record ciphertext.
+        (
+            Uniform::rand(rng),
+            Output::RecordWithDynamicID(
+                Uniform::rand(rng),
+                record_checksum,
+                Some(record_ciphertext),
+                sender_ciphertext,
+                Uniform::rand(rng),
+            ),
+        ),
+        // RecordWithDynamicID without record ciphertext.
+        (
+            Uniform::rand(rng),
+            Output::RecordWithDynamicID(
+                Uniform::rand(rng),
+                Uniform::rand(rng),
+                None,
+                sender_ciphertext,
+                Uniform::rand(rng),
+            ),
+        ),
+        // ExternalRecordWithDynamicID.
+        (Uniform::rand(rng), Output::ExternalRecordWithDynamicID(Uniform::rand(rng), Uniform::rand(rng))),
     ]
 }
 
@@ -273,6 +297,7 @@ function compute:
 
 /// Samples a V4 deployment (amendment) for the same program as V2.
 /// The edition must match an existing deployment's edition.
+/// Note: This program has no records, so translation VKs is an empty vec.
 pub fn sample_deployment_v4(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
     static INSTANCE: OnceLock<Deployment<CurrentNetwork>> = OnceLock::new();
     let deployment = INSTANCE
@@ -301,20 +326,22 @@ function compute:
             deployment.set_program_checksum_raw(Some(deployment.program().to_checksum()));
             // V4 deployments (amendments) have no program owner.
             deployment.set_program_owner_raw(None);
+            // V4 deployments have translation VKs (empty vec for programs without records).
+            deployment.set_translation_verifying_keys_raw(Some(vec![]));
             // Return the deployment.
             // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
             Deployment::from_str(&deployment.to_string()).unwrap()
         })
         .clone();
     // Create a new deployment with the desired edition.
-    // V4 deployments (amendments) have no translation verifying keys.
+    // V4 deployments have translation VKs (empty vec for programs without records).
     Deployment::<CurrentNetwork>::new(
         edition,
         deployment.program().clone(),
         deployment.verifying_keys().clone(),
         deployment.program_checksum(),
-        deployment.program_owner(),
-        None,
+        None,         // V4 (amendments) have no program owner.
+        Some(vec![]), // V4 has translation VKs (empty for programs without records).
     )
     .unwrap()
 }

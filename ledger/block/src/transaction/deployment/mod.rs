@@ -149,12 +149,8 @@ impl<N: Network> Deployment<N> {
         );
 
         // If the translation verifying keys are present, ensure they are well-formed.
+        // Note: V3 deployments use `Some(vec![])` for programs without records.
         if let Some(translation_verifying_keys) = &self.translation_verifying_keys {
-            // Ensure the number of program records is non-zero.
-            ensure!(
-                !self.program.records().is_empty(),
-                "No records present in the deployment for program '{program_id}'"
-            );
             // Ensure the number of records matches the number of translation verifying keys.
             ensure!(
                 self.program.records().len() == translation_verifying_keys.len(),
@@ -174,10 +170,12 @@ impl<N: Network> Deployment<N> {
                 }
             }
             // Ensure there are no duplicate translation verifying keys.
-            ensure!(
-                !has_duplicates(translation_verifying_keys.iter().map(|(name, ..)| name)),
-                "A duplicate translation record name was found"
-            );
+            if !translation_verifying_keys.is_empty() {
+                ensure!(
+                    !has_duplicates(translation_verifying_keys.iter().map(|(name, ..)| name)),
+                    "A duplicate translation record name was found"
+                );
+            }
         }
 
         Ok(())
@@ -348,17 +346,20 @@ impl<N: Network> Deployment<N> {
         ) {
             // V1: No checksum, no owner, no translation VKs.
             (false, false, false) => Ok(DeploymentVersion::V1),
-            // Invalid: Translation VKs require checksum and owner.
-            (false, false, true) => bail!(
-                "The deployment contains translation verifying keys, but neither the program checksum nor the program owner are present."
-            ),
+            // Invalid: Translation VKs require checksum.
+            (false, false, true) => {
+                bail!("The deployment contains translation verifying keys, but the program checksum is absent.")
+            }
             // V2: Checksum + owner, no translation VKs.
             (true, true, false) => Ok(DeploymentVersion::V2),
             // V3: Checksum + owner + translation VKs.
             (true, true, true) => Ok(DeploymentVersion::V3),
-            // V4: Checksum, no owner (amendments). May or may not have translation VKs.
-            (true, false, false) => Ok(DeploymentVersion::V4),
+            // V4: Checksum, no owner, with translation VKs (amendments).
             (true, false, true) => Ok(DeploymentVersion::V4),
+            // Invalid: Checksum without owner and without translation VKs.
+            (true, false, false) => {
+                bail!("The deployment has a checksum but is missing both owner and translation verifying keys.")
+            }
             // Invalid: Owner without checksum.
             (false, true, _) => {
                 bail!("The program owner is present, but the program checksum is absent.")
@@ -375,6 +376,7 @@ pub enum DeploymentVersion {
     V1 = 1,
     /// A deployment with both a program checksum and program owner (V2).
     /// Active after consensus version >= V9.
+    /// Inactive after consensus version >= V14.
     V2 = 2,
     /// A deployment with checksum, owner, and translation verifying keys (V3).
     /// Active after consensus version >= V14.
@@ -525,6 +527,7 @@ function compute:
     }
 
     /// Samples a V4 deployment (amendment) for the same program as V2.
+    /// Note: This program has no records, so translation VKs is an empty vec.
     pub(crate) fn sample_deployment_v4(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
         static INSTANCE: OnceLock<Deployment<CurrentNetwork>> = OnceLock::new();
         let deployment = INSTANCE
@@ -553,8 +556,8 @@ function compute:
                 deployment.set_program_checksum_raw(Some(deployment.program().to_checksum()));
                 // Amendments have no program owner.
                 deployment.set_program_owner_raw(None);
-                // Amendments have no translation verifying keys.
-                deployment.set_translation_verifying_keys_raw(None);
+                // V4 deployments have translation VKs (empty vec for programs without records).
+                deployment.set_translation_verifying_keys_raw(Some(vec![]));
                 // Return the deployment.
                 // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
                 Deployment::from_str(&deployment.to_string()).unwrap()
@@ -566,8 +569,8 @@ function compute:
             deployment.program().clone(),
             deployment.verifying_keys().clone(),
             deployment.program_checksum(),
-            None, // No owner for V4 (amendments).
-            None, // No translation VKs for V4 (amendments).
+            None,         // No owner for V4 (amendments).
+            Some(vec![]), // V4 has translation VKs (empty for programs without records).
         )
         .unwrap()
     }

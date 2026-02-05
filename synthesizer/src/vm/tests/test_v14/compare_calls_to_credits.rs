@@ -213,12 +213,12 @@ fn test_compare_transfer_public() {
             input r1 as u64.public;
             call.dynamic {credits_field} {aleo_field} {transfer_public_field}
                 with r0 r1 (as address.public u64.public)
-                into r2 (as future.dynamic);
+                into r2 (as dynamic.future);
             async transfer_public r2 into r3;
             output r3 as dw_transfer_public.aleo/transfer_public.future;
 
         finalize transfer_public:
-            input r0 as future.dynamic;
+            input r0 as dynamic.future;
             await r0;
 
         constructor:
@@ -253,12 +253,12 @@ fn test_compare_transfer_public() {
         get_deployment_costs(&vm, &static_deployment, &dynamic_deployment, consensus_version);
     assert_eq!(
         static_deploy_costs,
-        (2_111_760, 1_072_000, 37_760),
+        (2_113_760, 1_074_000, 37_760),
         "Static deployment costs (total, storage, synthesis)"
     );
     assert_eq!(
         dynamic_deploy_costs,
-        (2_151_470, 1_112_000, 37_470),
+        (2_153_470, 1_114_000, 37_470),
         "Dynamic deployment costs (total, storage, synthesis)"
     );
 
@@ -352,12 +352,12 @@ fn test_compare_transfer_public_as_signer() {
             input r1 as u64.public;
             call.dynamic {credits_field} {aleo_field} {transfer_public_as_signer_field}
                 with r0 r1 (as address.public u64.public)
-                into r2 (as future.dynamic);
+                into r2 (as dynamic.future);
             async transfer_public_as_signer r2 into r3;
             output r3 as dw_transfer_public_as_signer.aleo/transfer_public_as_signer.future;
 
         finalize transfer_public_as_signer:
-            input r0 as future.dynamic;
+            input r0 as dynamic.future;
             await r0;
 
         constructor:
@@ -392,12 +392,12 @@ fn test_compare_transfer_public_as_signer() {
         get_deployment_costs(&vm, &static_deployment, &dynamic_deployment, consensus_version);
     assert_eq!(
         static_deploy_costs,
-        (2_203_113, 1_162_000, 39_113),
+        (2_205_113, 1_164_000, 39_113),
         "Static deployment costs (total, storage, synthesis)"
     );
     assert_eq!(
         dynamic_deploy_costs,
-        (2_222_437, 1_182_000, 38_437),
+        (2_224_437, 1_184_000, 38_437),
         "Dynamic deployment costs (total, storage, synthesis)"
     );
 
@@ -489,13 +489,13 @@ fn test_compare_transfer_public_to_private() {
             input r1 as u64.public;
             call.dynamic {credits_field} {aleo_field} {transfer_public_to_private_field}
                 with r0 r1 (as address.private u64.public)
-                into r2 r3 (as record.dynamic future.dynamic);
+                into r2 r3 (as dynamic.record dynamic.future);
             async transfer_public_to_private r3 into r4;
-            output r2 as record.dynamic;
+            output r2 as dynamic.record;
             output r4 as dw_transfer_public_to_private.aleo/transfer_public_to_private.future;
 
         finalize transfer_public_to_private:
-            input r0 as future.dynamic;
+            input r0 as dynamic.future;
             await r0;
 
         constructor:
@@ -530,12 +530,12 @@ fn test_compare_transfer_public_to_private() {
         get_deployment_costs(&vm, &static_deployment, &dynamic_deployment, consensus_version);
     assert_eq!(
         static_deploy_costs,
-        (2_263_891, 1_198_000, 63_891),
+        (2_265_891, 1_200_000, 63_891),
         "Static deployment costs (total, storage, synthesis)"
     );
     assert_eq!(
         dynamic_deploy_costs,
-        (2_244_866, 1_196_000, 46_866),
+        (2_246_866, 1_198_000, 46_866),
         "Dynamic deployment costs (total, storage, synthesis)"
     );
 
@@ -582,7 +582,7 @@ fn test_compare_transfer_public_to_private() {
     assert_eq!(static_exec_costs, (3_376, 2_704, 672), "Static execution costs (total, storage, finalize)");
     assert_eq!(dynamic_exec_costs, (3_932, 3_260, 672), "Dynamic execution costs (total, storage, finalize)");
 
-    // Verify static transaction only (dynamic outputs record.dynamic).
+    // Verify static transaction only (dynamic outputs dynamic.record).
     add_and_test(&vm, &caller_private_key, &[static_tx], rng);
 }
 
@@ -623,14 +623,14 @@ fn test_compare_transfer_private() {
         program dw_transfer_private.aleo;
 
         function transfer_private:
-            input r0 as record.dynamic;
+            input r0 as dynamic.record;
             input r1 as address.private;
             input r2 as u64.private;
             call.dynamic {credits_field} {aleo_field} {transfer_private_field}
-                with r0 r1 r2 (as record.dynamic address.private u64.private)
-                into r3 r4 (as record.dynamic record.dynamic);
-            output r3 as record.dynamic;
-            output r4 as record.dynamic;
+                with r0 r1 r2 (as dynamic.record address.private u64.private)
+                into r3 r4 (as dynamic.record dynamic.record);
+            output r3 as dynamic.record;
+            output r4 as dynamic.record;
 
         constructor:
             assert.eq true true;
@@ -698,12 +698,12 @@ fn test_compare_transfer_private() {
         get_deployment_costs(&vm, &static_deployment, &dynamic_deployment, consensus_version);
     assert_eq!(
         static_deploy_costs,
-        (2_139_740, 1_032_000, 105_740),
+        (2_141_740, 1_034_000, 105_740),
         "Static deployment costs (total, storage, synthesis)"
     );
     assert_eq!(
         dynamic_deploy_costs,
-        (2_092_903, 1_039_000, 51_903),
+        (2_094_903, 1_041_000, 51_903),
         "Dynamic deployment costs (total, storage, synthesis)"
     );
 
@@ -761,7 +761,7 @@ fn test_compare_transfer_private() {
     assert_eq!(static_exec_costs, (3_236, 3_236, 0), "Static execution costs (total, storage, finalize)");
     assert_eq!(dynamic_exec_costs, (4_108, 4_108, 0), "Dynamic execution costs (total, storage, finalize)");
 
-    // Verify static transaction only (dynamic outputs record.dynamic).
+    // Verify static transaction only (dynamic outputs dynamic.record).
     add_and_test(&vm, &caller_private_key, &[static_tx], rng);
 }
 
@@ -807,18 +807,18 @@ fn test_compare_transfer_private_to_public() {
         program dw_transfer_private_to_public.aleo;
 
         function transfer_private_to_public:
-            input r0 as record.dynamic;
+            input r0 as dynamic.record;
             input r1 as address.public;
             input r2 as u64.public;
             call.dynamic {credits_field} {aleo_field} {transfer_private_to_public_field}
-                with r0 r1 r2 (as record.dynamic address.public u64.public)
-                into r3 r4 (as record.dynamic future.dynamic);
+                with r0 r1 r2 (as dynamic.record address.public u64.public)
+                into r3 r4 (as dynamic.record dynamic.future);
             async transfer_private_to_public r4 into r5;
-            output r3 as record.dynamic;
+            output r3 as dynamic.record;
             output r5 as dw_transfer_private_to_public.aleo/transfer_private_to_public.future;
 
         finalize transfer_private_to_public:
-            input r0 as future.dynamic;
+            input r0 as dynamic.future;
             await r0;
 
         constructor:
@@ -853,12 +853,12 @@ fn test_compare_transfer_private_to_public() {
         get_deployment_costs(&vm, &static_deployment, &dynamic_deployment, consensus_version);
     assert_eq!(
         static_deploy_costs,
-        (2_310_011, 1_225_000, 83_011),
+        (2_312_011, 1_227_000, 83_011),
         "Static deployment costs (total, storage, synthesis)"
     );
     assert_eq!(
         dynamic_deploy_costs,
-        (2_253_765, 1_203_000, 48_765),
+        (2_255_765, 1_205_000, 48_765),
         "Dynamic deployment costs (total, storage, synthesis)"
     );
 
@@ -956,12 +956,12 @@ fn test_compare_join() {
         program dw_join.aleo;
 
         function join:
-            input r0 as record.dynamic;
-            input r1 as record.dynamic;
+            input r0 as dynamic.record;
+            input r1 as dynamic.record;
             call.dynamic {credits_field} {aleo_field} {join_field}
-                with r0 r1 (as record.dynamic record.dynamic)
-                into r2 (as record.dynamic);
-            output r2 as record.dynamic;
+                with r0 r1 (as dynamic.record dynamic.record)
+                into r2 (as dynamic.record);
+            output r2 as dynamic.record;
 
         constructor:
             assert.eq true true;
@@ -995,12 +995,12 @@ fn test_compare_join() {
         get_deployment_costs(&vm, &static_deployment, &dynamic_deployment, consensus_version);
     assert_eq!(
         static_deploy_costs,
-        (1_001_062_645, 968_000, 92_645),
+        (1_001_064_645, 970_000, 92_645),
         "Static deployment costs (total, storage, synthesis)"
     );
     assert_eq!(
         dynamic_deploy_costs,
-        (1_001_022_361, 981_000, 39_361),
+        (1_001_024_361, 983_000, 39_361),
         "Dynamic deployment costs (total, storage, synthesis)"
     );
 
@@ -1094,13 +1094,13 @@ fn test_compare_split() {
         program dw_split.aleo;
 
         function split:
-            input r0 as record.dynamic;
+            input r0 as dynamic.record;
             input r1 as u64.private;
             call.dynamic {credits_field} {aleo_field} {split_field}
-                with r0 r1 (as record.dynamic u64.private)
-                into r2 r3 (as record.dynamic record.dynamic);
-            output r2 as record.dynamic;
-            output r3 as record.dynamic;
+                with r0 r1 (as dynamic.record u64.private)
+                into r2 r3 (as dynamic.record dynamic.record);
+            output r2 as dynamic.record;
+            output r3 as dynamic.record;
 
         constructor:
             assert.eq true true;
@@ -1134,12 +1134,12 @@ fn test_compare_split() {
         get_deployment_costs(&vm, &static_deployment, &dynamic_deployment, consensus_version);
     assert_eq!(
         static_deploy_costs,
-        (101_080_264, 980_000, 98_264),
+        (101_082_264, 982_000, 98_264),
         "Static deployment costs (total, storage, synthesis)"
     );
     assert_eq!(
         dynamic_deploy_costs,
-        (101_041_751, 995_000, 44_751),
+        (101_043_751, 997_000, 44_751),
         "Dynamic deployment costs (total, storage, synthesis)"
     );
 
@@ -1244,12 +1244,12 @@ fn test_compare_bond_validator() {
             input r2 as u8.public;
             call.dynamic {credits_field} {aleo_field} {bond_validator_field}
                 with r0 r1 r2 (as address.public u64.public u8.public)
-                into r3 (as future.dynamic);
+                into r3 (as dynamic.future);
             async bond_validator r3 into r4;
             output r4 as dw_bond_validator.aleo/bond_validator.future;
 
         finalize bond_validator:
-            input r0 as future.dynamic;
+            input r0 as dynamic.future;
             await r0;
 
         constructor:
@@ -1284,12 +1284,12 @@ fn test_compare_bond_validator() {
         get_deployment_costs(&vm, &static_deployment, &dynamic_deployment, consensus_version);
     assert_eq!(
         static_deploy_costs,
-        (2_112_678, 1_071_000, 39_678),
+        (2_114_678, 1_073_000, 39_678),
         "Static deployment costs (total, storage, synthesis)"
     );
     assert_eq!(
         dynamic_deploy_costs,
-        (2_157_366, 1_116_000, 39_366),
+        (2_159_366, 1_118_000, 39_366),
         "Dynamic deployment costs (total, storage, synthesis)"
     );
 
@@ -1348,12 +1348,12 @@ fn test_compare_bond_public() {
             input r2 as u64.public;
             call.dynamic {credits_field} {aleo_field} {bond_public_field}
                 with r0 r1 r2 (as address.public address.public u64.public)
-                into r3 (as future.dynamic);
+                into r3 (as dynamic.future);
             async bond_public r3 into r4;
             output r4 as dw_bond_public.aleo/bond_public.future;
 
         finalize bond_public:
-            input r0 as future.dynamic;
+            input r0 as dynamic.future;
             await r0;
 
         constructor:
@@ -1388,12 +1388,12 @@ fn test_compare_bond_public() {
         get_deployment_costs(&vm, &static_deployment, &dynamic_deployment, consensus_version);
     assert_eq!(
         static_deploy_costs,
-        (2_087_356, 1_044_000, 41_356),
+        (2_089_356, 1_046_000, 41_356),
         "Static deployment costs (total, storage, synthesis)"
     );
     assert_eq!(
         dynamic_deploy_costs,
-        (2_137_125, 1_095_000, 40_125),
+        (2_139_125, 1_097_000, 40_125),
         "Dynamic deployment costs (total, storage, synthesis)"
     );
 
@@ -1448,12 +1448,12 @@ fn test_compare_unbond_public() {
             input r1 as u64.public;
             call.dynamic {credits_field} {aleo_field} {unbond_public_field}
                 with r0 r1 (as address.public u64.public)
-                into r2 (as future.dynamic);
+                into r2 (as dynamic.future);
             async unbond_public r2 into r3;
             output r3 as dw_unbond_public.aleo/unbond_public.future;
 
         finalize unbond_public:
-            input r0 as future.dynamic;
+            input r0 as dynamic.future;
             await r0;
 
         constructor:
@@ -1488,12 +1488,12 @@ fn test_compare_unbond_public() {
         get_deployment_costs(&vm, &static_deployment, &dynamic_deployment, consensus_version);
     assert_eq!(
         static_deploy_costs,
-        (2_092_458, 1_054_000, 36_458),
+        (2_094_458, 1_056_000, 36_458),
         "Static deployment costs (total, storage, synthesis)"
     );
     assert_eq!(
         dynamic_deploy_costs,
-        (2_137_286, 1_098_000, 37_286),
+        (2_139_286, 1_100_000, 37_286),
         "Dynamic deployment costs (total, storage, synthesis)"
     );
 
@@ -1546,12 +1546,12 @@ fn test_compare_claim_unbond_public() {
             input r0 as address.public;
             call.dynamic {credits_field} {aleo_field} {claim_unbond_public_field}
                 with r0 (as address.public)
-                into r1 (as future.dynamic);
+                into r1 (as dynamic.future);
             async claim_unbond_public r1 into r2;
             output r2 as dw_claim_unbond.aleo/claim_unbond_public.future;
 
         finalize claim_unbond_public:
-            input r0 as future.dynamic;
+            input r0 as dynamic.future;
             await r0;
 
         constructor:
@@ -1586,12 +1586,12 @@ fn test_compare_claim_unbond_public() {
         get_deployment_costs(&vm, &static_deployment, &dynamic_deployment, consensus_version);
     assert_eq!(
         static_deploy_costs,
-        (2_121_531, 1_086_000, 33_531),
+        (2_123_531, 1_088_000, 33_531),
         "Static deployment costs (total, storage, synthesis)"
     );
     assert_eq!(
         dynamic_deploy_costs,
-        (2_152_422, 1_115_000, 35_422),
+        (2_154_422, 1_117_000, 35_422),
         "Dynamic deployment costs (total, storage, synthesis)"
     );
 
@@ -1645,12 +1645,12 @@ fn test_compare_set_validator_state() {
             input r0 as boolean.public;
             call.dynamic {credits_field} {aleo_field} {set_validator_state_field}
                 with r0 (as boolean.public)
-                into r1 (as future.dynamic);
+                into r1 (as dynamic.future);
             async set_validator_state r1 into r2;
             output r2 as dw_set_val_state.aleo/set_validator_state.future;
 
         finalize set_validator_state:
-            input r0 as future.dynamic;
+            input r0 as dynamic.future;
             await r0;
 
         constructor:
@@ -1685,12 +1685,12 @@ fn test_compare_set_validator_state() {
         get_deployment_costs(&vm, &static_deployment, &dynamic_deployment, consensus_version);
     assert_eq!(
         static_deploy_costs,
-        (2_122_580, 1_088_000, 32_580),
+        (2_124_580, 1_090_000, 32_580),
         "Static deployment costs (total, storage, synthesis)"
     );
     assert_eq!(
         dynamic_deploy_costs,
-        (2_153_413, 1_117_000, 34_413),
+        (2_155_413, 1_119_000, 34_413),
         "Dynamic deployment costs (total, storage, synthesis)"
     );
 

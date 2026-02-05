@@ -18,7 +18,7 @@ use circuit::{Aleo, Field as CircuitField, traits::ToFields};
 use super::*;
 
 /// Computes the ID of a console record (dynamic or external) given its field representation.
-pub fn compute_console_nonlocal_record_id<N: Network>(
+pub fn compute_console_dynamic_or_external_record_id<N: Network>(
     function_id: Field<N>,
     record_fields: Vec<Field<N>>,
     tvk: Field<N>,
@@ -34,7 +34,7 @@ pub fn compute_console_nonlocal_record_id<N: Network>(
 }
 
 /// Computes the ID of a circuit record (dynamic or external) given its field representation.
-fn compute_circuit_nonlocal_record_id<A: Aleo>(
+fn compute_circuit_dynamic_or_external_record_id<A: Aleo>(
     function_id: CircuitField<A>,
     record_fields: Vec<CircuitField<A>>,
     tvk: CircuitField<A>,
@@ -63,9 +63,9 @@ pub struct TranslationAssignment<N: Network> {
     /// The name of the static record (to be embedded as a constant).
     pub(super) record_name: Identifier<N>,
     /// True if translation is happening for an input to `dynamic.call` (static record is being produced) or an output of `dynamic.call` (static record is being consumed).
-    pub(super) is_input: bool,
+    pub(super) is_to_static: bool,
     /// Whether the value type corresponding to the static record is `Record` or that of an `ExternalRecord`.
-    pub(super) static_is_external: bool,
+    pub(super) is_external_record: bool,
     /// The index of this translation within the current batch.
     pub(super) translation_index: u16,
     /// The view key of the transition containing the dynamic call.
@@ -81,9 +81,9 @@ pub struct TranslationAssignment<N: Network> {
     ///    - Its `InputID`, i. e. its serial number, if the record is an input.
     ///    - Its `OutputID`, i. e. its commitment, if the record is an output.
     pub(super) id_static: Field<N>,
-    /// The record view key of the static record. Irrelevant if `static_is_external` is true.
+    /// The record view key of the static record. Irrelevant if `is_external_record` is true.
     pub(super) record_view_key: Field<N>,
-    /// The additional point used to produce the serial number. Irrelevant if `is_input` is false or `static_is_external` is true.
+    /// The additional point used to produce the serial number. Irrelevant if `is_to_static` is false or `is_external_record` is true.
     pub(super) gamma: Group<N>,
 }
 
@@ -95,8 +95,8 @@ impl<N: Network> TranslationAssignment<N> {
         program_id: ProgramID<N>,
         function_id: Field<N>,
         record_name: Identifier<N>,
-        is_input: bool,
-        static_is_external: bool,
+        is_to_static: bool,
+        is_external_record: bool,
         translation_index: u16,
         tvk: Field<N>,
         input_output_index: u16,
@@ -111,8 +111,8 @@ impl<N: Network> TranslationAssignment<N> {
             function_id,
             record_name,
             record_dynamic,
-            is_input,
-            static_is_external,
+            is_to_static,
+            is_external_record,
             translation_index,
             tvk,
             input_output_index,
@@ -147,10 +147,10 @@ impl<N: Network> TranslationAssignment<N> {
         // ******** Public inputs
 
         // Inject the translation-direction flag as `Mode::Public`.
-        let circuit_is_input = circuit::Boolean::<A>::new(circuit::Mode::Public, self.is_input);
+        let circuit_is_to_static = circuit::Boolean::<A>::new(circuit::Mode::Public, self.is_to_static);
 
         // Inject the external-record flag as `Mode::Public`.
-        let circuit_static_is_external = circuit::Boolean::<A>::new(circuit::Mode::Public, self.static_is_external);
+        let circuit_is_external_record = circuit::Boolean::<A>::new(circuit::Mode::Public, self.is_external_record);
 
         // Inject the calling function id as `Mode::Public`.
         let circuit_function_id = circuit::Field::<A>::new(circuit::Mode::Public, self.function_id);
@@ -169,8 +169,8 @@ impl<N: Network> TranslationAssignment<N> {
         );
 
         // Inject the commitment or serial number of the non-external record (if
-        // `static_is_external`) or the input/output ID of the external record
-        // (if not `static_is_external`) as `Mode::Public`.
+        // `is_external_record`) or the input/output ID of the external record
+        // (if not `is_external_record`) as `Mode::Public`.
         let circuit_id_static = circuit::Field::<A>::new(circuit::Mode::Public, self.id_static);
 
         // Inject the ID of the dynamic record as `Mode::Public`.
@@ -189,7 +189,6 @@ impl<N: Network> TranslationAssignment<N> {
         // Inject the transition view key as `Mode::Private`.
         let circuit_tvk = circuit::Field::<A>::new(circuit::Mode::Private, self.tvk);
 
-        // TODO (Compute the circuit RVK using the TVK)
         // Inject the record view key of the static record as `Mode::Private`.
         let circuit_record_view_key = circuit::Field::<A>::new(circuit::Mode::Private, self.record_view_key);
 
@@ -199,7 +198,7 @@ impl<N: Network> TranslationAssignment<N> {
         // ******** Computing the IDs of the dynamic and static records
 
         // Compute the ID of the dynamic record.
-        let actual_id_dynamic = compute_circuit_nonlocal_record_id(
+        let actual_id_dynamic = compute_circuit_dynamic_or_external_record_id(
             circuit_function_id.clone(),
             circuit_record_dynamic.to_fields(),
             circuit_tvk.clone(),
@@ -215,12 +214,15 @@ impl<N: Network> TranslationAssignment<N> {
         );
 
         // Input/output ID of the static record if it is not external (serial number or commitment).
-        let actual_id_static_non_external =
-            circuit::Field::<A>::ternary(&circuit_is_input, &circuit_static_serial_number, &circuit_static_commitment);
+        let actual_id_static_non_external = circuit::Field::<A>::ternary(
+            &circuit_is_to_static,
+            &circuit_static_serial_number,
+            &circuit_static_commitment,
+        );
 
         // Input/output ID of the static record if it is external.
         // Note: External records have the same InputID and OutputID formula.
-        let actual_id_static_external = compute_circuit_nonlocal_record_id(
+        let actual_id_static_external = compute_circuit_dynamic_or_external_record_id(
             circuit_function_id,
             circuit_record_static.to_fields(),
             circuit_tvk,
@@ -228,7 +230,7 @@ impl<N: Network> TranslationAssignment<N> {
         );
 
         let actual_id_static = circuit::Field::<A>::ternary(
-            &circuit_static_is_external,
+            &circuit_is_external_record,
             &actual_id_static_external,
             &actual_id_static_non_external,
         );
@@ -257,7 +259,7 @@ impl<N: Network> TranslationAssignment<N> {
     /// ```ignore
     ///     cm = commit([[program_id]], [[record_name]], record_static, record_view_key)
     ///     sn = serial_number(cm, gamma)
-    ///     actual_id_non_external = is_input ? sn : cm
+    ///     actual_id_non_external = is_to_static ? sn : cm
     ///     actual_id_external =  HashPSD8([[function_id]] | record_static | tvk | [[input_output_index]])
     ///     actual_id_static = is_external ? actual_id_external : actual_id_non_external
     ///     actual_id_dynamic = HashPSD8([[function_id]] | record_dynamic | tvk | [[input_output_index]])

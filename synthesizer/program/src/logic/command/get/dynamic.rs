@@ -19,7 +19,7 @@ use console::{
     program::{Identifier, Literal, Plaintext, PlaintextType, ProgramID, Register, Value},
 };
 
-/// A dynamic get command, e.g. `get.dynamic r0.r1/r2[r3] into r4;`.
+/// A dynamic get command, e.g. `get.dynamic r0 r1 r2[r3] into r4 as u8;`.
 /// Resolves the `program` and `mapping` operands, gets the value stored at the `key` operand in `mapping`, and stores the result into `destination`.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct GetDynamic<N: Network> {
@@ -120,7 +120,7 @@ impl<N: Network> GetDynamic<N> {
         let key = registers.load_plaintext(stack, self.key())?;
 
         // Get the mapping definition.
-        let mapping = stack.get_stack_unchecked(&program_id)?.program().get_mapping(&mapping_name)?;
+        let mapping = stack.get_stack_global(&program_id)?.program().get_mapping(&mapping_name)?;
         // Get the key type.
         let mapping_key_type = mapping.key().plaintext_type();
         // Ensure the key operand matches the mapping key type.
@@ -137,18 +137,17 @@ impl<N: Network> GetDynamic<N> {
             self.destination_type
         );
 
-        // Retrieve the value from storage as a literal.
+        // Retrieve the value from storage as a plaintext.
         let value = match store.get_value_speculative(program_id, mapping_name, &key)? {
             Some(Value::Plaintext(plaintext)) => Value::Plaintext(plaintext),
             Some(Value::Record(..)) => bail!("Cannot 'get.dynamic' a 'record'"),
             Some(Value::Future(..)) => bail!("Cannot 'get.dynamic' a 'future'",),
-            Some(Value::DynamicRecord(..)) => bail!("Cannot 'get.dynamic' a 'record.dynamic'"),
-            Some(Value::DynamicFuture(..)) => bail!("Cannot 'get.dynamic' a 'future.dynamic'"),
+            Some(Value::DynamicRecord(..)) => bail!("Cannot 'get.dynamic' a 'dynamic.record'"),
+            Some(Value::DynamicFuture(..)) => bail!("Cannot 'get.dynamic' a 'dynamic.future'"),
             // If a key does not exist, then bail.
             None => bail!("Key '{key}' does not exist in mapping '{program_id}/{mapping_name}'"),
         };
 
-        // Ensure the destin
         // Check that the value type matches the destination type.
         match &value {
             Value::Plaintext(plaintext) => {

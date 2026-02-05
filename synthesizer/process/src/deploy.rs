@@ -67,7 +67,7 @@ impl<N: Network> Process<N> {
                 // Insert the translation verifying keys.
                 if let Some(translation_verifying_keys) = deployment.translation_verifying_keys() {
                     for (record_name, (verifying_key, _)) in translation_verifying_keys {
-                        stack.insert_translation_verifying_key(record_name, verifying_key.clone())?;
+                        stack.insert_verifying_key(record_name, verifying_key.clone())?;
                     }
                 }
                 lap!(timer, "Insert the translation verifying keys");
@@ -91,6 +91,14 @@ impl<N: Network> Process<N> {
                     stack.insert_verifying_key(function_name, verifying_key.clone())?;
                 }
                 lap!(timer, "Insert the verifying keys");
+
+                // Insert the translation verifying keys if present.
+                if let Some(translation_verifying_keys) = deployment.translation_verifying_keys() {
+                    for (record_name, (verifying_key, _)) in translation_verifying_keys {
+                        stack.insert_verifying_key(record_name, verifying_key.clone())?;
+                    }
+                }
+                lap!(timer, "Insert the translation verifying keys");
 
                 stack
             }

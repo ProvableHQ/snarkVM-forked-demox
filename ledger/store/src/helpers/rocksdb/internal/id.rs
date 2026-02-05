@@ -114,6 +114,7 @@ pub enum DeploymentMap {
     Checksum = DataID::DeploymentChecksumMap as u16,
     VerifyingKey = DataID::DeploymentVerifyingKeyMap as u16,
     Certificate = DataID::DeploymentCertificateMap as u16,
+    ContainsTranslationKeys = DataID::DeploymentContainsTranslationKeysMap as u16,
     AmendmentNextIndex = DataID::DeploymentAmendmentCountMap as u16,
     AmendmentID = DataID::DeploymentAmendmentIDMap as u16,
     ReverseAmendmentID = DataID::DeploymentReverseAmendmentIDMap as u16,
@@ -324,7 +325,10 @@ enum DataID {
     // Track dynamic IDs for outputs.
     OutputDynamicIDMap,
 
-    // Amendment maps
+    // Track whether a deployment contains translation keys (V3 deployment).
+    DeploymentContainsTranslationKeysMap,
+
+    // Amendment maps.
     DeploymentAmendmentCountMap,
     DeploymentAmendmentIDMap,
     DeploymentReverseAmendmentIDMap,

@@ -201,6 +201,21 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     self.process.read().mapping_types_exist(deployment.program())?;
                 }
 
+                // Enforce translation verifying key requirements based on consensus version.
+                // Before V14: translation verifying keys are not allowed (V2 format).
+                // At/after V14: translation verifying keys are required (V3 format).
+                if consensus_version < ConsensusVersion::V14 {
+                    ensure!(
+                        deployment.translation_verifying_keys().is_none(),
+                        "Invalid deployment transaction '{id}' - translation verifying keys are not allowed before `ConsensusVersion::V14`"
+                    );
+                } else {
+                    ensure!(
+                        deployment.translation_verifying_keys().is_some(),
+                        "Invalid deployment transaction '{id}' - missing translation verifying keys after `ConsensusVersion::V14`"
+                    );
+                }
+
                 // If the program owner exists in the deployment, then verify that it matches the owner in the transaction.
                 if let Some(given_owner) = deployment.program_owner() {
                     // Ensure the program owner matches the owner in the transaction.
@@ -404,7 +419,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         if !has_vk_change {
                             if let Some(translation_vks) = deployment.translation_verifying_keys() {
                                 for (record_name, (new_vk, _)) in translation_vks {
-                                    match stack.get_translation_verifying_key(record_name) {
+                                    match stack.get_verifying_key(record_name) {
                                         Ok(existing_vk) => {
                                             if *new_vk != existing_vk {
                                                 has_vk_change = true;

@@ -205,7 +205,7 @@ constructor:
     // Verify the program was deployed without translation VKs.
     let stack = vm.process().read().get_stack("vk_test.aleo")?;
     assert!(
-        stack.get_translation_verifying_key(&Identifier::from_str("token")?).is_err(),
+        stack.get_verifying_key(&Identifier::from_str("token")?).is_err(),
         "V2 deployment at V9 should NOT have translation VKs"
     );
 
@@ -245,7 +245,7 @@ constructor:
     // Verify the translation VK was added by the amendment.
     let stack = vm.process().read().get_stack("vk_test.aleo")?;
     assert!(
-        stack.get_translation_verifying_key(&Identifier::from_str("token")?).is_ok(),
+        stack.get_verifying_key(&Identifier::from_str("token")?).is_ok(),
         "Amendment should have added translation VKs"
     );
 
@@ -570,7 +570,7 @@ constructor:
     // Verify deployed without translation VKs.
     let stack = vm.process().read().get_stack("multi_amend.aleo")?;
     assert!(
-        stack.get_translation_verifying_key(&Identifier::from_str("token")?).is_err(),
+        stack.get_verifying_key(&Identifier::from_str("token")?).is_err(),
         "V2 deployment should not have translation VKs"
     );
     let deployed_program = stack.program().clone();
@@ -592,7 +592,7 @@ constructor:
     // Verify the translation VK was added.
     let stack = vm.process().read().get_stack("multi_amend.aleo")?;
     assert!(
-        stack.get_translation_verifying_key(&Identifier::from_str("token")?).is_ok(),
+        stack.get_verifying_key(&Identifier::from_str("token")?).is_ok(),
         "First amendment should have added translation VKs"
     );
 

@@ -21,11 +21,15 @@ impl<N: Network> Serialize for Deployment<N> {
         match serializer.is_human_readable() {
             true => {
                 // Note: `Deployment::version` checks optional fields to determine the version.
+                // V1: edition, program, verifying_keys (3 fields)
+                // V2: + program_checksum, program_owner (5 fields)
+                // V3: + translation_verifying_keys (6 fields)
+                // V4: edition, program, verifying_keys, program_checksum, translation_verifying_keys (5 fields, no owner)
                 let len = match self.version().map_err(ser::Error::custom)? {
                     DeploymentVersion::V1 => 3,
                     DeploymentVersion::V2 => 5,
                     DeploymentVersion::V3 => 6,
-                    DeploymentVersion::V4 => 4,
+                    DeploymentVersion::V4 => 5,
                 };
                 let mut deployment = serializer.serialize_struct("Deployment", len)?;
                 deployment.serialize_field("edition", &self.edition)?;

@@ -44,7 +44,7 @@ type CircuitLH<A> = circuit::Poseidon8<A>;
 type CircuitPH<A> = circuit::Poseidon2<A>;
 
 /// Retrieves the value of an entry in a dynamic record.
-// TODO (@reviewers). Do we want to consider alternate names? `record.dynamic.entry`, `access.record.dynamic`, etc.
+// TODO (@reviewers). Do we want to consider alternate names? `dynamic.record.entry`, `access.dynamic.record`, etc.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct GetRecordDynamic<N: Network> {
     /// The register containing the dynamic record being read.

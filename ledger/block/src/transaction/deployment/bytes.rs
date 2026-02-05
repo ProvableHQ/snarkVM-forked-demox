@@ -84,10 +84,10 @@ impl<N: Network> FromBytes for Deployment<N> {
             }
         };
 
-        // If the deployment version is V3, read the translation verifying keys.
+        // If the deployment version is V3 or V4, read the translation verifying keys.
         let translation_verifying_keys = match version {
-            DeploymentVersion::V1 | DeploymentVersion::V2 | DeploymentVersion::V4 => None,
-            DeploymentVersion::V3 => {
+            DeploymentVersion::V1 | DeploymentVersion::V2 => None,
+            DeploymentVersion::V3 | DeploymentVersion::V4 => {
                 // Read the number of entries in the bundle.
                 let num_entries = u16::read_le(&mut reader)?;
                 // Ensure the number of entries is within bounds.
@@ -156,10 +156,12 @@ impl<N: Network> ToBytes for Deployment<N> {
         if matches!(version, DeploymentVersion::V2 | DeploymentVersion::V3) {
             self.program_owner.unwrap().write_le(&mut writer)?;
         }
-        // If the deployment version is V3, write the translation verifying keys.
-        // Note: The unwrap is safe because `Deployment::version` only returns V3 if the translation verifying keys are present.
-        if matches!(version, DeploymentVersion::V3) {
+        // If the deployment version is V3 or V4, write the translation verifying keys.
+        // V3 always has translation verifying keys (may be empty vec for programs without records).
+        // V4 always has translation verifying keys (may be empty vec for programs without records).
+        if matches!(version, DeploymentVersion::V3 | DeploymentVersion::V4) {
             // Get the translation verifying keys.
+            // Note: The unwrap is safe because V3 and V4 always have translation verifying keys.
             let translation_verifying_keys = self.translation_verifying_keys.as_ref().unwrap();
             // Write the number of entries in the bundle.
             (u16::try_from(translation_verifying_keys.len()).map_err(|e| error(e.to_string()))?)

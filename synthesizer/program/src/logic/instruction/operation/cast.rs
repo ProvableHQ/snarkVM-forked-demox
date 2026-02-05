@@ -65,9 +65,9 @@ impl<N: Network> Parser for CastType<N> {
         alt((
             map(tag("group.x"), |_| Self::GroupXCoordinate),
             map(tag("group.y"), |_| Self::GroupYCoordinate),
-            // We match this variant outside its usual position to ensure "record.dynamic" is not
+            // We match this variant outside its usual position to ensure "dynamic.record" is not
             // parsed as a static record with identifier "record"
-            map(tag("record.dynamic"), |_| Self::DynamicRecord),
+            map(tag("dynamic.record"), |_| Self::DynamicRecord),
             map(pair(Locator::parse, tag(".record")), |(locator, _)| Self::ExternalRecord(locator)),
             map(pair(Identifier::parse, tag(".record")), |(identifier, _)| Self::Record(identifier)),
             map(PlaintextType::parse, Self::Plaintext),
@@ -83,7 +83,7 @@ impl<N: Network> Display for CastType<N> {
             Self::Plaintext(plaintext_type) => write!(f, "{plaintext_type}"),
             Self::Record(identifier) => write!(f, "{identifier}.record"),
             Self::ExternalRecord(locator) => write!(f, "{locator}.record"),
-            Self::DynamicRecord => write!(f, "record.dynamic"),
+            Self::DynamicRecord => write!(f, "dynamic.record"),
         }
     }
 }
@@ -1409,23 +1409,23 @@ mod tests {
 
     #[test]
     fn test_parse_cast_into_dynamic_record() {
-        let correct_cases = ["cast r0 into r1 as record.dynamic", "cast r1 into r5 as record.dynamic"];
+        let correct_cases = ["cast r0 into r1 as dynamic.record", "cast r1 into r5 as dynamic.record"];
 
         let incorrect_cases = [
             // Too few operands
-            "cast into r1 as record.dynamic",
+            "cast into r1 as dynamic.record",
             // Too many operands (two)
-            "cast r0 r1 into r2 as record.dynamic",
+            "cast r0 r1 into r2 as dynamic.record",
             // Too many operands
-            "cast r0 r1 r2 into r3 as record.dynamic",
+            "cast r0 r1 r2 into r3 as dynamic.record",
             // Too few destinations (with tag)
-            "cast r0 into as record.dynamic",
+            "cast r0 into as dynamic.record",
             // Too few destinations (without tag)
-            "cast r0 as record.dynamic",
+            "cast r0 as dynamic.record",
             // Incorrect operand structure
-            "cast r0.owner into r1 as record.dynamic",
+            "cast r0.owner into r1 as dynamic.record",
             // Incorrect destination structure
-            "cast r0 into r1.owner as record.dynamic",
+            "cast r0 into r1.owner as dynamic.record",
         ];
 
         for case in correct_cases {
