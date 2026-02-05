@@ -1059,6 +1059,14 @@ mod tests {
                 }
             }
 
+            // Check the contains_translation_keys_map.
+            // V3 deployments (those with translation_verifying_keys = Some) should have an entry.
+            // V1 and V2 deployments should not have an entry.
+            let has_translation_keys = transaction.deployment().unwrap().translation_verifying_keys().is_some();
+            let contains_translation_keys_entry =
+                deployment_store.contains_translation_keys_map().get_confirmed(&(program_id, edition)).unwrap();
+            assert_eq!(has_translation_keys, contains_translation_keys_entry.is_some());
+
             // Check that the transaction exists in the ID edition map
             let candidate = deployment_store.id_edition_map().get_confirmed(&transaction_id).unwrap();
             assert_eq!(Some(edition), candidate.map(|e| *e));
@@ -1099,6 +1107,11 @@ mod tests {
             // Ensure the edition is not found in the `IDEditionMap`.
             let candidate = deployment_store.id_edition_map().get_confirmed(&transaction_id).unwrap();
             assert_eq!(None, candidate);
+
+            // Ensure the contains_translation_keys_map entry is removed.
+            let contains_translation_keys_entry =
+                deployment_store.contains_translation_keys_map().get_confirmed(&(program_id, edition)).unwrap();
+            assert_eq!(None, contains_translation_keys_entry);
 
             // Insert the deployment transaction again.
             deployment_store.insert(&transaction).unwrap();
