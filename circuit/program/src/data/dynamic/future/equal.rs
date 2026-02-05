@@ -23,7 +23,7 @@ impl<A: Aleo> Equal<Self> for DynamicFuture<A> {
         self.program_name.is_equal(&other.program_name)
             & self.program_network.is_equal(&other.program_network)
             & self.function_name.is_equal(&other.function_name)
-            & self.root.is_equal(&other.root)
+            & self.hash.is_equal(&other.hash)
     }
 
     /// Returns `true` if `self` and `other` are *not* equal.

@@ -30,8 +30,8 @@ impl<A: Aleo> ToBits for DynamicFuture<A> {
         // Write the bits for the function name.
         vec.extend_from_slice(&self.function_name.to_bits_le());
 
-        // Write the bits for the root.
-        vec.extend_from_slice(&self.root.to_bits_le());
+        // Write the bits for the hash.
+        vec.extend_from_slice(&self.hash.to_bits_le());
     }
 
     /// Returns the circuit dynamic future as a list of **big-endian** bits.
@@ -46,7 +46,7 @@ impl<A: Aleo> ToBits for DynamicFuture<A> {
         // Write the bits for the function name.
         vec.extend_from_slice(&self.function_name.to_bits_be());
 
-        // Write the bits for the root.
-        vec.extend_from_slice(&self.root.to_bits_be());
+        // Write the bits for the hash.
+        vec.extend_from_slice(&self.hash.to_bits_be());
     }
 }

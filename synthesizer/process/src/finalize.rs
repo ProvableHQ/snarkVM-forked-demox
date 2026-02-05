@@ -168,7 +168,7 @@ impl<N: Network> Process<N> {
                         *dynamic_future.program_name(),
                         *dynamic_future.program_network(),
                         *dynamic_future.function_name(),
-                        *dynamic_future.root(),
+                        *dynamic_future.hash(),
                     );
                     Some((key, future))
                 })
@@ -606,7 +606,7 @@ fn setup_await<N: Network>(
                 *dynamic_future.program_name(),
                 *dynamic_future.program_network(),
                 *dynamic_future.function_name(),
-                *dynamic_future.root(),
+                *dynamic_future.hash(),
             );
             // Look up the corresponding future from the dynamic future key.
             match dynamic_future_to_future.get(&key) {

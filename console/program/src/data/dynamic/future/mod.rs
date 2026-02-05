@@ -34,28 +34,10 @@ pub type FutureArgumentTree<E> = MerkleTree<E, Poseidon8<E>, Poseidon2<E>, FUTUR
 /// A dynamic future is a fixed-size representation of a future. Like static
 /// `Future`s, a dynamic future contains a program ID and function name. These
 /// are however represented as `Field` elements as opposed to `Identifier`s to
-/// ensure a fixed size. Dynamic futures also store a Merkle root of the
+/// ensure a fixed size. Dynamic futures also store a hash of the
 /// arguments to the future instead of the arguments themselves. This ensures
 /// that all dynamic futures have a constant size, regardless of the amount of
 /// data they contain.
-///
-/// Suppose we have the following `finalize` scope:
-///
-/// ```text
-/// finalize foo: input r0 as address.public; input r1 as u64.public;
-/// ```
-///
-/// The leaves of its Merkle tree are computed as follows:
-/// ```text
-/// L_0 := HashPSD8(ToFields(arg_0))
-/// L_1 := HashPSD8(ToFields(arg_1))
-/// ```
-///
-/// Note that `ToFields` encodes the arguments's variant.
-///
-/// The tree has depth `FUTURE_ARGUMENT_TREE_DEPTH = 4` and is constructed with
-/// path hasher `HashPSD2` and the padding scheme outlined in
-/// [`snarkVM`'s `MerkleTree`](snarkvm_console_collections::merkle_tree::MerkleTree).
 #[derive(Clone)]
 pub struct DynamicFuture<N: Network> {
     /// The program name.
@@ -64,22 +46,22 @@ pub struct DynamicFuture<N: Network> {
     program_network: Field<N>,
     /// The function name.
     function_name: Field<N>,
-    /// The Merkle root of the arguments.
-    root: Field<N>,
+    /// The hash of the arguments.
+    hash: Field<N>,
     /// The optional arguments.
     arguments: Option<Vec<Argument<N>>>,
 }
 
 impl<N: Network> DynamicFuture<N> {
-    /// Initializes a dynamic future without checking that the root, tree, and arguments are consistent.
+    /// Initializes a dynamic future without checking that the hash and arguments are consistent.
     pub fn new_unchecked(
         program_name: Field<N>,
         program_network: Field<N>,
         function_name: Field<N>,
-        root: Field<N>,
+        hash: Field<N>,
         arguments: Option<Vec<Argument<N>>>,
     ) -> Self {
-        Self { program_name, program_network, function_name, root, arguments }
+        Self { program_name, program_network, function_name, hash, arguments }
     }
 }
 
@@ -99,9 +81,9 @@ impl<N: Network> DynamicFuture<N> {
         &self.function_name
     }
 
-    /// Returns the Merkle root of the arguments.
-    pub const fn root(&self) -> &Field<N> {
-        &self.root
+    /// Returns the hash of the arguments.
+    pub const fn hash(&self) -> &Field<N> {
+        &self.hash
     }
 
     /// Returns the optional arguments.
@@ -122,20 +104,22 @@ impl<N: Network> DynamicFuture<N> {
         // Get the arguments.
         let arguments = future.arguments().to_vec();
 
-        // Prepare the leaves.
-        let leaves = arguments.iter().map(|argument| argument.to_fields()).collect::<Result<Vec<_>>>()?;
+        // Get the bits of the arguments.
+        let mut bits = vec![];
+        // Prefix the bits with the number of arguments to ensure that different numbers of arguments produce different hashes.
+        // Note that the number of arguments is at most 16, so it fits in a single byte.
+        bits.extend(u8::try_from(arguments.len())?.to_bits_le());
+        // Then, append the bits of each argument.
+        // Note that the argument bits themselves are type-prefixed.
+        bits.extend(arguments.iter().flat_map(|a| a.to_bits_le()));
+        // Then pad the bits to the next multiple of 8 to ensure that the hash is consistent regardless of the number of arguments.
+        bits.resize(bits.len().div_ceil(8), false);
 
-        // Initalize the hashers.
-        let leaf_hasher = Poseidon8::setup("DynamicFutureLeafHasher")?;
-        let path_hasher = Poseidon2::setup("DynamicFuturePathHasher")?;
+        // Hash the bits of the arguments.
+        // TODO: Do we need domain separation or the outer hash?
+        let hash = N::hash_bhp256(&N::hash_keccak256(&bits)?)?;
 
-        // Construct the Merkle tree of the data.
-        let tree = FutureArgumentTree::new(&leaf_hasher, &path_hasher, &leaves)?;
-
-        // Get the root.
-        let root = *tree.root();
-
-        Ok(Self::new_unchecked(program_name, program_network, function_name, root, Some(arguments)))
+        Ok(Self::new_unchecked(program_name, program_network, function_name, hash, Some(arguments)))
     }
 
     /// Creates a static future from a dynamic future.
@@ -218,7 +202,7 @@ mod tests {
     }
 
     #[test]
-    fn test_root_determinism() {
+    fn test_hash_determinism() {
         let args1 = vec![Argument::Plaintext(Plaintext::from_str("100u64").unwrap())];
         let args2 = vec![Argument::Plaintext(Plaintext::from_str("100u64").unwrap())];
         let args3 = vec![Argument::Plaintext(Plaintext::from_str("200u64").unwrap())];
@@ -227,39 +211,7 @@ mod tests {
         let d2 = DynamicFuture::from_future(&create_test_future(args2)).unwrap();
         let d3 = DynamicFuture::from_future(&create_test_future(args3)).unwrap();
 
-        assert_eq!(d1.root(), d2.root(), "Same arguments should produce same root");
-        assert_ne!(d1.root(), d3.root(), "Different arguments should produce different roots");
-    }
-
-    #[test]
-    fn test_membership_proofs() {
-        let inner =
-            Future::new(ProgramID::from_str("inner.aleo").unwrap(), Identifier::from_str("bar").unwrap(), vec![
-                Argument::Plaintext(Plaintext::from_str("1u64").unwrap()),
-            ]);
-        let arguments = vec![
-            Argument::Plaintext(Plaintext::from_str("100u64").unwrap()),
-            Argument::Future(inner),
-            Argument::Plaintext(Plaintext::from_str("200u64").unwrap()),
-        ];
-        let dynamic = DynamicFuture::from_future(&create_test_future(arguments.clone())).unwrap();
-
-        // Build tree and verify root matches.
-        let leaves: Vec<_> = arguments.iter().map(|a| a.to_fields().unwrap()).collect();
-        let leaf_hasher = Poseidon8::setup("DynamicFutureLeafHasher").unwrap();
-        let path_hasher = Poseidon2::setup("DynamicFuturePathHasher").unwrap();
-        let tree = FutureArgumentTree::new(&leaf_hasher, &path_hasher, &leaves).unwrap();
-        assert_eq!(tree.root(), dynamic.root());
-
-        // Valid proofs.
-        for (i, leaf) in leaves.iter().enumerate() {
-            let path = tree.prove(i, leaf).unwrap();
-            assert!(tree.verify(&path, tree.root(), leaf));
-        }
-
-        // Invalid proofs.
-        let path = tree.prove(0, &leaves[0]).unwrap();
-        assert!(!tree.verify(&path, tree.root(), &leaves[1])); // Wrong leaf.
-        assert!(!tree.verify(&path, &Field::from_u64(12345), &leaves[0])); // Wrong root.
+        assert_eq!(d1.hash(), d2.hash(), "Same arguments should produce same hash");
+        assert_ne!(d1.hash(), d3.hash(), "Different arguments should produce different hashes");
     }
 }

@@ -157,7 +157,7 @@ mod tests {
                 assert_eq!(result.program_name(), dynamic_inner.program_name());
                 assert_eq!(result.program_network(), dynamic_inner.program_network());
                 assert_eq!(result.function_name(), dynamic_inner.function_name());
-                assert_eq!(result.root(), dynamic_inner.root());
+                assert_eq!(result.hash(), dynamic_inner.hash());
             }
             _ => panic!("Expected DynamicFuture value"),
         }

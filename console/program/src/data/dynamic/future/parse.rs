@@ -19,8 +19,8 @@ impl<N: Network> Parser for DynamicFuture<N> {
     /// Parses a string into a dynamic future.
     ///
     /// Supports two formats:
-    /// - Human-readable: `{ program_id: foo.aleo, function: bar, root: 0field }`
-    /// - Raw field: `{ program_name: 0field, program_network: 0field, function_name: 0field, root: 0field }`
+    /// - Human-readable: `{ program_id: foo.aleo, function: bar, hash: 0field }`
+    /// - Raw field: `{ program_name: 0field, program_network: 0field, function_name: 0field, hash: 0field }`
     #[inline]
     fn parse(string: &str) -> ParserResult<Self> {
         // Try to parse the human-readable format first.
@@ -33,7 +33,7 @@ impl<N: Network> Parser for DynamicFuture<N> {
 }
 
 impl<N: Network> DynamicFuture<N> {
-    /// Parses the human-readable format: `{ program_id: foo.aleo, function: bar, root: 0field }`.
+    /// Parses the human-readable format: `{ program_id: foo.aleo, function: bar, hash: 0field }`.
     fn parse_human_readable(string: &str) -> ParserResult<Self> {
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
@@ -76,16 +76,16 @@ impl<N: Network> DynamicFuture<N> {
 
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
-        // Parse the "root" from the string.
-        let (string, _) = tag("root")(string)?;
+        // Parse the "hash" from the string.
+        let (string, _) = tag("hash")(string)?;
         // Parse the whitespace from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
         // Parse the ":" from the string.
         let (string, _) = tag(":")(string)?;
         // Parse the whitespace from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
-        // Parse the argument root from the string.
-        let (string, root) = Field::parse(string)?;
+        // Parse the argument hash from the string.
+        let (string, hash) = Field::parse(string)?;
 
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
@@ -98,10 +98,10 @@ impl<N: Network> DynamicFuture<N> {
         let program_network = program_id.network().to_field().expect("Failed to convert program network to field");
         let function_name_field = function_name.to_field().expect("Failed to convert function name to field");
 
-        Ok((string, Self::new_unchecked(program_name, program_network, function_name_field, root, None)))
+        Ok((string, Self::new_unchecked(program_name, program_network, function_name_field, hash, None)))
     }
 
-    /// Parses the raw field format: `{ program_name: 0field, program_network: 0field, function_name: 0field, root: 0field }`.
+    /// Parses the raw field format: `{ program_name: 0field, program_network: 0field, function_name: 0field, hash: 0field }`.
     fn parse_raw_fields(string: &str) -> ParserResult<Self> {
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
@@ -161,23 +161,23 @@ impl<N: Network> DynamicFuture<N> {
 
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
-        // Parse the "root" from the string.
-        let (string, _) = tag("root")(string)?;
+        // Parse the "hash" from the string.
+        let (string, _) = tag("hash")(string)?;
         // Parse the whitespace from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
         // Parse the ":" from the string.
         let (string, _) = tag(":")(string)?;
         // Parse the whitespace from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
-        // Parse the argument root from the string.
-        let (string, root) = Field::parse(string)?;
+        // Parse the argument hash from the string.
+        let (string, hash) = Field::parse(string)?;
 
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
         // Parse the "}" from the string.
         let (string, _) = tag("}")(string)?;
 
-        Ok((string, Self::new_unchecked(program_name, program_network, function_name, root, None)))
+        Ok((string, Self::new_unchecked(program_name, program_network, function_name, hash, None)))
     }
 }
 
@@ -219,18 +219,18 @@ impl<N: Network> Display for DynamicFuture<N> {
         // If all conversions succeed, display human-readable format.
         if let (Ok(name), Ok(network), Ok(function)) = (program_name_id, program_network_id, function_name_id) {
             if let Ok(program_id) = ProgramID::try_from((name, network)) {
-                return write!(f, "{{ program_id: {program_id}, function: {function}, root: {} }}", self.root());
+                return write!(f, "{{ program_id: {program_id}, function: {function}, hash: {} }}", self.hash());
             }
         }
 
         // Fall back to raw field format.
         write!(
             f,
-            "{{ program_name: {}, program_network: {}, function_name: {}, root: {} }}",
+            "{{ program_name: {}, program_network: {}, function_name: {}, hash: {} }}",
             self.program_name(),
             self.program_network(),
             self.function_name(),
-            self.root(),
+            self.hash(),
         )
     }
 }
@@ -267,13 +267,13 @@ mod tests {
         assert_eq!(expected.program_name(), candidate.program_name());
         assert_eq!(expected.program_network(), candidate.program_network());
         assert_eq!(expected.function_name(), candidate.function_name());
-        assert_eq!(expected.root(), candidate.root());
+        assert_eq!(expected.hash(), candidate.hash());
     }
 
     #[test]
     fn test_parse_human_readable() {
         // Parse a dynamic future from a human-readable string.
-        let string = "{ program_id: test.aleo, function: foo, root: 0field }";
+        let string = "{ program_id: test.aleo, function: foo, hash: 0field }";
         let (remainder, candidate) = DynamicFuture::<CurrentNetwork>::parse(string).unwrap();
         assert!(remainder.is_empty());
 
@@ -285,19 +285,19 @@ mod tests {
         assert_eq!(program_name.to_string(), "test");
         assert_eq!(program_network.to_string(), "aleo");
         assert_eq!(function_name.to_string(), "foo");
-        assert_eq!(*candidate.root(), Field::from_u64(0));
+        assert_eq!(*candidate.hash(), Field::from_u64(0));
     }
 
     #[test]
     fn test_parse_raw_fields() {
         // Parse a dynamic future from a raw field string.
-        let string = "{ program_name: 0field, program_network: 0field, function_name: 0field, root: 0field }";
+        let string = "{ program_name: 0field, program_network: 0field, function_name: 0field, hash: 0field }";
         let (remainder, candidate) = DynamicFuture::<CurrentNetwork>::parse(string).unwrap();
         assert!(remainder.is_empty());
         assert_eq!(*candidate.program_name(), Field::from_u64(0));
         assert_eq!(*candidate.program_network(), Field::from_u64(0));
         assert_eq!(*candidate.function_name(), Field::from_u64(0));
-        assert_eq!(*candidate.root(), Field::from_u64(0));
+        assert_eq!(*candidate.hash(), Field::from_u64(0));
     }
 
     #[test]
@@ -318,7 +318,7 @@ mod tests {
         assert!(display.contains("credits.aleo"));
         assert!(display.contains("function:"));
         assert!(display.contains("transfer"));
-        assert!(display.contains("root:"));
+        assert!(display.contains("hash:"));
     }
 
     #[test]
@@ -337,6 +337,6 @@ mod tests {
         assert!(display.contains("program_name:"));
         assert!(display.contains("program_network:"));
         assert!(display.contains("function_name:"));
-        assert!(display.contains("root:"));
+        assert!(display.contains("hash:"));
     }
 }

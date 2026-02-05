@@ -30,10 +30,10 @@ impl<N: Network> FromBytes for DynamicFuture<N> {
         let program_network = Field::read_le(&mut reader)?;
         // Read the function name.
         let function_name = Field::read_le(&mut reader)?;
-        // Read the argument root.
-        let root = Field::read_le(&mut reader)?;
+        // Read the argument hash.
+        let hash = Field::read_le(&mut reader)?;
         // Return the dynamic future.
-        Ok(Self::new_unchecked(program_name, program_network, function_name, root, None))
+        Ok(Self::new_unchecked(program_name, program_network, function_name, hash, None))
     }
 }
 
@@ -48,8 +48,8 @@ impl<N: Network> ToBytes for DynamicFuture<N> {
         self.program_network.write_le(&mut writer)?;
         // Write the function name.
         self.function_name.write_le(&mut writer)?;
-        // Write the argument root.
-        self.root.write_le(&mut writer)?;
+        // Write the argument hash.
+        self.hash.write_le(&mut writer)?;
 
         Ok(())
     }
@@ -85,7 +85,7 @@ mod tests {
         assert_eq!(expected.program_name(), candidate.program_name());
         assert_eq!(expected.program_network(), candidate.program_network());
         assert_eq!(expected.function_name(), candidate.function_name());
-        assert_eq!(expected.root(), candidate.root());
+        assert_eq!(expected.hash(), candidate.hash());
     }
 
     #[test]
@@ -108,7 +108,7 @@ mod tests {
         assert_eq!(expected.program_name(), candidate.program_name());
         assert_eq!(expected.program_network(), candidate.program_network());
         assert_eq!(expected.function_name(), candidate.function_name());
-        assert_eq!(expected.root(), candidate.root());
+        assert_eq!(expected.hash(), candidate.hash());
     }
 
     #[test]
@@ -135,6 +135,6 @@ mod tests {
         assert_eq!(expected.program_name(), candidate.program_name());
         assert_eq!(expected.program_network(), candidate.program_network());
         assert_eq!(expected.function_name(), candidate.function_name());
-        assert_eq!(expected.root(), candidate.root());
+        assert_eq!(expected.hash(), candidate.hash());
     }
 }

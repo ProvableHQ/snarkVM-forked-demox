@@ -198,7 +198,7 @@ mod tests {
                 assert_eq!(e.program_name(), c.program_name());
                 assert_eq!(e.program_network(), c.program_network());
                 assert_eq!(e.function_name(), c.function_name());
-                assert_eq!(e.root(), c.root());
+                assert_eq!(e.hash(), c.hash());
             }
             _ => panic!("Expected DynamicFuture argument"),
         }
