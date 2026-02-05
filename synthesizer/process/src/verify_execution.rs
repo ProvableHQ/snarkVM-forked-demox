@@ -450,6 +450,13 @@ impl<N: Network> Process<N> {
                 for (index, (caller_output, caller_destination_type)) in
                     caller_outputs.iter().zip(call_dynamic_instruction.destination_types().iter()).enumerate()
                 {
+                    ensure!(
+                        caller_output.is_type(caller_destination_type),
+                        "Caller output {index} in dynamic call to {} should be of type {}, found: {}",
+                        child_transition.function_name(),
+                        caller_destination_type,
+                        caller_output,
+                    );
                     match (caller_output, caller_destination_type) {
                         // In the case of a `DynamicFuture`, the verifier computes the hash of the dynamic future directly.
                         (Output::Future(_id, future), ValueType::DynamicFuture) => {
@@ -473,14 +480,6 @@ impl<N: Network> Process<N> {
                             caller_output_ids.push(*dynamic_future_id);
                         }
                         _ => {
-                            ensure!(
-                                caller_output.is_type(caller_destination_type),
-                                "Caller output {index} in dynamic call to {} should be of type {}, found: {}",
-                                child_transition.function_name(),
-                                caller_destination_type,
-                                caller_output,
-                            );
-
                             caller_output_ids.push(**caller_output.id());
                         }
                     }
