@@ -352,8 +352,6 @@ impl<N: Network> Process<N> {
             child_transition_ids.len()
         );
 
-        // TODO(@vicsn): in case we stick to encoding and using *all* of the caller_{inputs, outputs} instead of just the dynamic ones,
-        // we'll have to assert they equal the child's inputs/outputs.
         for (child_transition_id, (is_dynamic, parent_function_call)) in
             child_transition_ids.iter().zip(parent_function_calls)
         {

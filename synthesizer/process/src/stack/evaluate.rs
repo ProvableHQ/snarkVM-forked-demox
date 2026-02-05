@@ -46,7 +46,6 @@ impl<N: Network> Stack<N> {
         registers.set_caller(caller);
         // Set the transition view key.
         registers.set_tvk(tvk);
-        // TODO(@vicsn) should closures set the function name, for use in dynamic record translations?
         lap!(timer, "Initialize the registers");
 
         // Store the inputs.
