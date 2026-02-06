@@ -40,8 +40,8 @@ use console::{
 
 use indexmap::IndexMap;
 
-#[derive(Clone, PartialEq, Eq, Hash)]
 /// The type of the cast operation.
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub enum CastType<N: Network> {
     GroupXCoordinate,
     GroupYCoordinate,

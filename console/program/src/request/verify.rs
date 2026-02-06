@@ -108,18 +108,10 @@ impl<N: Network> Request<N> {
                         let record = match &input {
                             Value::Record(record) => record,
                             // Ensure the input is a record.
-                            Value::Plaintext(..) => {
-                                bail!("Expected a record input, found a plaintext input")
-                            }
-                            Value::Future(..) => {
-                                bail!("Expected a record input, found a future input")
-                            }
-                            Value::DynamicRecord(..) => {
-                                bail!("Expected a record input, found a dynamic record input")
-                            }
-                            Value::DynamicFuture(..) => {
-                                bail!("Expected a record input, found a dynamic future input")
-                            }
+                            Value::Plaintext(..) => bail!("Expected a record input, found a plaintext input"),
+                            Value::Future(..) => bail!("Expected a record input, found a future input"),
+                            Value::DynamicRecord(..) => bail!("Expected a record input, found a dynamic record input"),
+                            Value::DynamicFuture(..) => bail!("Expected a record input, found a dynamic future input"),
                         };
                         // Retrieve the record name.
                         let record_name = match input_type {
@@ -185,7 +177,6 @@ impl<N: Network> Request<N> {
         }
 
         // Verify the signature.
-
         self.signature.verify(&self.signer, &message)
     }
 }

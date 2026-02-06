@@ -211,7 +211,7 @@ impl<N: Network> Request<N> {
     /// - leaving all other inputs unchanged.
     ///
     /// and then computing their corresponding input IDs.
-    pub fn caller_input_ids(&self) -> Result<Vec<InputID<N>>> {
+    pub fn to_dynamic_input_ids(&self) -> Result<Vec<InputID<N>>> {
         // Compute the function ID.
         let function_id = compute_function_id(&self.network_id, &self.program_id, &self.function_name)?;
 
@@ -248,7 +248,7 @@ impl<N: Network> Request<N> {
     /// Returns the expected caller inputs for a dynamic call by:
     /// - converting all record inputs to dynamic record inputs
     /// - leaving all other inputs unchanged.
-    pub fn caller_inputs(&self) -> Result<Vec<Value<N>>> {
+    pub fn to_dynamic_inputs(&self) -> Result<Vec<Value<N>>> {
         self.inputs
             .iter()
             .map(|input| match input {

@@ -44,21 +44,19 @@ type CircuitLH<A> = circuit::Poseidon8<A>;
 type CircuitPH<A> = circuit::Poseidon2<A>;
 
 /// Retrieves the value of an entry in a dynamic record.
-// TODO (@reviewers). Do we want to consider alternate names? `dynamic.record.entry`, `access.dynamic.record`, etc.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct GetRecordDynamic<N: Network> {
     /// The register containing the dynamic record being read.
     // It is always of the form `Operand::Register(Register::Locator(u64))`.
     operands: [Operand<N>; 1],
-    /// The destination register to store the value of the entry.
-    // The variant is always Register::Locator
-    destination: Register<N>,
     /// The Identifier of the entry being read.
     entry_identifier: Identifier<N>,
     /// The type of the entry being read.
     plaintext_type: PlaintextType<N>,
+    /// The destination register to store the value of the entry.
+    // The variant is always Register::Locator
+    destination: Register<N>,
 }
-
 impl<N: Network> GetRecordDynamic<N> {
     /// Initializes a new `get.record.dynamic` instruction.
     #[inline]
@@ -101,10 +99,9 @@ impl<N: Network> GetRecordDynamic<N> {
     }
 
     /// Returns whether this instruction refers to an external struct.
-    /// Dynamic instructions never reference external structs.
     #[inline]
     pub fn contains_external_struct(&self) -> bool {
-        false
+        self.plaintext_type.contains_external_struct()
     }
 }
 
@@ -178,7 +175,7 @@ impl<N: Network> GetRecordDynamic<N> {
 
         // This verification is only a sanity check and not performed in-circuit. The type of the
         // in-circuit entry is encoded into the circuit structure (and therefore the proving and
-        // is encoded into the circuit structure (and therefore the proving and verifying keys)).
+        // verifying keys).
         {
             let plaintext = match &console_entry {
                 Entry::Constant(plaintext) => plaintext,

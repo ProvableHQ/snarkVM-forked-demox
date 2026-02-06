@@ -37,7 +37,14 @@ mod evaluate;
 mod execute;
 mod helpers;
 
-use crate::{CallMetrics, Process, Trace, trace::RecordTranslationData};
+use crate::{
+    CallMetrics,
+    Process,
+    Trace,
+    TranslationAssignment,
+    compute_console_dynamic_or_external_record_id,
+    trace::RecordTranslationData,
+};
 use console::{
     account::{Address, PrivateKey},
     network::prelude::*,
@@ -61,6 +68,7 @@ use console::{
         RegisterType,
         Request,
         Response,
+        ToFields,
         U8,
         U16,
         Value,
@@ -89,14 +97,14 @@ use indexmap::IndexMap;
 use locktick::parking_lot::RwLock;
 #[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
-use rand::{CryptoRng, Rng};
+use rand::{CryptoRng, Rng, SeedableRng, rngs::StdRng};
 use std::sync::{Arc, Weak};
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 pub type Assignments<N> = Arc<RwLock<Vec<(circuit::Assignment<<N as Environment>::Field>, CallMetrics<N>)>>>;
-/// A stack of translation buckets. Each function execution level pushes a new bucket,
+/// A stack of translations for the transitions in the execution. Each function execution level pushes a new bucket,
 /// and translations for dynamic calls made at that level are pushed to the top bucket.
 /// When the transition is inserted, the top bucket is popped and its translations are
 /// associated with that transition (the caller's transition ID).

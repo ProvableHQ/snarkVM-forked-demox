@@ -59,9 +59,9 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     /// The mapping of `(program ID, edition)` to `checksum`.
     /// This was introduced in `ConsensusVersion::V9`.
     type ChecksumMap: for<'a> Map<'a, (ProgramID<N>, u16), [U8<N>; 32]>;
-    /// The mapping of `(program ID, name, edition)` to `verifying key`.
+    /// The mapping of `(program ID, function or record name, edition)` to `verifying key`.
     type VerifyingKeyMap: for<'a> Map<'a, (ProgramID<N>, Identifier<N>, u16), VerifyingKey<N>>;
-    /// The mapping of `(program ID, name, edition)` to `certificate`.
+    /// The mapping of `(program ID, function or record name, edition)` to `certificate`.
     type CertificateMap: for<'a> Map<'a, (ProgramID<N>, Identifier<N>, u16), Certificate<N>>;
     /// The mapping of `(program ID, edition)` to a marker indicating the deployment is V3.
     /// The presence of an entry indicates V3; absence with no records indicates V2.
@@ -467,7 +467,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.program_map().get_confirmed(&(*program_id, edition)).map(|p| p.map(|p| p.into_owned()))
     }
 
-    /// Returns the latest verifying key for the given `program ID` and `resource name`.
+    /// Returns the latest verifying key for the given `program ID` and `function or record name`.
     fn get_latest_verifying_key(
         &self,
         program_id: &ProgramID<N>,
@@ -499,7 +499,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         Ok(Some(verifying_key.into_owned()))
     }
 
-    /// Returns the verifying key for the given `program ID`, `resource name` and `edition`.
+    /// Returns the verifying key for the given `program ID`, `function or record name` and `edition`.
     fn get_verifying_key_with_edition(
         &self,
         program_id: &ProgramID<N>,
@@ -527,7 +527,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         }
     }
 
-    /// Returns the latest certificate for the given `program ID` and `resource name`.
+    /// Returns the latest certificate for the given `program ID` and `function or record name`.
     fn get_latest_certificate(
         &self,
         program_id: &ProgramID<N>,
@@ -551,7 +551,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         Ok(Some(certificate.into_owned()))
     }
 
-    /// Returns the certificate for the given `program ID`, `resource name`, and `edition`.
+    /// Returns the certificate for the given `program ID`, `function or record name`, and `edition`.
     fn get_certificate_with_edition(
         &self,
         program_id: &ProgramID<N>,
@@ -568,7 +568,9 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         // Retrieve the certificate.
         match self.certificate_map().get_confirmed(&(*program_id, *resource_name, edition))? {
             Some(certificate) => Ok(Some(certificate.into_owned())),
-            None => bail!("Failed to get the certificate for '{program_id}/{resource_name}' (edition {edition})"),
+            None => {
+                bail!("Failed to get the certificate for '{program_id}/{resource_name}' (edition {edition})")
+            }
         }
     }
 
@@ -854,42 +856,42 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
         self.storage.get_program_for_edition(program_id, edition)
     }
 
-    /// Returns the latest verifying key for the given `(program ID, function name)`.
+    /// Returns the latest verifying key for the given `(program ID, function or record name)`.
     pub fn get_latest_verifying_key(
         &self,
         program_id: &ProgramID<N>,
-        function_name: &Identifier<N>,
+        resource_name: &Identifier<N>,
     ) -> Result<Option<VerifyingKey<N>>> {
-        self.storage.get_latest_verifying_key(program_id, function_name)
+        self.storage.get_latest_verifying_key(program_id, resource_name)
     }
 
-    /// Returns the verifying key for the given `(program ID, function name, edition)`.
+    /// Returns the verifying key for the given `(program ID, function or record name, edition)`.
     pub fn get_verifying_key_with_edition(
         &self,
         program_id: &ProgramID<N>,
-        function_name: &Identifier<N>,
+        resource_name: &Identifier<N>,
         edition: u16,
     ) -> Result<Option<VerifyingKey<N>>> {
-        self.storage.get_verifying_key_with_edition(program_id, function_name, edition)
+        self.storage.get_verifying_key_with_edition(program_id, resource_name, edition)
     }
 
-    /// Returns the latest certificate for the given `(program ID, function name)`.
+    /// Returns the latest certificate for the given `(program ID, function or record name)`.
     pub fn get_latest_certificate(
         &self,
         program_id: &ProgramID<N>,
-        function_name: &Identifier<N>,
+        resource_name: &Identifier<N>,
     ) -> Result<Option<Certificate<N>>> {
-        self.storage.get_latest_certificate(program_id, function_name)
+        self.storage.get_latest_certificate(program_id, resource_name)
     }
 
-    /// Returns the certificate for the given `(program ID, function name, edition)`.
+    /// Returns the certificate for the given `(program ID, function or record name, edition)`.
     pub fn get_certificate_with_edition(
         &self,
         program_id: &ProgramID<N>,
-        function_name: &Identifier<N>,
+        resource_name: &Identifier<N>,
         edition: u16,
     ) -> Result<Option<Certificate<N>>> {
-        self.storage.get_certificate_with_edition(program_id, function_name, edition)
+        self.storage.get_certificate_with_edition(program_id, resource_name, edition)
     }
 
     /// Returns the fee for the given `transaction ID`.

@@ -300,7 +300,7 @@ impl<N: Network> Stack<N> {
 
         lap!(timer, "Initialize the registers");
 
-        Self::log_circuit::<A>("Request", call_stack_type.clone());
+        Self::log_circuit::<A>("Request", &call_stack_type);
 
         // Retrieve the number of constraints for verifying the request in the circuit.
         let num_request_constraints = A::num_constraints();
@@ -448,7 +448,7 @@ impl<N: Network> Stack<N> {
             })
             .collect::<Vec<_>>();
 
-        Self::log_circuit::<A>(format!("Function '{}()'", function.name()), call_stack_type.clone());
+        Self::log_circuit::<A>(format!("Function '{}()'", function.name()), &call_stack_type);
 
         // Retrieve the number of constraints for executing the function in the circuit.
         let num_function_constraints = A::num_constraints().saturating_sub(num_request_constraints);
@@ -474,13 +474,13 @@ impl<N: Network> Stack<N> {
         );
         lap!(timer, "Construct the response");
 
-        Self::log_circuit::<A>("Response", call_stack_type.clone());
+        Self::log_circuit::<A>("Response", &call_stack_type);
 
         // Retrieve the number of constraints for verifying the response in the circuit.
         let num_response_constraints =
             A::num_constraints().saturating_sub(num_request_constraints).saturating_sub(num_function_constraints);
 
-        Self::log_circuit::<A>("Complete", call_stack_type.clone());
+        Self::log_circuit::<A>("Complete", &call_stack_type);
 
         // Eject the response.
         let response = response.eject_value();
@@ -563,7 +563,7 @@ impl<N: Network> Stack<N> {
 
             // Pop the translation bucket for this execution level.
             // This bucket contains translations from dynamic calls made at this level.
-            let translation_bucket =
+            let translations_for_transition =
                 translations.write().pop().ok_or_else(|| anyhow!("Translation stack underflow: no bucket to pop"))?;
 
             // Add the transition to the trace.
@@ -571,7 +571,7 @@ impl<N: Network> Stack<N> {
                 console_request.input_ids(),
                 &transition,
                 (proving_key, assignment),
-                &translation_bucket,
+                &translations_for_transition,
                 metrics,
             )?;
         }
@@ -601,7 +601,10 @@ impl<N: Network> Stack<N> {
 impl<N: Network> Stack<N> {
     /// Prints the current state of the circuit.
     #[allow(unused_variables)]
-    pub(crate) fn log_circuit<A: circuit::Aleo<Network = N>>(scope: impl std::fmt::Display, call_stack_type: String) {
+    pub(crate) fn log_circuit<A: circuit::Aleo<Network = N>>(
+        scope: impl std::fmt::Display,
+        call_stack_type: impl std::fmt::Display,
+    ) {
         #[cfg(debug_assertions)]
         {
             use snarkvm_utilities::dev_println;

@@ -113,7 +113,7 @@ impl<N: Network> DynamicFuture<N> {
         // Note that the argument bits themselves are type-prefixed.
         bits.extend(arguments.iter().flat_map(|a| a.to_bits_le()));
         // Then pad the bits to the next multiple of 8 to ensure that the hash is consistent regardless of the number of arguments.
-        bits.resize(bits.len().div_ceil(8), false);
+        bits.resize(bits.len().div_ceil(8) * 8, false);
 
         // Hash the bits of the arguments.
         // TODO: Do we need domain separation or the outer hash?

@@ -134,7 +134,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             // Evaluate the function.
             let response = substack.evaluate_function::<A, R>(call_stack, console_caller, root_tvk, rng)?;
             // Convert the callee's outputs to the caller's context.
-            response.caller_outputs()?
+            response.to_dynamic_outputs()?
         }
         // Else, throw an error.
         else {
@@ -288,7 +288,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         )?;
 
                         // Construct the request verification inputs.
-                        let request_verification_inputs = RequestVerificationInputs::from(&callee_request)?;
+                        let request_verification_inputs = CalleeDynamicRequest::from(&callee_request)?;
                         // Retrieve the call stack.
                         let mut call_stack = registers.call_stack();
                         // Push the callee's request onto the call stack.
@@ -302,7 +302,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             target.substack().execute_function::<A, R>(call_stack, console_caller, root_tvk, rng)?;
 
                         // Convert the callee's outputs to the caller's context.
-                        let caller_response_outputs = callee_response.caller_outputs()?;
+                        let caller_response_outputs = callee_response.to_dynamic_outputs()?;
 
                         // Return the request verification inputs and response.
                         (request_verification_inputs, caller_response_outputs)
@@ -318,7 +318,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         let address = Address::try_from(private_key)?;
 
                         // Construct the request verification inputs.
-                        let request_verification_inputs = RequestVerificationInputs {
+                        let request_verification_inputs = CalleeDynamicRequest {
                             network_id: U16::new(N::ID),
                             program_id,
                             function_name,
@@ -416,7 +416,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         )?;
 
                         // Construct the request verification inputs.
-                        let request_verification_inputs = RequestVerificationInputs::from(&callee_request)?;
+                        let request_verification_inputs = CalleeDynamicRequest::from(&callee_request)?;
 
                         // Retrieve the call stack.
                         let mut call_stack = registers.call_stack();
@@ -428,7 +428,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             target.substack().execute_function::<A, _>(call_stack, console_caller, root_tvk, rng)?;
 
                         // Convert the callee's outputs to the caller's context.
-                        let caller_response_outputs = callee_response.caller_outputs()?;
+                        let caller_response_outputs = callee_response.to_dynamic_outputs()?;
 
                         // Return the request verification inputs and response.
                         (request_verification_inputs, caller_response_outputs)
@@ -459,7 +459,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         let callee_request = authorization.peek_next()?;
 
                         // Construct the request verification inputs.
-                        let callee_request_verification_inputs = RequestVerificationInputs::from(&callee_request)?;
+                        let callee_request_verification_inputs = CalleeDynamicRequest::from(&callee_request)?;
 
                         // Evaluate the function, and load the outputs.
                         let console_callee_response = target.substack().evaluate_function::<A, R>(
@@ -501,7 +501,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                                 record_stack.synthesize_translation_key::<A, R>(record_name, rng)
                             };
 
-                        let caller_console_input_ids = callee_request.caller_input_ids()?;
+                        let caller_console_input_ids = callee_request.to_dynamic_input_ids()?;
                         let callee_console_input_ids = callee_request.input_ids();
                         let callee_console_function_id = compute_function_id(
                             &U16::<N>::new(N::ID),
@@ -534,8 +534,8 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         }
 
                         // Collect output record translations.
-                        let caller_console_outputs = callee_response.caller_outputs()?;
-                        let caller_console_output_ids = callee_response.caller_output_ids(
+                        let caller_console_outputs = callee_response.to_dynamic_outputs()?;
+                        let caller_console_output_ids = callee_response.to_dynamic_output_ids(
                             callee_request.network_id(),
                             callee_request.program_id(),
                             callee_request.function_name(),
@@ -593,7 +593,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         }
 
                         // Return the caller's request and response.
-                        (callee_request_verification_inputs, callee_response.caller_outputs()?)
+                        (callee_request_verification_inputs, callee_response.to_dynamic_outputs()?)
                     }
                 }
             };
@@ -717,7 +717,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
 }
 
 // Information needed to verify the callee's request in a dynamic call.
-struct RequestVerificationInputs<N: Network> {
+struct CalleeDynamicRequest<N: Network> {
     // The network ID.
     pub network_id: U16<N>,
     // The program ID.
@@ -736,7 +736,7 @@ struct RequestVerificationInputs<N: Network> {
     pub caller_input_ids: Vec<InputID<N>>,
 }
 
-impl<N: Network> RequestVerificationInputs<N> {
+impl<N: Network> CalleeDynamicRequest<N> {
     /// Constructs the request verification inputs from a request and caller input IDs.
     #[inline]
     pub fn from(request: &Request<N>) -> Result<Self> {
@@ -748,7 +748,7 @@ impl<N: Network> RequestVerificationInputs<N> {
             sk_tag: *request.sk_tag(),
             tvk: *request.tvk(),
             tcm: *request.tcm(),
-            caller_input_ids: request.caller_input_ids()?,
+            caller_input_ids: request.to_dynamic_input_ids()?,
         })
     }
 }
@@ -815,8 +815,8 @@ fn convert_caller_inputs_to_callee_inputs<N: Network>(
                 (Value::Future(_), _) => Err(anyhow!("A future cannot be an input to a dynamic call.")),
                 // Dynamic futures are not allowed as inputs to dynamic calls.
                 (Value::DynamicFuture(_), _) => Err(anyhow!("A dynamic future cannot be an input to a dynamic call.")),
-                // For all other types, pass through unchanged.
-                _ => Ok(input.clone()),
+                // For plaintext and record types, pass through unchanged.
+                (Value::Plaintext(_), _) | (Value::Record(_), _) | (Value::DynamicRecord(_), _) => Ok(input.clone()),
             }
         })
         .collect()
@@ -960,8 +960,8 @@ fn resolve_dynamic_target<'a, N: Network>(
     }
 }
 
-// Validates that all translation arrays have the same length.
-fn validate_translation_array_lengths(
+// Checks that all translation arrays have the same length.
+fn check_translation_array_lengths(
     context: &str,
     caller_values_len: usize,
     caller_ids_len: usize,
@@ -1012,7 +1012,7 @@ fn collect_input_translations<N: Network>(
     tvk: Field<N>,
 ) -> Result<Vec<RecordTranslationData<N>>> {
     // Validate that all arrays have the same length.
-    validate_translation_array_lengths(
+    check_translation_array_lengths(
         "Inputs",
         caller_values.len(),
         caller_ids.len(),
@@ -1083,7 +1083,11 @@ fn collect_input_translations<N: Network>(
                 });
             }
             // All other cases do not require translation.
-            _ => {}
+            (Value::Plaintext(..), ..)
+            | (Value::Record(..), ..)
+            | (Value::Future(..), ..)
+            | (Value::DynamicFuture(..), ..)
+            | (Value::DynamicRecord(..), ..) => {}
         }
     }
 
@@ -1106,7 +1110,7 @@ fn collect_output_translations<N: Network>(
     compute_record_view_key: impl Fn(usize, &console::program::Record<N, Plaintext<N>>) -> Result<Option<Field<N>>>,
 ) -> Result<Vec<RecordTranslationData<N>>> {
     // Validate that all arrays have the same length.
-    validate_translation_array_lengths(
+    check_translation_array_lengths(
         "Outputs",
         caller_values.len(),
         caller_ids.len(),
@@ -1180,7 +1184,11 @@ fn collect_output_translations<N: Network>(
                 });
             }
             // All other cases do not require translation.
-            _ => {}
+            (Value::Plaintext(..), ..)
+            | (Value::Record(..), ..)
+            | (Value::Future(..), ..)
+            | (Value::DynamicFuture(..), ..)
+            | (Value::DynamicRecord(..), ..) => {}
         }
     }
 

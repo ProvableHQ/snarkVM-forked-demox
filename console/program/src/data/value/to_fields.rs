@@ -19,6 +19,17 @@ impl<N: Network> ToFields for Value<N> {
     type Field = Field<N>;
 
     /// Returns the stack value as a list of fields.
+    ///
+    /// Each variant encodes its data as follows:
+    /// 1. The variant's `to_bits_le()` produces a unique bit sequence reflecting its internal structure.
+    /// 2. A terminator bit (`true`) is appended to mark the end of the data.
+    /// 3. The bits are packed into field elements in chunks of `Field::size_in_data_bits()`.
+    ///
+    /// The encoding is unambiguous because each variant's bit-level structure is distinct:
+    /// - `Plaintext` encodes literals and structs with type-tagged entries.
+    /// - `Record` includes the owner, gates, and typed record entries.
+    /// - `Future` includes the program ID, function name, and argument list.
+    /// - `DynamicRecord` and `DynamicFuture` use their own distinct structural encodings.
     #[inline]
     fn to_fields(&self) -> Result<Vec<Self::Field>> {
         // // TODO (howardwu): Implement `Literal::to_fields()` to replace this closure.

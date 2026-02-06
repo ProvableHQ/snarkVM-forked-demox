@@ -190,11 +190,11 @@ impl<N: Network> Future<N> {
                     Argument::Plaintext(plaintext) => match i == self.arguments.len() - 1 {
                         true => {
                             // Print the last argument without a comma.
-                            write!(f, "\n{:indent$}{plaintext}", "", indent = (depth + 2) * INDENT,)
+                            write!(f, "\n{:indent$}{plaintext}", "", indent = (depth + 2) * INDENT)
                         }
                         // Print the argument with a comma.
                         false => {
-                            write!(f, "\n{:indent$}{plaintext},", "", indent = (depth + 2) * INDENT,)
+                            write!(f, "\n{:indent$}{plaintext},", "", indent = (depth + 2) * INDENT)
                         }
                     },
                     Argument::Future(future) => {
@@ -214,10 +214,10 @@ impl<N: Network> Future<N> {
                         match i == self.arguments.len() - 1 {
                             true => {
                                 // Print the last argument without a comma.
-                                write!(f, "\n{:indent$}{dynamic_future}", "", indent = (depth + 2) * INDENT,)
+                                write!(f, "\n{:indent$}{dynamic_future}", "", indent = (depth + 2) * INDENT)
                             }
                             // Print the argument with a comma.
-                            false => write!(f, "\n{:indent$}{dynamic_future},", "", indent = (depth + 2) * INDENT,),
+                            false => write!(f, "\n{:indent$}{dynamic_future},", "", indent = (depth + 2) * INDENT),
                         }
                     }
                 }

@@ -2504,8 +2504,6 @@ finalize transfer_public_to_private:
         // Get the address of the wrapper program.
         let wrapper_program_id = ProgramID::from_str("credits_wrapper.aleo").unwrap();
 
-        println!("PRINT STRART");
-
         // Deploy the wrapper program.
         let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
 

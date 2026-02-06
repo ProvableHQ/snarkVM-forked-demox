@@ -158,16 +158,23 @@ impl<N: Network> Process<N> {
                 function.input_types().len() == transition.inputs().len(),
                 "The number of transition inputs is incorrect"
             );
-            for (function_input, transition_input) in function.input_types().iter().zip(transition.inputs().iter()) {
-                ensure!(transition_input.is_type(function_input), "The input variants do not match");
+            for (function_input, transition_input) in function.input_types().iter().zip_eq(transition.inputs().iter()) {
+                ensure!(
+                    transition_input.is_type(function_input),
+                    "Input variant mismatch: expected '{function_input}', found '{transition_input}'",
+                );
             }
             ensure!(
                 function.output_types().len() == transition.outputs().len(),
                 "The number of transition outputs is incorrect"
             );
-            for (function_output, transition_output) in function.output_types().iter().zip(transition.outputs().iter())
+            for (function_output, transition_output) in
+                function.output_types().iter().zip_eq(transition.outputs().iter())
             {
-                ensure!(transition_output.is_type(function_output), "The output variants do not match");
+                ensure!(
+                    transition_output.is_type(function_output),
+                    "Output variant mismatch: expected '{function_output}', found '{transition_output}'",
+                );
             }
 
             // Retrieve the parent program ID.
@@ -296,28 +303,39 @@ impl<N: Network> Process<N> {
             )
         })?;
 
+        // Retrieve the parent function from the transition map.
         let parent_function = transition_map.get(transition.id()).map(|(_, function)| function.clone());
 
+        // Collect the function call instructions from the parent function.
+        // Each entry is a tuple of (is_dynamic, instruction).
         let parent_function_calls = match parent_function {
             Some(function) => function
                 .instructions()
                 .iter()
                 .filter_map(|instruction| match instruction {
+                    // Dynamic calls are always included.
                     Instruction::CallDynamic(..) => Some((true, instruction.clone())),
+                    // Static calls are included only if they are function calls (not closure calls).
                     Instruction::Call(call) => {
                         match self
                             .get_stack(transition.program_id())
                             .and_then(|stack| call.is_function_call(stack.as_ref()))
                         {
                             Ok(true) => Some((false, instruction.clone())),
-                            Ok(false) | Err(_) => None,
+                            Ok(false) => None,
+                            Err(e) => {
+                                // This should not occur, since the program is well-formed.
+                                debug_assert!(false, "Failed to check if call is a function call: {e}");
+                                None
+                            }
                         }
                     }
+                    // All other instructions are not function calls.
                     _ => None,
                 })
                 .collect_vec(),
             // This should never occur, since call_graph.get(transition.id())
-            // was successful above before and call_graph is constructed
+            // was successful above and call_graph is constructed
             // together with transition_map, from which parent_function is
             // sourced.
             None => bail!("Function not found"),
@@ -332,8 +350,8 @@ impl<N: Network> Process<N> {
 
         // TODO(@vicsn): in case we stick to encoding and using *all* of the caller_{inputs, outputs} instead of just the dynamic ones,
         // we'll have to assert they equal the child's inputs/outputs.
-        for (child_transition_id, (is_dynamic, parent_function_call)) in
-            child_transition_ids.iter().zip(parent_function_calls)
+        for (child_transition_id, (is_dynamic, call_instruction)) in
+            child_transition_ids.iter().zip_eq(parent_function_calls)
         {
             // Note: This unwrap is safe, as we are processing transitions in post-order,
             // which implies that all child transition IDs have been added to `transition_map`.
@@ -342,7 +360,7 @@ impl<N: Network> Process<N> {
             let child_function_id =
                 compute_function_id(&U16::new(N::ID), child_transition.program_id(), child_transition.function_name())?;
 
-            let call_dynamic_instruction_opt = match parent_function_call {
+            let call_dynamic_instruction_opt = match call_instruction {
                 Instruction::CallDynamic(call_dynamic) => Some(call_dynamic),
                 _ => None,
             };
@@ -351,11 +369,7 @@ impl<N: Network> Process<N> {
             if is_dynamic {
                 verifier_inputs.extend(child_transition.program_id().to_fields()?.into_iter().map(|field| *field));
                 verifier_inputs.extend([*child_transition.function_name().to_field()?]);
-                verifier_inputs.extend([*compute_function_id(
-                    &U16::new(N::ID),
-                    child_transition.program_id(),
-                    child_transition.function_name(),
-                )?]);
+                verifier_inputs.extend([*child_function_id]);
             }
             // [Inputs] Extend the verifier inputs with the transition commitment of the external call.
             verifier_inputs.extend([**child_transition.tcm()]);
@@ -367,14 +381,25 @@ impl<N: Network> Process<N> {
                 // Note: call_dynamic_instruction_opt.unwrap() cannot panic by construction (is_dynamic is true).
                 let call_dynamic_instruction = call_dynamic_instruction_opt.clone().unwrap();
                 let operand_types = call_dynamic_instruction.operand_types();
-                for (i, (input, input_type)) in child_transition.inputs().iter().zip(operand_types.iter()).enumerate() {
+                ensure!(
+                    child_transition.inputs().len() == operand_types.len(),
+                    "The number of inputs ({}) and dynamic call operand types ({}) do not match",
+                    child_transition.inputs().len(),
+                    operand_types.len(),
+                );
+                for (i, (input, input_type)) in
+                    child_transition.inputs().iter().zip_eq(operand_types.iter()).enumerate()
+                {
+                    // Ensure the input is not a plain Record or ExternalRecord.
+                    // Dynamic calls must use the `*WithDynamicID` variants for record inputs.
+                    ensure!(
+                        !matches!(input, Input::Record(..) | Input::ExternalRecord(..)),
+                        "Input {i} in dynamic call to {} must not be a plain Record or ExternalRecord, found: {}",
+                        child_transition.function_name(),
+                        input,
+                    );
                     // Ensure the input type matches the caller's expectation.
                     // Use the caller's view of the input (e.g., RecordWithDynamicID -> DynamicRecord).
-                    // Note: This check also ensures that record/external-record inputs in dynamic calls
-                    // use the `*WithDynamicID` variants (RecordWithDynamicID, ExternalRecordWithDynamicID),
-                    // because: (1) CallDynamic requires `DynamicRecord` type for record operands,
-                    // (2) `to_caller_input()` converts `*WithDynamicID` -> `DynamicRecord`, and
-                    // (3) plain `Record`/`ExternalRecord` remain unchanged by `to_caller_input()`.
                     ensure!(
                         input.to_caller_input().is_type(input_type),
                         "Input {i} in dynamic call to {} should be of type {}, found: {}",
@@ -392,7 +417,7 @@ impl<N: Network> Process<N> {
                 verifier_inputs.extend(child_transition.inputs().iter().flat_map(|input| input.verifier_inputs()));
             }
 
-            // [Inputs] Extend the verifier inputs with the output IDs of the external call.
+            // [Outputs] Extend the verifier inputs with the output IDs of the external call.
             if is_dynamic {
                 // As above, this unwrap cannot panic by construction (is_dynamic is true).
                 let call_dynamic_instruction = call_dynamic_instruction_opt.unwrap();
@@ -402,7 +427,7 @@ impl<N: Network> Process<N> {
                     "The number of outputs and dynamic call destination types do not match"
                 );
                 for (index, (output, destination_type)) in
-                    child_transition.outputs().iter().zip(destination_types.iter()).enumerate()
+                    child_transition.outputs().iter().zip_eq(destination_types.iter()).enumerate()
                 {
                     match (output, destination_type) {
                         // In the case of a `DynamicFuture`, the verifier computes the hash of the dynamic future directly.
@@ -426,11 +451,17 @@ impl<N: Network> Process<N> {
                             };
                             verifier_inputs.push(*dynamic_future_id);
                         }
-                        _ => {
+                        (Output::Constant(..), _)
+                        | (Output::Public(..), _)
+                        | (Output::Private(..), _)
+                        | (Output::Record(..), _)
+                        | (Output::ExternalRecord(..), _)
+                        | (Output::Future(..), _)
+                        | (Output::DynamicRecord(..), _)
+                        | (Output::RecordWithDynamicID(..), _)
+                        | (Output::ExternalRecordWithDynamicID(..), _) => {
                             // Ensure the output type matches the caller's expectation.
                             // Use the caller's view of the output (e.g., RecordWithDynamicID -> DynamicRecord).
-                            // Note: This check also ensures that record/external-record outputs in dynamic calls
-                            // use the `*WithDynamicID` variants, by the same reasoning as for inputs above.
                             ensure!(
                                 output.to_caller_output().is_type(destination_type),
                                 "Output {index} in dynamic call to {} should be of type {}, found: {}",

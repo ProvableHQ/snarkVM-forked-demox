@@ -66,11 +66,11 @@ impl<N: Network> Process<N> {
         // We only need to check that the variant type matches because we already check the hashes in
         // the `Input::verify` and `Output::verify` functions.
         ensure!(function.input_types().len() == fee.inputs().len(), "The number of fee inputs is incorrect");
-        for (function_input, fee_input) in function.input_types().iter().zip(fee.inputs().iter()) {
+        for (function_input, fee_input) in function.input_types().iter().zip_eq(fee.inputs().iter()) {
             ensure!(fee_input.is_type(function_input), "The fee input variants do not match");
         }
         ensure!(function.output_types().len() == fee.outputs().len(), "The number of fee outputs is incorrect");
-        for (function_output, fee_output) in function.output_types().iter().zip(fee.outputs().iter()) {
+        for (function_output, fee_output) in function.output_types().iter().zip_eq(fee.outputs().iter()) {
             ensure!(fee_output.is_type(function_output), "The fee output variants do not match");
         }
 

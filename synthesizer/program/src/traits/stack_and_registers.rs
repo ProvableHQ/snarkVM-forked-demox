@@ -138,6 +138,7 @@ pub trait StackTrait<N: Network> {
     fn get_function_ref(&self, function_name: &Identifier<N>) -> Result<&Function<N>>;
 
     /// Returns the minimum number of calls for the given function name.
+    /// Note: In a static call graph (no dynamic dispatch), the minimum is the actual count.
     fn get_minimum_number_of_calls(&self, function_name: &Identifier<N>) -> Result<usize>;
 
     /// Returns whether or not a function has a dynamic call in its execution.

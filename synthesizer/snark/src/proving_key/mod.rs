@@ -105,9 +105,3 @@ impl<N: Network> Deref for ProvingKey<N> {
         &self.proving_key
     }
 }
-
-impl<N: Network> PartialEq for ProvingKey<N> {
-    fn eq(&self, other: &Self) -> bool {
-        self.proving_key == other.proving_key
-    }
-}

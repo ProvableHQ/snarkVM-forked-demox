@@ -13,12 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{TranslationAssignment, compute_console_dynamic_or_external_record_id};
-
 use super::*;
-
-use console::program::{DynamicRecord, ToFields};
-use rand::{SeedableRng, rngs::StdRng};
 
 impl<N: Network> Stack<N> {
     /// Deploys the given program ID, if it does not exist.
@@ -133,8 +128,6 @@ impl<N: Network> Stack<N> {
         // Check that the number of combined variables and constraints does not exceed the deployment limit.
         ensure!(deployment.num_combined_variables()? <= N::MAX_DEPLOYMENT_VARIABLES);
         ensure!(deployment.num_combined_constraints()? <= N::MAX_DEPLOYMENT_CONSTRAINTS);
-        ensure!(deployment.num_combined_translation_variables()? <= N::MAX_DEPLOYMENT_VARIABLES);
-        ensure!(deployment.num_combined_translation_constraints()? <= N::MAX_DEPLOYMENT_CONSTRAINTS);
 
         // Construct the call stacks and assignments used to verify the certificates.
         let mut call_stacks = Vec::with_capacity(deployment.verifying_keys().len());

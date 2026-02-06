@@ -46,7 +46,12 @@ impl<N: Network> TransitionLeaf<N> {
     }
 
     /// Initializes a new instance of `TransitionLeaf` for inputs and outputs of a dynamic call to a transition.
+    /// The variant must be 3 (Record) or 4 (ExternalRecord).
     pub const fn new_dynamic_with_version(index: u8, variant: u8, id: Field<N>) -> Self {
+        assert!(
+            variant == 3 || variant == 4,
+            "Dynamic transition leaf variant must be 3 (Record) or 4 (ExternalRecord)"
+        );
         Self { version: TRANSITION_LEAF_VERSION_DYNAMIC, index, variant, id }
     }
 

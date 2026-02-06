@@ -57,14 +57,11 @@ pub struct Deployment<N: Network> {
 impl<N: Network> PartialEq for Deployment<N> {
     fn eq(&self, other: &Self) -> bool {
         self.edition == other.edition
-            && self.program == other.program
-            && self.verifying_keys == other.verifying_keys
-            // Note. These fields were added after the original implementation.
-            // This is safe since the deployment ID is computed off a hash of all fields.
-            // All uses of `PartialEq` and `Eq` of `Deployment` use the deployment ID.
             && self.program_checksum == other.program_checksum
             && self.program_owner == other.program_owner
+            && self.verifying_keys == other.verifying_keys
             && self.translation_verifying_keys == other.translation_verifying_keys
+            && self.program == other.program
     }
 }
 
