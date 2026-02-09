@@ -410,17 +410,6 @@ impl<N: Network> Process<N> {
                 for (index, (output, destination_type)) in
                     child_transition.outputs().iter().zip(destination_types.iter()).enumerate()
                 {
-                    // Ensure the output type matches the caller's expectation.
-                    // Use the caller's view of the output (e.g., RecordWithDynamicID -> DynamicRecord).
-                    // Note: This check also ensures that record/external-record outputs in dynamic calls
-                    // use the `*WithDynamicID` variants, by the same reasoning as for inputs above.
-                    ensure!(
-                        output.to_caller_output().is_type(destination_type),
-                        "Output {index} in dynamic call to {} should be of type {}, found: {}",
-                        child_transition.function_name(),
-                        destination_type,
-                        output,
-                    );
                     match (output, destination_type) {
                         // In the case of a `DynamicFuture`, the verifier computes the hash of the dynamic future directly.
                         (Output::Future(_id, future), ValueType::DynamicFuture) => {
@@ -444,6 +433,17 @@ impl<N: Network> Process<N> {
                             verifier_inputs.push(*dynamic_future_id);
                         }
                         _ => {
+                            // Ensure the output type matches the caller's expectation.
+                            // Use the caller's view of the output (e.g., RecordWithDynamicID -> DynamicRecord).
+                            // Note: This check also ensures that record/external-record outputs in dynamic calls
+                            // use the `*WithDynamicID` variants, by the same reasoning as for inputs above.
+                            ensure!(
+                                output.to_caller_output().is_type(destination_type),
+                                "Output {index} in dynamic call to {} should be of type {}, found: {}",
+                                child_transition.function_name(),
+                                destination_type,
+                                output,
+                            );
                             // Use the dynamic ID if present, otherwise use the output id.
                             match output.dynamic_id() {
                                 Some(dynamic_id) => verifier_inputs.push(**dynamic_id),
