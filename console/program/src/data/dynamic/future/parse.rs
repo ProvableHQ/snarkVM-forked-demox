@@ -149,3 +149,71 @@ impl<N: Network> DynamicFuture<N> {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Argument, Future, Plaintext};
+    use snarkvm_console_network::MainnetV0;
+
+    use core::str::FromStr;
+
+    type CurrentNetwork = MainnetV0;
+
+    #[test]
+    fn test_parse_display_roundtrip() {
+        // Create a static future.
+        let future = Future::<CurrentNetwork>::new(
+            crate::ProgramID::from_str("test.aleo").unwrap(),
+            crate::Identifier::from_str("foo").unwrap(),
+            vec![Argument::Plaintext(Plaintext::from_str("100u64").unwrap())],
+        );
+
+        // Convert to dynamic future.
+        let expected = DynamicFuture::from_future(&future).unwrap();
+
+        // Convert to string.
+        let expected_string = expected.to_string();
+
+        // Parse the string.
+        let candidate = DynamicFuture::<CurrentNetwork>::from_str(&expected_string).unwrap();
+
+        // Verify the fields match.
+        assert_eq!(expected.program_name(), candidate.program_name());
+        assert_eq!(expected.program_network(), candidate.program_network());
+        assert_eq!(expected.function_name(), candidate.function_name());
+        assert_eq!(expected.root(), candidate.root());
+    }
+
+    #[test]
+    fn test_parse() {
+        // Parse a dynamic future from a string.
+        let string = "{ _program_name: 0field, _program_network: 0field, _function_name: 0field, _root: 0field }";
+        let (remainder, candidate) = DynamicFuture::<CurrentNetwork>::parse(string).unwrap();
+        assert!(remainder.is_empty());
+        assert_eq!(*candidate.program_name(), Field::from_u64(0));
+        assert_eq!(*candidate.program_network(), Field::from_u64(0));
+        assert_eq!(*candidate.function_name(), Field::from_u64(0));
+        assert_eq!(*candidate.root(), Field::from_u64(0));
+    }
+
+    #[test]
+    fn test_display() {
+        // Create a static future.
+        let future = Future::<CurrentNetwork>::new(
+            crate::ProgramID::from_str("credits.aleo").unwrap(),
+            crate::Identifier::from_str("transfer").unwrap(),
+            vec![],
+        );
+
+        // Convert to dynamic future.
+        let dynamic = DynamicFuture::from_future(&future).unwrap();
+
+        // Check that the display contains expected fields.
+        let display = dynamic.to_string();
+        assert!(display.contains("_program_name:"));
+        assert!(display.contains("_program_network:"));
+        assert!(display.contains("_function_name:"));
+        assert!(display.contains("_root:"));
+    }
+}

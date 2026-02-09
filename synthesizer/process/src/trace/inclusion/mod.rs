@@ -32,7 +32,7 @@ use console::{
     program::{InputID, StatePath, TRANSACTION_DEPTH, TransactionLeaf, TransitionLeaf, TransitionPath},
     types::{Field, Group},
 };
-use snarkvm_ledger_block::{Input, Output, Transaction, Transition};
+use snarkvm_ledger_block::{Transaction, Transition};
 use snarkvm_ledger_query::QueryTrait;
 
 use std::collections::{HashMap, VecDeque};
@@ -88,7 +88,7 @@ impl<N: Network> Inclusion<N> {
         let transition_index = u16::try_from(self.input_tasks.len())?;
 
         // Initialize the input tasks.
-        let input_tasks = self.input_tasks.entry(transition.inclusion_id()).or_default();
+        let input_tasks = self.input_tasks.entry(*transition.id()).or_default();
 
         // Process the inputs.
         for input_id in input_ids {
@@ -106,7 +106,7 @@ impl<N: Network> Inclusion<N> {
 
         if !transition.outputs().is_empty() {
             // Compute the transaction leaf.
-            let transaction_leaf = TransactionLeaf::new_execution(transition_index, *transition.inclusion_id());
+            let transaction_leaf = TransactionLeaf::new_execution(transition_index, **transition.id());
             // Compute the transition root.
             let transition_root = transition.to_root()?;
             // Fetch the tcm.
@@ -115,7 +115,7 @@ impl<N: Network> Inclusion<N> {
             // Process the outputs.
             for (index, output) in transition.outputs().iter().enumerate() {
                 // Filter the outputs for records.
-                if let Output::Record(commitment, ..) = output {
+                if let Some(commitment) = output.commitment() {
                     // Compute the output index.
                     let output_index = u8::try_from(input_ids.len().saturating_add(index))?;
                     // Compute the transition leaf.
@@ -167,7 +167,7 @@ impl<N: Network> Inclusion<N> {
             // Iterate through the inputs.
             for input in transition.inputs() {
                 // Filter the inputs for records.
-                if let Input::Record(serial_number, _) = input {
+                if let Some(serial_number) = input.serial_number() {
                     // Add the public inputs to the batch verifier inputs.
                     let mut verifier_inputs =
                         vec![N::Field::one(), **global_state_root, *local_state_root, **serial_number];
@@ -188,7 +188,7 @@ impl<N: Network> Inclusion<N> {
             // If this is not the last transition, append the transaction leaf to the transaction tree.
             if transition_index + 1 != num_transitions {
                 // Construct the transaction leaf.
-                let leaf = TransactionLeaf::new_execution(u16::try_from(transition_index)?, *transition.inclusion_id());
+                let leaf = TransactionLeaf::new_execution(u16::try_from(transition_index)?, **transition.id());
                 // Insert the leaf into the transaction tree.
                 transaction_tree.append(&[leaf.to_bits_le()])?;
             }

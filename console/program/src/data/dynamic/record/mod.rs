@@ -19,7 +19,6 @@ mod find;
 mod parse;
 mod to_bits;
 mod to_fields;
-mod to_id;
 
 use crate::{
     Access,
@@ -38,7 +37,6 @@ use crate::{
     ToField,
     ToFields,
     U8,
-    U16,
     Value,
 };
 

@@ -1083,7 +1083,6 @@ function compute:
             *transition.tpk(),
             *transition.tcm(),
             *transition.scm(),
-            transition.caller_metadata().cloned(),
         )
         .unwrap();
 

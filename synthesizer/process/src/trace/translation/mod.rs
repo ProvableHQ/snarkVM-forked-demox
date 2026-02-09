@@ -14,7 +14,7 @@
 // limitations under the License.
 
 mod assignment;
-pub use assignment::*;
+pub use assignment::{TranslationAssignment, compute_console_nonlocal_record_id};
 
 mod prepare;
 
@@ -35,8 +35,6 @@ use snarkvm_synthesizer_program::Function;
 use snarkvm_synthesizer_snark::VerifyingKey;
 
 use std::collections::HashMap;
-
-use itertools::izip;
 
 /// Data collected during execution to prove record translation in dynamic calls.
 /// It largely mirrors the `TranslationAssignment` struct in this module.
@@ -161,252 +159,132 @@ impl<N: Network> Translation<N> {
             let callee_function_id =
                 compute_function_id(&U16::<N>::new(N::ID), transition.program_id(), transition.function_name())?;
 
-            // Prepare the input translation tasks
-            let num_inputs = if let Some(caller_inputs) = transition.caller_inputs() {
-                ensure!(
-                    caller_inputs.len() == transition.inputs().len(),
-                    "The number of caller inputs does not match the number of inputs in transition {}: {} vs. {}",
-                    transition.id(),
-                    caller_inputs.len(),
-                    transition.inputs().len(),
-                );
+            let callee_input_types = callee_function_core.input_types();
+            let num_inputs = transition.inputs().len();
 
-                let callee_input_types = callee_function_core.input_types();
+            // Prepare the input translation tasks.
+            for (input_output_index, (input, callee_input_type)) in
+                transition.inputs().iter().zip(callee_input_types.iter()).enumerate()
+            {
+                // Only process inputs that have a dynamic ID.
+                let Some(dynamic_id) = input.dynamic_id() else { continue };
 
-                ensure!(
-                    callee_input_types.len() == transition.inputs().len(),
-                    "The number of input types does not match the number of inputs in transition {}: {} vs. {}",
-                    transition.id(),
-                    callee_input_types.len(),
-                    transition.inputs().len(),
-                );
+                // Construct the translation count as a field element.
+                let field_translation_index = *Field::<N>::from_u128(translation_index as u128);
+                // Construct the input output index as a field element.
+                let field_input_output_index = *Field::<N>::from_u128(input_output_index as u128);
 
-                for (input_output_index, (caller_input, callee_input, callee_input_type)) in
-                    izip!(caller_inputs.iter(), transition.inputs().iter(), callee_input_types.iter()).enumerate()
-                {
-                    // Construct the translation count as a field element.
-                    let field_translation_index = *Field::<N>::from_u128(translation_index as u128);
-                    // Construct the input output index as a field element.
-                    let field_input_output_index = *Field::<N>::from_u128(input_output_index as u128);
+                let field_is_input = N::Field::one();
+                let field_function_id = *callee_function_id;
+                let field_id_static = **input.id();
+                let field_id_dynamic = **dynamic_id;
 
-                    match (caller_input, callee_input, callee_input_type) {
-                        (
-                            Input::DynamicRecord(id_dynamic),
-                            Input::Record(serial_number, _),
-                            ValueType::Record(record_name),
-                        ) => {
-                            // true
-                            let field_is_input = N::Field::one();
-                            // false
-                            let field_static_is_external = N::Field::zero();
-
-                            let field_function_id = *callee_function_id;
-
-                            let field_id_static = **serial_number;
-                            let field_id_dynamic = **id_dynamic;
-
-                            let verifier_inputs = vec![
-                                N::Field::one(),
-                                field_is_input,
-                                field_static_is_external,
-                                field_function_id,
-                                field_translation_index,
-                                field_input_output_index,
-                                field_id_static,
-                                field_id_dynamic,
-                            ];
-
-                            batch_verifier_inputs
-                                .entry((*transition.program_id(), *record_name))
-                                .or_default()
-                                .push(verifier_inputs);
-
-                            translation_index += 1;
-                        }
-                        (
-                            Input::DynamicRecord(id_dynamic),
-                            Input::ExternalRecord(id_static),
-                            ValueType::ExternalRecord(record_locator),
-                        ) => {
-                            // true
-                            let field_is_input = N::Field::one();
-                            // true
-                            let field_static_is_external = N::Field::one();
-
-                            let field_function_id = *callee_function_id;
-
-                            let field_id_static = **id_static;
-                            let field_id_dynamic = **id_dynamic;
-
-                            let verifier_inputs = vec![
-                                N::Field::one(),
-                                field_is_input,
-                                field_static_is_external,
-                                field_function_id,
-                                field_translation_index,
-                                field_input_output_index,
-                                field_id_static,
-                                field_id_dynamic,
-                            ];
-
-                            let program_id = record_locator.program_id();
-                            let record_name = record_locator.resource();
-
-                            batch_verifier_inputs.entry((*program_id, *record_name)).or_default().push(verifier_inputs);
-
-                            translation_index += 1;
-                        }
-                        (Input::Record(..), Input::DynamicRecord(..), ValueType::DynamicRecord) => {
-                            bail!("Translation of (non-external) input records to dynamic records is not supported");
-                        }
-                        (Input::ExternalRecord(..), Input::DynamicRecord(..), ValueType::DynamicRecord) => {
-                            bail!("Translation of (external) input records to dynamic records is not supported");
-                        }
-                        (Input::ExternalRecord(..), Input::Record(..), ValueType::Record(..))
-                        | (Input::Record(..), Input::ExternalRecord(..), ValueType::ExternalRecord(..)) => {
-                            // This is an admissible type combination which requires no translation
-                        }
-                        _ => {
-                            ensure!(
-                                Input::variants_match(caller_input, callee_input)
-                                    && callee_input.is_type(callee_input_type),
-                                "Mismatch between caller input {}, (callee) input {} and (callee) input type {} in transition {} (index: {})",
-                                caller_input,
-                                callee_input,
-                                callee_input_type,
-                                transition.id(),
-                                input_output_index
-                            )
-                        }
+                match (input, callee_input_type) {
+                    (Input::RecordWithDynamicID(..), ValueType::Record(record_name)) => {
+                        let field_static_is_external = N::Field::zero();
+                        let verifier_inputs = vec![
+                            N::Field::one(),
+                            field_is_input,
+                            field_static_is_external,
+                            field_function_id,
+                            field_translation_index,
+                            field_input_output_index,
+                            field_id_static,
+                            field_id_dynamic,
+                        ];
+                        batch_verifier_inputs
+                            .entry((*transition.program_id(), *record_name))
+                            .or_default()
+                            .push(verifier_inputs);
+                        translation_index += 1;
                     }
+                    (Input::ExternalRecordWithDynamicID(..), ValueType::ExternalRecord(record_locator)) => {
+                        let field_static_is_external = N::Field::one();
+                        let verifier_inputs = vec![
+                            N::Field::one(),
+                            field_is_input,
+                            field_static_is_external,
+                            field_function_id,
+                            field_translation_index,
+                            field_input_output_index,
+                            field_id_static,
+                            field_id_dynamic,
+                        ];
+                        batch_verifier_inputs
+                            .entry((*record_locator.program_id(), *record_locator.resource()))
+                            .or_default()
+                            .push(verifier_inputs);
+                        translation_index += 1;
+                    }
+                    _ => bail!(
+                        "Unexpected input variant with dynamic_id in transition {} (index: {})",
+                        transition.id(),
+                        input_output_index
+                    ),
                 }
+            }
 
-                caller_inputs.len()
-            } else {
-                0
-            };
+            let callee_output_types = callee_function_core.output_types();
 
             // Prepare the output translation tasks.
-            if let Some(caller_outputs) = transition.caller_outputs() {
-                ensure!(
-                    caller_outputs.len() == transition.outputs().len(),
-                    "The number of caller outputs does not match the number of outputs in transition {}: {} vs. {}",
-                    transition.id(),
-                    caller_outputs.len(),
-                    transition.outputs().len(),
-                );
+            for (input_output_index, (output, callee_output_type)) in
+                transition.outputs().iter().zip(callee_output_types.iter()).enumerate()
+            {
+                // Only process outputs that have a dynamic ID.
+                let Some(dynamic_id) = output.dynamic_id() else { continue };
 
-                let callee_output_types = callee_function_core.output_types();
+                // Construct the translation count as a field element.
+                let field_translation_index = *Field::<N>::from_u128(translation_index as u128);
+                // Construct the input output index as a field element.
+                let field_input_output_index = *Field::<N>::from_u128((num_inputs + input_output_index) as u128);
 
-                ensure!(
-                    callee_output_types.len() == transition.outputs().len(),
-                    "The number of outputs types does not match the number of outputs in transition {}: {} vs. {}",
-                    transition.id(),
-                    callee_output_types.len(),
-                    transition.outputs().len(),
-                );
+                let field_is_input = N::Field::zero();
+                let field_function_id = *callee_function_id;
+                let field_id_static = **output.id();
+                let field_id_dynamic = **dynamic_id;
 
-                for (input_output_index, (caller_output, callee_output, callee_output_type)) in
-                    izip!(caller_outputs.iter(), transition.outputs().iter(), callee_output_types.iter()).enumerate()
-                {
-                    // Construct the translation count as a field element.
-                    let field_translation_index = *Field::<N>::from_u128(translation_index as u128);
-                    // Construct the input output index as a field element.
-                    let field_input_output_index = *Field::<N>::from_u128((num_inputs + input_output_index) as u128);
-
-                    match (caller_output, callee_output, callee_output_type) {
-                        (
-                            Output::DynamicRecord(id_dynamic),
-                            Output::Record(commitment, _, _, _),
-                            ValueType::Record(record_name),
-                        ) => {
-                            // false
-                            let field_is_input = N::Field::zero();
-                            // false
-                            let field_static_is_external = N::Field::zero();
-
-                            let field_function_id = *callee_function_id;
-
-                            let field_id_static = **commitment;
-                            let field_id_dynamic = **id_dynamic;
-
-                            let verifier_inputs = vec![
-                                // Initial constant 1
-                                N::Field::one(),
-                                field_is_input,
-                                field_static_is_external,
-                                field_function_id,
-                                field_translation_index,
-                                field_input_output_index,
-                                field_id_static,
-                                field_id_dynamic,
-                            ];
-
-                            batch_verifier_inputs
-                                .entry((*transition.program_id(), *record_name))
-                                .or_default()
-                                .push(verifier_inputs);
-
-                            translation_index += 1;
-                        }
-                        (
-                            Output::DynamicRecord(id_dynamic),
-                            Output::ExternalRecord(id_static),
-                            ValueType::ExternalRecord(record_locator),
-                        ) => {
-                            // false
-                            let field_is_input = N::Field::zero();
-                            // true
-                            let field_static_is_external = N::Field::one();
-
-                            let field_function_id = *callee_function_id;
-
-                            let field_id_static = **id_static;
-                            let field_id_dynamic = **id_dynamic;
-
-                            let verifier_inputs = vec![
-                                // Initial constant 1
-                                N::Field::one(),
-                                field_is_input,
-                                field_static_is_external,
-                                field_function_id,
-                                field_translation_index,
-                                field_input_output_index,
-                                field_id_static,
-                                field_id_dynamic,
-                            ];
-
-                            let program_id = record_locator.program_id();
-                            let record_name = record_locator.resource();
-
-                            batch_verifier_inputs.entry((*program_id, *record_name)).or_default().push(verifier_inputs);
-
-                            translation_index += 1;
-                        }
-                        (Output::Record(..), Output::DynamicRecord(..), ValueType::DynamicRecord) => {
-                            bail!("Translation of output dynamic records to (non-external) records is not supported");
-                        }
-                        (Output::ExternalRecord(..), Output::DynamicRecord(..), ValueType::DynamicRecord) => {
-                            bail!("Translation of output dynamic records to (external) records is not supported");
-                        }
-                        (Output::ExternalRecord(..), Output::Record(..), ValueType::Record(..))
-                        | (Output::Record(..), Output::ExternalRecord(..), ValueType::ExternalRecord(..)) => {
-                            // This is an admissible type combination which requires no translation
-                        }
-                        // Note that dynamic futures are never output directly from a callee function nor are they constructed when creating the caller outputs.
-                        _ => {
-                            ensure!(
-                                Output::variants_match(caller_output, callee_output)
-                                    && callee_output.is_type(callee_output_type),
-                                "Mismatch between caller output {}, (callee) output {} and (callee) output type {} in transition {} (index: {})",
-                                caller_output,
-                                callee_output,
-                                callee_output_type,
-                                transition.id(),
-                                input_output_index
-                            )
-                        }
+                match (output, callee_output_type) {
+                    (Output::RecordWithDynamicID(..), ValueType::Record(record_name)) => {
+                        let field_static_is_external = N::Field::zero();
+                        let verifier_inputs = vec![
+                            N::Field::one(),
+                            field_is_input,
+                            field_static_is_external,
+                            field_function_id,
+                            field_translation_index,
+                            field_input_output_index,
+                            field_id_static,
+                            field_id_dynamic,
+                        ];
+                        batch_verifier_inputs
+                            .entry((*transition.program_id(), *record_name))
+                            .or_default()
+                            .push(verifier_inputs);
+                        translation_index += 1;
                     }
+                    (Output::ExternalRecordWithDynamicID(..), ValueType::ExternalRecord(record_locator)) => {
+                        let field_static_is_external = N::Field::one();
+                        let verifier_inputs = vec![
+                            N::Field::one(),
+                            field_is_input,
+                            field_static_is_external,
+                            field_function_id,
+                            field_translation_index,
+                            field_input_output_index,
+                            field_id_static,
+                            field_id_dynamic,
+                        ];
+                        batch_verifier_inputs
+                            .entry((*record_locator.program_id(), *record_locator.resource()))
+                            .or_default()
+                            .push(verifier_inputs);
+                        translation_index += 1;
+                    }
+                    _ => bail!(
+                        "Unexpected output variant with dynamic_id in transition {} (index: {})",
+                        transition.id(),
+                        input_output_index
+                    ),
                 }
             }
         }

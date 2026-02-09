@@ -87,9 +87,9 @@ impl<N: Network> Transaction<N> {
     pub fn from_execution(execution: Execution<N>, fee: Option<Fee<N>>) -> Result<Self> {
         // Ensure the transaction is not empty.
         ensure!(!execution.is_empty(), "Attempted to create an empty execution transaction");
-        // Compute the execution ID (uses transition.id() with caller_metadata for fee binding).
+        // Compute the execution ID.
         let execution_id = execution.to_execution_id()?;
-        // Compute the execution tree (uses inclusion_id() for inclusion proof compatibility).
+        // Compute the execution tree.
         let execution_tree = Self::execution_tree(&execution)?;
         // Compute the transaction ID.
         let transaction_id = *Self::transaction_tree(execution_tree, fee.as_ref())?.root();
@@ -574,8 +574,6 @@ mod tests {
                 Transaction::Execute(transaction_id, execution_id, ref execution, _) => {
                     let expected_transaction_id = *expected.clone().to_tree()?.root();
                     assert_eq!(expected_transaction_id, *transaction_id);
-                    // Note: execution_id uses transition.id() (with caller_metadata) for fee binding,
-                    // while execution_tree uses inclusion_id() for inclusion proofs.
                     let expected_execution_id = execution.to_execution_id()?;
                     assert_eq!(expected_execution_id, execution_id);
                 }

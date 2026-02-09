@@ -13,8 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use snarkvm_utilities::dev_println;
-
 use super::*;
 
 impl<A: Aleo> Request<A> {
@@ -111,16 +109,18 @@ impl<A: Aleo> Request<A> {
             self.signature.challenge().is_equal(&candidate_challenge) & self.signer.is_equal(&candidate_address)
         };
 
-        dev_println!(
-            "In circuit::Request::verify: signature_checks: {signature_checks}, input_checks: {input_checks}, tpk_checks: {tpk_checks}"
-        );
-
         // Verify the signature, inputs, and `tpk` are valid.
         signature_checks & input_checks & tpk_checks
     }
 
     /// Returns `true` if the inputs match their input IDs.
     /// Note: This method does **not** perform signature checks.
+    ///
+    /// The `function_id` parameter is optional for backwards compatibility. When `None`, the
+    /// function ID is computed from the network ID, program ID, and function name. When `Some`,
+    /// the provided function ID is used directly. This is critical for dynamic dispatch where the
+    /// function ID must be passed in to ensure circuit size does not depend on the length of the
+    /// program or function name.
     pub fn check_input_ids<const CREATE_MESSAGE: bool>(
         network_id: &U16<A>,
         program_id: &ProgramID<A>,
@@ -146,9 +146,6 @@ impl<A: Aleo> Request<A> {
             Some(function_id) => function_id,
             None => compute_function_id(network_id, program_id, function_name),
         };
-
-        // For logging purposes.
-        let function_name_value = function_name.eject_value();
 
         // Initialize a vector for a message.
         let mut message = Vec::new();
@@ -181,13 +178,13 @@ impl<A: Aleo> Request<A> {
                         match &input {
                             Value::Plaintext(..) => input_hash.is_equal(&A::hash_psd8(&preimage)),
                             // Ensure the input is not a record or future.
-                            Value::Record(..) => A::halt(format!("[check_input_ids] (in function {function_name_value}) Expected a constant plaintext input, found a record input")),
-                            Value::Future(..) => A::halt(format!("[check_input_ids] (in function {function_name_value}) Expected a constant plaintext input, found a future input")),
+                            Value::Record(..) => A::halt("Expected a constant plaintext input, found a record input"),
+                            Value::Future(..) => A::halt("Expected a constant plaintext input, found a future input"),
                             Value::DynamicRecord(..) => {
-                                A::halt(format!("[check_input_ids] (in function {function_name_value}) Expected a constant plaintext input, found a dynamic record input"))
+                                A::halt("Expected a constant plaintext input, found a dynamic record input")
                             }
                             Value::DynamicFuture(..) => {
-                                A::halt(format!("[check_input_ids] (in function {function_name_value}) Expected a constant plaintext input, found a dynamic future input"))
+                                A::halt("Expected a constant plaintext input, found a dynamic future input")
                             }
                         }
                     }
@@ -211,13 +208,13 @@ impl<A: Aleo> Request<A> {
                         match &input {
                             Value::Plaintext(..) => input_hash.is_equal(&A::hash_psd8(&preimage)),
                             // Ensure the input is not a record or future.
-                            Value::Record(..) => A::halt(format!("[check_input_ids] (in function {function_name_value}) Expected a public plaintext input, found a record input")),
-                            Value::Future(..) => A::halt(format!("[check_input_ids] (in function {function_name_value}) Expected a public plaintext input, found a future input")),
+                            Value::Record(..) => A::halt("Expected a public plaintext input, found a record input"),
+                            Value::Future(..) => A::halt("Expected a public plaintext input, found a future input"),
                             Value::DynamicRecord(..) => {
-                                A::halt(format!("[check_input_ids] (in function {function_name_value}) Expected a public plaintext input, found a dynamic record input"))
+                                A::halt("Expected a public plaintext input, found a dynamic record input")
                             }
                             Value::DynamicFuture(..) => {
-                                A::halt(format!("[check_input_ids] (in function {function_name_value}) Expected a public plaintext input, found a dynamic future input"))
+                                A::halt("Expected a public plaintext input, found a dynamic future input")
                             }
                         }
                     }
@@ -236,13 +233,13 @@ impl<A: Aleo> Request<A> {
                         let ciphertext = match &input {
                             Value::Plaintext(plaintext) => plaintext.encrypt_symmetric(input_view_key),
                             // Ensure the input is a plaintext.
-                            Value::Record(..) => A::halt(format!("[check_input_ids] (in function {function_name_value}) Expected a private plaintext input, found a record input")),
-                            Value::Future(..) => A::halt(format!("[check_input_ids] (in function {function_name_value}) Expected a private plaintext input, found a future input")),
+                            Value::Record(..) => A::halt("Expected a private plaintext input, found a record input"),
+                            Value::Future(..) => A::halt("Expected a private plaintext input, found a future input"),
                             Value::DynamicRecord(..) => {
-                                A::halt(format!("[check_input_ids] (in function {function_name_value}) Expected a private plaintext input, found a dynamic record input"))
+                                A::halt("Expected a private plaintext input, found a dynamic record input")
                             }
                             Value::DynamicFuture(..) => {
-                                A::halt(format!("[check_input_ids] (in function {function_name_value}) Expected a private plaintext input, found a dynamic future input"))
+                                A::halt("Expected a private plaintext input, found a dynamic future input")
                             }
                         };
 
@@ -255,20 +252,20 @@ impl<A: Aleo> Request<A> {
                         let record = match &input {
                             Value::Record(record) => record,
                             // Ensure the input is a record.
-                            Value::Plaintext(..) => A::halt(format!("[check_input_ids] (in function {function_name_value}) Expected a record input, found a plaintext input")),
-                            Value::Future(..) => A::halt(format!("[check_input_ids] (in function {function_name_value}) Expected a record input, found a future input")),
+                            Value::Plaintext(..) => A::halt("Expected a record input, found a plaintext input"),
+                            Value::Future(..) => A::halt("Expected a record input, found a future input"),
                             Value::DynamicRecord(..) => {
-                                A::halt(format!("[check_input_ids] (in function {function_name_value}) Expected a record input, found a dynamic record input"))
+                                A::halt("Expected a record input, found a dynamic record input")
                             }
                             Value::DynamicFuture(..) => {
-                                A::halt(format!("[check_input_ids] (in function {function_name_value}) Expected a record input, found a dynamic future input"))
+                                A::halt("Expected a record input, found a dynamic future input")
                             }
                         };
                         // Retrieve the record name as a `Mode::Constant`.
                         let record_name = match input_type {
                             console::ValueType::Record(record_name) => Identifier::constant(*record_name),
                             // Ensure the input is a record.
-                            _ => A::halt(format!("[check_input_ids] (in function {function_name_value}) Expected a record input at input {index}")),
+                            _ => A::halt(format!("Expected a record input at input {index}")),
                         };
                         // Compute the record commitment.
                         let candidate_commitment = record.to_commitment(program_id, &record_name, record_view_key);
@@ -283,7 +280,7 @@ impl<A: Aleo> Request<A> {
                             // Ensure the signature is declared.
                             let signature = match signature {
                                 Some(signature) => signature,
-                                None => A::halt(format!("[check_input_ids] (in function {function_name_value}) Missing signature in logic to check input IDs")),
+                                None => A::halt("Missing signature in logic to check input IDs"),
                             };
                             // Retrieve the challenge from the signature.
                             let challenge = signature.challenge();
@@ -321,14 +318,14 @@ impl<A: Aleo> Request<A> {
                             Value::Record(record) => record,
                             // Ensure the input is a record.
                             Value::Plaintext(..) => {
-                                A::halt(format!("[check_input_ids] (in function {function_name_value}) Expected an external record input, found a plaintext input"))
+                                A::halt("Expected an external record input, found a plaintext input")
                             }
-                            Value::Future(..) => A::halt(format!("[check_input_ids] (in function {function_name_value}) Expected an external record input, found a future input")),
+                            Value::Future(..) => A::halt("Expected an external record input, found a future input"),
                             Value::DynamicRecord(..) => {
-                                A::halt(format!("[check_input_ids] (in function {function_name_value}) Expected an external record input, found a dynamic record input"))
+                                A::halt("Expected an external record input, found a dynamic record input")
                             }
                             Value::DynamicFuture(..) => {
-                                A::halt(format!("[check_input_ids] (in function {function_name_value}) Expected an external record input, found a dynamic future input"))
+                                A::halt("Expected an external record input, found a dynamic future input")
                             }
                         };
 
@@ -355,11 +352,11 @@ impl<A: Aleo> Request<A> {
                         let record = match &input {
                             Value::DynamicRecord(dynamic_record) => dynamic_record,
                             // Ensure the input is a dynamic record.
-                            Value::Plaintext(..) => A::halt(format!("[check_input_ids] (in function {function_name_value}) Expected a dynamic record input, found a plaintext input")),
-                            Value::Future(..) => A::halt(format!("[check_input_ids] (in function {function_name_value}) Expected a dynamic record input, found a future input")),
-                            Value::Record(..) => A::halt(format!("[check_input_ids] (in function {function_name_value}) Expected a dynamic record input, found a record input")),
+                            Value::Plaintext(..) => A::halt("Expected a dynamic record input, found a plaintext input"),
+                            Value::Future(..) => A::halt("Expected a dynamic record input, found a future input"),
+                            Value::Record(..) => A::halt("Expected a dynamic record input, found a record input"),
                             Value::DynamicFuture(..) => {
-                                A::halt(format!("[check_input_ids] (in function {function_name_value}) Expected a dynamic record input, found a dynamic future input"))
+                                A::halt("Expected a dynamic record input, found a dynamic future input")
                             }
                         };
 
@@ -407,7 +404,7 @@ mod tests {
         program_id: &str,
         function_name: &str,
         set_program_checksum: bool,
-        dynamic: bool,
+        is_dynamic: bool,
         use_record: bool,
         i: usize,
         rng: &mut TestRng,
@@ -472,33 +469,18 @@ mod tests {
         let program_checksum = set_program_checksum.then(|| console::Field::from_u64(i as u64));
 
         // Compute the signed request.
-        let request = match dynamic {
-            false => console::Request::sign_static(
-                &private_key,
-                program_id,
-                function_name,
-                inputs.iter(),
-                &input_types,
-                root_tvk,
-                is_root,
-                program_checksum,
-                rng,
-            )?,
-            true => {
-                // Construct the request.
-                console::Request::sign_dynamic(
-                    &private_key,
-                    program_id,
-                    function_name,
-                    inputs.clone().into_iter(),
-                    &input_types,
-                    root_tvk,
-                    is_root,
-                    program_checksum,
-                    rng,
-                )?
-            }
-        };
+        let request = console::Request::sign(
+            &private_key,
+            program_id,
+            function_name,
+            inputs.iter(),
+            &input_types,
+            root_tvk,
+            is_root,
+            program_checksum,
+            is_dynamic,
+            rng,
+        )?;
         assert!(request.verify(&input_types, is_root, program_checksum));
 
         Ok((request, input_types, is_root, program_checksum))
@@ -510,14 +492,14 @@ mod tests {
         function_name: &str,
         count: UpdatableCount,
         set_program_checksum: bool,
-        dynamic: bool,
+        is_dynamic: bool,
         use_record: bool,
     ) -> Result<()> {
         let rng = &mut TestRng::default();
 
         for i in 0..ITERATIONS {
             let (request, input_types, is_root, program_checksum) =
-                create_request(program_id, function_name, set_program_checksum, dynamic, use_record, i, rng)?;
+                create_request(program_id, function_name, set_program_checksum, is_dynamic, use_record, i, rng)?;
 
             // Inject the request into a circuit.
             let tpk = Group::<Circuit>::new(mode, request.to_tpk());
@@ -547,20 +529,20 @@ mod tests {
         function_name: &str,
         expected_count: UpdatableCount,
         set_program_checksum: bool,
-        dynamic: bool,
+        is_dynamic: bool,
         use_record: bool,
     ) -> Result<()> {
         let rng = &mut TestRng::default();
 
         for i in 0..ITERATIONS {
             let (request, input_types, _, _) =
-                create_request(program_id, function_name, set_program_checksum, dynamic, use_record, i, rng)?;
+                create_request(program_id, function_name, set_program_checksum, is_dynamic, use_record, i, rng)?;
 
             // Inject the request into a circuit.
             let request = Request::<Circuit>::new(mode, request);
 
             // If the request is dynamic, compute the function ID.
-            let function_id = if dynamic {
+            let function_id = if is_dynamic {
                 Some(compute_function_id(request.network_id(), request.program_id(), request.function_name()))
             } else {
                 None

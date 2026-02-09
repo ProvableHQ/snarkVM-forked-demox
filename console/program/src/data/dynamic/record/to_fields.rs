@@ -33,7 +33,7 @@ impl<N: Network> ToFields for DynamicRecord<N> {
         // Ensure the number of field elements does not exceed the maximum allowed size.
         match fields.len() <= N::MAX_DATA_SIZE_IN_FIELDS as usize {
             true => Ok(fields),
-            false => bail!("DynamicRecord<Plaintext> exceeds maximum allowed size"),
+            false => bail!("DynamicRecord exceeds maximum allowed size"),
         }
     }
 }

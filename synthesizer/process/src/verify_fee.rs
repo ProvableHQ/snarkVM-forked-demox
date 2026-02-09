@@ -47,13 +47,7 @@ impl<N: Network> Process<N> {
                 bail!("The number of function calls in '{}/{}' should be 1", stack.program_id(), function.name())
             }
             // Debug-mode only, as the `Transition` constructor recomputes the transition ID at initialization.
-            // Note: Fee transitions should never have caller metadata, but check for consistency.
-            let expected_id = match fee.transition().caller_metadata() {
-                Some(caller_metadata) => {
-                    N::hash_bhp512(&(fee.to_root()?, *fee.tcm(), caller_metadata.clone()).to_bits_le())?
-                }
-                None => N::hash_bhp512(&(fee.to_root()?, *fee.tcm()).to_bits_le())?,
-            };
+            let expected_id = N::hash_bhp512(&(fee.to_root()?, *fee.tcm()).to_bits_le())?;
             debug_assert_eq!(**fee.id(), expected_id, "Transition ID of the fee is incorrect");
         }
 

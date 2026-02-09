@@ -78,11 +78,10 @@ impl<N: Network> Execution<N> {
     }
 
     /// Computes the execution ID from an iterator of transitions.
-    /// Note: This uses `transition.id()` (with caller_metadata) to bind the fee to the full transition identity.
     pub fn compute_execution_id<'a>(transitions: impl ExactSizeIterator<Item = &'a Transition<N>>) -> Result<Field<N>> {
         // Ensure the number of transitions is within bounds.
         Transaction::<N>::check_execution_size(transitions.len())?;
-        // Build the tree using transition IDs (with caller_metadata for fee binding security).
+        // Build the tree using transition IDs.
         let leaves = transitions.enumerate().map(|(index, transition)| {
             Ok::<_, Error>(TransactionLeaf::new_execution(u16::try_from(index)?, **transition.id()).to_bits_le())
         });
