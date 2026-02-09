@@ -174,6 +174,6 @@ mod tests {
         assert_eq!(expected.program_name(), candidate.program_name());
         assert_eq!(expected.program_network(), candidate.program_network());
         assert_eq!(expected.function_name(), candidate.function_name());
-        assert_eq!(expected.hash(), candidate.hash());
+        assert_eq!(expected.checksum(), candidate.checksum());
     }
 }

@@ -134,9 +134,9 @@ impl<N: Network> Stack<N> {
         let record_name = *record_name;
         let record_static = self.sample_record(&address, &record_name, Group::rand(rng), rng)?;
         let record_dynamic = DynamicRecord::<N>::from_record(&record_static)?;
-        let translation_index = Uniform::rand(rng);
+        let translation_index: u16 = Uniform::rand(rng);
         let tvk = Uniform::rand(rng);
-        let input_output_index = Uniform::rand(rng);
+        let record_register_index = Uniform::rand(rng);
         let record_view_key = Uniform::rand(rng);
         let gamma = Uniform::rand(rng);
         // Compute the dynamic ID for external or dynamic record inputs/outputs.
@@ -144,7 +144,7 @@ impl<N: Network> Stack<N> {
             function_id,
             record_dynamic.to_fields()?,
             tvk,
-            U16::new(input_output_index),
+            U16::new(record_register_index),
         )?;
         let is_to_static = Uniform::rand(rng);
         let is_external_record = Uniform::rand(rng);
@@ -158,17 +158,16 @@ impl<N: Network> Stack<N> {
             record_name,
             is_to_static,
             is_external_record,
-            translation_index,
             tvk,
-            input_output_index,
-            id_dynamic,
-            id_static,
             record_view_key,
             gamma,
+            record_register_index,
+            id_dynamic,
+            id_static,
         );
 
         // Construct the translation circuit.
-        let circuit_assignment = translation_assignment.to_circuit_assignment::<A>()?;
+        let circuit_assignment = translation_assignment.to_circuit_assignment::<A>(translation_index)?;
 
         // Synthesize the proving and verifying key.
         let (proving_key, verifying_key) =

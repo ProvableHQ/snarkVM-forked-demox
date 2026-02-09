@@ -376,7 +376,7 @@ impl<N: Network> FinalizeTypes<N> {
             }
         }
         // Check the key type.
-        match self.get_type_from_operand(stack, contains.key())? {
+        match self.get_type_from_operand(stack, contains.key_operand())? {
             // If the register is a plaintext type, do nothing.
             FinalizeType::Plaintext(_) => {}
             // If the register is a future, throw an error.
@@ -482,7 +482,7 @@ impl<N: Network> FinalizeTypes<N> {
             }
         }
         // Check the register type of the key.
-        match self.get_type_from_operand(stack, get.key())? {
+        match self.get_type_from_operand(stack, get.key_operand())? {
             // If the register is a plaintext type, do nothing.
             FinalizeType::Plaintext(_) => {}
             // If the register is a future, throw an error.
@@ -607,7 +607,7 @@ impl<N: Network> FinalizeTypes<N> {
             }
         }
         // Check the register type of the key.
-        match self.get_type_from_operand(stack, get_or_use.key())? {
+        match self.get_type_from_operand(stack, get_or_use.key_operand())? {
             // If the register is a plaintext type, do nothing.
             FinalizeType::Plaintext(_) => {}
             // If the register is a future, throw an error.
@@ -616,7 +616,7 @@ impl<N: Network> FinalizeTypes<N> {
             FinalizeType::DynamicFuture => bail!("A dynamic future cannot be used as a key in a `get.or_use` command"),
         };
         // Check the register type of the default value.
-        match self.get_type_from_operand(stack, get_or_use.default())? {
+        match self.get_type_from_operand(stack, get_or_use.default_operand())? {
             // If the register is a plaintext type, check that it matches the destination type.
             FinalizeType::Plaintext(plaintext_type) => {
                 ensure!(

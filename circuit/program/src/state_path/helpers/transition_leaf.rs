@@ -74,12 +74,14 @@ impl<A: Aleo> Eject for TransitionLeaf<A> {
 
     /// Ejects the transition leaf.
     fn eject_value(&self) -> Self::Primitive {
+        // The circuit enforces valid version/variant combinations, so this cannot fail.
         Self::Primitive::from(
             *self.version.eject_value(),
             *self.index.eject_value(),
             *self.variant.eject_value(),
             self.id.eject_value(),
         )
+        .expect("Circuit-ejected transition leaf has invalid version/variant combination")
     }
 }
 

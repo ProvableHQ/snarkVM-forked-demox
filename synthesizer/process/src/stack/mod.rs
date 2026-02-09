@@ -37,14 +37,7 @@ mod evaluate;
 mod execute;
 mod helpers;
 
-use crate::{
-    CallMetrics,
-    Process,
-    Trace,
-    TranslationAssignment,
-    compute_console_dynamic_or_external_record_id,
-    trace::RecordTranslationData,
-};
+use crate::{CallMetrics, Process, Trace, TranslationAssignment, compute_console_dynamic_or_external_record_id};
 use console::{
     account::{Address, PrivateKey},
     network::prelude::*,
@@ -105,10 +98,10 @@ use rayon::prelude::*;
 
 pub type Assignments<N> = Arc<RwLock<Vec<(circuit::Assignment<<N as Environment>::Field>, CallMetrics<N>)>>>;
 /// A stack of translations for the transitions in the execution. Each function execution level pushes a new bucket,
-/// and translations for dynamic calls made at that level are pushed to the top bucket.
-/// When the transition is inserted, the top bucket is popped and its translations are
-/// associated with that transition (the caller's transition ID).
-pub type Translations<N> = Arc<RwLock<Vec<Vec<RecordTranslationData<N>>>>>;
+/// and translations for dynamic calls made at that level are pushed to the top bucket. When the transition is
+/// inserted, the top bucket is popped and its translations are associated with that transition (the caller's
+/// transition ID). Each translation datum is paired with the proving key for its record type.
+pub type Translations<N> = Arc<RwLock<Vec<Vec<(TranslationAssignment<N>, ProvingKey<N>)>>>>;
 
 /// The `CallStack` is used to track the current state of the program execution.
 #[derive(Clone, Debug)]

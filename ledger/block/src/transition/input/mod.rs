@@ -85,9 +85,9 @@ impl<N: Network> Input<N> {
     pub fn to_transition_leaf(&self, index: u8) -> TransitionLeaf<N> {
         match self {
             // RecordWithDynamicID produces leaf with version 2, variant 3.
-            Input::RecordWithDynamicID(..) => TransitionLeaf::new_dynamic_with_version(index, 3, *self.id()),
+            Input::RecordWithDynamicID(..) => TransitionLeaf::new_dynamic_record(index, *self.id()),
             // ExternalRecordWithDynamicID produces leaf with version 2, variant 4.
-            Input::ExternalRecordWithDynamicID(..) => TransitionLeaf::new_dynamic_with_version(index, 4, *self.id()),
+            Input::ExternalRecordWithDynamicID(..) => TransitionLeaf::new_dynamic_external_record(index, *self.id()),
             // All other variants use their serialization variant byte.
             _ => TransitionLeaf::new_with_version(index, self.variant(), *self.id()),
         }

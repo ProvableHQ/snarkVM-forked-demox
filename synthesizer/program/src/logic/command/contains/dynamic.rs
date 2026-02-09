@@ -63,7 +63,7 @@ impl<N: Network> ContainsDynamic<N> {
 
     /// Returns the operand containing the key.
     #[inline]
-    pub const fn key(&self) -> &Operand<N> {
+    pub const fn key_operand(&self) -> &Operand<N> {
         &self.operands[3]
     }
 
@@ -109,7 +109,7 @@ impl<N: Network> ContainsDynamic<N> {
         }
 
         // Load the operand as a plaintext.
-        let key = registers.load_plaintext(stack, self.key())?;
+        let key = registers.load_plaintext(stack, self.key_operand())?;
 
         // Get the mapping definition.
         let mapping = stack.get_stack_global(&program_id)?.program().get_mapping(&mapping_name)?;
@@ -220,7 +220,7 @@ impl<N: Network> Display for ContainsDynamic<N> {
             self.program_name_operand(),
             self.program_network_operand(),
             self.mapping_name_operand(),
-            self.key()
+            self.key_operand()
         )?;
         // Print the destination register.
         write!(f, "{};", self.destination)
@@ -255,7 +255,7 @@ impl<N: Network> ToBytes for ContainsDynamic<N> {
         // Write the mapping name.
         self.mapping_name_operand().write_le(&mut writer)?;
         // Write the key operand.
-        self.key().write_le(&mut writer)?;
+        self.key_operand().write_le(&mut writer)?;
         // Write the destination register.
         self.destination.write_le(&mut writer)
     }
@@ -289,7 +289,7 @@ mod tests {
             &Operand::Register(Register::Locator(2)),
             "The third operand is incorrect"
         );
-        assert_eq!(contains.key(), &Operand::Register(Register::Locator(3)), "The fourth operand is incorrect");
+        assert_eq!(contains.key_operand(), &Operand::Register(Register::Locator(3)), "The fourth operand is incorrect");
         assert_eq!(contains.destination, Register::Locator(4), "The second operand is incorrect");
     }
 

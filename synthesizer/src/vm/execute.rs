@@ -205,11 +205,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 let (response, mut trace) = $process.execute::<$aleo, _>(authorization.clone(), rng)?;
                 lap!(timer, "Execute the call");
 
-                let process_ref = &*$process;
-                let process = cast_ref!(&process_ref as Process<N>);
-
                 // Prepare the assignments.
-                cast_mut_ref!(trace as Trace<N>).prepare(process, query)?;
+                cast_mut_ref!(trace as Trace<N>).prepare(query)?;
                 lap!(timer, "Prepare the assignments");
 
                 // Compute the proof and construct the execution.
@@ -257,11 +254,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 let (_, mut trace) = $process.execute::<$aleo, _>(authorization.clone(), rng)?;
                 lap!(timer, "Execute the call");
 
-                let process_deref = &*$process;
-                let process = cast_ref!(&process_deref as Process<N>);
-
                 // Prepare the assignments.
-                cast_mut_ref!(trace as Trace<N>).prepare(process, query)?;
+                cast_mut_ref!(trace as Trace<N>).prepare(query)?;
                 lap!(timer, "Prepare the assignments");
 
                 // Compute the proof and construct the fee.

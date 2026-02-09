@@ -836,19 +836,19 @@ pub fn cost_per_command<N: Network>(
             cost_in_size(stack, finalize_types, [command.key()], MAPPING_PER_BYTE_COST, mapping_base_cost)
         }
         Command::ContainsDynamic(command) => {
-            cost_in_size(stack, finalize_types, [command.key()], MAPPING_PER_BYTE_COST, mapping_base_cost)
+            cost_in_size(stack, finalize_types, [command.key_operand()], MAPPING_PER_BYTE_COST, mapping_base_cost)
         }
         Command::Get(command) => {
             cost_in_size(stack, finalize_types, [command.key()], MAPPING_PER_BYTE_COST, mapping_base_cost)
         }
         Command::GetDynamic(command) => {
-            cost_in_size(stack, finalize_types, [command.key()], MAPPING_PER_BYTE_COST, mapping_base_cost)
+            cost_in_size(stack, finalize_types, [command.key_operand()], MAPPING_PER_BYTE_COST, mapping_base_cost)
         }
         Command::GetOrUse(command) => {
             cost_in_size(stack, finalize_types, [command.key()], MAPPING_PER_BYTE_COST, mapping_base_cost)
         }
         Command::GetOrUseDynamic(command) => {
-            cost_in_size(stack, finalize_types, [command.key()], MAPPING_PER_BYTE_COST, mapping_base_cost)
+            cost_in_size(stack, finalize_types, [command.key_operand()], MAPPING_PER_BYTE_COST, mapping_base_cost)
         }
         Command::RandChaCha(_) => Ok(25_000),
         Command::Remove(_) => Ok(SET_BASE_COST),

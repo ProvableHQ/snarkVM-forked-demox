@@ -136,29 +136,29 @@ impl<N: Network> Process<N> {
         let transition = execution.peek()?;
         // Retrieve the stack.
         let stack = self.get_stack(transition.program_id())?;
+        // Calculate the minimum number of calls for the root transition.
+        let minimum_number_of_calls = stack.get_minimum_number_of_calls(transition.function_name())?;
         // If the root transition contains a dynamic call,
         // - ensure that the number of calls is less than or equal to the number of transitions.
         // - otherwise, ensure that the number of calls matches the number of transitions.
         if stack.contains_dynamic_call(transition.function_name())? {
             ensure!(
-                stack.get_minimum_number_of_calls(transition.function_name())? <= execution.len(),
-                "The number of transitions in the execution is incorrect. Expected at least {}, but found {}",
-                stack.get_minimum_number_of_calls(transition.function_name())?,
+                minimum_number_of_calls <= execution.len(),
+                "The number of transitions in the execution is incorrect. Expected at least {minimum_number_of_calls}, but found {}",
                 execution.len()
             );
         } else {
             ensure!(
-                stack.get_minimum_number_of_calls(transition.function_name())? == execution.len(),
-                "The number of transitions in the execution is incorrect. Expected {}, but found {}",
-                stack.get_minimum_number_of_calls(transition.function_name())?,
+                minimum_number_of_calls == execution.len(),
+                "The number of transitions in the execution is incorrect. Expected {minimum_number_of_calls}, but found {}",
                 execution.len()
             );
         }
         lap!(timer, "Verify the number of transitions");
 
         // Collect all of the futures in the execution's transitions and compute their corresponding dynamic future keys.
-        // The key is (program_name, program_network, function_name, root) to uniquely identify each future,
-        // since different futures may have the same root if their arguments happen to be identical.
+        // The key is (program_name, program_network, function_name, checksum) to uniquely identify each future,
+        // since different futures may have the same checksum if their arguments happen to be identical.
         let dynamic_future_to_future: HashMap<(Field<N>, Field<N>, Field<N>, Field<N>), &Future<N>> = execution
             .transitions()
             .filter_map(|transition| {
@@ -168,7 +168,7 @@ impl<N: Network> Process<N> {
                         *dynamic_future.program_name(),
                         *dynamic_future.program_network(),
                         *dynamic_future.function_name(),
-                        *dynamic_future.hash(),
+                        *dynamic_future.checksum(),
                     );
                     Some((key, future))
                 })
@@ -606,7 +606,7 @@ fn setup_await<N: Network>(
                 *dynamic_future.program_name(),
                 *dynamic_future.program_network(),
                 *dynamic_future.function_name(),
-                *dynamic_future.hash(),
+                *dynamic_future.checksum(),
             );
             // Look up the corresponding future from the dynamic future key.
             match dynamic_future_to_future.get(&key) {

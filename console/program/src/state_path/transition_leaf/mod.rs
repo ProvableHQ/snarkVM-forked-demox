@@ -45,19 +45,24 @@ impl<N: Network> TransitionLeaf<N> {
         Self { version: TRANSITION_LEAF_VERSION, index, variant, id }
     }
 
-    /// Initializes a new instance of `TransitionLeaf` for inputs and outputs of a dynamic call to a transition.
-    /// The variant must be 3 (Record) or 4 (ExternalRecord).
-    pub const fn new_dynamic_with_version(index: u8, variant: u8, id: Field<N>) -> Self {
-        assert!(
-            variant == 3 || variant == 4,
-            "Dynamic transition leaf variant must be 3 (Record) or 4 (ExternalRecord)"
-        );
-        Self { version: TRANSITION_LEAF_VERSION_DYNAMIC, index, variant, id }
+    /// Initializes a new instance of `TransitionLeaf` for a dynamic record input/output (variant 3).
+    pub const fn new_dynamic_record(index: u8, id: Field<N>) -> Self {
+        Self { version: TRANSITION_LEAF_VERSION_DYNAMIC, index, variant: 3, id }
     }
 
-    /// Initializes a new instance of `TransitionLeaf`.
-    pub const fn from(version: u8, index: u8, variant: u8, id: Field<N>) -> Self {
-        Self { version, index, variant, id }
+    /// Initializes a new instance of `TransitionLeaf` for a dynamic external record input/output (variant 4).
+    pub const fn new_dynamic_external_record(index: u8, id: Field<N>) -> Self {
+        Self { version: TRANSITION_LEAF_VERSION_DYNAMIC, index, variant: 4, id }
+    }
+
+    /// Initializes a new instance of `TransitionLeaf` from raw fields.
+    /// Returns an error if the version/variant combination is invalid.
+    pub fn from(version: u8, index: u8, variant: u8, id: Field<N>) -> Result<Self> {
+        // Dynamic version (2) is only allowed for Record (3) and ExternalRecord (4) variants.
+        if version == TRANSITION_LEAF_VERSION_DYNAMIC && variant != 3 && variant != 4 {
+            bail!("Dynamic transition leaf variant must be 3 (Record) or 4 (ExternalRecord), found {variant}");
+        }
+        Ok(Self { version, index, variant, id })
     }
 
     /// Returns the version of the Merkle leaf.
@@ -95,11 +100,12 @@ mod test_helpers {
     }
 
     /// Samples a transition leaf with version 2 (dynamic).
-    /// Dynamic version is only allowed for Record (3) and ExternalRecord (4) variants.
     pub(super) fn sample_dynamic_leaf(rng: &mut TestRng) -> TransitionLeaf<CurrentNetwork> {
-        // Dynamic version is only allowed for Record (variant 3) and ExternalRecord (variant 4).
-        let variant = if rng.r#gen() { 3 } else { 4 };
-        // Construct a new dynamic leaf.
-        TransitionLeaf::new_dynamic_with_version(rng.r#gen(), variant, Uniform::rand(rng))
+        // Randomly choose between Record (variant 3) and ExternalRecord (variant 4).
+        if rng.r#gen() {
+            TransitionLeaf::new_dynamic_record(rng.r#gen(), Uniform::rand(rng))
+        } else {
+            TransitionLeaf::new_dynamic_external_record(rng.r#gen(), Uniform::rand(rng))
+        }
     }
 }

@@ -71,43 +71,33 @@ impl<N: Network> Request<N> {
 
         if let Err(error) = self.input_ids.iter().zip_eq(&self.inputs).zip_eq(input_types).enumerate().try_for_each(
             |(index, ((input_id, input), input_type))| {
-                // Convert index to u16.
+                // Compute the input index.
                 let index = u16::try_from(index).or_halt_with::<N>("Input index exceeds u16");
 
                 match input_id {
                     // A constant input is hashed (using `tcm`) to a field element.
                     InputID::Constant(input_hash) => {
-                        let candidate_hash = *InputID::constant(function_id, input, self.tcm, index)?.id();
-                        // Ensure the input hash matches.
-                        ensure!(*input_hash == candidate_hash, "Expected a constant input with the same hash");
-
-                        // Add the input hash to the message.
-                        message.push(candidate_hash);
+                        let candidate = InputID::constant(function_id, input, self.tcm, index)?;
+                        ensure!(*input_hash == *candidate.id(), "Expected a constant input with the same hash");
+                        message.push(*candidate.id());
                     }
                     // A public input is hashed (using `tcm`) to a field element.
                     InputID::Public(input_hash) => {
-                        let candidate_hash = *InputID::public(function_id, input, self.tcm, index)?.id();
-                        // Ensure the input hash matches.
-                        ensure!(*input_hash == candidate_hash, "Expected a public input with the same hash");
-
-                        // Add the input hash to the message.
-                        message.push(candidate_hash);
+                        let candidate = InputID::public(function_id, input, self.tcm, index)?;
+                        ensure!(*input_hash == *candidate.id(), "Expected a public input with the same hash");
+                        message.push(*candidate.id());
                     }
                     // A private input is encrypted (using `tvk`) and hashed to a field element.
                     InputID::Private(input_hash) => {
-                        let candidate_hash = *InputID::private(function_id, input, self.tvk, index)?.id();
-                        // Ensure the input hash matches.
-                        ensure!(*input_hash == candidate_hash, "Expected a private input with the same hash");
-
-                        // Add the input hash to the message.
-                        message.push(candidate_hash);
+                        let candidate = InputID::private(function_id, input, self.tvk, index)?;
+                        ensure!(*input_hash == *candidate.id(), "Expected a private input with the same hash");
+                        message.push(*candidate.id());
                     }
-                    // A record input is computed to its serial number.
+                    // A record input is verified using the challenge and response.
                     InputID::Record(commitment, gamma, record_view_key, serial_number, tag) => {
                         // Retrieve the record.
                         let record = match &input {
                             Value::Record(record) => record,
-                            // Ensure the input is a record.
                             Value::Plaintext(..) => bail!("Expected a record input, found a plaintext input"),
                             Value::Future(..) => bail!("Expected a record input, found a future input"),
                             Value::DynamicRecord(..) => bail!("Expected a record input, found a dynamic record input"),
@@ -116,7 +106,6 @@ impl<N: Network> Request<N> {
                         // Retrieve the record name.
                         let record_name = match input_type {
                             ValueType::Record(record_name) => record_name,
-                            // Ensure the input type is a record.
                             _ => bail!("Expected a record type at input {index}"),
                         };
                         // Ensure the record belongs to the signer.
@@ -125,15 +114,13 @@ impl<N: Network> Request<N> {
                         // Compute the record commitment.
                         let candidate_commitment =
                             record.to_commitment(&self.program_id, record_name, record_view_key)?;
-                        // Ensure the commitment matches.
                         ensure!(
                             *commitment == candidate_commitment,
                             "Expected a record input with the same commitment"
                         );
 
-                        // Compute the `candidate_sn` from `gamma`.
+                        // Compute the candidate serial number from `gamma`.
                         let candidate_sn = Record::<N, Plaintext<N>>::serial_number_from_gamma(gamma, *commitment)?;
-                        // Ensure the serial number matches.
                         ensure!(*serial_number == candidate_sn, "Expected a record input with the same serial number");
 
                         // Compute the generator `H` as `HashToGroup(commitment)`.
@@ -143,7 +130,6 @@ impl<N: Network> Request<N> {
 
                         // Compute the tag as `Hash(sk_tag || commitment)`.
                         let candidate_tag = N::hash_psd2(&[self.sk_tag, *commitment])?;
-                        // Ensure the tag matches.
                         ensure!(*tag == candidate_tag, "Expected a record input with the same tag");
 
                         // Add (`H`, `r * H`, `gamma`, `tag`) to the message.
@@ -152,21 +138,15 @@ impl<N: Network> Request<N> {
                     }
                     // An external record input is hashed (using `tvk`) to a field element.
                     InputID::ExternalRecord(input_hash) => {
-                        let candidate_hash = *InputID::external_record(function_id, input, self.tvk, index)?.id();
-                        // Ensure the input hash matches.
-                        ensure!(*input_hash == candidate_hash, "Expected a locator input with the same hash");
-
-                        // Add the input hash to the message.
-                        message.push(candidate_hash);
+                        let candidate = InputID::external_record(function_id, input, self.tvk, index)?;
+                        ensure!(*input_hash == *candidate.id(), "Expected an external record input with the same hash");
+                        message.push(*candidate.id());
                     }
                     // A dynamic record input is hashed (using `tvk`) to a field element.
                     InputID::DynamicRecord(input_hash) => {
-                        let candidate_hash = *InputID::dynamic_record(function_id, input, self.tvk, index)?.id();
-                        // Ensure the input hash matches.
-                        ensure!(*input_hash == candidate_hash, "Expected a locator input with the same hash");
-
-                        // Add the input hash to the message.
-                        message.push(candidate_hash);
+                        let candidate = InputID::dynamic_record(function_id, input, self.tvk, index)?;
+                        ensure!(*input_hash == *candidate.id(), "Expected a dynamic record input with the same hash");
+                        message.push(*candidate.id());
                     }
                 }
                 Ok(())

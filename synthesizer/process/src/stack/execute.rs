@@ -262,9 +262,6 @@ impl<N: Network> Stack<N> {
         // If a program checksum was passed in, Inject it as `Mode::Public`.
         let program_checksum = program_checksum.map(|c| circuit::Field::<A>::new(circuit::Mode::Public, c));
 
-        // Set the request.
-        registers.set_request(console_request.clone());
-
         use circuit::{Eject, Inject};
 
         // Inject the transition public key `tpk` as `Mode::Public`.
@@ -546,7 +543,6 @@ impl<N: Network> Stack<N> {
             registers.ensure_console_and_circuit_registers_match()?;
 
             // Construct the transition.
-            // TODO(perf): we already have the transition from the Authorization at this point.
             let transition = Transition::from(&console_request, &response, &output_types, &output_registers)?;
 
             // Retrieve the proving key.
@@ -562,7 +558,7 @@ impl<N: Network> Stack<N> {
             };
 
             // Pop the translation bucket for this execution level.
-            // This bucket contains translations from dynamic calls made at this level.
+            // This bucket contains translations (with proving keys) from dynamic calls made at this level.
             let translations_for_transition =
                 translations.write().pop().ok_or_else(|| anyhow!("Translation stack underflow: no bucket to pop"))?;
 
@@ -571,7 +567,7 @@ impl<N: Network> Stack<N> {
                 console_request.input_ids(),
                 &transition,
                 (proving_key, assignment),
-                &translations_for_transition,
+                translations_for_transition,
                 metrics,
             )?;
         }

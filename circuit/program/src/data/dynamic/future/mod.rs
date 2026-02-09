@@ -23,7 +23,7 @@ use snarkvm_circuit_types::{Boolean, Field, environment::prelude::*};
 /// A dynamic future is a fixed-size representation of a future. Like static
 /// `Future`s, a dynamic future contains a program ID and function name. These
 /// are however represented as `Field` elements as opposed to `Identifier`s to
-/// ensure a fixed size. Dynamic futures also store a hash of the
+/// ensure a fixed size. Dynamic futures also store a checksum of the
 /// arguments to the future instead of the arguments themselves. This ensures
 /// that all dynamic futures have a constant size, regardless of the amount of
 /// data they contain.
@@ -35,8 +35,8 @@ pub struct DynamicFuture<A: Aleo> {
     program_network: Field<A>,
     /// The function name.
     function_name: Field<A>,
-    /// The hash of the arguments.
-    hash: Field<A>,
+    /// The checksum of the arguments.
+    checksum: Field<A>,
     /// The optional console arguments.
     /// Note: This is NOT part of the circuit representation.
     arguments: Option<Vec<console::Argument<A::Network>>>,
@@ -51,7 +51,7 @@ impl<A: Aleo> Inject for DynamicFuture<A> {
             program_name: Inject::new(mode, *value.program_name()),
             program_network: Inject::new(mode, *value.program_network()),
             function_name: Inject::new(mode, *value.function_name()),
-            hash: Inject::new(mode, *value.hash()),
+            checksum: Inject::new(mode, *value.checksum()),
             arguments: value.arguments().clone(),
         }
     }
@@ -73,9 +73,9 @@ impl<A: Aleo> DynamicFuture<A> {
         &self.function_name
     }
 
-    /// Returns the hash of the arguments.
-    pub const fn hash(&self) -> &Field<A> {
-        &self.hash
+    /// Returns the checksum of the arguments.
+    pub const fn checksum(&self) -> &Field<A> {
+        &self.checksum
     }
 
     /// Returns the console arguments.
@@ -92,8 +92,8 @@ impl<A: Aleo> Eject for DynamicFuture<A> {
         let program_name_mode = Eject::eject_mode(self.program_name());
         let program_network_mode = Eject::eject_mode(self.program_network());
         let function_name_mode = Eject::eject_mode(self.function_name());
-        let hash_mode = Eject::eject_mode(self.hash());
-        Mode::combine(program_name_mode, [program_network_mode, function_name_mode, hash_mode])
+        let checksum_mode = Eject::eject_mode(self.checksum());
+        Mode::combine(program_name_mode, [program_network_mode, function_name_mode, checksum_mode])
     }
 
     /// Ejects the dynamic future.
@@ -102,7 +102,7 @@ impl<A: Aleo> Eject for DynamicFuture<A> {
             Eject::eject_value(self.program_name()),
             Eject::eject_value(self.program_network()),
             Eject::eject_value(self.function_name()),
-            Eject::eject_value(self.hash()),
+            Eject::eject_value(self.checksum()),
             self.arguments.clone(),
         )
     }

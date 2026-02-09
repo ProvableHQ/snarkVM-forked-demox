@@ -43,21 +43,21 @@ impl<N: Network> Process<N> {
             let transition = execution.peek()?;
             // Retrieve the stack.
             let stack = self.get_stack(transition.program_id())?;
+            // Calculate the minimum number of calls for the root transition.
+            let minimum_number_of_calls = stack.get_minimum_number_of_calls(transition.function_name())?;
             // If the root transition contains a dynamic call,
             // - ensure that the number of calls is less than or equal to the number of transitions.
             // - otherwise, ensure that the number of calls matches the number of transitions.
             if stack.contains_dynamic_call(transition.function_name())? {
                 ensure!(
-                    stack.get_minimum_number_of_calls(transition.function_name())? <= execution.len(),
-                    "The number of transitions in the execution is incorrect. Expected at least {}, but found {}",
-                    stack.get_minimum_number_of_calls(transition.function_name())?,
+                    minimum_number_of_calls <= execution.len(),
+                    "The number of transitions in the execution is incorrect. Expected at least {minimum_number_of_calls}, but found {}",
                     execution.len()
                 );
             } else {
                 ensure!(
-                    stack.get_minimum_number_of_calls(transition.function_name())? == execution.len(),
-                    "The number of transitions in the execution is incorrect. Expected {}, but found {}",
-                    stack.get_minimum_number_of_calls(transition.function_name())?,
+                    minimum_number_of_calls == execution.len(),
+                    "The number of transitions in the execution is incorrect. Expected {minimum_number_of_calls}, but found {}",
                     execution.len()
                 );
             }
@@ -168,12 +168,14 @@ impl<N: Network> Process<N> {
                 function.output_types().len() == transition.outputs().len(),
                 "The number of transition outputs is incorrect"
             );
-            for (function_output, transition_output) in
-                function.output_types().iter().zip_eq(transition.outputs().iter())
+            for (output_index, (function_output, transition_output)) in
+                function.output_types().iter().zip_eq(transition.outputs().iter()).enumerate()
             {
                 ensure!(
                     transition_output.is_type(function_output),
-                    "Output variant mismatch: expected '{function_output}', found '{transition_output}'",
+                    "Output variant mismatch at index {output_index} in '{}/{}': expected '{function_output}', found '{transition_output}'",
+                    transition.program_id(),
+                    transition.function_name(),
                 );
             }
 
@@ -263,6 +265,9 @@ impl<N: Network> Process<N> {
         program_checksum: Option<N::Field>,
         transition_map: &mut HashMap<N::TransitionID, (&Transition<N>, Function<N>)>,
     ) -> Result<Vec<N::Field>> {
+        // Retrieve the network ID.
+        let network_id = U16::new(N::ID);
+
         // Compute the x- and y-coordinate of `tpk`.
         let (tpk_x, tpk_y) = transition.tpk().to_xy_coordinates();
 
@@ -307,38 +312,34 @@ impl<N: Network> Process<N> {
         let parent_function = transition_map.get(transition.id()).map(|(_, function)| function.clone());
 
         // Collect the function call instructions from the parent function.
-        // Each entry is a tuple of (is_dynamic, instruction).
+        // Each entry is (is_dynamic, instruction), where `is_dynamic` indicates a `call.dynamic`.
         let parent_function_calls = match parent_function {
-            Some(function) => function
-                .instructions()
-                .iter()
-                .filter_map(|instruction| match instruction {
-                    // Dynamic calls are always included.
-                    Instruction::CallDynamic(..) => Some((true, instruction.clone())),
-                    // Static calls are included only if they are function calls (not closure calls).
-                    Instruction::Call(call) => {
-                        match self
-                            .get_stack(transition.program_id())
-                            .and_then(|stack| call.is_function_call(stack.as_ref()))
-                        {
-                            Ok(true) => Some((false, instruction.clone())),
-                            Ok(false) => None,
-                            Err(e) => {
-                                // This should not occur, since the program is well-formed.
-                                debug_assert!(false, "Failed to check if call is a function call: {e}");
-                                None
+            Some(function) => {
+                let mut calls = Vec::new();
+                for instruction in function.instructions() {
+                    match instruction {
+                        // Dynamic calls (`call.dynamic`) are always function calls and contribute to the call graph.
+                        Instruction::CallDynamic(..) => calls.push((true, instruction.clone())),
+                        // Static calls (`call`) are included only if they invoke a function (not a closure).
+                        // Closures are inlined and do not produce separate transitions.
+                        Instruction::Call(call) => {
+                            // Retrieve the stack for the current program.
+                            let stack = self.get_stack(transition.program_id())?;
+                            // Check if this call invokes a function (as opposed to a closure).
+                            match call.is_function_call(stack.as_ref()) {
+                                Ok(true) => calls.push((false, instruction.clone())),
+                                Ok(false) => { /* Closure call - skip */ }
+                                Err(e) => bail!("Failed to determine if call is a function call: {e}"),
                             }
                         }
+                        // All other instruction types (arithmetic, hashing, casting, etc.) are not function calls.
+                        _ => {}
                     }
-                    // All other instructions are not function calls.
-                    _ => None,
-                })
-                .collect_vec(),
-            // This should never occur, since call_graph.get(transition.id())
-            // was successful above and call_graph is constructed
-            // together with transition_map, from which parent_function is
-            // sourced.
-            None => bail!("Function not found"),
+                }
+                calls
+            }
+            // This should never occur, since `call_graph` and `transition_map` are populated together.
+            None => bail!("Function not found for transition {} ({})", transition.id(), transition.function_name()),
         };
 
         ensure!(
@@ -350,23 +351,27 @@ impl<N: Network> Process<N> {
 
         // TODO(@vicsn): in case we stick to encoding and using *all* of the caller_{inputs, outputs} instead of just the dynamic ones,
         // we'll have to assert they equal the child's inputs/outputs.
-        for (child_transition_id, (is_dynamic, call_instruction)) in
+        for (child_transition_id, (is_dynamic_call, call_instruction)) in
             child_transition_ids.iter().zip_eq(parent_function_calls)
         {
             // Note: This unwrap is safe, as we are processing transitions in post-order,
             // which implies that all child transition IDs have been added to `transition_map`.
             let (child_transition, _) = transition_map.get(child_transition_id).unwrap();
 
+            // Compute the function ID for the child transition.
             let child_function_id =
-                compute_function_id(&U16::new(N::ID), child_transition.program_id(), child_transition.function_name())?;
+                compute_function_id(&network_id, child_transition.program_id(), child_transition.function_name())?;
 
-            let call_dynamic_instruction_opt = match call_instruction {
-                Instruction::CallDynamic(call_dynamic) => Some(call_dynamic),
-                _ => None,
+            // Extract the `CallDynamic` instruction data, if this is a dynamic call.
+            let call_dynamic = match call_instruction {
+                Instruction::CallDynamic(cd) => Some(cd),
+                Instruction::Call(..) => None,
+                // This should never occur, since `parent_function_calls` only contains `Call` and `CallDynamic`.
+                _ => bail!("Unexpected instruction type in parent function calls"),
             };
 
             // [Inputs] Extend the verifier inputs with the program ID and function name if the child transition is dynamic.
-            if is_dynamic {
+            if is_dynamic_call {
                 verifier_inputs.extend(child_transition.program_id().to_fields()?.into_iter().map(|field| *field));
                 verifier_inputs.extend([*child_transition.function_name().to_field()?]);
                 verifier_inputs.extend([*child_function_id]);
@@ -376,11 +381,11 @@ impl<N: Network> Process<N> {
 
             // [Inputs] Extend the verifier inputs with the input IDs of the external call.
             let num_inputs = child_transition.inputs().len();
-            if is_dynamic {
-                // For dynamic calls, use the dynamic_id when present, otherwise use normal verifier inputs.
-                // Note: call_dynamic_instruction_opt.unwrap() cannot panic by construction (is_dynamic is true).
-                let call_dynamic_instruction = call_dynamic_instruction_opt.clone().unwrap();
-                let operand_types = call_dynamic_instruction.operand_types();
+            if is_dynamic_call {
+                // For dynamic calls, use the dynamic ID when present, otherwise use normal verifier inputs.
+                // Note: This unwrap is safe because `is_dynamic_call` is true only for `CallDynamic` instructions.
+                let call_dynamic_ref = call_dynamic.as_ref().unwrap();
+                let operand_types = call_dynamic_ref.operand_types();
                 ensure!(
                     child_transition.inputs().len() == operand_types.len(),
                     "The number of inputs ({}) and dynamic call operand types ({}) do not match",
@@ -407,10 +412,22 @@ impl<N: Network> Process<N> {
                         input_type,
                         input,
                     );
-                    // Use the dynamic ID if present, otherwise use normal verifier inputs.
-                    match input.dynamic_id() {
-                        Some(dynamic_id) => verifier_inputs.push(**dynamic_id),
-                        None => verifier_inputs.extend(input.verifier_inputs()),
+                    // Extend the verifier inputs based on the input variant.
+                    match input {
+                        // Inputs with a dynamic ID contribute only the dynamic ID.
+                        Input::DynamicRecord(dynamic_id)
+                        | Input::RecordWithDynamicID(_, _, dynamic_id)
+                        | Input::ExternalRecordWithDynamicID(_, dynamic_id) => {
+                            verifier_inputs.push(**dynamic_id);
+                        }
+                        // All other inputs contribute their standard verifier inputs.
+                        Input::Constant(..) | Input::Public(..) | Input::Private(..) => {
+                            verifier_inputs.extend(input.verifier_inputs());
+                        }
+                        // Record and ExternalRecord are excluded above.
+                        Input::Record(..) | Input::ExternalRecord(..) => {
+                            unreachable!("Record and ExternalRecord are excluded above")
+                        }
                     }
                 }
             } else {
@@ -418,19 +435,21 @@ impl<N: Network> Process<N> {
             }
 
             // [Outputs] Extend the verifier inputs with the output IDs of the external call.
-            if is_dynamic {
-                // As above, this unwrap cannot panic by construction (is_dynamic is true).
-                let call_dynamic_instruction = call_dynamic_instruction_opt.unwrap();
-                let destination_types = call_dynamic_instruction.destination_types();
+            if is_dynamic_call {
+                // Note: This unwrap is safe because `is_dynamic_call` is true only for `CallDynamic` instructions.
+                let call_dynamic_ref = call_dynamic.as_ref().unwrap();
+                let destination_types = call_dynamic_ref.destination_types();
                 ensure!(
                     child_transition.outputs().len() == destination_types.len(),
-                    "The number of outputs and dynamic call destination types do not match"
+                    "The number of outputs ({}) and dynamic call destination types ({}) do not match",
+                    child_transition.outputs().len(),
+                    destination_types.len(),
                 );
                 for (index, (output, destination_type)) in
                     child_transition.outputs().iter().zip_eq(destination_types.iter()).enumerate()
                 {
                     match (output, destination_type) {
-                        // In the case of a `DynamicFuture`, the verifier computes the hash of the dynamic future directly.
+                        // A `DynamicFuture` output: the verifier computes the hash of the dynamic future directly.
                         (Output::Future(_id, future), ValueType::DynamicFuture) => {
                             let Some(future) = future else {
                                 bail!("Future is not present for child transition {}", child_transition.id());
@@ -451,17 +470,10 @@ impl<N: Network> Process<N> {
                             };
                             verifier_inputs.push(*dynamic_future_id);
                         }
-                        (Output::Constant(..), _)
-                        | (Output::Public(..), _)
-                        | (Output::Private(..), _)
-                        | (Output::Record(..), _)
-                        | (Output::ExternalRecord(..), _)
-                        | (Output::Future(..), _)
-                        | (Output::DynamicRecord(..), _)
-                        | (Output::RecordWithDynamicID(..), _)
-                        | (Output::ExternalRecordWithDynamicID(..), _) => {
-                            // Ensure the output type matches the caller's expectation.
-                            // Use the caller's view of the output (e.g., RecordWithDynamicID -> DynamicRecord).
+                        // Outputs with a dynamic ID contribute only the dynamic ID.
+                        (Output::DynamicRecord(dynamic_id), _)
+                        | (Output::RecordWithDynamicID(_, _, _, _, dynamic_id), _)
+                        | (Output::ExternalRecordWithDynamicID(_, dynamic_id), _) => {
                             ensure!(
                                 output.to_caller_output().is_type(destination_type),
                                 "Output {index} in dynamic call to {} should be of type {}, found: {}",
@@ -469,11 +481,23 @@ impl<N: Network> Process<N> {
                                 destination_type,
                                 output,
                             );
-                            // Use the dynamic ID if present, otherwise use the output id.
-                            match output.dynamic_id() {
-                                Some(dynamic_id) => verifier_inputs.push(**dynamic_id),
-                                None => verifier_inputs.push(**output.id()),
-                            }
+                            verifier_inputs.push(**dynamic_id);
+                        }
+                        // All other outputs contribute their standard output ID.
+                        (Output::Constant(..), _)
+                        | (Output::Public(..), _)
+                        | (Output::Private(..), _)
+                        | (Output::Record(..), _)
+                        | (Output::ExternalRecord(..), _)
+                        | (Output::Future(..), _) => {
+                            ensure!(
+                                output.to_caller_output().is_type(destination_type),
+                                "Output {index} in dynamic call to {} should be of type {}, found: {}",
+                                child_transition.function_name(),
+                                destination_type,
+                                output,
+                            );
+                            verifier_inputs.push(**output.id());
                         }
                     }
                 }
@@ -482,7 +506,7 @@ impl<N: Network> Process<N> {
             }
         }
 
-        // [Inputs] Extend the verifier inputs with the output IDs.
+        // [Outputs] Extend the verifier inputs with the output IDs.
         verifier_inputs.extend(transition.outputs().iter().flat_map(|output| output.verifier_inputs()));
 
         dev_println!("Transition public inputs ({} elements): {:#?}", verifier_inputs.len(), verifier_inputs);

@@ -490,16 +490,20 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             .into());
                         }
 
-                        // A helper function that synthesizes the translation key for a given program-record combination (if it has not been synthesized yet) and stores it in the program's stack.
-                        let ensure_translation_proving_key =
-                            |program_id: &ProgramID<N>, record_name: &Identifier<N>, rng: &mut R| -> Result<()> {
-                                let record_stack = match program_id == stack.program_id() {
-                                    true => stack,
-                                    false => &stack.get_stack_global(program_id)?,
-                                };
-
-                                record_stack.synthesize_translation_key::<A, R>(record_name, rng)
+                        // A helper function that synthesizes the translation key for a given program-record combination
+                        // (if it has not been synthesized yet), stores it in the program's stack, and returns it.
+                        let ensure_and_get_translation_proving_key = |program_id: &ProgramID<N>,
+                                                                      record_name: &Identifier<N>,
+                                                                      rng: &mut R|
+                         -> Result<ProvingKey<N>> {
+                            let record_stack = match program_id == stack.program_id() {
+                                true => stack,
+                                false => &stack.get_stack_global(program_id)?,
                             };
+
+                            record_stack.synthesize_translation_key::<A, R>(record_name, rng)?;
+                            record_stack.get_proving_key(record_name)
+                        };
 
                         let caller_console_input_ids = callee_request.to_dynamic_input_ids()?;
                         let callee_console_input_ids = callee_request.input_ids();
@@ -525,12 +529,16 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         // Synthesize translation proving keys and store input translations.
                         // Push to the top bucket of the translation stack (the caller's level).
                         for translation in input_translations {
-                            ensure_translation_proving_key(&translation.program_id, &translation.record_name, rng)?;
+                            let proving_key = ensure_and_get_translation_proving_key(
+                                &translation.program_id,
+                                &translation.record_name,
+                                rng,
+                            )?;
                             translations
                                 .write()
                                 .last_mut()
                                 .ok_or_else(|| anyhow!("Translation stack is empty"))?
-                                .push(translation);
+                                .push((translation, proving_key));
                         }
 
                         // Collect output record translations.
@@ -584,12 +592,16 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         // Synthesize translation proving keys and store output translations.
                         // Push to the top bucket of the translation stack (the caller's level).
                         for translation in output_translations {
-                            ensure_translation_proving_key(&translation.program_id, &translation.record_name, rng)?;
+                            let proving_key = ensure_and_get_translation_proving_key(
+                                &translation.program_id,
+                                &translation.record_name,
+                                rng,
+                            )?;
                             translations
                                 .write()
                                 .last_mut()
                                 .ok_or_else(|| anyhow!("Translation stack is empty"))?
-                                .push(translation);
+                                .push((translation, proving_key));
                         }
 
                         // Return the caller's request and response.
@@ -719,21 +731,21 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
 // Information needed to verify the callee's request in a dynamic call.
 struct CalleeDynamicRequest<N: Network> {
     // The network ID.
-    pub network_id: U16<N>,
+    network_id: U16<N>,
     // The program ID.
-    pub program_id: ProgramID<N>,
+    program_id: ProgramID<N>,
     // The function name.
-    pub function_name: Identifier<N>,
+    function_name: Identifier<N>,
     // The signer.
-    pub signer: Address<N>,
+    signer: Address<N>,
     // The sk_tag.
-    pub sk_tag: Field<N>,
+    sk_tag: Field<N>,
     // The tvk.
-    pub tvk: Field<N>,
+    tvk: Field<N>,
     // The tcm.
-    pub tcm: Field<N>,
+    tcm: Field<N>,
     // The caller input IDs.
-    pub caller_input_ids: Vec<InputID<N>>,
+    caller_input_ids: Vec<InputID<N>>,
 }
 
 impl<N: Network> CalleeDynamicRequest<N> {
@@ -815,8 +827,12 @@ fn convert_caller_inputs_to_callee_inputs<N: Network>(
                 (Value::Future(_), _) => Err(anyhow!("A future cannot be an input to a dynamic call.")),
                 // Dynamic futures are not allowed as inputs to dynamic calls.
                 (Value::DynamicFuture(_), _) => Err(anyhow!("A dynamic future cannot be an input to a dynamic call.")),
-                // For plaintext and record types, pass through unchanged.
-                (Value::Plaintext(_), _) | (Value::Record(_), _) | (Value::DynamicRecord(_), _) => Ok(input.clone()),
+                // Plaintext values pass through unchanged.
+                (Value::Plaintext(_), _) => Ok(input.clone()),
+                // Record values pass through unchanged.
+                (Value::Record(_), _) => Ok(input.clone()),
+                // DynamicRecord values that don't match the above patterns pass through unchanged.
+                (Value::DynamicRecord(_), _) => Ok(input.clone()),
             }
         })
         .collect()
@@ -1010,7 +1026,7 @@ fn collect_input_translations<N: Network>(
     callee_program_id: &ProgramID<N>,
     function_id: Field<N>,
     tvk: Field<N>,
-) -> Result<Vec<RecordTranslationData<N>>> {
+) -> Result<Vec<TranslationAssignment<N>>> {
     // Validate that all arrays have the same length.
     check_translation_array_lengths(
         "Inputs",
@@ -1040,7 +1056,7 @@ fn collect_input_translations<N: Network>(
                 ValueType::Record(record_name),
             ) => {
                 // Add the translation data for this non-external record.
-                translations.push(RecordTranslationData {
+                translations.push(TranslationAssignment {
                     record_static: record_static.clone(),
                     record_dynamic: record_dynamic.clone(),
                     program_id: *callee_program_id,
@@ -1053,7 +1069,7 @@ fn collect_input_translations<N: Network>(
                     gamma: Some(*gamma),
                     id_static: *serial_number,
                     id_dynamic: *id_dynamic,
-                    input_output_index: operand_index as u16,
+                    record_register_index: operand_index as u16,
                 });
             }
             // Case: DynamicRecord translates to an ExternalRecord.
@@ -1066,7 +1082,7 @@ fn collect_input_translations<N: Network>(
                 ValueType::ExternalRecord(record_locator),
             ) => {
                 // Add the translation data for this external record.
-                translations.push(RecordTranslationData {
+                translations.push(TranslationAssignment {
                     record_static: record_static.clone(),
                     record_dynamic: record_dynamic.clone(),
                     program_id: *record_locator.program_id(),
@@ -1079,15 +1095,19 @@ fn collect_input_translations<N: Network>(
                     gamma: None,
                     id_static: *id_static,
                     id_dynamic: *id_dynamic,
-                    input_output_index: operand_index as u16,
+                    record_register_index: operand_index as u16,
                 });
             }
-            // All other cases do not require translation.
-            (Value::Plaintext(..), ..)
-            | (Value::Record(..), ..)
-            | (Value::Future(..), ..)
-            | (Value::DynamicFuture(..), ..)
-            | (Value::DynamicRecord(..), ..) => {}
+            // Plaintext values do not require translation.
+            (Value::Plaintext(..), ..) => {}
+            // Record values that don't match the above patterns do not require translation.
+            (Value::Record(..), ..) => {}
+            // Future values do not require translation.
+            (Value::Future(..), ..) => {}
+            // DynamicFuture values do not require translation.
+            (Value::DynamicFuture(..), ..) => {}
+            // DynamicRecord values that don't match the above patterns do not require translation.
+            (Value::DynamicRecord(..), ..) => {}
         }
     }
 
@@ -1108,7 +1128,7 @@ fn collect_output_translations<N: Network>(
     tvk: Field<N>,
     num_inputs: usize,
     compute_record_view_key: impl Fn(usize, &console::program::Record<N, Plaintext<N>>) -> Result<Option<Field<N>>>,
-) -> Result<Vec<RecordTranslationData<N>>> {
+) -> Result<Vec<TranslationAssignment<N>>> {
     // Validate that all arrays have the same length.
     check_translation_array_lengths(
         "Outputs",
@@ -1141,7 +1161,7 @@ fn collect_output_translations<N: Network>(
                 let record_view_key = compute_record_view_key(operand_index, record_static)?;
 
                 // Add the translation data for this non-external record.
-                translations.push(RecordTranslationData {
+                translations.push(TranslationAssignment {
                     record_static: record_static.clone(),
                     record_dynamic: record_dynamic.clone(),
                     program_id: *callee_program_id,
@@ -1154,7 +1174,7 @@ fn collect_output_translations<N: Network>(
                     gamma: None,
                     id_static: *id_static,
                     id_dynamic: *id_dynamic,
-                    input_output_index: (num_inputs + operand_index) as u16,
+                    record_register_index: (num_inputs + operand_index) as u16,
                 });
             }
             // Case: DynamicRecord translates to an ExternalRecord.
@@ -1167,7 +1187,7 @@ fn collect_output_translations<N: Network>(
                 ValueType::ExternalRecord(record_locator),
             ) => {
                 // Add the translation data for this external record.
-                translations.push(RecordTranslationData {
+                translations.push(TranslationAssignment {
                     record_static: record_static.clone(),
                     record_dynamic: record_dynamic.clone(),
                     program_id: *record_locator.program_id(),
@@ -1180,15 +1200,19 @@ fn collect_output_translations<N: Network>(
                     gamma: None,
                     id_static: *id_static,
                     id_dynamic: *id_dynamic,
-                    input_output_index: (num_inputs + operand_index) as u16,
+                    record_register_index: (num_inputs + operand_index) as u16,
                 });
             }
-            // All other cases do not require translation.
-            (Value::Plaintext(..), ..)
-            | (Value::Record(..), ..)
-            | (Value::Future(..), ..)
-            | (Value::DynamicFuture(..), ..)
-            | (Value::DynamicRecord(..), ..) => {}
+            // Plaintext values do not require translation.
+            (Value::Plaintext(..), ..) => {}
+            // Record values that don't match the above patterns do not require translation.
+            (Value::Record(..), ..) => {}
+            // Future values do not require translation.
+            (Value::Future(..), ..) => {}
+            // DynamicFuture values do not require translation.
+            (Value::DynamicFuture(..), ..) => {}
+            // DynamicRecord values that don't match the above patterns do not require translation.
+            (Value::DynamicRecord(..), ..) => {}
         }
     }
 

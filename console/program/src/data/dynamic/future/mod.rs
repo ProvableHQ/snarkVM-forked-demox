@@ -34,7 +34,7 @@ pub type FutureArgumentTree<E> = MerkleTree<E, Poseidon8<E>, Poseidon2<E>, FUTUR
 /// A dynamic future is a fixed-size representation of a future. Like static
 /// `Future`s, a dynamic future contains a program ID and function name. These
 /// are however represented as `Field` elements as opposed to `Identifier`s to
-/// ensure a fixed size. Dynamic futures also store a hash of the
+/// ensure a fixed size. Dynamic futures also store a checksum of the
 /// arguments to the future instead of the arguments themselves. This ensures
 /// that all dynamic futures have a constant size, regardless of the amount of
 /// data they contain.
@@ -46,22 +46,22 @@ pub struct DynamicFuture<N: Network> {
     program_network: Field<N>,
     /// The function name.
     function_name: Field<N>,
-    /// The hash of the arguments.
-    hash: Field<N>,
+    /// The checksum of the arguments.
+    checksum: Field<N>,
     /// The optional arguments.
     arguments: Option<Vec<Argument<N>>>,
 }
 
 impl<N: Network> DynamicFuture<N> {
-    /// Initializes a dynamic future without checking that the hash and arguments are consistent.
+    /// Initializes a dynamic future without checking that the checksum and arguments are consistent.
     pub fn new_unchecked(
         program_name: Field<N>,
         program_network: Field<N>,
         function_name: Field<N>,
-        hash: Field<N>,
+        checksum: Field<N>,
         arguments: Option<Vec<Argument<N>>>,
     ) -> Self {
-        Self { program_name, program_network, function_name, hash, arguments }
+        Self { program_name, program_network, function_name, checksum, arguments }
     }
 }
 
@@ -81,9 +81,9 @@ impl<N: Network> DynamicFuture<N> {
         &self.function_name
     }
 
-    /// Returns the hash of the arguments.
-    pub const fn hash(&self) -> &Field<N> {
-        &self.hash
+    /// Returns the checksum of the arguments.
+    pub const fn checksum(&self) -> &Field<N> {
+        &self.checksum
     }
 
     /// Returns the optional arguments.
@@ -117,9 +117,9 @@ impl<N: Network> DynamicFuture<N> {
 
         // Hash the bits of the arguments.
         // TODO: Do we need domain separation or the outer hash?
-        let hash = N::hash_bhp256(&N::hash_keccak256(&bits)?)?;
+        let checksum = N::hash_bhp256(&N::hash_keccak256(&bits)?)?;
 
-        Ok(Self::new_unchecked(program_name, program_network, function_name, hash, Some(arguments)))
+        Ok(Self::new_unchecked(program_name, program_network, function_name, checksum, Some(arguments)))
     }
 
     /// Creates a static future from a dynamic future.
@@ -202,7 +202,7 @@ mod tests {
     }
 
     #[test]
-    fn test_hash_determinism() {
+    fn test_checksum_determinism() {
         let args1 = vec![Argument::Plaintext(Plaintext::from_str("100u64").unwrap())];
         let args2 = vec![Argument::Plaintext(Plaintext::from_str("100u64").unwrap())];
         let args3 = vec![Argument::Plaintext(Plaintext::from_str("200u64").unwrap())];
@@ -211,7 +211,7 @@ mod tests {
         let d2 = DynamicFuture::from_future(&create_test_future(args2)).unwrap();
         let d3 = DynamicFuture::from_future(&create_test_future(args3)).unwrap();
 
-        assert_eq!(d1.hash(), d2.hash(), "Same arguments should produce same hash");
-        assert_ne!(d1.hash(), d3.hash(), "Different arguments should produce different hashes");
+        assert_eq!(d1.checksum(), d2.checksum(), "Same arguments should produce same checksum");
+        assert_ne!(d1.checksum(), d3.checksum(), "Different arguments should produce different checksums");
     }
 }
