@@ -35,7 +35,6 @@ use snarkvm_ledger_query::QueryTrait;
 use snarkvm_synthesizer_program::StackTrait;
 use snarkvm_synthesizer_snark::{Proof, ProvingKey, VerifyingKey};
 
-use indexmap::IndexMap;
 use std::{collections::HashMap, sync::OnceLock};
 
 use crate::Authorization;
@@ -192,17 +191,6 @@ impl<N: Network> Trace<N> {
 
         // Store the global state root.
         self.global_state_root.set(global_state_root).map_err(|_| anyhow!("Failed to set global state root"))?;
-
-        // Ensure the constructed call graph is acyclic from ConsensusVersion::V14 onwards.
-        let consensus_version = N::CONSENSUS_VERSION(query.current_block_height()?)?;
-        if consensus_version >= ConsensusVersion::V14 {
-            let tid_to_locator = self
-                .transitions
-                .iter()
-                .map(|t| (*t.id(), Locator::new(*t.program_id(), *t.function_name())))
-                .collect::<IndexMap<_, _>>();
-            Process::<N>::ensure_acyclic_call_graph(&self.call_graph, &tid_to_locator)?;
-        }
 
         Ok(())
     }

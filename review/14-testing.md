@@ -24,7 +24,6 @@ General VM execution tests, updated for V14 compatibility.
 
 | File | Focus |
 |------|-------|
-| `test_call_graph.rs` | Acyclic call graph validation |
 | `test_credits.rs` | Credits program with dynamic dispatch |
 | `test_execute.rs` | Execution including dynamic calls |
 | `test_serializers.rs` | Serialization for new types |
@@ -258,16 +257,12 @@ Test expectation files in `synthesizer/tests/expectations/vm/execute_and_finaliz
 3. Error recovery in dynamic call failures
 4. Large-scale batch translation proving
 
-**Disabled Tests:**
-- `recursion.rs` - Disabled due to acyclic call graph requirement
-
 ---
 
 ## Security Testing
 
 **Tested Security Properties:**
-1. **Acyclic Call Graph:** `test_call_graph.rs` validates cycle detection
-2. **Type Safety:** Type mismatch tests in all instruction tests
-3. **Double-Spend Prevention:** `cast.rs` tests consumption patterns
-4. **Translation Integrity:** `translation/tests.rs` validates proof correctness
-5. **Fee Protection:** Fee transitions cannot be dynamic (enforced in `Fee::from()`)
+1. **Type Safety:** Type mismatch tests in all instruction tests
+2. **Double-Spend Prevention:** `cast.rs` tests consumption patterns
+3. **Translation Integrity:** `translation/tests.rs` validates proof correctness
+4. **Fee Protection:** Fee transitions cannot be dynamic (enforced in `Fee::from()`)

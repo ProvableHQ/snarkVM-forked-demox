@@ -8,8 +8,7 @@ The `synthesizer/process` crate is the heart of Aleo program execution. For dyna
 
 1. **Implements dynamic call execution** via `call.dynamic` handling
 2. **Introduces translation proofs** for Record ↔ DynamicRecord verification
-3. **Enforces acyclic call graphs** for V14+ consensus
-4. **Manages type checking** for DynamicRecord/DynamicFuture
+3. **Manages type checking** for DynamicRecord/DynamicFuture
 5. **Uses structured error types** from staging merge (CallEvalError, CallExecError, etc.)
 
 ## Error Type System (from staging)
@@ -250,7 +249,6 @@ Comprehensive tests:
 - `prepare()` now calls `translation_tasks.prepare()` with call graph
 - `prove_batch()` includes translation assignments in Varuna proof
 - `verify_batch()` constructs translation verifier inputs
-- **Acyclic validation** (V14+): `ensure_acyclic_call_graph()`
 
 ---
 
@@ -366,9 +364,6 @@ let batch_translation_inputs = Translation::prepare_verifier_inputs(
 
 #### `tests/mod.rs`
 Module registration for test files.
-
-#### `tests/test_call_graph.rs`
-Acyclic call graph validation tests.
 
 #### `tests/test_credits.rs`
 Credits program tests with dynamic dispatch.

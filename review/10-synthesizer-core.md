@@ -191,15 +191,6 @@ Comprehensive test suite for V14 dynamic dispatch features.
 
 ---
 
-#### `recursion.rs` (518 lines) - **DISABLED**
-**Purpose:** Recursive dynamic function calls.
-
-**Status:** Commented out due to acyclic call graph requirement.
-
-**Note:** "can be re-enabled if we ever allow cycles"
-
----
-
 ### Other Test Files
 
 #### `vm/tests/mod.rs`
