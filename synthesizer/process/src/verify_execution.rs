@@ -239,7 +239,8 @@ impl<N: Network> Process<N> {
             },
         )?;
         // Ensure `Authorization::translation_batches` matches the number of translations.
-        // We only compare the totals because preserving order is complex.
+        // We only compare the totals because `Authorization::translation_batches` does not preserve order.
+        // Note that in general the prover and verifier agree on order through the use of `translation_index`.
         let expected_n_translations =
             Authorization::translation_batches(self, execution.transitions())?.into_iter().sum::<usize>();
         let actual_n_translations = batch_translation_inputs.iter().map(|(_, inputs)| inputs.len()).sum::<usize>();
