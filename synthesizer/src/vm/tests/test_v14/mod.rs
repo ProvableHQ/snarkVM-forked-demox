@@ -122,9 +122,9 @@ use snarkvm_utilities::TestRng;
 // - Translate an output record fom a call to a preexisting program to ensure signature-verification circuit has not changed
 //   In: get_record_dynamic.rs::translate_transfer_public_to_private
 
-/// Tests that V3 deployments without records have empty translation verifying keys.
+/// Tests that V14 deployments without records have no record verifying keys.
 #[test]
-fn test_v3_deployment_without_records() {
+fn test_v14_deployment_without_records() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
@@ -148,18 +148,18 @@ constructor:
     // Create a deployment transaction.
     let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
 
-    // Verify the deployment has translation verifying keys (V3 format).
-    // At V14, all deployments must have translation_verifying_keys = Some(...).
+    // Verify the deployment has the expected number of verifying keys.
+    // At V14, programs without records should have verifying_keys.len() == num_functions.
     match &deployment {
         Transaction::Deploy(_, _, _, deploy, _) => {
-            // Programs without records should have Some(vec![]).
-            assert!(
-                deploy.translation_verifying_keys().is_some(),
-                "V14 deployment should have translation_verifying_keys = Some(...)"
+            assert_eq!(
+                deploy.verifying_keys().len(),
+                deploy.num_functions(),
+                "V14 deployment without records should have verifying_keys.len() == num_functions"
             );
             assert!(
-                deploy.translation_verifying_keys().as_ref().unwrap().is_empty(),
-                "Program without records should have empty translation verifying keys"
+                deploy.translation_verifying_keys().is_none(),
+                "Program without records should have no record verifying keys"
             );
         }
         _ => panic!("Expected deploy transaction"),
@@ -169,9 +169,9 @@ constructor:
     add_and_test(&vm, &caller_private_key, &[deployment], rng);
 }
 
-/// Tests that V3 deployments with records have non-empty translation verifying keys.
+/// Tests that V14 deployments with records have record verifying keys in the merged vec.
 #[test]
-fn test_v3_deployment_with_records() {
+fn test_v14_deployment_with_records() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
@@ -200,16 +200,16 @@ constructor:
     // Create a deployment transaction.
     let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
 
-    // Verify the deployment has non-empty translation verifying keys.
+    // Verify the deployment has record verifying keys in the merged vec.
     match &deployment {
         Transaction::Deploy(_, _, _, deploy, _) => {
             assert!(
                 deploy.translation_verifying_keys().is_some(),
-                "V14 deployment should have translation_verifying_keys = Some(...)"
+                "V14 deployment with records should have record verifying keys"
             );
             assert!(
-                !deploy.translation_verifying_keys().as_ref().unwrap().is_empty(),
-                "Program with records should have non-empty translation verifying keys"
+                !deploy.translation_verifying_keys().unwrap().is_empty(),
+                "Program with records should have non-empty record verifying keys"
             );
         }
         _ => panic!("Expected deploy transaction"),
@@ -246,12 +246,17 @@ constructor:
     // Create a deployment transaction.
     let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
 
-    // Verify the deployment does NOT have translation verifying keys (V2 format).
+    // Verify the deployment does NOT have record verifying keys (pre-V14 format).
     match &deployment {
         Transaction::Deploy(_, _, _, deploy, _) => {
             assert!(
                 deploy.translation_verifying_keys().is_none(),
-                "Pre-V14 deployment should have translation_verifying_keys = None (V2 format)"
+                "Pre-V14 deployment should have no record verifying keys"
+            );
+            assert_eq!(
+                deploy.verifying_keys().len(),
+                deploy.num_functions(),
+                "Pre-V14 deployment should only have function verifying keys"
             );
         }
         _ => panic!("Expected deploy transaction"),
@@ -264,7 +269,7 @@ constructor:
     vm.add_next_block(&block).unwrap();
 }
 
-/// Tests that a V2 deployment (created with translation_verifying_keys = None)
+/// Tests that a V2 deployment (without record verifying keys)
 /// is rejected when verified at V14.
 #[test]
 fn test_v2_deployment_transaction_rejected_at_v14() {
@@ -293,12 +298,12 @@ constructor:
     // Create a V2 deployment transaction at V13.
     let v2_deployment = vm_v13.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
 
-    // Verify it's a V2 deployment.
+    // Verify it's a pre-V14 deployment (no record verifying keys).
     match &v2_deployment {
         Transaction::Deploy(_, _, _, deploy, _) => {
             assert!(
                 deploy.translation_verifying_keys().is_none(),
-                "V2 deployment should have translation_verifying_keys = None"
+                "Pre-V14 deployment should have no record verifying keys"
             );
         }
         _ => panic!("Expected deploy transaction"),
@@ -343,12 +348,12 @@ constructor:
     let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
     let transaction_id = deployment.id();
 
-    // Verify it's a V2 deployment.
+    // Verify it's a pre-V14 deployment (no record verifying keys).
     match &deployment {
         Transaction::Deploy(_, _, _, deploy, _) => {
             assert!(
                 deploy.translation_verifying_keys().is_none(),
-                "V2 deployment should have translation_verifying_keys = None"
+                "Pre-V14 deployment should have no record verifying keys"
             );
         }
         _ => panic!("Expected deploy transaction"),
@@ -373,12 +378,12 @@ constructor:
     let retrieved_tx = vm.transaction_store().get_transaction(&transaction_id).unwrap();
     assert!(retrieved_tx.is_some(), "V2 deployment should still be accessible after V14");
 
-    // Verify the retrieved deployment still has V2 format (translation_verifying_keys = None).
+    // Verify the retrieved deployment still has pre-V14 format (no record verifying keys).
     match retrieved_tx.unwrap() {
         Transaction::Deploy(_, _, _, deploy, _) => {
             assert!(
                 deploy.translation_verifying_keys().is_none(),
-                "Retrieved V2 deployment should still have translation_verifying_keys = None"
+                "Retrieved pre-V14 deployment should still have no record verifying keys"
             );
         }
         _ => panic!("Expected deploy transaction"),

@@ -43,19 +43,11 @@ impl<N: Network> Process<N> {
         // and is `None` for all programs deployed before the `V9` migration.
         stack.set_program_owner(deployment.program_owner());
 
-        // Insert the verifying keys.
-        for (function_name, (verifying_key, _)) in deployment.verifying_keys() {
-            stack.insert_verifying_key(function_name, verifying_key.clone())?;
+        // Insert all verifying keys.
+        for (name, (verifying_key, _)) in deployment.verifying_keys() {
+            stack.insert_verifying_key(name, verifying_key.clone())?;
         }
         lap!(timer, "Insert the verifying keys");
-
-        // Insert the translation verifying keys.
-        if let Some(translation_verifying_keys) = deployment.translation_verifying_keys() {
-            for (record_name, (verifying_key, _)) in translation_verifying_keys {
-                stack.insert_verifying_key(record_name, verifying_key.clone())?;
-            }
-        }
-        lap!(timer, "Insert the translation verifying keys");
 
         // Determine which mappings must be initialized.
         let mappings = match deployment.edition().is_zero() {

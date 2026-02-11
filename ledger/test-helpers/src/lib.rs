@@ -203,12 +203,11 @@ function compute:
         deployment.verifying_keys().clone(),
         None,
         None,
-        None,
     )
     .unwrap()
 }
 
-pub fn sample_deployment_v2(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
+pub fn sample_deployment_v2_without_translation_keys(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
     static INSTANCE: OnceLock<Deployment<CurrentNetwork>> = OnceLock::new();
     let deployment = INSTANCE
         .get_or_init(|| {
@@ -244,12 +243,11 @@ function compute:
         deployment.verifying_keys().clone(),
         deployment.program_checksum(),
         Some(Address::rand(rng)),
-        None,
     )
     .unwrap()
 }
 
-pub fn sample_deployment_v3(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
+pub fn sample_deployment_v2_with_translation_keys(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
     static INSTANCE: OnceLock<Deployment<CurrentNetwork>> = OnceLock::new();
     let deployment = INSTANCE
         .get_or_init(|| {
@@ -290,7 +288,6 @@ function compute:
         deployment.verifying_keys().clone(),
         deployment.program_checksum(),
         Some(Address::rand(rng)),
-        deployment.translation_verifying_keys().clone(),
     )
     .unwrap()
 }
@@ -299,14 +296,16 @@ function compute:
 pub fn sample_rejected_deployment(
     version: u8,
     edition: u16,
+    has_translation_keys: bool,
     is_fee_private: bool,
     rng: &mut TestRng,
 ) -> Rejected<CurrentNetwork> {
     // Sample a deploy transaction.
-    let deployment = match crate::sample_deployment_transaction(version, edition, is_fee_private, rng) {
-        Transaction::Deploy(_, _, _, deployment, _) => (*deployment).clone(),
-        _ => unreachable!(),
-    };
+    let deployment =
+        match crate::sample_deployment_transaction(version, edition, has_translation_keys, is_fee_private, rng) {
+            Transaction::Deploy(_, _, _, deployment, _) => (*deployment).clone(),
+            _ => unreachable!(),
+        };
 
     // Sample a new program owner.
     let private_key = PrivateKey::new(rng).unwrap();
@@ -498,29 +497,28 @@ function large_transaction:
 pub fn sample_deployment_transaction(
     version: u8,
     edition: u16,
+    has_translation_keys: bool,
     is_fee_private: bool,
     rng: &mut TestRng,
 ) -> Transaction<CurrentNetwork> {
     // Sample a private key.
     let private_key = PrivateKey::new(rng).unwrap();
     // Sample a deployment.
-    let deployment = match version {
-        1 => sample_deployment_v1(edition, rng),
-        2 => {
-            let mut deployment = sample_deployment_v2(edition, rng);
+    let deployment = match (version, has_translation_keys) {
+        (1, false) => sample_deployment_v1(edition, rng),
+        (2, false) => {
+            let mut deployment = sample_deployment_v2_without_translation_keys(edition, rng);
             // Set the program owner to the address of the private key.
             deployment.set_program_owner_raw(Some(Address::try_from(&private_key).unwrap()));
-            // Return the deployment.
             deployment
         }
-        3 => {
-            let mut deployment = sample_deployment_v3(edition, rng);
+        (2, true) => {
+            let mut deployment = sample_deployment_v2_with_translation_keys(edition, rng);
             // Set the program owner to the address of the private key.
             deployment.set_program_owner_raw(Some(Address::try_from(&private_key).unwrap()));
-            // Return the deployment.
             deployment
         }
-        _ => panic!("Invalid deployment version: {version}"),
+        _ => panic!("Invalid deployment version ({version}) or translation keys combination."),
     };
 
     // Compute the deployment ID.

@@ -109,8 +109,6 @@ pub struct DeploymentMemory<N: Network> {
     verifying_key_map: MemoryMap<(ProgramID<N>, Identifier<N>, u16), VerifyingKey<N>>,
     /// The certificate map.
     certificate_map: MemoryMap<(ProgramID<N>, Identifier<N>, u16), Certificate<N>>,
-    /// The contains-translation-keys map.
-    contains_translation_keys_map: MemoryMap<(ProgramID<N>, u16), ()>,
     /// The fee store.
     fee_store: FeeStore<N, FeeMemory<N>>,
 }
@@ -126,7 +124,6 @@ impl<N: Network> DeploymentStorage<N> for DeploymentMemory<N> {
     type ChecksumMap = MemoryMap<(ProgramID<N>, u16), [U8<N>; 32]>;
     type VerifyingKeyMap = MemoryMap<(ProgramID<N>, Identifier<N>, u16), VerifyingKey<N>>;
     type CertificateMap = MemoryMap<(ProgramID<N>, Identifier<N>, u16), Certificate<N>>;
-    type ContainsTranslationKeysMap = MemoryMap<(ProgramID<N>, u16), ()>;
     type FeeStorage = FeeMemory<N>;
 
     /// Initializes the deployment storage.
@@ -141,7 +138,6 @@ impl<N: Network> DeploymentStorage<N> for DeploymentMemory<N> {
             checksum_map: MemoryMap::default(),
             verifying_key_map: MemoryMap::default(),
             certificate_map: MemoryMap::default(),
-            contains_translation_keys_map: MemoryMap::default(),
             fee_store,
         })
     }
@@ -189,11 +185,6 @@ impl<N: Network> DeploymentStorage<N> for DeploymentMemory<N> {
     /// Returns the certificate map.
     fn certificate_map(&self) -> &Self::CertificateMap {
         &self.certificate_map
-    }
-
-    /// Returns the contains-translation-keys map.
-    fn contains_translation_keys_map(&self) -> &Self::ContainsTranslationKeysMap {
-        &self.contains_translation_keys_map
     }
 
     /// Returns the fee store.

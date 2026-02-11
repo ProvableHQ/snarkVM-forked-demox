@@ -271,18 +271,19 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     self.process.read().mapping_types_exist(deployment.program())?;
                 }
 
-                // Enforce translation verifying key requirements based on consensus version.
-                // Before V14: translation verifying keys are not allowed (V2 format).
-                // At/after V14: translation verifying keys are required (V3 format).
+                // Enforce record verifying key requirements based on consensus version.
+                // Before V14: record verifying keys are not allowed.
+                // At/after V14: record verifying keys are required.
                 if consensus_version < ConsensusVersion::V14 {
                     ensure!(
-                        deployment.translation_verifying_keys().is_none(),
-                        "Invalid deployment transaction '{id}' - translation verifying keys are not allowed before `ConsensusVersion::V14`"
+                        deployment.verifying_keys().len() == deployment.num_functions(),
+                        "Invalid deployment transaction '{id}' - record verifying keys are not allowed before `ConsensusVersion::V14`"
                     );
                 } else {
+                    let expected = deployment.num_functions() + deployment.program().records().len();
                     ensure!(
-                        deployment.translation_verifying_keys().is_some(),
-                        "Invalid deployment transaction '{id}' - missing translation verifying keys after `ConsensusVersion::V14`"
+                        deployment.verifying_keys().len() == expected,
+                        "Invalid deployment transaction '{id}' - missing record verifying keys after `ConsensusVersion::V14`"
                     );
                 }
 

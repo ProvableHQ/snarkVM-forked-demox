@@ -19,8 +19,8 @@ impl<N: Network> Parser for DynamicFuture<N> {
     /// Parses a string into a dynamic future.
     ///
     /// Supports two formats:
-    /// - Human-readable: `{ program_id: foo.aleo, function_name: bar, checksum: 0field }`
-    /// - Raw field: `{ program_name: 0field, program_network: 0field, function_name: 0field, checksum: 0field }`
+    /// - Human-readable: `{ _program_id: foo.aleo, _function_name: bar, _checksum: 0field }`
+    /// - Raw field: `{ _program_name: 0field, _program_network: 0field, _function_name: 0field, _checksum: 0field }`
     #[inline]
     fn parse(string: &str) -> ParserResult<Self> {
         // Try to parse the human-readable format first.
@@ -33,7 +33,7 @@ impl<N: Network> Parser for DynamicFuture<N> {
 }
 
 impl<N: Network> DynamicFuture<N> {
-    /// Parses the human-readable format: `{ program_id: foo.aleo, function_name: bar, checksum: 0field }`.
+    /// Parses the human-readable format: `{ _program_id: foo.aleo, _function_name: bar, _checksum: 0field }`.
     fn parse_human_readable(string: &str) -> ParserResult<Self> {
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
@@ -42,8 +42,8 @@ impl<N: Network> DynamicFuture<N> {
 
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
-        // Parse the "program_id" from the string.
-        let (string, _) = tag("program_id")(string)?;
+        // Parse the "_program_id" from the string.
+        let (string, _) = tag("_program_id")(string)?;
         // Parse the whitespace from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
         // Parse the ":" from the string.
@@ -59,8 +59,8 @@ impl<N: Network> DynamicFuture<N> {
 
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
-        // Parse the "function_name" from the string.
-        let (string, _) = tag("function_name")(string)?;
+        // Parse the "_function_name" from the string.
+        let (string, _) = tag("_function_name")(string)?;
         // Parse the whitespace from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
         // Parse the ":" from the string.
@@ -76,8 +76,8 @@ impl<N: Network> DynamicFuture<N> {
 
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
-        // Parse the "checksum" from the string.
-        let (string, _) = tag("checksum")(string)?;
+        // Parse the "_checksum" from the string.
+        let (string, _) = tag("_checksum")(string)?;
         // Parse the whitespace from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
         // Parse the ":" from the string.
@@ -101,7 +101,7 @@ impl<N: Network> DynamicFuture<N> {
         Ok((string, Self::new_unchecked(program_name, program_network, function_name_field, checksum, None)))
     }
 
-    /// Parses the raw field format: `{ program_name: 0field, program_network: 0field, function_name: 0field, checksum: 0field }`.
+    /// Parses the raw field format: `{ _program_name: 0field, _program_network: 0field, _function_name: 0field, _checksum: 0field }`.
     fn parse_raw_fields(string: &str) -> ParserResult<Self> {
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
@@ -110,8 +110,8 @@ impl<N: Network> DynamicFuture<N> {
 
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
-        // Parse the "program_name" from the string.
-        let (string, _) = tag("program_name")(string)?;
+        // Parse the "_program_name" from the string.
+        let (string, _) = tag("_program_name")(string)?;
         // Parse the whitespace from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
         // Parse the ":" from the string.
@@ -127,8 +127,8 @@ impl<N: Network> DynamicFuture<N> {
 
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
-        // Parse the "program_network" from the string.
-        let (string, _) = tag("program_network")(string)?;
+        // Parse the "_program_network" from the string.
+        let (string, _) = tag("_program_network")(string)?;
         // Parse the whitespace from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
         // Parse the ":" from the string.
@@ -144,8 +144,8 @@ impl<N: Network> DynamicFuture<N> {
 
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
-        // Parse the "function_name" from the string.
-        let (string, _) = tag("function_name")(string)?;
+        // Parse the "_function_name" from the string.
+        let (string, _) = tag("_function_name")(string)?;
         // Parse the whitespace from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
         // Parse the ":" from the string.
@@ -161,8 +161,8 @@ impl<N: Network> DynamicFuture<N> {
 
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
-        // Parse the "checksum" from the string.
-        let (string, _) = tag("checksum")(string)?;
+        // Parse the "_checksum" from the string.
+        let (string, _) = tag("_checksum")(string)?;
         // Parse the whitespace from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
         // Parse the ":" from the string.
@@ -221,7 +221,7 @@ impl<N: Network> Display for DynamicFuture<N> {
             if let Ok(program_id) = ProgramID::try_from((name, network)) {
                 return write!(
                     f,
-                    "{{ program_id: {program_id}, function_name: {function}, checksum: {} }}",
+                    "{{ _program_id: {program_id}, _function_name: {function}, _checksum: {} }}",
                     self.checksum()
                 );
             }
@@ -230,7 +230,7 @@ impl<N: Network> Display for DynamicFuture<N> {
         // Fall back to raw field format.
         write!(
             f,
-            "{{ program_name: {}, program_network: {}, function_name: {}, checksum: {} }}",
+            "{{ _program_name: {}, _program_network: {}, _function_name: {}, _checksum: {} }}",
             self.program_name(),
             self.program_network(),
             self.function_name(),
@@ -277,7 +277,7 @@ mod tests {
     #[test]
     fn test_parse_human_readable() {
         // Parse a dynamic future from a human-readable string.
-        let string = "{ program_id: test.aleo, function_name: foo, checksum: 0field }";
+        let string = "{ _program_id: test.aleo, _function_name: foo, _checksum: 0field }";
         let (remainder, candidate) = DynamicFuture::<CurrentNetwork>::parse(string).unwrap();
         assert!(remainder.is_empty());
 
@@ -295,7 +295,7 @@ mod tests {
     #[test]
     fn test_parse_raw_fields() {
         // Parse a dynamic future from a raw field string.
-        let string = "{ program_name: 0field, program_network: 0field, function_name: 0field, checksum: 0field }";
+        let string = "{ _program_name: 0field, _program_network: 0field, _function_name: 0field, _checksum: 0field }";
         let (remainder, candidate) = DynamicFuture::<CurrentNetwork>::parse(string).unwrap();
         assert!(remainder.is_empty());
         assert_eq!(*candidate.program_name(), Field::from_u64(0));
@@ -318,11 +318,11 @@ mod tests {
 
         // Check that the display uses human-readable format.
         let display = dynamic.to_string();
-        assert!(display.contains("program_id:"));
+        assert!(display.contains("_program_id:"));
         assert!(display.contains("credits.aleo"));
-        assert!(display.contains("function_name:"));
+        assert!(display.contains("_function_name:"));
         assert!(display.contains("transfer"));
-        assert!(display.contains("checksum:"));
+        assert!(display.contains("_checksum:"));
     }
 
     #[test]
@@ -338,9 +338,9 @@ mod tests {
 
         // Check that the display falls back to raw field format.
         let display = dynamic.to_string();
-        assert!(display.contains("program_name:"));
-        assert!(display.contains("program_network:"));
-        assert!(display.contains("function_name:"));
-        assert!(display.contains("checksum:"));
+        assert!(display.contains("_program_name:"));
+        assert!(display.contains("_program_network:"));
+        assert!(display.contains("_function_name:"));
+        assert!(display.contains("_checksum:"));
     }
 }

@@ -25,8 +25,9 @@ impl<N: Network> Stack<N> {
         ensure!(!self.program.functions().is_empty(), "Program '{}' has no functions", self.program.id());
 
         // Initialize a vector for the verifying keys and certificates.
-        let mut verifying_keys = Vec::with_capacity(self.program.functions().len());
+        let mut verifying_keys = Vec::with_capacity(self.program.functions().len() + self.program.records().len());
 
+        // Synthesize function verifying keys.
         for function_name in self.program.functions().keys() {
             // Synthesize the proving and verifying key.
             self.synthesize_key::<A, R>(function_name, rng)?;
@@ -46,9 +47,7 @@ impl<N: Network> Stack<N> {
             verifying_keys.push((*function_name, (verifying_key, certificate)));
         }
 
-        // Initialize a vector for the verifying keys and certificates.
-        let mut translation_verifying_keys = Vec::with_capacity(self.program.records().len());
-
+        // Synthesize record (translation) verifying keys and append to the same vec.
         for record_name in self.program.records().keys() {
             // Synthesize the proving and verifying key.
             self.synthesize_translation_key::<A, R>(record_name, rng)?;
@@ -66,14 +65,8 @@ impl<N: Network> Stack<N> {
             lap!(timer, "Certify the circuit");
 
             // Add the verifying key and certificate to the bundle.
-            translation_verifying_keys.push((*record_name, (verifying_key, certificate)));
+            verifying_keys.push((*record_name, (verifying_key, certificate)));
         }
-
-        // If there are no program records, do not include translation verifying keys.
-        let translation_verifying_keys = match translation_verifying_keys.is_empty() {
-            true => None,
-            false => Some(translation_verifying_keys),
-        };
 
         finish!(timer);
 
@@ -84,7 +77,6 @@ impl<N: Network> Stack<N> {
             verifying_keys,
             Some(self.program.to_checksum()),
             Some(Address::zero()),
-            translation_verifying_keys,
         )
     }
 
@@ -131,17 +123,17 @@ impl<N: Network> Stack<N> {
         ensure!(deployment.num_combined_constraints()? <= N::MAX_DEPLOYMENT_CONSTRAINTS);
 
         // Construct the call stacks and assignments used to verify the certificates.
-        let mut call_stacks = Vec::with_capacity(deployment.verifying_keys().len());
+        let mut call_stacks = Vec::with_capacity(deployment.function_verifying_keys().len());
 
         // Sample a dummy `root_tvk` for circuit synthesis.
         let root_tvk = None;
         // Sample a dummy `caller` for circuit synthesis.
         let caller = None;
 
-        // Check that the number of functions matches the number of verifying keys.
+        // Check that the number of functions matches the number of function verifying keys.
         ensure!(
-            deployment.program().functions().len() == deployment.verifying_keys().len(),
-            "The number of functions in the program does not match the number of verifying keys"
+            deployment.program().functions().len() == deployment.function_verifying_keys().len(),
+            "The number of functions in the program does not match the number of function verifying keys"
         );
 
         #[cfg(not(any(test, feature = "test")))]
@@ -160,7 +152,7 @@ impl<N: Network> Stack<N> {
 
         // Iterate through the program functions and construct the callstacks and corresponding assignments.
         for (function, (_, (verifying_key, _))) in
-            deployment.program().functions().values().zip_eq(deployment.verifying_keys())
+            deployment.program().functions().values().zip_eq(deployment.function_verifying_keys())
         {
             // Initialize a burner private key.
             let burner_private_key = PrivateKey::new(rng)?;
@@ -231,7 +223,7 @@ impl<N: Network> Stack<N> {
 
         // Verify the certificates.
         let rngs = (0..call_stacks.len()).map(|_| StdRng::from_seed(seeded_rng.r#gen())).collect::<Vec<_>>();
-        cfg_into_iter!(call_stacks).zip_eq(deployment.verifying_keys()).zip_eq(rngs).try_for_each(
+        cfg_into_iter!(call_stacks).zip_eq(deployment.function_verifying_keys()).zip_eq(rngs).try_for_each(
             |(((function_name, call_stack, assignments), (_, (verifying_key, certificate))), mut rng)| {
                 // Synthesize the circuit.
                 if let Err(err) = self.execute_function::<A, _>(call_stack, caller, root_tvk, &mut rng) {

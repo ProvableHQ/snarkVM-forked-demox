@@ -146,6 +146,10 @@ features = [ "query" ]
 workspace = true
 features = [ "test" ]
 
+[dev-dependencies.snarkvm-circuit]
+workspace = true
+features = [ "test" ]
+
 [dev-dependencies.snarkvm-ledger-test-helpers]
 path = "../../ledger/test-helpers"
 

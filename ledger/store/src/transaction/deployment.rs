@@ -63,10 +63,6 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     type VerifyingKeyMap: for<'a> Map<'a, (ProgramID<N>, Identifier<N>, u16), VerifyingKey<N>>;
     /// The mapping of `(program ID, function or record name, edition)` to `certificate`.
     type CertificateMap: for<'a> Map<'a, (ProgramID<N>, Identifier<N>, u16), Certificate<N>>;
-    /// The mapping of `(program ID, edition)` to a marker indicating the deployment is V3.
-    /// The presence of an entry indicates V3; absence with no records indicates V2.
-    /// This was introduced in `ConsensusVersion::V14`.
-    type ContainsTranslationKeysMap: for<'a> Map<'a, (ProgramID<N>, u16), ()>;
     /// The fee storage.
     type FeeStorage: FeeStorage<N>;
 
@@ -91,8 +87,6 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     fn verifying_key_map(&self) -> &Self::VerifyingKeyMap;
     /// Returns the certificate map.
     fn certificate_map(&self) -> &Self::CertificateMap;
-    /// Returns the contains-translation-keys map.
-    fn contains_translation_keys_map(&self) -> &Self::ContainsTranslationKeysMap;
     /// Returns the fee storage.
     fn fee_store(&self) -> &FeeStore<N, Self::FeeStorage>;
 
@@ -112,7 +106,6 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.checksum_map().start_atomic();
         self.verifying_key_map().start_atomic();
         self.certificate_map().start_atomic();
-        self.contains_translation_keys_map().start_atomic();
         self.fee_store().start_atomic();
     }
 
@@ -127,7 +120,6 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             || self.checksum_map().is_atomic_in_progress()
             || self.verifying_key_map().is_atomic_in_progress()
             || self.certificate_map().is_atomic_in_progress()
-            || self.contains_translation_keys_map().is_atomic_in_progress()
             || self.fee_store().is_atomic_in_progress()
     }
 
@@ -142,7 +134,6 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.checksum_map().atomic_checkpoint();
         self.verifying_key_map().atomic_checkpoint();
         self.certificate_map().atomic_checkpoint();
-        self.contains_translation_keys_map().atomic_checkpoint();
         self.fee_store().atomic_checkpoint();
     }
 
@@ -157,7 +148,6 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.checksum_map().clear_latest_checkpoint();
         self.verifying_key_map().clear_latest_checkpoint();
         self.certificate_map().clear_latest_checkpoint();
-        self.contains_translation_keys_map().clear_latest_checkpoint();
         self.fee_store().clear_latest_checkpoint();
     }
 
@@ -172,7 +162,6 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.checksum_map().atomic_rewind();
         self.verifying_key_map().atomic_rewind();
         self.certificate_map().atomic_rewind();
-        self.contains_translation_keys_map().atomic_rewind();
         self.fee_store().atomic_rewind();
     }
 
@@ -187,7 +176,6 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.checksum_map().abort_atomic();
         self.verifying_key_map().abort_atomic();
         self.certificate_map().abort_atomic();
-        self.contains_translation_keys_map().abort_atomic();
         self.fee_store().abort_atomic();
     }
 
@@ -202,7 +190,6 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.checksum_map().finish_atomic()?;
         self.verifying_key_map().finish_atomic()?;
         self.certificate_map().finish_atomic()?;
-        self.contains_translation_keys_map().finish_atomic()?;
         self.fee_store().finish_atomic()
     }
 
@@ -264,25 +251,12 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
                 self.checksum_map().insert((program_id, edition), checksum)?;
             }
 
-            // Store the verifying keys and certificates.
-            for (function_name, (verifying_key, certificate)) in deployment.verifying_keys() {
+            // Store all verifying keys and certificates.
+            for (name, (verifying_key, certificate)) in deployment.verifying_keys() {
                 // Store the verifying key.
-                self.verifying_key_map().insert((program_id, *function_name, edition), verifying_key.clone())?;
+                self.verifying_key_map().insert((program_id, *name, edition), verifying_key.clone())?;
                 // Store the certificate.
-                self.certificate_map().insert((program_id, *function_name, edition), certificate.clone())?;
-            }
-
-            // Store the translation verifying keys and certificates, if they exist.
-            // Also mark the deployment as V3 in the contains_translation_keys_map.
-            if let Some(translation_verifying_keys) = deployment.translation_verifying_keys() {
-                for (record_name, (verifying_key, certificate)) in translation_verifying_keys {
-                    // Store the verifying key.
-                    self.verifying_key_map().insert((program_id, *record_name, edition), verifying_key.clone())?;
-                    // Store the certificate.
-                    self.certificate_map().insert((program_id, *record_name, edition), certificate.clone())?;
-                }
-                // Mark this deployment as V3.
-                self.contains_translation_keys_map().insert((program_id, edition), ())?;
+                self.certificate_map().insert((program_id, *name, edition), certificate.clone())?;
             }
 
             // Store the fee transition.
@@ -360,9 +334,6 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
                 // Remove the certificate.
                 self.certificate_map().remove(&(program_id, *record_name, edition))?;
             }
-            // Remove the V3 marker if it exists.
-            self.contains_translation_keys_map().remove(&(program_id, edition))?;
-
             // Remove the fee transition.
             self.fee_store().remove(transaction_id)?;
 
@@ -602,10 +573,20 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             },
         };
 
-        // Initialize a vector for the verifying keys and certificates.
-        let mut verifying_keys = Vec::with_capacity(program.functions().len());
+        // Determine if the deployment contains record verifying keys by probing the first record name.
+        let contains_record_keys = match program.records().keys().next() {
+            Some(record_name) => {
+                self.verifying_key_map().get_confirmed(&(program_id, *record_name, edition))?.is_some()
+            }
+            None => false,
+        };
 
-        // Retrieve the verifying keys and certificates.
+        // Initialize a vector for the verifying keys and certificates.
+        let num_functions = program.functions().len();
+        let num_records = if contains_record_keys { program.records().len() } else { 0 };
+        let mut verifying_keys = Vec::with_capacity(num_functions + num_records);
+
+        // Retrieve the function verifying keys and certificates.
         for function_name in program.functions().keys() {
             // Retrieve the verifying key.
             let Some(verifying_key) =
@@ -623,52 +604,32 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             verifying_keys.push((*function_name, (verifying_key, certificate)));
         }
 
-        // Check if this deployment is marked as V3 in the contains_translation_keys_map.
-        let contains_translation_keys =
-            self.contains_translation_keys_map().get_confirmed(&(program_id, edition))?.is_some();
-
-        // Determine translation verifying keys based on V3 status.
-        let translation_verifying_keys = if contains_translation_keys {
-            // V3 deployment: load translation verifying keys (may be empty for programs without records).
-            let mut translation_verifying_keys = Vec::with_capacity(program.records().len());
+        // If the deployment contains record verifying keys, load and append them.
+        if contains_record_keys {
             for record_name in program.records().keys() {
                 // Retrieve the verifying key.
-                let Some(translation_verifying_key) = self
+                let Some(verifying_key) = self
                     .verifying_key_map()
                     .get_confirmed(&(program_id, *record_name, edition))?
                     .map(|x| x.into_owned())
                 else {
                     bail!(
-                        "Failed to get the translation verifying key for '{program_id}/{record_name}' (edition {edition})"
+                        "Failed to get the record verifying key for '{program_id}/{record_name}' (edition {edition})"
                     );
                 };
-                // Retrieve the translation certificate.
+                // Retrieve the certificate.
                 let Some(certificate) =
                     self.certificate_map().get_confirmed(&(program_id, *record_name, edition))?.map(|x| x.into_owned())
                 else {
-                    bail!(
-                        "Failed to get the translation certificate for '{program_id}/{record_name}' (edition {edition})"
-                    );
+                    bail!("Failed to get the record certificate for '{program_id}/{record_name}' (edition {edition})");
                 };
-                // Add the verifying key and certificate to the deployment.
-                translation_verifying_keys.push((*record_name, (translation_verifying_key, certificate)));
+                // Append the record verifying key and certificate.
+                verifying_keys.push((*record_name, (verifying_key, certificate)));
             }
-            // V3 deployments always use Some, even if empty.
-            Some(translation_verifying_keys)
-        } else {
-            // V2 deployment (pre-V14): no translation verifying keys.
-            None
-        };
+        }
 
         // Return the deployment.
-        Ok(Some(Deployment::new(
-            edition,
-            program,
-            verifying_keys,
-            program_checksum,
-            program_owner,
-            translation_verifying_keys,
-        )?))
+        Ok(Some(Deployment::new(edition, program, verifying_keys, program_checksum, program_owner)?))
     }
 
     /// Returns the fee for the given `transaction ID`.
@@ -1016,14 +977,14 @@ mod tests {
         let deployment_store = DeploymentMemory::open(fee_store).unwrap();
 
         // Sample the transactions.
-        let transaction_0 = snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 0, true, rng);
-        let transaction_1 = snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 1, false, rng);
-        let transaction_2 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, rng);
-        let transaction_3 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, false, rng);
-        let transaction_4 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, true, rng);
-        let transaction_5 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 0, true, rng);
-        let transaction_6 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 1, false, rng);
-        let transaction_7 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 2, true, rng);
+        let transaction_0 = snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 0, false, true, rng);
+        let transaction_1 = snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 1, false, false, rng);
+        let transaction_2 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, false, true, rng);
+        let transaction_3 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, false, false, rng);
+        let transaction_4 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, false, true, rng);
+        let transaction_5 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, true, rng);
+        let transaction_6 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, true, false, rng);
+        let transaction_7 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, true, true, rng);
 
         let transactions = vec![
             transaction_0,
@@ -1060,14 +1021,6 @@ mod tests {
                     assert_eq!(None, candidate);
                 }
             }
-
-            // Check the contains_translation_keys_map.
-            // V3 deployments (those with translation_verifying_keys = Some) should have an entry.
-            // V1 and V2 deployments should not have an entry.
-            let has_translation_keys = transaction.deployment().unwrap().translation_verifying_keys().is_some();
-            let contains_translation_keys_entry =
-                deployment_store.contains_translation_keys_map().get_confirmed(&(program_id, edition)).unwrap();
-            assert_eq!(has_translation_keys, contains_translation_keys_entry.is_some());
 
             // Check that the transaction exists in the ID edition map
             let candidate = deployment_store.id_edition_map().get_confirmed(&transaction_id).unwrap();
@@ -1110,11 +1063,6 @@ mod tests {
             let candidate = deployment_store.id_edition_map().get_confirmed(&transaction_id).unwrap();
             assert_eq!(None, candidate);
 
-            // Ensure the contains_translation_keys_map entry is removed.
-            let contains_translation_keys_entry =
-                deployment_store.contains_translation_keys_map().get_confirmed(&(program_id, edition)).unwrap();
-            assert_eq!(None, contains_translation_keys_entry);
-
             // Insert the deployment transaction again.
             deployment_store.insert(&transaction).unwrap();
         }
@@ -1132,14 +1080,14 @@ mod tests {
         let deployment_store = DeploymentMemory::open(fee_store).unwrap();
 
         // Sample the transactions.
-        let transaction_0 = snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 0, true, rng);
-        let transaction_1 = snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 1, false, rng);
-        let transaction_2 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, rng);
-        let transaction_3 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, false, rng);
-        let transaction_4 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, true, rng);
-        let transaction_5 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 0, true, rng);
-        let transaction_6 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 1, false, rng);
-        let transaction_7 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 2, true, rng);
+        let transaction_0 = snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 0, false, true, rng);
+        let transaction_1 = snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 1, false, false, rng);
+        let transaction_2 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, false, true, rng);
+        let transaction_3 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, false, false, rng);
+        let transaction_4 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, false, true, rng);
+        let transaction_5 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, true, rng);
+        let transaction_6 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, true, false, rng);
+        let transaction_7 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, true, true, rng);
 
         let transactions = vec![
             transaction_0,

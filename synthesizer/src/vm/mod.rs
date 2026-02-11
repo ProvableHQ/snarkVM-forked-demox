@@ -1638,7 +1638,6 @@ function do:
             vks_with_overreport,
             deployment.program_checksum(),
             deployment.program_owner(),
-            deployment.translation_verifying_keys().clone(),
         )
         .unwrap();
         let adjusted_transaction = Transaction::from_deployment(program_owner, adjusted_deployment, fee).unwrap();
@@ -1700,7 +1699,6 @@ function do:
             vks_with_underreport,
             deployment.program_checksum(),
             deployment.program_owner(),
-            deployment.translation_verifying_keys().clone(),
         )
         .unwrap();
         let deployment_id = adjusted_deployment.to_deployment_id().unwrap();
@@ -1782,7 +1780,6 @@ function do:
             vks_with_underreport,
             deployment.program_checksum(),
             deployment.program_owner(),
-            deployment.translation_verifying_keys().clone(),
         )
         .unwrap();
         let deployment_id = adjusted_deployment.to_deployment_id().unwrap();

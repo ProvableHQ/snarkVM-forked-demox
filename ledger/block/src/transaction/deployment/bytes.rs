@@ -22,7 +22,6 @@ impl<N: Network> FromBytes for Deployment<N> {
         let version = match u8::read_le(&mut reader)? {
             1 => DeploymentVersion::V1,
             2 => DeploymentVersion::V2,
-            3 => DeploymentVersion::V3,
             version => return Err(error(format!("Invalid deployment version: {version}"))),
         };
 
@@ -34,11 +33,10 @@ impl<N: Network> FromBytes for Deployment<N> {
         // Read the number of entries in the bundle.
         let num_entries = u16::read_le(&mut reader)?;
         // Ensure the number of entries is within bounds.
-        if num_entries as usize > N::MAX_FUNCTIONS {
+        let max_entries = N::MAX_FUNCTIONS + N::MAX_RECORDS;
+        if num_entries as usize > max_entries {
             return Err(error(format!(
-                "Deployment (from 'read_le') has too many entries ({} > {})",
-                num_entries,
-                N::MAX_FUNCTIONS
+                "Deployment (from 'read_le') has too many entries ({num_entries} > {max_entries})"
             )));
         }
         // Read the verifying keys.
@@ -54,10 +52,10 @@ impl<N: Network> FromBytes for Deployment<N> {
             verifying_keys.push((identifier, (verifying_key, certificate)));
         }
 
-        // If the deployment version is 2 or 3, read the program checksum and verify it.
+        // If the deployment version is 2, read the program checksum and verify it.
         let program_checksum = match version {
             DeploymentVersion::V1 => None,
-            DeploymentVersion::V2 | DeploymentVersion::V3 => {
+            DeploymentVersion::V2 => {
                 // Read the program checksum.
                 let bytes: [u8; 32] = FromBytes::read_le(&mut reader)?;
                 let checksum = bytes.map(U8::new);
@@ -72,48 +70,18 @@ impl<N: Network> FromBytes for Deployment<N> {
                 Some(checksum)
             }
         };
-        // If the deployment version is 2 or 3, read the program owner.
+        // If the deployment version is 2, read the program owner.
         let program_owner = match version {
             DeploymentVersion::V1 => None,
-            DeploymentVersion::V2 | DeploymentVersion::V3 => {
+            DeploymentVersion::V2 => {
                 // Read the program owner.
                 let owner = Address::<N>::read_le(&mut reader)?;
                 Some(owner)
             }
         };
 
-        // If the deployment version is 3, read the translation verifying keys.
-        let translation_verifying_keys = match version {
-            DeploymentVersion::V1 | DeploymentVersion::V2 => None,
-            DeploymentVersion::V3 => {
-                // Read the number of entries in the bundle.
-                let num_entries = u16::read_le(&mut reader)?;
-                // Ensure the number of entries is within bounds.
-                if num_entries as usize > N::MAX_RECORDS {
-                    return Err(error(format!(
-                        "Deployment (from 'read_le') has too many translation records ({} > {})",
-                        num_entries,
-                        N::MAX_RECORDS
-                    )));
-                }
-                // Read the translation verifying keys.
-                let mut translation_verifying_keys = Vec::with_capacity(num_entries as usize);
-                for _ in 0..num_entries {
-                    // Read the identifier.
-                    let identifier = Identifier::<N>::read_le(&mut reader)?;
-                    // Read the verifying key.
-                    let verifying_key = VerifyingKey::<N>::read_le(&mut reader)?;
-                    // Read the certificate.
-                    let certificate = Certificate::<N>::read_le(&mut reader)?;
-                    // Add the entry.
-                    translation_verifying_keys.push((identifier, (verifying_key, certificate)));
-                }
-                Some(translation_verifying_keys)
-            }
-        };
-
         // Return the deployment.
-        Self::new(edition, program, verifying_keys, program_checksum, program_owner, translation_verifying_keys)
+        Self::new(edition, program, verifying_keys, program_checksum, program_owner)
             .map_err(|err| error(format!("{err}")))
     }
 }
@@ -133,41 +101,23 @@ impl<N: Network> ToBytes for Deployment<N> {
         // Write the number of entries in the bundle.
         (u16::try_from(self.verifying_keys.len()).map_err(|e| error(e.to_string()))?).write_le(&mut writer)?;
         // Write each entry.
-        for (function_name, (verifying_key, certificate)) in &self.verifying_keys {
-            // Write the function name.
-            function_name.write_le(&mut writer)?;
+        for (name, (verifying_key, certificate)) in &self.verifying_keys {
+            // Write the name.
+            name.write_le(&mut writer)?;
             // Write the verifying key.
             verifying_key.write_le(&mut writer)?;
             // Write the certificate.
             certificate.write_le(&mut writer)?;
         }
-        // If the deployment version is 2 or 3, write the program checksum and program owner.
-        // Note: The unwraps are safe because `Deployment::version` only returns `V2 or V3` if both the checksum and owner is present.
-        if matches!(version, DeploymentVersion::V2 | DeploymentVersion::V3) {
+        // If the deployment version is 2, write the program checksum and program owner.
+        // Note: The unwraps are safe because `Deployment::version` only returns `V2` if both the checksum and owner are present.
+        if matches!(version, DeploymentVersion::V2) {
             // Write the bytes of the checksum.
             for byte in &self.program_checksum.unwrap() {
                 byte.write_le(&mut writer)?;
             }
             // Write the bytes of the owner.
             self.program_owner.unwrap().write_le(&mut writer)?;
-        }
-        // If the deployment version is 3, write the translation verifying keys.
-        // Note: The unwrap is safe because `Deployment::version` only returns `V3` if the translation verifying keys are present.
-        if matches!(version, DeploymentVersion::V3) {
-            // Get the translation verifying keys.
-            let translation_verifying_keys = self.translation_verifying_keys.as_ref().unwrap();
-            // Write the number of entries in the bundle.
-            (u16::try_from(translation_verifying_keys.len()).map_err(|e| error(e.to_string()))?)
-                .write_le(&mut writer)?;
-            // Write each entry.
-            for (record_name, (verifying_key, certificate)) in translation_verifying_keys {
-                // Write the record name.
-                record_name.write_le(&mut writer)?;
-                // Write the verifying key.
-                verifying_key.write_le(&mut writer)?;
-                // Write the certificate.
-                certificate.write_le(&mut writer)?;
-            }
         }
         Ok(())
     }
@@ -184,8 +134,8 @@ mod tests {
         // Construct the deployments.
         for expected in [
             test_helpers::sample_deployment_v1(Uniform::rand(rng), rng),
-            test_helpers::sample_deployment_v2(Uniform::rand(rng), rng),
-            test_helpers::sample_deployment_v3(Uniform::rand(rng), rng),
+            test_helpers::sample_deployment_v2_without_translation_keys(Uniform::rand(rng), rng),
+            test_helpers::sample_deployment_v2_with_translation_keys(Uniform::rand(rng), rng),
         ] {
             // Check the byte representation.
             let expected_bytes = expected.to_bytes_le()?;
