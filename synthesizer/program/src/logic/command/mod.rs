@@ -226,6 +226,7 @@ impl<N: Network> Command<N> {
             Command::Instruction(c) => c.contains_external_struct(),
             Command::Await(c) => c.contains_external_struct(),
             Command::Contains(c) => c.contains_external_struct(),
+            // `contains.dynamic` always produces a boolean result and has no type fields that could reference external structs.
             Command::ContainsDynamic(_) => false,
             Command::Get(c) => c.contains_external_struct(),
             Command::GetDynamic(c) => c.destination_type().contains_external_struct(),

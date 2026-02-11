@@ -203,7 +203,7 @@ impl<N: Network> Deployment<N> {
         &self.verifying_keys
     }
 
-    /// Returns the function verifying keys
+    /// Returns the function verifying keys.
     pub fn function_verifying_keys(&self) -> &[(Identifier<N>, (VerifyingKey<N>, Certificate<N>))] {
         &self.verifying_keys[..self.program.functions().len()]
     }

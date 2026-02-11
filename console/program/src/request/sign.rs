@@ -110,7 +110,7 @@ impl<N: Network> Request<N> {
             // Store the prepared input.
             prepared_inputs.push(input.clone());
 
-            // Compute the input index.
+            // Convert index to u16.
             let index = u16::try_from(index).or_halt_with::<N>("Input index exceeds u16");
 
             match input_type {

@@ -275,15 +275,18 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // Before V14: record verifying keys are not allowed.
                 // At/after V14: record verifying keys are required.
                 if consensus_version < ConsensusVersion::V14 {
+                    let num_functions = deployment.num_functions();
                     ensure!(
-                        deployment.verifying_keys().len() == deployment.num_functions(),
-                        "Invalid deployment transaction '{id}' - record verifying keys are not allowed before `ConsensusVersion::V14`"
+                        deployment.verifying_keys().len() == num_functions,
+                        "Invalid deployment transaction '{id}' - expected {num_functions} function verifying keys before `ConsensusVersion::V14`"
                     );
                 } else {
-                    let expected = deployment.num_functions() + deployment.program().records().len();
+                    let num_functions = deployment.num_functions();
+                    let num_records = deployment.program().records().len();
+                    let expected = num_functions + num_records;
                     ensure!(
                         deployment.verifying_keys().len() == expected,
-                        "Invalid deployment transaction '{id}' - missing record verifying keys after `ConsensusVersion::V14`"
+                        "Invalid deployment transaction '{id}' - expected {num_functions} function and {num_records} record verifying keys after `ConsensusVersion::V14`"
                     );
                 }
 

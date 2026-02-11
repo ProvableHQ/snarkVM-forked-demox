@@ -285,11 +285,9 @@ fn test_editions_are_sequential() -> Result<()> {
     // Initialize a new caller.
     let caller_private_key = sample_genesis_private_key(rng);
 
-    // Initialize two VMs at V14 to ensure all deployments use V3 format.
-    // Note: Using V14 instead of V9 because the test adds enough blocks to advance
-    // past the V9->V14 transition, and V2 deployments are rejected at V14.
-    let off_chain_vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14)?, rng);
-    let on_chain_vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14)?, rng);
+    // Initialize two VMs at V9 (required for constructor support).
+    let off_chain_vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V9)?, rng);
+    let on_chain_vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V9)?, rng);
 
     // Define the three versions of the program.
     let program_v0 = Program::from_str(

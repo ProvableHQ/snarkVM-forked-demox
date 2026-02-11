@@ -490,11 +490,11 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                             .into());
                         }
 
-                        // A helper function that synthesizes the translation key for a given program-record combination
-                        // (if it has not been synthesized yet), stores it in the program's stack, and returns it.
-                        let ensure_and_get_translation_proving_key = |program_id: &ProgramID<N>,
-                                                                      record_name: &Identifier<N>,
-                                                                      rng: &mut R|
+                        // Synthesizes the translation proving key for the given program and record
+                        // (if not already synthesized), caches it in the stack, and returns it.
+                        let get_translation_proving_key = |program_id: &ProgramID<N>,
+                                                           record_name: &Identifier<N>,
+                                                           rng: &mut R|
                          -> Result<ProvingKey<N>> {
                             let record_stack = match program_id == stack.program_id() {
                                 true => stack,
@@ -527,13 +527,10 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         )?;
 
                         // Synthesize translation proving keys and store input translations.
-                        // Push to the top bucket of the translation stack (the caller's level).
+                        // Push to the top group of the translation stack (the caller's level).
                         for translation in input_translations {
-                            let proving_key = ensure_and_get_translation_proving_key(
-                                &translation.program_id,
-                                &translation.record_name,
-                                rng,
-                            )?;
+                            let proving_key =
+                                get_translation_proving_key(&translation.program_id, &translation.record_name, rng)?;
                             translations
                                 .write()
                                 .last_mut()
@@ -590,13 +587,10 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         )?;
 
                         // Synthesize translation proving keys and store output translations.
-                        // Push to the top bucket of the translation stack (the caller's level).
+                        // Push to the top group of the translation stack (the caller's level).
                         for translation in output_translations {
-                            let proving_key = ensure_and_get_translation_proving_key(
-                                &translation.program_id,
-                                &translation.record_name,
-                                rng,
-                            )?;
+                            let proving_key =
+                                get_translation_proving_key(&translation.program_id, &translation.record_name, rng)?;
                             translations
                                 .write()
                                 .last_mut()

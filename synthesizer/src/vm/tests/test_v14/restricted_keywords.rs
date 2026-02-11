@@ -70,6 +70,8 @@ function dynamic:
 /// Tests that "dynamic" cannot be used as a record name at V14.
 /// Note: The record is declared but not used in the function body to avoid
 /// parser ambiguity with `dynamic.record` being parsed as `RegisterType::DynamicRecord`.
+/// This is not a vulnerability because "dynamic" is restricted as a keyword at V14,
+/// preventing any deployed program from using it as a record name.
 #[test]
 fn test_restricted_keyword_dynamic_record_name() {
     let rng = &mut TestRng::default();

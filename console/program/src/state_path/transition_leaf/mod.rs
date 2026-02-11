@@ -27,7 +27,7 @@ use snarkvm_console_types::Field;
 pub enum LeafVersion {
     /// Static leaf (version 1) — standard inputs/outputs.
     Static = 1,
-    /// Dynamic leaf (version 2) — dynamic dispatch record inputs/outputs.
+    /// Dynamic leaf (version 2) — record inputs/outputs from dynamic transition calls.
     Dynamic = 2,
 }
 

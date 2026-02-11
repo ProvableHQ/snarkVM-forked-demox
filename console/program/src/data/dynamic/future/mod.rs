@@ -38,6 +38,11 @@ pub type FutureArgumentTree<E> = MerkleTree<E, Poseidon8<E>, Poseidon2<E>, FUTUR
 /// arguments to the future instead of the arguments themselves. This ensures
 /// that all dynamic futures have a constant size, regardless of the amount of
 /// data they contain.
+///
+/// The checksum is computed as `BHP256(Keccak256(bits))`, where `bits` is constructed by:
+///   1. Prefixing with the number of arguments as a `u8` in little-endian bits.
+///   2. Appending the type-prefixed `to_bits_le()` of each argument.
+///   3. Padding the result to the next multiple of 8 bits.
 #[derive(Clone)]
 pub struct DynamicFuture<N: Network> {
     /// The program name.
@@ -116,7 +121,7 @@ impl<N: Network> DynamicFuture<N> {
         bits.resize(bits.len().div_ceil(8) * 8, false);
 
         // Hash the bits of the arguments.
-        // TODO: Do we need domain separation or the outer hash?
+        // TODO (@reviewers): Do we need domain separation or the outer hash?
         let checksum = N::hash_bhp256(&N::hash_keccak256(&bits)?)?;
 
         Ok(Self::new_unchecked(program_name, program_network, function_name, checksum, Some(arguments)))

@@ -21,15 +21,19 @@ impl<N: Network> ToFields for Value<N> {
     /// Returns the stack value as a list of fields.
     ///
     /// Each variant encodes its data as follows:
-    /// 1. The variant's `to_bits_le()` produces a unique bit sequence reflecting its internal structure.
+    /// 1. The variant's `to_bits_le()` produces a bit sequence reflecting its internal structure.
     /// 2. A terminator bit (`true`) is appended to mark the end of the data.
     /// 3. The bits are packed into field elements in chunks of `Field::size_in_data_bits()`.
     ///
-    /// The encoding is unambiguous because each variant's bit-level structure is distinct:
-    /// - `Plaintext` encodes literals and structs with type-tagged entries.
-    /// - `Record` includes the owner, gates, and typed record entries.
-    /// - `Future` includes the program ID, function name, and argument list.
-    /// - `DynamicRecord` and `DynamicFuture` use their own distinct structural encodings.
+    /// Cross-variant ambiguity is not a concern because the caller always knows the
+    /// expected variant via the `ValueType` or `RegisterType` from the program definition,
+    /// and only the matching variant's `to_fields()` is invoked. Within each variant,
+    /// the encoding is unambiguous:
+    /// - `Plaintext` uses a 2-bit type tag (Literal=00, Struct=01, Array=10) followed by typed data.
+    /// - `Record` starts with owner visibility, 256-bit owner, and a u32 data-length encoding.
+    /// - `Future` starts with a u16 length-prefixed program ID, then function name and arguments.
+    /// - `DynamicRecord` is fixed-size (owner + root + nonce + version, 776 bits total).
+    /// - `DynamicFuture` is fixed-size (4 field elements, 1024 bits total).
     #[inline]
     fn to_fields(&self) -> Result<Vec<Self::Field>> {
         // // TODO (howardwu): Implement `Literal::to_fields()` to replace this closure.

@@ -106,76 +106,82 @@ impl<N: Network> StackTrait<N> for Stack<N> {
 
     /// Returns `true` if the proving key for the given name exists.
     /// The name can be a function name or a record name (for translation keys).
-    fn contains_proving_key(&self, name: &Identifier<N>) -> bool {
-        self.proving_keys.read().contains_key(name)
+    fn contains_proving_key(&self, function_or_record_name: &Identifier<N>) -> bool {
+        self.proving_keys.read().contains_key(function_or_record_name)
     }
 
     /// Returns the proving key for the given name.
     /// The name can be a function name or a record name (for translation keys).
-    fn get_proving_key(&self, name: &Identifier<N>) -> Result<ProvingKey<N>> {
+    fn get_proving_key(&self, function_or_record_name: &Identifier<N>) -> Result<ProvingKey<N>> {
         // If the program is 'credits.aleo', try to load the proving key, if it does not exist.
-        self.try_insert_credits_function_proving_key(name)?;
+        self.try_insert_credits_function_proving_key(function_or_record_name)?;
         // Return the proving key, if it exists.
-        match self.proving_keys.read().get(name) {
+        match self.proving_keys.read().get(function_or_record_name) {
             Some(pk) => Ok(pk.clone()),
-            None => bail!("Proving key not found for: {}/{}", self.program.id(), name),
+            None => bail!("Proving key not found for: {}/{}", self.program.id(), function_or_record_name),
         }
     }
 
     /// Inserts the given proving key for the given name.
     /// The name can be a function name or a record name (for translation keys).
-    fn insert_proving_key(&self, name: &Identifier<N>, proving_key: ProvingKey<N>) -> Result<()> {
+    fn insert_proving_key(&self, function_or_record_name: &Identifier<N>, proving_key: ProvingKey<N>) -> Result<()> {
         // Ensure the name exists in the program as a function or record.
         ensure!(
-            self.program.contains_function(name) || self.program.contains_record(name),
-            "'{name}' does not exist as a function or record in program '{}'.",
+            self.program.contains_function(function_or_record_name)
+                || self.program.contains_record(function_or_record_name),
+            "'{function_or_record_name}' does not exist as a function or record in program '{}'.",
             self.program.id()
         );
         // Insert the proving key.
-        self.proving_keys.write().insert(*name, proving_key);
+        self.proving_keys.write().insert(*function_or_record_name, proving_key);
         Ok(())
     }
 
     /// Removes the proving key for the given name.
     /// The name can be a function name or a record name (for translation keys).
-    fn remove_proving_key(&self, name: &Identifier<N>) {
-        self.proving_keys.write().shift_remove(name);
+    fn remove_proving_key(&self, function_or_record_name: &Identifier<N>) {
+        self.proving_keys.write().shift_remove(function_or_record_name);
     }
 
     /// Returns `true` if the verifying key for the given name exists.
     /// The name can be a function name or a record name (for translation keys).
-    fn contains_verifying_key(&self, name: &Identifier<N>) -> bool {
-        self.verifying_keys.read().contains_key(name)
+    fn contains_verifying_key(&self, function_or_record_name: &Identifier<N>) -> bool {
+        self.verifying_keys.read().contains_key(function_or_record_name)
     }
 
     /// Returns the verifying key for the given name.
     /// The name can be a function name or a record name (for translation keys).
-    fn get_verifying_key(&self, name: &Identifier<N>) -> Result<VerifyingKey<N>> {
+    fn get_verifying_key(&self, function_or_record_name: &Identifier<N>) -> Result<VerifyingKey<N>> {
         // Return the verifying key, if it exists.
-        match self.verifying_keys.read().get(name) {
+        match self.verifying_keys.read().get(function_or_record_name) {
             Some(vk) => Ok(vk.clone()),
-            None => bail!("Verifying key not found for: {}/{}", self.program.id(), name),
+            None => bail!("Verifying key not found for: {}/{}", self.program.id(), function_or_record_name),
         }
     }
 
     /// Inserts the given verifying key for the given name.
     /// The name can be a function name or a record name (for translation keys).
-    fn insert_verifying_key(&self, name: &Identifier<N>, verifying_key: VerifyingKey<N>) -> Result<()> {
+    fn insert_verifying_key(
+        &self,
+        function_or_record_name: &Identifier<N>,
+        verifying_key: VerifyingKey<N>,
+    ) -> Result<()> {
         // Ensure the name exists in the program as a function or record.
         ensure!(
-            self.program.contains_function(name) || self.program.contains_record(name),
-            "'{name}' does not exist as a function or record in program '{}'.",
+            self.program.contains_function(function_or_record_name)
+                || self.program.contains_record(function_or_record_name),
+            "'{function_or_record_name}' does not exist as a function or record in program '{}'.",
             self.program.id()
         );
         // Insert the verifying key.
-        self.verifying_keys.write().insert(*name, verifying_key);
+        self.verifying_keys.write().insert(*function_or_record_name, verifying_key);
         Ok(())
     }
 
     /// Removes the verifying key for the given name.
     /// The name can be a function name or a record name (for translation keys).
-    fn remove_verifying_key(&self, name: &Identifier<N>) {
-        self.verifying_keys.write().shift_remove(name);
+    fn remove_verifying_key(&self, function_or_record_name: &Identifier<N>) {
+        self.verifying_keys.write().shift_remove(function_or_record_name);
     }
 
     /// Returns the program.

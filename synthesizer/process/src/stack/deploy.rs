@@ -47,7 +47,7 @@ impl<N: Network> Stack<N> {
             verifying_keys.push((*function_name, (verifying_key, certificate)));
         }
 
-        // Synthesize record (translation) verifying keys and append to the same vec.
+        // Synthesize record (translation) verifying keys.
         for record_name in self.program.records().keys() {
             // Synthesize the proving and verifying key.
             self.synthesize_translation_key::<A, R>(record_name, rng)?;

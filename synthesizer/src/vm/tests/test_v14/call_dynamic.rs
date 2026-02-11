@@ -2662,3 +2662,57 @@ fn test_nested_caller_authorization() {
 
     println!("\nSUCCESS: Nested caller authorization correctly identifies immediate caller in dynamic call chains");
 }
+
+/// Tests that a V2 deployment (without record verifying keys)
+/// is rejected when verified at V14.
+#[test]
+fn test_v2_deployment_transaction_rejected_at_v14() {
+    let rng = &mut TestRng::default();
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    // Create a VM at V13 to construct a V2 deployment.
+    let vm_v13 = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V13).unwrap(), rng);
+
+    // Deploy a program with a record at V13. The record means the V14 check will
+    // require record verifying keys, which the pre-V14 deployment won't have.
+    let program = Program::from_str(
+        r"
+program v2_rejected_at_v14_test.aleo;
+
+record token:
+    owner as address.private;
+    amount as u64.private;
+
+function compute:
+    input r0 as u64.private;
+    add r0 1u64 into r1;
+    output r1 as u64.private;
+
+constructor:
+    assert.eq true true;
+",
+    )
+    .unwrap();
+
+    // Create a V2 deployment transaction at V13.
+    let v2_deployment = vm_v13.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
+
+    // Verify it's a pre-V14 deployment (no record verifying keys).
+    match &v2_deployment {
+        Transaction::Deploy(_, _, _, deploy, _) => {
+            assert!(
+                deploy.translation_verifying_keys().is_none(),
+                "Pre-V14 deployment should have no record verifying keys"
+            );
+        }
+        _ => panic!("Expected deploy transaction"),
+    }
+
+    // Now create a VM at V14 and try to verify/include the V2 deployment.
+    let vm_v14 = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    // The V2 deployment should be rejected at V14.
+    let block = sample_next_block(&vm_v14, &caller_private_key, &[v2_deployment], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 0, "V2 deployment should be rejected at V14");
+    assert_eq!(block.aborted_transaction_ids().len(), 1, "V2 deployment should be aborted at V14");
+}

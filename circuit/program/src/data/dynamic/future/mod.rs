@@ -27,6 +27,10 @@ use snarkvm_circuit_types::{Boolean, Field, environment::prelude::*};
 /// arguments to the future instead of the arguments themselves. This ensures
 /// that all dynamic futures have a constant size, regardless of the amount of
 /// data they contain.
+///
+/// Note: The checksum is never computed in circuit. It is computed in console
+/// as `BHP256(Keccak256(length_prefix || type_prefixed_argument_bits))` and
+/// injected as a witness field element.
 #[derive(Clone)]
 pub struct DynamicFuture<A: Aleo> {
     /// The program name.

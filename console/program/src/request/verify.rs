@@ -71,7 +71,7 @@ impl<N: Network> Request<N> {
 
         if let Err(error) = self.input_ids.iter().zip_eq(&self.inputs).zip_eq(input_types).enumerate().try_for_each(
             |(index, ((input_id, input), input_type))| {
-                // Compute the input index.
+                // Convert index to u16.
                 let index = u16::try_from(index).or_halt_with::<N>("Input index exceeds u16");
 
                 match input_id {
@@ -93,7 +93,7 @@ impl<N: Network> Request<N> {
                         ensure!(*input_hash == *candidate.id(), "Expected a private input with the same hash");
                         message.push(*candidate.id());
                     }
-                    // A record input is verified using the challenge and response.
+                    // A record input is computed to its serial number.
                     InputID::Record(commitment, gamma, record_view_key, serial_number, tag) => {
                         // Retrieve the record.
                         let record = match &input {

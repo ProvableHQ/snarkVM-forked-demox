@@ -97,9 +97,9 @@ use std::sync::{Arc, Weak};
 use rayon::prelude::*;
 
 pub type Assignments<N> = Arc<RwLock<Vec<(circuit::Assignment<<N as Environment>::Field>, CallMetrics<N>)>>>;
-/// A stack of translations for the transitions in the execution. Each function execution level pushes a new bucket,
-/// and translations for dynamic calls made at that level are pushed to the top bucket. When the transition is
-/// inserted, the top bucket is popped and its translations are associated with that transition (the caller's
+/// A stack of translations for the transitions in the execution. Each function execution level pushes a new group,
+/// and translations for dynamic calls made at that level are collected into the top group. When the transition is
+/// inserted, the top group is popped and its translations are associated with that transition (the caller's
 /// transition ID). Each translation datum is paired with the proving key for its record type.
 pub type Translations<N> = Arc<RwLock<Vec<Vec<(TranslationAssignment<N>, ProvingKey<N>)>>>>;
 
