@@ -75,10 +75,10 @@ impl<N: Network> Process<N> {
         let reverse_call_graph = Self::reverse_call_graph(&call_graph);
 
         // Initialize a map of verifying keys to public inputs.
-        let mut verifier_inputs = HashMap::new();
+        let mut verifier_inputs = HashMap::with_capacity(execution.transitions().len());
 
         // Initialize a map of transition IDs to references of the transition.
-        let mut transition_map = HashMap::new();
+        let mut transition_map = HashMap::with_capacity(execution.transitions().len());
 
         // Verify each transition.
         for transition in execution.transitions() {

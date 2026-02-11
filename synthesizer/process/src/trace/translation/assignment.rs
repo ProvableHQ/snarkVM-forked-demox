@@ -53,39 +53,39 @@ fn compute_circuit_dynamic_or_external_record_id<A: Aleo>(
 #[derive(Clone, Debug)]
 pub struct TranslationAssignment<N: Network> {
     /// The static record (whether external or not).
-    pub record_static: Record<N, Plaintext<N>>,
+    pub(crate) record_static: Record<N, Plaintext<N>>,
     /// The dynamic record.
-    pub record_dynamic: DynamicRecord<N>,
+    pub(crate) record_dynamic: DynamicRecord<N>,
     /// The ID of the program where the static record is defined (whether external or not).
-    pub program_id: ProgramID<N>,
+    pub(crate) program_id: ProgramID<N>,
     /// The function ID of the callee in the dynamic call.
-    pub function_id: Field<N>,
+    pub(crate) function_id: Field<N>,
     /// The name of the static record.
-    pub record_name: Identifier<N>,
+    pub(crate) record_name: Identifier<N>,
     /// True if translation is happening for an input to `dynamic.call` (static record is being produced)
     /// or an output of `dynamic.call` (static record is being consumed).
-    pub is_to_static: bool,
+    pub(crate) is_to_static: bool,
     /// Whether the value type corresponding to the static record is `Record` or `ExternalRecord`.
-    pub is_external_record: bool,
+    pub(crate) is_external_record: bool,
     /// The view key of the transition containing the dynamic call.
-    pub tvk: Field<N>,
+    pub(crate) tvk: Field<N>,
     /// The record view key of the static record. Irrelevant if `is_external_record` is true.
-    pub record_view_key: Option<Field<N>>,
+    pub(crate) record_view_key: Option<Field<N>>,
     /// The additional point used to produce the serial number.
     /// Irrelevant if `is_to_static` is false or `is_external_record` is true.
-    pub gamma: Option<Group<N>>,
+    pub(crate) gamma: Option<Group<N>>,
     /// Index of the input operand or output destination that contains the (dynamic and static) record.
     /// Note: The first three dynamic.call operands are reserved for call-related data,
     /// however this operand index still starts at 0 and is the same for caller and callee.
-    pub record_register_index: u16,
+    pub(crate) record_register_index: u16,
     /// The ID of the dynamic record.
-    pub id_dynamic: Field<N>,
+    pub(crate) id_dynamic: Field<N>,
     /// The ID of the static record:
     /// - If the static record is external, this is its `InputID` = `OutputID`.
     /// - If the static record is not external, this is:
     ///   - Its `InputID`, i.e. its serial number, if the record is an input.
     ///   - Its `OutputID`, i.e. its commitment, if the record is an output.
-    pub id_static: Field<N>,
+    pub(crate) id_static: Field<N>,
 }
 
 impl<N: Network> TranslationAssignment<N> {
@@ -279,7 +279,7 @@ impl<N: Network> TranslationAssignment<N> {
         self.to_circuit_assignment_internal::<A>(translation_index)?;
         Stack::log_circuit::<A>(
             format_args!("Translation circuit for dynamic record with nonce {}", self.record_static.nonce()),
-            "TranslationAssignment".to_string(),
+            "TranslationAssignment",
         );
         Ok(A::eject_assignment_and_reset())
     }

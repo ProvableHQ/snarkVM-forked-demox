@@ -115,7 +115,7 @@ impl<N: Network> GetOrUseDynamic<N> {
         // Get the mapping name.
         let mapping_name = match registers.load(stack, self.mapping_name_operand())? {
             Value::Plaintext(Plaintext::Literal(Literal::Field(field), _)) => Identifier::from_field(&field)?,
-            _ => bail!("Expected the third operand of get.or_use.dynamic to be a field literal."),
+            _ => bail!("Expected the third operand of `get.or_use.dynamic` to be a field literal."),
         };
 
         // Ensure the mapping exists.

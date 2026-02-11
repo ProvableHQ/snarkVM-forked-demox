@@ -100,6 +100,13 @@ impl<N: Network> Request<N> {
             let input = input.try_into().map_err(|_| {
                 anyhow!("Failed to parse input #{index} ('{input_type}') for '{program_id}/{function_name}'")
             })?;
+            // If the function expects a dynamic record but a record was provided, convert it.
+            let input = match (&input, input_type) {
+                (Value::Record(record), ValueType::DynamicRecord) => {
+                    Value::DynamicRecord(DynamicRecord::from_record(record)?)
+                }
+                _ => input,
+            };
             // Store the prepared input.
             prepared_inputs.push(input.clone());
 

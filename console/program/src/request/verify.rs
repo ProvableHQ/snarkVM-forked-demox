@@ -57,8 +57,8 @@ impl<N: Network> Request<N> {
         // Compute the 'is_root' field.
         let is_root = if is_root { Field::<N>::one() } else { Field::<N>::zero() };
 
-        // Construct the signature message as `[tvk, tcm, function ID, input IDs]`.
-        let mut message = Vec::with_capacity(3 + self.input_ids.len());
+        // Construct the signature message as `[tvk, tcm, function ID, is_root, program checksum?, input IDs]`.
+        let mut message = Vec::with_capacity(5 + 4 * self.input_ids.len());
         message.push(self.tvk);
         message.push(self.tcm);
         message.push(function_id);
@@ -232,6 +232,63 @@ mod tests {
                 rng,
             )
             .unwrap();
+            assert!(request.verify(&input_types, is_root, program_checksum));
+        }
+    }
+
+    #[test]
+    fn test_sign_record_as_dynamic_record() {
+        let rng = &mut TestRng::default();
+
+        for _ in 0..ITERATIONS {
+            // Sample a random private key and address.
+            let private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
+            let address = Address::try_from(&private_key).unwrap();
+
+            // Construct a program ID and function name.
+            let program_id = ProgramID::from_str("token.aleo").unwrap();
+            let function_name = Identifier::from_str("transfer").unwrap();
+
+            // Prepare a record belonging to the address.
+            let record_string = format!(
+                "{{ owner: {address}.private, token_amount: 100u64.private, _nonce: 2293253577170800572742339369209137467208538700597121244293392265726446806023group.public }}"
+            );
+
+            // Construct a Value::Record input.
+            let input_record = Value::from_str(&record_string).unwrap();
+            assert!(matches!(input_record, Value::Record(..)));
+            let inputs = [input_record];
+
+            // Declare the input type as DynamicRecord.
+            let input_types = vec![ValueType::DynamicRecord];
+
+            // Sample 'is_root'.
+            let is_root = Uniform::rand(rng);
+            // Sample 'program_checksum'.
+            let program_checksum = match bool::rand(rng) {
+                true => Some(Field::rand(rng)),
+                false => None,
+            };
+
+            // Sign the request — should succeed because Record is implicitly converted to DynamicRecord.
+            let request = Request::sign(
+                &private_key,
+                program_id,
+                function_name,
+                inputs.into_iter(),
+                &input_types,
+                None,
+                is_root,
+                program_checksum,
+                true,
+                rng,
+            )
+            .unwrap();
+
+            // Assert the stored input is Value::DynamicRecord (not Value::Record).
+            assert!(matches!(request.inputs()[0], Value::DynamicRecord(..)));
+
+            // Assert verification passes.
             assert!(request.verify(&input_types, is_root, program_checksum));
         }
     }

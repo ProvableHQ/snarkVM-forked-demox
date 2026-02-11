@@ -43,6 +43,39 @@ use rand::thread_rng;
 type CircuitLH<A> = circuit::Poseidon8<A>;
 type CircuitPH<A> = circuit::Poseidon2<A>;
 
+/// The expected visibility of a record entry.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum Visibility {
+    /// The entry is constant.
+    Constant = 0,
+    /// The entry is public.
+    Public = 1,
+    /// The entry is private.
+    Private = 2,
+}
+
+impl Visibility {
+    /// Returns the name of the visibility.
+    pub const fn name(&self) -> &'static str {
+        match self {
+            Self::Constant => "constant",
+            Self::Public => "public",
+            Self::Private => "private",
+        }
+    }
+
+    /// Returns `true` if the visibility matches the given entry variant.
+    pub fn matches_entry<N: Network>(&self, entry: &Entry<N, Plaintext<N>>) -> bool {
+        matches!(
+            (self, entry),
+            (Self::Constant, Entry::Constant(_))
+                | (Self::Public, Entry::Public(_))
+                | (Self::Private, Entry::Private(_))
+        )
+    }
+}
+
 /// Retrieves the value of an entry in a dynamic record.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct GetRecordDynamic<N: Network> {
@@ -56,12 +89,21 @@ pub struct GetRecordDynamic<N: Network> {
     entry_identifier: Identifier<N>,
     /// The type of the entry being read.
     plaintext_type: PlaintextType<N>,
+    /// The visibility of the entry.
+    /// When `Some`, visibility bits are injected as constants in the circuit.
+    /// When `None`, visibility bits are injected as private witnesses in the circuit.
+    visibility: Option<Visibility>,
 }
 
 impl<N: Network> GetRecordDynamic<N> {
     /// Initializes a new `get.record.dynamic` instruction.
     #[inline]
-    pub fn new(operand: Operand<N>, destination: Register<N>, plaintext_type: PlaintextType<N>) -> Result<Self> {
+    pub fn new(
+        operand: Operand<N>,
+        destination: Register<N>,
+        plaintext_type: PlaintextType<N>,
+        visibility: Option<Visibility>,
+    ) -> Result<Self> {
         ensure!(
             matches!(destination, Register::Locator(_)),
             "Expected destination of the form r<i>, found {destination}"
@@ -78,7 +120,13 @@ impl<N: Network> GetRecordDynamic<N> {
                 bail!("Expected input to be of the form r<i>.<name>, found {operand:?}")
             };
 
-        Ok(Self { operands: prepared_operands, destination, entry_identifier, plaintext_type })
+        Ok(Self { operands: prepared_operands, destination, entry_identifier, plaintext_type, visibility })
+    }
+
+    /// Returns the visibility, if any.
+    #[inline]
+    pub const fn visibility(&self) -> Option<&Visibility> {
+        self.visibility.as_ref()
     }
 
     /// Returns the opcode.
@@ -109,7 +157,7 @@ impl<N: Network> GetRecordDynamic<N> {
 impl<N: Network> GetRecordDynamic<N> {
     /// Evaluates the instruction.
     pub fn evaluate(&self, stack: &impl StackTrait<N>, registers: &mut impl RegistersTrait<N>) -> Result<()> {
-        // Retrieve the dynamic record
+        // Retrieve the dynamic record.
         let dynamic_record = {
             let value = registers.load(stack, &self.operands[0])?;
             if let Value::DynamicRecord(dynamic_record) = value {
@@ -118,7 +166,7 @@ impl<N: Network> GetRecordDynamic<N> {
                 bail!("Expected dynamic record, found {value}")
             }
         };
-
+        // Retrieve the entry from the record data.
         let entry = if let Some(data) = dynamic_record.data() {
             if let Some(entry) = data.get(&self.entry_identifier) {
                 entry
@@ -129,6 +177,22 @@ impl<N: Network> GetRecordDynamic<N> {
             bail!("Dynamic record data has not been populated")
         };
 
+        // Check visibility, if it was specified.
+        if let Some(expected) = &self.visibility {
+            ensure!(
+                expected.matches_entry(entry),
+                "Visibility mismatch in `get.record.dynamic` for entry '{}': expected {}, found {}",
+                self.entry_identifier,
+                expected.name(),
+                match entry {
+                    Entry::Constant(_) => "constant",
+                    Entry::Public(_) => "public",
+                    Entry::Private(_) => "private",
+                },
+            );
+        }
+
+        // Get the plaintext value from the entry.
         let plaintext = match entry {
             Entry::Constant(plaintext) => plaintext,
             Entry::Public(plaintext) => plaintext,
@@ -163,21 +227,34 @@ impl<N: Network> GetRecordDynamic<N> {
             }
         };
 
-        // Compute the Merkle path for the entry. If the data is not present
-        // (for instance, during key synthesis), populate with arbitrary data
-        // first.
-        let (console_entry, console_path) = Self::compute_or_patch_path(
+        // Compute the Merkle path for the entry.
+        // If the data is not present (for instance, during key synthesis), populate with arbitrary data first.
+        let (console_entry, console_path) = Self::compute_or_sample_path(
             circuit_dynamic_record.data(),
             &self.entry_identifier,
             stack,
             &self.plaintext_type,
             &circuit_dynamic_record.root().eject_value(),
+            self.visibility.as_ref(),
         )?;
 
-        // This verification is only a sanity check and not performed in-circuit. The type of the
-        // in-circuit entry is encoded into the circuit structure (and therefore the proving and
-        // verifying keys).
+        // This verification is only a sanity check and not performed in-circuit.
         {
+            // Check visibility, if it was specified.
+            if let Some(expected) = &self.visibility {
+                ensure!(
+                    expected.matches_entry(&console_entry),
+                    "Visibility mismatch in `get.record.dynamic` for entry '{}': expected {}, found {}",
+                    self.entry_identifier,
+                    expected.name(),
+                    match &console_entry {
+                        Entry::Constant(_) => "constant",
+                        Entry::Public(_) => "public",
+                        Entry::Private(_) => "private",
+                    },
+                );
+            }
+
             let plaintext = match &console_entry {
                 Entry::Constant(plaintext) => plaintext,
                 Entry::Public(plaintext) => plaintext,
@@ -195,28 +272,29 @@ impl<N: Network> GetRecordDynamic<N> {
         // Loading the root of the merkleized-data tree
         let circuit_root = circuit_dynamic_record.root();
 
-        // Constructing the in-circuit leaf in Private mode. An entry is
-        // described by:
-        // - its identifier, which is injected into the circuit as a constant
-        //   Field element
-        // - its visibility (Constant, Public or Private) which is injected as
-        //   two private Boolean
-        // - its plaintext, whose variant and relevant identifiers (e. g. those
-        //   inside structures) are injected as constants
+        // Constructing the in-circuit leaf. An entry is described by:
+        // - its identifier, which is injected into the circuit as a constant `Field` element.
+        // - its visibility which is injected as two bits.
+        //   When the visibility is specified, these bits are constants. Otherwise they are private witnesses.
+        // - its plaintext value.
+        let mode = match self.visibility {
+            Some(_) => Mode::Constant,
+            None => Mode::Private,
+        };
         let circuit_identifier = circuit::Identifier::constant(self.entry_identifier);
         let circuit_entry = circuit::Entry::new(Mode::Private, console_entry);
         let mut circuit_leaf = vec![circuit_identifier.to_field()];
-        circuit_leaf.extend(circuit_entry.to_fields_with_mode(Mode::Private));
+        circuit_leaf.extend(circuit_entry.to_fields_with_visibility_as_mode(mode));
 
-        // Initialize the in-circuit hashers
+        // Initialize the in-circuit hashers.
         let (console_leaf_hasher, console_path_hasher) = DynamicRecord::initialize_hashers()?;
         let circuit_leaf_hasher = CircuitLH::<A>::constant(console_leaf_hasher.clone());
         let circuit_path_hasher = CircuitPH::<A>::constant(console_path_hasher.clone());
 
-        // Constructing the in-circuit path (i. e. Merkle proof) in Private mode
+        // Constructing the in-circuit path (i. e. Merkle proof) in private mode.
         let circuit_path = circuit::merkle_tree::MerklePath::new(Mode::Private, console_path);
 
-        // Verifying the path inside the circuit
+        // Verifying the path inside the circuit.
         A::assert(circuit_path.verify(&circuit_leaf_hasher, &circuit_path_hasher, circuit_root, &circuit_leaf))
             .expect("In-circuit verification of the Merkle path for dynamic record entry failed");
 
@@ -255,45 +333,39 @@ impl<N: Network> GetRecordDynamic<N> {
 }
 
 impl<N: Network> GetRecordDynamic<N> {
-    // Internal auxiliary function which computes the (native) Merkle path to
-    // the given entry. If the record data is not present, it is populated with
-    // arbitrary values first and the event is logged. This can happen
+    // Internal auxiliary function which computes the console Merkle path to the given entry.
+    // If the record data is not present, it is populated with arbitrary values.
+    // This can happen:
     //  - during synthesis, where it is normal
-    //  - during execution, where it is an error (the data should have been
-    //    populated)
-    // Note the two cases cannot be told apart at the point this function is
-    // used above.
+    //  - during execution, where it is an error
     //
-    // In the case where the data is present, the root of the resulting tree is
-    // matched against the provided one, returning an error if they do not
-    // match.
-    //
-    // An error is also returned if the data is present but does not contain the
-    // requested  entry.
+    // In the case where the data is present, the root of the resulting tree is checked against the provided one.
+    // An error is also returned if the data is present but does not contain the requested entry.
     #[allow(clippy::type_complexity)]
-    fn compute_or_patch_path(
+    fn compute_or_sample_path(
         opt_data: Option<&IndexMap<Identifier<N>, Entry<N, Plaintext<N>>>>,
         entry_identifier: &Identifier<N>,
         stack: &impl StackTrait<N>,
         plaintext_type: &PlaintextType<N>,
         root: &Field<N>,
+        visibility: Option<&Visibility>,
     ) -> Result<(Entry<N, Plaintext<N>>, MerklePath<N, RECORD_DATA_TREE_DEPTH>)> {
         match opt_data {
             Some(data) => {
-                // Retrieving the entry
+                // Retrieve the entry.
                 let (index, _, entry) = data.get_full(entry_identifier).ok_or_else(|| {
                     anyhow!("The dynamic record's data is present but does not contain entry {entry_identifier}",)
                 })?;
 
-                // Constructing the leaf of the merkleized-data tree
+                // Construct the leaf of the merkleized data tree.
                 let mut leaf = vec![entry_identifier.to_field()?];
                 leaf.extend(entry.to_fields()?);
-
                 let tree = DynamicRecord::merkleize_data(data)?;
 
-                // Computing the path (i. e. Merkle proof)
+                // Compute the path.
                 let path = tree.prove(index, &leaf)?;
 
+                // Check that the leaf index in the path matches the entry index in the data.
                 ensure!(
                     *path.leaf_index() == index as u64,
                     "Entry {} has index {} in the dynamic record's data, but its leaf index in the dynamic record's Merkle tree is {}",
@@ -301,7 +373,7 @@ impl<N: Network> GetRecordDynamic<N> {
                     index,
                     *path.leaf_index()
                 );
-
+                // Check that the root in the path matches the provided root.
                 ensure!(
                     tree.root() == root,
                     "The root in the dynamic record does not match the one computed from its data"
@@ -310,6 +382,7 @@ impl<N: Network> GetRecordDynamic<N> {
                 Ok((entry.clone(), path.clone()))
             }
             None => {
+                // Sample an arbitrary value for the entry, consistent with the specified type.
                 let value = {
                     let rng = &mut thread_rng();
                     let address = Address::<N>::rand(rng);
@@ -317,11 +390,14 @@ impl<N: Network> GetRecordDynamic<N> {
                 };
 
                 let entry = match value {
-                    // The visibility (Constant/Private/Public) of the entry is injected into
-                    // the circuit as a private variable (rather than a constant) and can therefore be
-                    // chosen arbitrarily here. The plaintext type of the entry, however, is injected
-                    // as a constant and must be set correctly at this point.
-                    Value::Plaintext(plaintext) => Entry::Public(plaintext),
+                    // When visibility is specified, the visibility bits are injected as constants in the circuit.
+                    // The entry variant must match so that the circuit structure is correct during synthesis/key generation.
+                    // When unspecified, visibility is a private witness so the variant here can be arbitrary. In this case it is `Public`.
+                    Value::Plaintext(plaintext) => match visibility {
+                        Some(Visibility::Constant) => Entry::Constant(plaintext),
+                        Some(Visibility::Private) => Entry::Private(plaintext),
+                        Some(Visibility::Public) | None => Entry::Public(plaintext),
+                    },
                     _ => {
                         bail!("Expected plaintext value while sampling an entry for a dynamic record, found {value:?}")
                     }
@@ -361,12 +437,18 @@ impl<N: Network> Parser for GetRecordDynamic<N> {
         let (string, _) = tag("as")(string)?;
         // Parse the whitespace from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
-        // Parse the entry type from the string.
+        // Parse the plaintext type from the string.
         let (string, plaintext_type) = PlaintextType::parse(string)?;
+        // Optionally parse a visibility suffix (e.g. `.private`, `.public`, `.constant`).
+        let (string, visibility) = opt(alt((
+            map(tag(".constant"), |_| Visibility::Constant),
+            map(tag(".public"), |_| Visibility::Public),
+            map(tag(".private"), |_| Visibility::Private),
+        )))(string)?;
         // Parse the whitespace from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
 
-        match Self::new(source_operand, destination, plaintext_type) {
+        match Self::new(source_operand, destination, plaintext_type, visibility) {
             Ok(instruction) => Ok((string, instruction)),
             Err(e) => map_res(fail, |_: ParserResult<Self>| {
                 Err(error(format!("Failed to parse '{}' instruction: {e}", Self::opcode())))
@@ -411,7 +493,14 @@ impl<N: Network> Display for GetRecordDynamic<N> {
             self.entry_identifier,
             self.destination,
             self.plaintext_type
-        )
+        )?;
+        // Append visibility suffix if specified.
+        match &self.visibility {
+            Some(Visibility::Constant) => write!(f, ".constant"),
+            Some(Visibility::Public) => write!(f, ".public"),
+            Some(Visibility::Private) => write!(f, ".private"),
+            None => Ok(()),
+        }
     }
 }
 
@@ -423,6 +512,20 @@ impl<N: Network> FromBytes for GetRecordDynamic<N> {
         let entry_identifier = Identifier::read_le(&mut reader)?;
         let plaintext_type = PlaintextType::read_le(&mut reader)?;
 
+        // Read the optional expected visibility.
+        let has_visibility = bool::read_le(&mut reader)?;
+        let visibility = if has_visibility {
+            let vis = u8::read_le(&mut reader)?;
+            Some(match vis {
+                0 => Visibility::Constant,
+                1 => Visibility::Public,
+                2 => Visibility::Private,
+                _ => return Err(error(format!("Expected visibility must be 0, 1, or 2, found {vis}"))),
+            })
+        } else {
+            None
+        };
+
         if !matches!(operand, Operand::Register(Register::Locator(_))) {
             return Err(error(format!("Expected (prepared) operand of the form r<i>, found {operand}")));
         }
@@ -432,7 +535,7 @@ impl<N: Network> FromBytes for GetRecordDynamic<N> {
         }
 
         // Return the operation.
-        Ok(Self { operands: [operand], destination, entry_identifier, plaintext_type })
+        Ok(Self { operands: [operand], destination, entry_identifier, plaintext_type, visibility })
     }
 }
 
@@ -446,7 +549,13 @@ impl<N: Network> ToBytes for GetRecordDynamic<N> {
         // Write the entry identifier.
         self.entry_identifier.write_le(&mut writer)?;
         // Write the entry type.
-        self.plaintext_type.write_le(&mut writer)
+        self.plaintext_type.write_le(&mut writer)?;
+        // Write the optional expected visibility.
+        self.visibility.is_some().write_le(&mut writer)?;
+        if let Some(visibility) = &self.visibility {
+            (*visibility as u8).write_le(&mut writer)?;
+        }
+        Ok(())
     }
 }
 
@@ -480,6 +589,7 @@ mod tests {
         assert_eq!(instruction.destination, Register::Locator(1));
         assert_eq!(instruction.entry_identifier, Identifier::from_str("outdated").unwrap());
         assert_eq!(instruction.plaintext_type, PlaintextType::from_str("bool").unwrap());
+        assert!(instruction.visibility().is_none());
         test_serialization(instruction);
 
         let (remainder, instruction) =
@@ -654,5 +764,58 @@ mod tests {
         for case in incorrect_cases {
             assert!(GetRecordDynamic::<CurrentNetwork>::parse(case).is_err());
         }
+    }
+
+    #[test]
+    fn test_parse_with_visibility() {
+        // Parse with `.private` visibility.
+        let (remainder, instruction) =
+            GetRecordDynamic::<CurrentNetwork>::parse("get.record.dynamic r0.amount into r1 as u64.private").unwrap();
+        assert!(remainder.is_empty());
+        assert_eq!(instruction.plaintext_type, PlaintextType::from_str("u64").unwrap());
+        assert_eq!(instruction.visibility(), Some(&Visibility::Private));
+        test_serialization(instruction);
+
+        // Parse with `.public` visibility.
+        let (remainder, instruction) =
+            GetRecordDynamic::<CurrentNetwork>::parse("get.record.dynamic r0.amount into r1 as u64.public").unwrap();
+        assert!(remainder.is_empty());
+        assert_eq!(instruction.plaintext_type, PlaintextType::from_str("u64").unwrap());
+        assert_eq!(instruction.visibility(), Some(&Visibility::Public));
+        test_serialization(instruction);
+
+        // Parse with `.constant` visibility.
+        let (remainder, instruction) =
+            GetRecordDynamic::<CurrentNetwork>::parse("get.record.dynamic r0.amount into r1 as u64.constant").unwrap();
+        assert!(remainder.is_empty());
+        assert_eq!(instruction.plaintext_type, PlaintextType::from_str("u64").unwrap());
+        assert_eq!(instruction.visibility(), Some(&Visibility::Constant));
+        test_serialization(instruction);
+
+        // Parse struct type with visibility.
+        let (remainder, instruction) =
+            GetRecordDynamic::<CurrentNetwork>::parse("get.record.dynamic r0.banana into r1 as fruit_struct.private")
+                .unwrap();
+        assert!(remainder.is_empty());
+        assert_eq!(instruction.plaintext_type, PlaintextType::Struct(Identifier::from_str("fruit_struct").unwrap()));
+        assert_eq!(instruction.visibility(), Some(&Visibility::Private));
+        test_serialization(instruction);
+
+        // Parse without visibility (existing behavior).
+        let (remainder, instruction) =
+            GetRecordDynamic::<CurrentNetwork>::parse("get.record.dynamic r0.amount into r1 as u64").unwrap();
+        assert!(remainder.is_empty());
+        assert_eq!(instruction.plaintext_type, PlaintextType::from_str("u64").unwrap());
+        assert!(instruction.visibility().is_none());
+        test_serialization(instruction);
+
+        // Invalid visibility suffix should not parse as visibility (falls back to bare type).
+        let result = GetRecordDynamic::<CurrentNetwork>::parse("get.record.dynamic r0.amount into r1 as u64.secret");
+        // `PlaintextType::parse` parses `u64`, then `opt(alt(...))` does not match `.secret`,
+        // so the instruction parses successfully but `.secret` remains.
+        assert!(result.is_ok());
+        let (remainder, instruction) = result.unwrap();
+        assert_eq!(remainder, ".secret");
+        assert!(instruction.visibility().is_none());
     }
 }
