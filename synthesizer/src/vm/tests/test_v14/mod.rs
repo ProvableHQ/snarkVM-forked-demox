@@ -279,10 +279,15 @@ fn test_v2_deployment_transaction_rejected_at_v14() {
     // Create a VM at V13 to construct a V2 deployment.
     let vm_v13 = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V13).unwrap(), rng);
 
-    // Deploy a simple program at V13 to get a V2 deployment transaction (with constructor for V9+).
+    // Deploy a program with a record at V13. The record means the V14 check will
+    // require record verifying keys, which the pre-V14 deployment won't have.
     let program = Program::from_str(
         r"
 program v2_rejected_at_v14_test.aleo;
+
+record token:
+    owner as address.private;
+    amount as u64.private;
 
 function compute:
     input r0 as u64.private;

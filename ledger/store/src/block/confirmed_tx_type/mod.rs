@@ -53,10 +53,12 @@ pub mod test_helpers {
     /// Samples a rejected deploy.
     pub(crate) fn sample_rejected_deploy(version: u8, rng: &mut TestRng) -> ConfirmedTxType<CurrentNetwork> {
         // Sample the rejected deployment.
+        // Only V2 deployments can have translation keys.
+        let has_translation_keys = version >= 2 && rng.r#gen();
         let rejected = snarkvm_ledger_test_helpers::sample_rejected_deployment(
             version,
             rng.r#gen(),
-            rng.r#gen(),
+            has_translation_keys,
             rng.r#gen(),
             rng,
         );

@@ -253,12 +253,12 @@ fn test_compare_transfer_public() {
         get_deployment_costs(&vm, &static_deployment, &dynamic_deployment, consensus_version);
     assert_eq!(
         static_deploy_costs,
-        (2_113_760, 1_074_000, 37_760),
+        (2_111_760, 1_072_000, 37_760),
         "Static deployment costs (total, storage, synthesis)"
     );
     assert_eq!(
         dynamic_deploy_costs,
-        (2_153_470, 1_114_000, 37_470),
+        (2_151_470, 1_112_000, 37_470),
         "Dynamic deployment costs (total, storage, synthesis)"
     );
 
@@ -392,12 +392,12 @@ fn test_compare_transfer_public_as_signer() {
         get_deployment_costs(&vm, &static_deployment, &dynamic_deployment, consensus_version);
     assert_eq!(
         static_deploy_costs,
-        (2_205_113, 1_164_000, 39_113),
+        (2_203_113, 1_162_000, 39_113),
         "Static deployment costs (total, storage, synthesis)"
     );
     assert_eq!(
         dynamic_deploy_costs,
-        (2_224_437, 1_184_000, 38_437),
+        (2_222_437, 1_182_000, 38_437),
         "Dynamic deployment costs (total, storage, synthesis)"
     );
 
@@ -530,12 +530,12 @@ fn test_compare_transfer_public_to_private() {
         get_deployment_costs(&vm, &static_deployment, &dynamic_deployment, consensus_version);
     assert_eq!(
         static_deploy_costs,
-        (2_265_891, 1_200_000, 63_891),
+        (2_263_891, 1_198_000, 63_891),
         "Static deployment costs (total, storage, synthesis)"
     );
     assert_eq!(
         dynamic_deploy_costs,
-        (2_246_866, 1_198_000, 46_866),
+        (2_244_866, 1_196_000, 46_866),
         "Dynamic deployment costs (total, storage, synthesis)"
     );
 
@@ -698,12 +698,12 @@ fn test_compare_transfer_private() {
         get_deployment_costs(&vm, &static_deployment, &dynamic_deployment, consensus_version);
     assert_eq!(
         static_deploy_costs,
-        (2_141_740, 1_034_000, 105_740),
+        (2_139_740, 1_032_000, 105_740),
         "Static deployment costs (total, storage, synthesis)"
     );
     assert_eq!(
         dynamic_deploy_costs,
-        (2_094_903, 1_041_000, 51_903),
+        (2_092_903, 1_039_000, 51_903),
         "Dynamic deployment costs (total, storage, synthesis)"
     );
 
@@ -853,12 +853,12 @@ fn test_compare_transfer_private_to_public() {
         get_deployment_costs(&vm, &static_deployment, &dynamic_deployment, consensus_version);
     assert_eq!(
         static_deploy_costs,
-        (2_312_011, 1_227_000, 83_011),
+        (2_310_011, 1_225_000, 83_011),
         "Static deployment costs (total, storage, synthesis)"
     );
     assert_eq!(
         dynamic_deploy_costs,
-        (2_255_765, 1_205_000, 48_765),
+        (2_253_765, 1_203_000, 48_765),
         "Dynamic deployment costs (total, storage, synthesis)"
     );
 
@@ -995,12 +995,12 @@ fn test_compare_join() {
         get_deployment_costs(&vm, &static_deployment, &dynamic_deployment, consensus_version);
     assert_eq!(
         static_deploy_costs,
-        (1_001_064_645, 970_000, 92_645),
+        (1_001_062_645, 968_000, 92_645),
         "Static deployment costs (total, storage, synthesis)"
     );
     assert_eq!(
         dynamic_deploy_costs,
-        (1_001_024_361, 983_000, 39_361),
+        (1_001_022_361, 981_000, 39_361),
         "Dynamic deployment costs (total, storage, synthesis)"
     );
 
@@ -1134,12 +1134,12 @@ fn test_compare_split() {
         get_deployment_costs(&vm, &static_deployment, &dynamic_deployment, consensus_version);
     assert_eq!(
         static_deploy_costs,
-        (101_082_264, 982_000, 98_264),
+        (101_080_264, 980_000, 98_264),
         "Static deployment costs (total, storage, synthesis)"
     );
     assert_eq!(
         dynamic_deploy_costs,
-        (101_043_751, 997_000, 44_751),
+        (101_041_751, 995_000, 44_751),
         "Dynamic deployment costs (total, storage, synthesis)"
     );
 
@@ -1284,12 +1284,12 @@ fn test_compare_bond_validator() {
         get_deployment_costs(&vm, &static_deployment, &dynamic_deployment, consensus_version);
     assert_eq!(
         static_deploy_costs,
-        (2_114_678, 1_073_000, 39_678),
+        (2_112_678, 1_071_000, 39_678),
         "Static deployment costs (total, storage, synthesis)"
     );
     assert_eq!(
         dynamic_deploy_costs,
-        (2_159_366, 1_118_000, 39_366),
+        (2_157_366, 1_116_000, 39_366),
         "Dynamic deployment costs (total, storage, synthesis)"
     );
 
@@ -1388,12 +1388,12 @@ fn test_compare_bond_public() {
         get_deployment_costs(&vm, &static_deployment, &dynamic_deployment, consensus_version);
     assert_eq!(
         static_deploy_costs,
-        (2_089_356, 1_046_000, 41_356),
+        (2_087_356, 1_044_000, 41_356),
         "Static deployment costs (total, storage, synthesis)"
     );
     assert_eq!(
         dynamic_deploy_costs,
-        (2_139_125, 1_097_000, 40_125),
+        (2_137_125, 1_095_000, 40_125),
         "Dynamic deployment costs (total, storage, synthesis)"
     );
 
@@ -1488,12 +1488,12 @@ fn test_compare_unbond_public() {
         get_deployment_costs(&vm, &static_deployment, &dynamic_deployment, consensus_version);
     assert_eq!(
         static_deploy_costs,
-        (2_094_458, 1_056_000, 36_458),
+        (2_092_458, 1_054_000, 36_458),
         "Static deployment costs (total, storage, synthesis)"
     );
     assert_eq!(
         dynamic_deploy_costs,
-        (2_139_286, 1_100_000, 37_286),
+        (2_137_286, 1_098_000, 37_286),
         "Dynamic deployment costs (total, storage, synthesis)"
     );
 
@@ -1586,12 +1586,12 @@ fn test_compare_claim_unbond_public() {
         get_deployment_costs(&vm, &static_deployment, &dynamic_deployment, consensus_version);
     assert_eq!(
         static_deploy_costs,
-        (2_123_531, 1_088_000, 33_531),
+        (2_121_531, 1_086_000, 33_531),
         "Static deployment costs (total, storage, synthesis)"
     );
     assert_eq!(
         dynamic_deploy_costs,
-        (2_154_422, 1_117_000, 35_422),
+        (2_152_422, 1_115_000, 35_422),
         "Dynamic deployment costs (total, storage, synthesis)"
     );
 
@@ -1685,12 +1685,12 @@ fn test_compare_set_validator_state() {
         get_deployment_costs(&vm, &static_deployment, &dynamic_deployment, consensus_version);
     assert_eq!(
         static_deploy_costs,
-        (2_124_580, 1_090_000, 32_580),
+        (2_122_580, 1_088_000, 32_580),
         "Static deployment costs (total, storage, synthesis)"
     );
     assert_eq!(
         dynamic_deploy_costs,
-        (2_155_413, 1_119_000, 34_413),
+        (2_153_413, 1_117_000, 34_413),
         "Dynamic deployment costs (total, storage, synthesis)"
     );
 
