@@ -20,10 +20,6 @@ impl<N: Network> FromBytes for TransitionLeaf<N> {
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
         // Read the version.
         let version = FromBytes::read_le(&mut reader)?;
-        // Ensure the version is valid.
-        if version != TRANSITION_LEAF_VERSION && version != TRANSITION_LEAF_VERSION_DYNAMIC {
-            return Err(error("Invalid transition leaf version"));
-        }
         // Read the index.
         let index = FromBytes::read_le(&mut reader)?;
         // Read the variant.
@@ -87,24 +83,24 @@ mod tests {
 
         // Test that version 1 (static) works with any variant.
         for variant in 0..=7 {
-            let leaf = TransitionLeaf::<CurrentNetwork>::new_with_version(0, variant, id);
+            let leaf = TransitionLeaf::<CurrentNetwork>::new(0, variant, id);
             let bytes = leaf.to_bytes_le()?;
             assert!(TransitionLeaf::<CurrentNetwork>::read_le(&bytes[..]).is_ok());
         }
 
         // Test that version 2 (dynamic) only works with Record (3) and ExternalRecord (4).
-        let leaf_record = TransitionLeaf::<CurrentNetwork>::new_dynamic_record(0, id);
+        let leaf_record = TransitionLeaf::<CurrentNetwork>::new_record_with_dynamic_id(0, id);
         let bytes = leaf_record.to_bytes_le()?;
         assert!(TransitionLeaf::<CurrentNetwork>::read_le(&bytes[..]).is_ok());
 
-        let leaf_external = TransitionLeaf::<CurrentNetwork>::new_dynamic_external_record(0, id);
+        let leaf_external = TransitionLeaf::<CurrentNetwork>::new_external_record_with_dynamic_id(0, id);
         let bytes = leaf_external.to_bytes_le()?;
         assert!(TransitionLeaf::<CurrentNetwork>::read_le(&bytes[..]).is_ok());
 
         // Test that version 2 (dynamic) returns an error for invalid variants.
         for variant in [0u8, 1, 2, 5, 6, 7] {
             assert!(
-                TransitionLeaf::<CurrentNetwork>::from(TRANSITION_LEAF_VERSION_DYNAMIC, 0, variant, id).is_err(),
+                TransitionLeaf::<CurrentNetwork>::from(LeafVersion::Dynamic as u8, 0, variant, id).is_err(),
                 "Expected error for dynamic variant {variant}"
             );
         }
