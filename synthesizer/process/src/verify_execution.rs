@@ -232,8 +232,16 @@ impl<N: Network> Process<N> {
                 self.get_stack(program_id).and_then(|stack| stack.get_verifying_key(record_name))
             },
         )?;
-
-        // TODO (@vicsn): bring appropriate new measurement functions from execution_cost_for_authorization to here.
+        // Ensure `Authorization::translation_batches` matches the number of translations.
+        // We only compare the totals because `Authorization::translation_batches` does not preserve order.
+        // Note that in general the prover and verifier agree on order through the use of `translation_index`.
+        let expected_n_translations =
+            Authorization::translation_batches(self, execution.transitions())?.into_iter().sum::<usize>();
+        let actual_n_translations = batch_translation_inputs.iter().map(|(_, inputs)| inputs.len()).sum::<usize>();
+        ensure!(
+            actual_n_translations == expected_n_translations,
+            "Unexpected number of translation inputs: {actual_n_translations} instead of {expected_n_translations}",
+        );
 
         for (verifying_key, batch_translation_inputs_for_record) in batch_translation_inputs.into_iter() {
             // Retrieve the number of public and private variables.
@@ -349,10 +357,8 @@ impl<N: Network> Process<N> {
             child_transition_ids.len()
         );
 
-        // TODO(@vicsn): in case we stick to encoding and using *all* of the caller_{inputs, outputs} instead of just the dynamic ones,
-        // we'll have to assert they equal the child's inputs/outputs.
         for (child_transition_id, (is_dynamic_call, call_instruction)) in
-            child_transition_ids.iter().zip_eq(parent_function_calls)
+            child_transition_ids.iter().zip(parent_function_calls)
         {
             // Note: This unwrap is safe, as we are processing transitions in post-order,
             // which implies that all child transition IDs have been added to `transition_map`.
