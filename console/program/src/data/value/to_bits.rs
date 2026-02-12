@@ -37,8 +37,8 @@ impl<N: Network> ToBits for Value<N> {
             Self::Plaintext(plaintext) => plaintext.write_bits_be(vec),
             Self::Record(record) => record.write_bits_be(vec),
             Self::Future(future) => future.write_bits_be(vec),
-            Self::DynamicRecord(dynamic_record) => dynamic_record.write_bits_le(vec),
-            Self::DynamicFuture(dynamic_future) => dynamic_future.write_bits_le(vec),
+            Self::DynamicRecord(dynamic_record) => dynamic_record.write_bits_be(vec),
+            Self::DynamicFuture(dynamic_future) => dynamic_future.write_bits_be(vec),
         };
     }
 }

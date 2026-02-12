@@ -37,7 +37,7 @@ mod evaluate;
 mod execute;
 mod helpers;
 
-use crate::{CallMetrics, Process, Trace, trace::RecordTranslationData};
+use crate::{CallMetrics, Process, Trace, TranslationAssignment, compute_console_dynamic_or_external_record_id};
 use console::{
     account::{Address, PrivateKey},
     network::prelude::*,
@@ -61,6 +61,7 @@ use console::{
         RegisterType,
         Request,
         Response,
+        ToFields,
         U8,
         U16,
         Value,
@@ -89,18 +90,18 @@ use indexmap::IndexMap;
 use locktick::parking_lot::RwLock;
 #[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
-use rand::{CryptoRng, Rng};
+use rand::{CryptoRng, Rng, SeedableRng, rngs::StdRng};
 use std::sync::{Arc, Weak};
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
 pub type Assignments<N> = Arc<RwLock<Vec<(circuit::Assignment<<N as Environment>::Field>, CallMetrics<N>)>>>;
-/// A stack of translation buckets. Each function execution level pushes a new bucket,
-/// and translations for dynamic calls made at that level are pushed to the top bucket.
-/// When the transition is inserted, the top bucket is popped and its translations are
-/// associated with that transition (the caller's transition ID).
-pub type Translations<N> = Arc<RwLock<Vec<Vec<RecordTranslationData<N>>>>>;
+/// A stack of translations for the transitions in the execution. Each function execution level pushes a new group,
+/// and translations for dynamic calls made at that level are collected into the top group. When the transition is
+/// inserted, the top group is popped and its translations are associated with that transition (the caller's
+/// transition ID). Each translation datum is paired with the proving key for its record type.
+pub type Translations<N> = Arc<RwLock<Vec<Vec<(TranslationAssignment<N>, ProvingKey<N>)>>>>;
 
 /// The `CallStack` is used to track the current state of the program execution.
 #[derive(Clone, Debug)]
@@ -245,14 +246,12 @@ pub struct Stack<N: Network> {
     finalize_types: Arc<RwLock<IndexMap<Identifier<N>, FinalizeTypes<N>>>>,
     /// The universal SRS.
     universal_srs: UniversalSRS<N>,
-    /// The mapping of function name to proving key.
+    /// The mapping of function name or record name to proving key.
+    /// Function names map to function proving keys, record names map to translation proving keys.
     proving_keys: Arc<RwLock<IndexMap<Identifier<N>, ProvingKey<N>>>>,
-    /// The mapping of function name to verifying key.
+    /// The mapping of function name or record name to verifying key.
+    /// Function names map to function verifying keys, record names map to translation verifying keys.
     verifying_keys: Arc<RwLock<IndexMap<Identifier<N>, VerifyingKey<N>>>>,
-    /// The mapping of record name to translation proving key.
-    translation_proving_keys: Arc<RwLock<IndexMap<Identifier<N>, ProvingKey<N>>>>,
-    /// The mapping of record name to translation verifying key.
-    translation_verifying_keys: Arc<RwLock<IndexMap<Identifier<N>, VerifyingKey<N>>>>,
     /// The program address.
     program_address: Address<N>,
     /// The program checksum.

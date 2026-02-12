@@ -32,7 +32,7 @@ impl<N: Network> Equal<Self> for DynamicFuture<N> {
         self.program_name.is_equal(&other.program_name)
             & self.program_network.is_equal(&other.program_network)
             & self.function_name.is_equal(&other.function_name)
-            & self.root.is_equal(&other.root)
+            & self.checksum.is_equal(&other.checksum)
     }
 
     /// Returns `true` if `self` and `other` are *not* equal.
@@ -105,8 +105,8 @@ mod tests {
     }
 
     #[test]
-    fn test_is_not_equal_root() {
-        // Create dynamic futures with different arguments (thus different roots).
+    fn test_is_not_equal_checksum() {
+        // Create dynamic futures with different arguments (thus different checksums).
         let dynamic1 = create_dynamic_future("test.aleo", "foo", vec![Argument::Plaintext(
             Plaintext::from_str("100u64").unwrap(),
         )]);
@@ -114,7 +114,7 @@ mod tests {
             Plaintext::from_str("200u64").unwrap(),
         )]);
 
-        // They should not be equal due to different roots.
+        // They should not be equal due to different checksums.
         assert!(!*dynamic1.is_equal(&dynamic2));
         assert!(dynamic1 != dynamic2);
         assert!(*dynamic1.is_not_equal(&dynamic2));

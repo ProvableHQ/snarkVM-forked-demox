@@ -43,7 +43,7 @@ wasm = [
   "snarkvm-synthesizer-program/wasm",
   "snarkvm-synthesizer-snark/wasm"
 ]
-test = [ "snarkvm-console/test" ]
+test = [ "snarkvm-console/test", "snarkvm-circuit/test" ]
 timer = [ "aleo-std/timer" ]
 dev-print = [ "snarkvm-utilities/dev-print" ]
 dev_skip_checks = [ ]
@@ -143,6 +143,10 @@ workspace = true
 features = [ "query" ]
 
 [dev-dependencies.snarkvm-ledger-store]
+workspace = true
+features = [ "test" ]
+
+[dev-dependencies.snarkvm-circuit]
 workspace = true
 features = [ "test" ]
 

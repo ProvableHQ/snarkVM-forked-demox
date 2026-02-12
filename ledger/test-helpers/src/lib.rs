@@ -131,13 +131,37 @@ pub fn sample_outputs() -> Vec<(<CurrentNetwork as Network>::TransitionID, Outpu
         (Uniform::rand(rng), Output::Public(Uniform::rand(rng), None)),
         (Uniform::rand(rng), Output::Public(plaintext_hash, Some(plaintext))),
         (Uniform::rand(rng), Output::Private(Uniform::rand(rng), None)),
-        (Uniform::rand(rng), Output::Private(ciphertext_hash, Some(ciphertext))),
+        (Uniform::rand(rng), Output::Private(ciphertext_hash, Some(ciphertext.clone()))),
         (Uniform::rand(rng), Output::Record(Uniform::rand(rng), Uniform::rand(rng), None, sender_ciphertext)),
         (
             Uniform::rand(rng),
-            Output::Record(Uniform::rand(rng), record_checksum, Some(record_ciphertext), sender_ciphertext),
+            Output::Record(Uniform::rand(rng), record_checksum, Some(record_ciphertext.clone()), sender_ciphertext),
         ),
         (Uniform::rand(rng), Output::ExternalRecord(Uniform::rand(rng))),
+        // RecordWithDynamicID with record ciphertext.
+        (
+            Uniform::rand(rng),
+            Output::RecordWithDynamicID(
+                Uniform::rand(rng),
+                record_checksum,
+                Some(record_ciphertext),
+                sender_ciphertext,
+                Uniform::rand(rng),
+            ),
+        ),
+        // RecordWithDynamicID without record ciphertext.
+        (
+            Uniform::rand(rng),
+            Output::RecordWithDynamicID(
+                Uniform::rand(rng),
+                Uniform::rand(rng),
+                None,
+                sender_ciphertext,
+                Uniform::rand(rng),
+            ),
+        ),
+        // ExternalRecordWithDynamicID.
+        (Uniform::rand(rng), Output::ExternalRecordWithDynamicID(Uniform::rand(rng), Uniform::rand(rng))),
     ]
 }
 
@@ -179,12 +203,11 @@ function compute:
         deployment.verifying_keys().clone(),
         None,
         None,
-        None,
     )
     .unwrap()
 }
 
-pub fn sample_deployment_v2(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
+pub fn sample_deployment_v2_without_translation_keys(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
     static INSTANCE: OnceLock<Deployment<CurrentNetwork>> = OnceLock::new();
     let deployment = INSTANCE
         .get_or_init(|| {
@@ -220,12 +243,11 @@ function compute:
         deployment.verifying_keys().clone(),
         deployment.program_checksum(),
         Some(Address::rand(rng)),
-        None,
     )
     .unwrap()
 }
 
-pub fn sample_deployment_v3(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
+pub fn sample_deployment_v2_with_translation_keys(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
     static INSTANCE: OnceLock<Deployment<CurrentNetwork>> = OnceLock::new();
     let deployment = INSTANCE
         .get_or_init(|| {
@@ -266,7 +288,6 @@ function compute:
         deployment.verifying_keys().clone(),
         deployment.program_checksum(),
         Some(Address::rand(rng)),
-        deployment.translation_verifying_keys().clone(),
     )
     .unwrap()
 }
@@ -275,14 +296,16 @@ function compute:
 pub fn sample_rejected_deployment(
     version: u8,
     edition: u16,
+    has_translation_keys: bool,
     is_fee_private: bool,
     rng: &mut TestRng,
 ) -> Rejected<CurrentNetwork> {
     // Sample a deploy transaction.
-    let deployment = match crate::sample_deployment_transaction(version, edition, is_fee_private, rng) {
-        Transaction::Deploy(_, _, _, deployment, _) => (*deployment).clone(),
-        _ => unreachable!(),
-    };
+    let deployment =
+        match crate::sample_deployment_transaction(version, edition, has_translation_keys, is_fee_private, rng) {
+            Transaction::Deploy(_, _, _, deployment, _) => (*deployment).clone(),
+            _ => unreachable!(),
+        };
 
     // Sample a new program owner.
     let private_key = PrivateKey::new(rng).unwrap();
@@ -372,7 +395,7 @@ pub fn sample_fee_private(deployment_or_execution_id: Field<CurrentNetwork>, rng
     block_store.insert(&FromStr::from_str(&block.to_string()).unwrap()).unwrap();
 
     // Prepare the assignments.
-    trace.prepare(&process, &Query::from(block_store)).unwrap();
+    trace.prepare(&Query::from(block_store)).unwrap();
     // Compute the proof and construct the fee.
     let fee = trace.prove_fee::<CurrentAleo, _>(VarunaVersion::V1, rng).unwrap();
 
@@ -425,7 +448,7 @@ pub fn sample_fee_public(deployment_or_execution_id: Field<CurrentNetwork>, rng:
     block_store.insert(&FromStr::from_str(&block.to_string()).unwrap()).unwrap();
 
     // Prepare the assignments.
-    trace.prepare(&process, &Query::from(block_store)).unwrap();
+    trace.prepare(&Query::from(block_store)).unwrap();
     // Compute the proof and construct the fee.
     let fee = trace.prove_fee::<CurrentAleo, _>(VarunaVersion::V1, rng).unwrap();
 
@@ -474,29 +497,28 @@ function large_transaction:
 pub fn sample_deployment_transaction(
     version: u8,
     edition: u16,
+    has_translation_keys: bool,
     is_fee_private: bool,
     rng: &mut TestRng,
 ) -> Transaction<CurrentNetwork> {
     // Sample a private key.
     let private_key = PrivateKey::new(rng).unwrap();
     // Sample a deployment.
-    let deployment = match version {
-        1 => sample_deployment_v1(edition, rng),
-        2 => {
-            let mut deployment = sample_deployment_v2(edition, rng);
+    let deployment = match (version, has_translation_keys) {
+        (1, false) => sample_deployment_v1(edition, rng),
+        (2, false) => {
+            let mut deployment = sample_deployment_v2_without_translation_keys(edition, rng);
             // Set the program owner to the address of the private key.
             deployment.set_program_owner_raw(Some(Address::try_from(&private_key).unwrap()));
-            // Return the deployment.
             deployment
         }
-        3 => {
-            let mut deployment = sample_deployment_v3(edition, rng);
+        (2, true) => {
+            let mut deployment = sample_deployment_v2_with_translation_keys(edition, rng);
             // Set the program owner to the address of the private key.
             deployment.set_program_owner_raw(Some(Address::try_from(&private_key).unwrap()));
-            // Return the deployment.
             deployment
         }
-        _ => panic!("Invalid deployment version: {version}"),
+        _ => panic!("Invalid deployment version ({version}) or translation keys combination."),
     };
 
     // Compute the deployment ID.
@@ -573,7 +595,7 @@ pub fn sample_large_execution_transaction(rng: &mut TestRng) -> Transaction<Curr
             .unwrap();
 
             // Prepare the assignments.
-            trace.prepare(&process, &snarkvm_ledger_query::Query::from(block_store)).unwrap();
+            trace.prepare(&snarkvm_ledger_query::Query::from(block_store)).unwrap();
             // Compute the proof and construct the execution.
             let execution = trace.prove_execution::<CurrentAleo, _>("testing.aleo", VarunaVersion::V1, rng).unwrap();
             // Reconstruct the execution from bytes.
@@ -683,7 +705,7 @@ pub fn sample_genesis_block_and_components_uncached(
             let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
 
             // Prepare the assignments.
-            trace.prepare(&process, &Query::from(block_store)).unwrap();
+            trace.prepare(&Query::from(block_store)).unwrap();
             // Compute the proof and construct the execution.
             let execution = trace.prove_execution::<CurrentAleo, _>(locator.0, VarunaVersion::V1, rng).unwrap();
             // Convert the execution.

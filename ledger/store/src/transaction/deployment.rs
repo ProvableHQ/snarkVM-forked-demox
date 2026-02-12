@@ -59,9 +59,9 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     /// The mapping of `(program ID, edition)` to `checksum`.
     /// This was introduced in `ConsensusVersion::V9`.
     type ChecksumMap: for<'a> Map<'a, (ProgramID<N>, u16), [U8<N>; 32]>;
-    /// The mapping of `(program ID, name, edition)` to `verifying key`.
+    /// The mapping of `(program ID, function or record name, edition)` to `verifying key`.
     type VerifyingKeyMap: for<'a> Map<'a, (ProgramID<N>, Identifier<N>, u16), VerifyingKey<N>>;
-    /// The mapping of `(program ID, name, edition)` to `certificate`.
+    /// The mapping of `(program ID, function or record name, edition)` to `certificate`.
     type CertificateMap: for<'a> Map<'a, (ProgramID<N>, Identifier<N>, u16), Certificate<N>>;
     /// The fee storage.
     type FeeStorage: FeeStorage<N>;
@@ -251,22 +251,12 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
                 self.checksum_map().insert((program_id, edition), checksum)?;
             }
 
-            // Store the verifying keys and certificates.
-            for (function_name, (verifying_key, certificate)) in deployment.verifying_keys() {
+            // Store all verifying keys and certificates.
+            for (name, (verifying_key, certificate)) in deployment.verifying_keys() {
                 // Store the verifying key.
-                self.verifying_key_map().insert((program_id, *function_name, edition), verifying_key.clone())?;
+                self.verifying_key_map().insert((program_id, *name, edition), verifying_key.clone())?;
                 // Store the certificate.
-                self.certificate_map().insert((program_id, *function_name, edition), certificate.clone())?;
-            }
-
-            // Store the translation verifying keys and certificates, if they exist.
-            if let Some(translation_verifying_keys) = deployment.translation_verifying_keys() {
-                for (record_name, (verifying_key, certificate)) in translation_verifying_keys {
-                    // Store the verifying key.
-                    self.verifying_key_map().insert((program_id, *record_name, edition), verifying_key.clone())?;
-                    // Store the certificate.
-                    self.certificate_map().insert((program_id, *record_name, edition), certificate.clone())?;
-                }
+                self.certificate_map().insert((program_id, *name, edition), certificate.clone())?;
             }
 
             // Store the fee transition.
@@ -344,7 +334,6 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
                 // Remove the certificate.
                 self.certificate_map().remove(&(program_id, *record_name, edition))?;
             }
-
             // Remove the fee transition.
             self.fee_store().remove(transaction_id)?;
 
@@ -449,7 +438,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.program_map().get_confirmed(&(*program_id, edition)).map(|p| p.map(|p| p.into_owned()))
     }
 
-    /// Returns the latest verifying key for the given `program ID` and `resource name`.
+    /// Returns the latest verifying key for the given `program ID` and `function or record name`.
     fn get_latest_verifying_key(
         &self,
         program_id: &ProgramID<N>,
@@ -481,7 +470,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         Ok(Some(verifying_key.into_owned()))
     }
 
-    /// Returns the verifying key for the given `program ID`, `resource name` and `edition`.
+    /// Returns the verifying key for the given `program ID`, `function or record name` and `edition`.
     fn get_verifying_key_with_edition(
         &self,
         program_id: &ProgramID<N>,
@@ -509,7 +498,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         }
     }
 
-    /// Returns the latest certificate for the given `program ID` and `resource name`.
+    /// Returns the latest certificate for the given `program ID` and `function or record name`.
     fn get_latest_certificate(
         &self,
         program_id: &ProgramID<N>,
@@ -533,7 +522,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         Ok(Some(certificate.into_owned()))
     }
 
-    /// Returns the certificate for the given `program ID`, `resource name`, and `edition`.
+    /// Returns the certificate for the given `program ID`, `function or record name`, and `edition`.
     fn get_certificate_with_edition(
         &self,
         program_id: &ProgramID<N>,
@@ -550,7 +539,9 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         // Retrieve the certificate.
         match self.certificate_map().get_confirmed(&(*program_id, *resource_name, edition))? {
             Some(certificate) => Ok(Some(certificate.into_owned())),
-            None => bail!("Failed to get the certificate for '{program_id}/{resource_name}' (edition {edition})"),
+            None => {
+                bail!("Failed to get the certificate for '{program_id}/{resource_name}' (edition {edition})")
+            }
         }
     }
 
@@ -582,10 +573,20 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             },
         };
 
-        // Initialize a vector for the verifying keys and certificates.
-        let mut verifying_keys = Vec::with_capacity(program.functions().len());
+        // Determine if the deployment contains record verifying keys by probing the first record name.
+        let contains_record_keys = match program.records().keys().next() {
+            Some(record_name) => {
+                self.verifying_key_map().get_confirmed(&(program_id, *record_name, edition))?.is_some()
+            }
+            None => false,
+        };
 
-        // Retrieve the verifying keys and certificates.
+        // Initialize a vector for the verifying keys and certificates.
+        let num_functions = program.functions().len();
+        let num_records = if contains_record_keys { program.records().len() } else { 0 };
+        let mut verifying_keys = Vec::with_capacity(num_functions + num_records);
+
+        // Retrieve the function verifying keys and certificates.
         for function_name in program.functions().keys() {
             // Retrieve the verifying key.
             let Some(verifying_key) =
@@ -603,49 +604,32 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             verifying_keys.push((*function_name, (verifying_key, certificate)));
         }
 
-        // Initialize a vector for the translation verifying keys and certificates.
-        let mut translation_verifying_keys = Vec::with_capacity(program.records().len());
-
-        // Retrieve the verifying keys and certificates.
-        for record_name in program.records().keys() {
-            // Retrieve the verifying key.
-            let Some(translation_verifying_key) =
-                self.verifying_key_map().get_confirmed(&(program_id, *record_name, edition))?.map(|x| x.into_owned())
-            else {
-                continue;
-            };
-            // Retrieve the translation certificate.
-            let Some(certificate) =
-                self.certificate_map().get_confirmed(&(program_id, *record_name, edition))?.map(|x| x.into_owned())
-            else {
-                bail!("Failed to get the translation certificate for '{program_id}/{record_name}' (edition {edition})");
-            };
-            // Add the verifying key and certificate to the deployment.
-            translation_verifying_keys.push((*record_name, (translation_verifying_key, certificate)));
+        // If the deployment contains record verifying keys, load and append them.
+        if contains_record_keys {
+            for record_name in program.records().keys() {
+                // Retrieve the verifying key.
+                let Some(verifying_key) = self
+                    .verifying_key_map()
+                    .get_confirmed(&(program_id, *record_name, edition))?
+                    .map(|x| x.into_owned())
+                else {
+                    bail!(
+                        "Failed to get the record verifying key for '{program_id}/{record_name}' (edition {edition})"
+                    );
+                };
+                // Retrieve the certificate.
+                let Some(certificate) =
+                    self.certificate_map().get_confirmed(&(program_id, *record_name, edition))?.map(|x| x.into_owned())
+                else {
+                    bail!("Failed to get the record certificate for '{program_id}/{record_name}' (edition {edition})");
+                };
+                // Append the record verifying key and certificate.
+                verifying_keys.push((*record_name, (verifying_key, certificate)));
+            }
         }
 
-        // Check that the number of translation verifying keys is consistent.
-        let translation_verifying_keys = match translation_verifying_keys.is_empty() {
-            true => None,
-            false => {
-                // Check that the number of translation verifying keys matches the number of records.
-                ensure!(
-                    translation_verifying_keys.len() == program.records().len(),
-                    "The number of translation verifying keys does not match the number of records for program '{program_id}' (edition {edition})"
-                );
-                Some(translation_verifying_keys)
-            }
-        };
-
         // Return the deployment.
-        Ok(Some(Deployment::new(
-            edition,
-            program,
-            verifying_keys,
-            program_checksum,
-            program_owner,
-            translation_verifying_keys,
-        )?))
+        Ok(Some(Deployment::new(edition, program, verifying_keys, program_checksum, program_owner)?))
     }
 
     /// Returns the fee for the given `transaction ID`.
@@ -833,42 +817,42 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
         self.storage.get_program_for_edition(program_id, edition)
     }
 
-    /// Returns the latest verifying key for the given `(program ID, function name)`.
+    /// Returns the latest verifying key for the given `(program ID, function or record name)`.
     pub fn get_latest_verifying_key(
         &self,
         program_id: &ProgramID<N>,
-        function_name: &Identifier<N>,
+        resource_name: &Identifier<N>,
     ) -> Result<Option<VerifyingKey<N>>> {
-        self.storage.get_latest_verifying_key(program_id, function_name)
+        self.storage.get_latest_verifying_key(program_id, resource_name)
     }
 
-    /// Returns the verifying key for the given `(program ID, function name, edition)`.
+    /// Returns the verifying key for the given `(program ID, function or record name, edition)`.
     pub fn get_verifying_key_with_edition(
         &self,
         program_id: &ProgramID<N>,
-        function_name: &Identifier<N>,
+        resource_name: &Identifier<N>,
         edition: u16,
     ) -> Result<Option<VerifyingKey<N>>> {
-        self.storage.get_verifying_key_with_edition(program_id, function_name, edition)
+        self.storage.get_verifying_key_with_edition(program_id, resource_name, edition)
     }
 
-    /// Returns the latest certificate for the given `(program ID, function name)`.
+    /// Returns the latest certificate for the given `(program ID, function or record name)`.
     pub fn get_latest_certificate(
         &self,
         program_id: &ProgramID<N>,
-        function_name: &Identifier<N>,
+        resource_name: &Identifier<N>,
     ) -> Result<Option<Certificate<N>>> {
-        self.storage.get_latest_certificate(program_id, function_name)
+        self.storage.get_latest_certificate(program_id, resource_name)
     }
 
-    /// Returns the certificate for the given `(program ID, function name, edition)`.
+    /// Returns the certificate for the given `(program ID, function or record name, edition)`.
     pub fn get_certificate_with_edition(
         &self,
         program_id: &ProgramID<N>,
-        function_name: &Identifier<N>,
+        resource_name: &Identifier<N>,
         edition: u16,
     ) -> Result<Option<Certificate<N>>> {
-        self.storage.get_certificate_with_edition(program_id, function_name, edition)
+        self.storage.get_certificate_with_edition(program_id, resource_name, edition)
     }
 
     /// Returns the fee for the given `transaction ID`.
@@ -993,14 +977,14 @@ mod tests {
         let deployment_store = DeploymentMemory::open(fee_store).unwrap();
 
         // Sample the transactions.
-        let transaction_0 = snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 0, true, rng);
-        let transaction_1 = snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 1, false, rng);
-        let transaction_2 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, rng);
-        let transaction_3 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, false, rng);
-        let transaction_4 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, true, rng);
-        let transaction_5 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 0, true, rng);
-        let transaction_6 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 1, false, rng);
-        let transaction_7 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 2, true, rng);
+        let transaction_0 = snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 0, false, true, rng);
+        let transaction_1 = snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 1, false, false, rng);
+        let transaction_2 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, false, true, rng);
+        let transaction_3 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, false, false, rng);
+        let transaction_4 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, false, true, rng);
+        let transaction_5 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, true, rng);
+        let transaction_6 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, true, false, rng);
+        let transaction_7 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, true, true, rng);
 
         let transactions = vec![
             transaction_0,
@@ -1096,14 +1080,14 @@ mod tests {
         let deployment_store = DeploymentMemory::open(fee_store).unwrap();
 
         // Sample the transactions.
-        let transaction_0 = snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 0, true, rng);
-        let transaction_1 = snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 1, false, rng);
-        let transaction_2 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, rng);
-        let transaction_3 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, false, rng);
-        let transaction_4 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, true, rng);
-        let transaction_5 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 0, true, rng);
-        let transaction_6 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 1, false, rng);
-        let transaction_7 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 2, true, rng);
+        let transaction_0 = snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 0, false, true, rng);
+        let transaction_1 = snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 1, false, false, rng);
+        let transaction_2 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, false, true, rng);
+        let transaction_3 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, false, false, rng);
+        let transaction_4 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, false, true, rng);
+        let transaction_5 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, true, rng);
+        let transaction_6 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, true, false, rng);
+        let transaction_7 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, true, true, rng);
 
         let transactions = vec![
             transaction_0,

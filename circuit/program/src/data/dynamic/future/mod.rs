@@ -23,28 +23,14 @@ use snarkvm_circuit_types::{Boolean, Field, environment::prelude::*};
 /// A dynamic future is a fixed-size representation of a future. Like static
 /// `Future`s, a dynamic future contains a program ID and function name. These
 /// are however represented as `Field` elements as opposed to `Identifier`s to
-/// ensure a fixed size. Dynamic futures also store a Merkle root of the
+/// ensure a fixed size. Dynamic futures also store a checksum of the
 /// arguments to the future instead of the arguments themselves. This ensures
 /// that all dynamic futures have a constant size, regardless of the amount of
 /// data they contain.
 ///
-/// Suppose we have the following `finalize` scope:
-///
-/// ```text
-/// finalize foo: input r0 as address.public; input r1 as u64.public;
-/// ```
-///
-/// The leaves of its Merkle tree are computed as follows:
-/// ```text
-/// L_0 := HashPSD8(ToFields(arg_0))
-/// L_1 := HashPSD8(ToFields(arg_1))
-/// ```
-///
-/// Note that `ToFields` encodes the arguments's variant.
-///
-/// The tree has depth `FUTURE_ARGUMENT_TREE_DEPTH = 4` and is constructed with
-/// path hasher `HashPSD2` and the padding scheme outlined in
-/// [`snarkVM`'s `MerkleTree`](snarkvm_console_collections::merkle_tree::MerkleTree).
+/// Note: The checksum is never computed in circuit. It is computed in console
+/// as `BHP256(Keccak256(length_prefix || type_prefixed_argument_bits))` and
+/// injected as a witness field element.
 #[derive(Clone)]
 pub struct DynamicFuture<A: Aleo> {
     /// The program name.
@@ -53,8 +39,8 @@ pub struct DynamicFuture<A: Aleo> {
     program_network: Field<A>,
     /// The function name.
     function_name: Field<A>,
-    /// The Merkle root of the arguments.
-    root: Field<A>,
+    /// The checksum of the arguments.
+    checksum: Field<A>,
     /// The optional console arguments.
     /// Note: This is NOT part of the circuit representation.
     arguments: Option<Vec<console::Argument<A::Network>>>,
@@ -69,7 +55,7 @@ impl<A: Aleo> Inject for DynamicFuture<A> {
             program_name: Inject::new(mode, *value.program_name()),
             program_network: Inject::new(mode, *value.program_network()),
             function_name: Inject::new(mode, *value.function_name()),
-            root: Inject::new(mode, *value.root()),
+            checksum: Inject::new(mode, *value.checksum()),
             arguments: value.arguments().clone(),
         }
     }
@@ -91,9 +77,9 @@ impl<A: Aleo> DynamicFuture<A> {
         &self.function_name
     }
 
-    /// Returns the Merkle root of the arguments.
-    pub const fn root(&self) -> &Field<A> {
-        &self.root
+    /// Returns the checksum of the arguments.
+    pub const fn checksum(&self) -> &Field<A> {
+        &self.checksum
     }
 
     /// Returns the console arguments.
@@ -110,8 +96,8 @@ impl<A: Aleo> Eject for DynamicFuture<A> {
         let program_name_mode = Eject::eject_mode(self.program_name());
         let program_network_mode = Eject::eject_mode(self.program_network());
         let function_name_mode = Eject::eject_mode(self.function_name());
-        let root_mode = Eject::eject_mode(self.root());
-        Mode::combine(program_name_mode, [program_network_mode, function_name_mode, root_mode])
+        let checksum_mode = Eject::eject_mode(self.checksum());
+        Mode::combine(program_name_mode, [program_network_mode, function_name_mode, checksum_mode])
     }
 
     /// Ejects the dynamic future.
@@ -120,7 +106,7 @@ impl<A: Aleo> Eject for DynamicFuture<A> {
             Eject::eject_value(self.program_name()),
             Eject::eject_value(self.program_network()),
             Eject::eject_value(self.function_name()),
-            Eject::eject_value(self.root()),
+            Eject::eject_value(self.checksum()),
             self.arguments.clone(),
         )
     }

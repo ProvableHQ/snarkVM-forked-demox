@@ -19,10 +19,7 @@ use snarkvm_console_algorithms::Result;
 use snarkvm_console_network::Network;
 use snarkvm_console_types::{Field, U8, U16};
 
-/// Compute the function ID.
-///
-/// `Hash(network_id, program_id.len(), program_id, function_name.len(), function_name)`.
-///
+/// Compute the function ID as `Hash(network_id, program_id.len(), program_id, function_name.len(), function_name)`.
 pub fn compute_function_id<N: Network>(
     network_id: &U16<N>,
     program_id: &ProgramID<N>,

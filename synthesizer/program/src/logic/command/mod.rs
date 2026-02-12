@@ -226,11 +226,12 @@ impl<N: Network> Command<N> {
             Command::Instruction(c) => c.contains_external_struct(),
             Command::Await(c) => c.contains_external_struct(),
             Command::Contains(c) => c.contains_external_struct(),
-            Command::ContainsDynamic(_) => false, // Dynamic commands don't reference external structs
+            // `contains.dynamic` always produces a boolean result and has no type fields that could reference external structs.
+            Command::ContainsDynamic(_) => false,
             Command::Get(c) => c.contains_external_struct(),
-            Command::GetDynamic(_) => false, // Dynamic commands don't reference external structs
+            Command::GetDynamic(c) => c.destination_type().contains_external_struct(),
             Command::GetOrUse(c) => c.contains_external_struct(),
-            Command::GetOrUseDynamic(_) => false, // Dynamic commands don't reference external structs
+            Command::GetOrUseDynamic(c) => c.destination_type().contains_external_struct(),
             Command::RandChaCha(c) => c.contains_external_struct(),
             Command::Remove(c) => c.contains_external_struct(),
             Command::Set(c) => c.contains_external_struct(),

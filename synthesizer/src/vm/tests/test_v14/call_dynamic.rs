@@ -37,11 +37,11 @@ fn test_dynamic_calls_to_credits_aleo() -> Result<()> {
             // function static:
             //    input r0 as address.public;
             //    input r1 as u64.public;
-            //    call.dynamic credits aleo transfer_public_as_signer with r0 r1 (as address.public u64.public) into r2 (as future.dynamic);
+            //    call.dynamic credits aleo transfer_public_as_signer with r0 r1 (as address.public u64.public) into r2 (as dynamic.future);
             //    async static r2 into r3;
             //    output r3 as test_dcall.aleo/static.future;
             // finalize static:
-            //    input r0 as future.dynamic;
+            //    input r0 as dynamic.future;
             //    await r0; 
                     
             function two_transfer_publics:
@@ -50,13 +50,13 @@ fn test_dynamic_calls_to_credits_aleo() -> Result<()> {
                 input r2 as field.public;
                 input r3 as address.public;
                 input r4 as u64.public;
-                call.dynamic r0 r1 r2 with r3 r4 (as address.public u64.public) into r5 (as future.dynamic);
-                call.dynamic r0 r1 r2 with r3 r4 (as address.public u64.public) into r6 (as future.dynamic);
+                call.dynamic r0 r1 r2 with r3 r4 (as address.public u64.public) into r5 (as dynamic.future);
+                call.dynamic r0 r1 r2 with r3 r4 (as address.public u64.public) into r6 (as dynamic.future);
                 async two_transfer_publics r5 r6 into r7;
                 output r7 as test_dcall.aleo/two_transfer_publics.future;
             finalize two_transfer_publics:
-                input r0 as future.dynamic;
-                input r1 as future.dynamic;
+                input r0 as dynamic.future;
+                input r1 as dynamic.future;
                 await r1;
                 await r0;
 
@@ -66,24 +66,24 @@ fn test_dynamic_calls_to_credits_aleo() -> Result<()> {
                 input r2 as field.public;
                 input r3 as address.private;
                 input r4 as u64.public;
-                call.dynamic r0 r1 r2 with r3 r4 (as address.private u64.public) into r5 r6 (as record.dynamic future.dynamic);
+                call.dynamic r0 r1 r2 with r3 r4 (as address.private u64.public) into r5 r6 (as dynamic.record dynamic.future);
                 async dynamic_transfer_pub_to_priv r6 into r7;
-                output r5 as record.dynamic;
+                output r5 as dynamic.record;
                 output r7 as test_dcall.aleo/dynamic_transfer_pub_to_priv.future;
             finalize dynamic_transfer_pub_to_priv:
-                input r0 as future.dynamic;
+                input r0 as dynamic.future;
                 await r0;
 
             function dynamic_transfer_private:
                 input r0 as field.public;
                 input r1 as field.public;
                 input r2 as field.public;
-                input r3 as record.dynamic;
+                input r3 as dynamic.record;
                 input r4 as address.private;
                 input r5 as u64.private;
-                call.dynamic r0 r1 r2 with r3 r4 r5 (as record.dynamic address.private u64.private) into r6 r7 (as record.dynamic record.dynamic);
-                output r6 as record.dynamic;
-                output r7 as record.dynamic;
+                call.dynamic r0 r1 r2 with r3 r4 r5 (as dynamic.record address.private u64.private) into r6 r7 (as dynamic.record dynamic.record);
+                output r6 as dynamic.record;
+                output r7 as dynamic.record;
 
             constructor:
                 assert.eq true true;
@@ -281,19 +281,19 @@ fn test_universal_swap() {
             // transfer_public_to_private function
             input r4 as field.public;
             // credits_a record
-            input r5 as record.dynamic;
+            input r5 as dynamic.record;
             // Token a amount to send
             input r6 as u64.public;
             // Token b amount to receive
             input r7 as u64.public;
             cast r6 r7 into r8 as reserves;
-            call.dynamic r0 r2 r3 with r5 aleo1rrj2mgall8mw57lcpkkvkxwqkawpc5rjarqm57w8gux2ahnt9sxqf0md56 r6 (as record.dynamic address.public u64.public) into r9 r10 (as record.dynamic future.dynamic);
-            call.dynamic r1 r2 r4 with self.signer r6 (as address.private u64.public) into r11 r12 (as record.dynamic future.dynamic);
+            call.dynamic r0 r2 r3 with r5 aleo1rrj2mgall8mw57lcpkkvkxwqkawpc5rjarqm57w8gux2ahnt9sxqf0md56 r6 (as dynamic.record address.public u64.public) into r9 r10 (as dynamic.record dynamic.future);
+            call.dynamic r1 r2 r4 with self.signer r6 (as address.private u64.public) into r11 r12 (as dynamic.record dynamic.future);
             async buy_token_b r6 r7 r10 r12 into r13;
             // token_a change record
-            output r9 as record.dynamic;
+            output r9 as dynamic.record;
             // token_b receiver record
-            output r11 as record.dynamic;
+            output r11 as dynamic.record;
             output r13 as amm.aleo/buy_token_b.future;
 
         finalize buy_token_b:
@@ -301,8 +301,8 @@ fn test_universal_swap() {
             input r0 as u64.public;
             // token_b amount
             input r1 as u64.public;
-            input r2 as future.dynamic;
-            input r3 as future.dynamic;
+            input r2 as dynamic.future;
+            input r3 as dynamic.future;
             await r2;
             await r3;
             // TODO: implement reserve update logic here.
@@ -1241,8 +1241,8 @@ fn test_dynamic_call_credits_fee_functions_forbidden() {
             input r0 as u64.public;
             call.dynamic {credits_field} {aleo_field} {fee_private_field}
                 with r0 (as u64.public)
-                into r1 (as record.dynamic);
-            output r1 as record.dynamic;
+                into r1 (as dynamic.record);
+            output r1 as dynamic.record;
 
         constructor:
             assert.eq true true;
@@ -1272,12 +1272,12 @@ fn test_dynamic_call_credits_fee_functions_forbidden() {
             input r0 as u64.public;
             call.dynamic {credits_field} {aleo_field} {fee_public_field}
                 with r0 (as u64.public)
-                into r1 (as future.dynamic);
+                into r1 (as dynamic.future);
             async attempt_fee_public r1 into r2;
             output r2 as call_fee_public.aleo/attempt_fee_public.future;
 
         finalize attempt_fee_public:
-            input r0 as future.dynamic;
+            input r0 as dynamic.future;
             await r0;
 
         constructor:
@@ -1516,8 +1516,8 @@ fn test_call_dynamic_in_finalize_forbidden() {
     assert!(parse_result.is_err(), "call.dynamic in finalize should fail to parse");
 }
 
-// Tests that outputting a `future.dynamic` directly fails at deployment time.
-// A `future.dynamic` must be passed to `async` and awaited, not returned directly.
+// Tests that outputting a `dynamic.future` directly fails at deployment time.
+// A `dynamic.future` must be passed to `async` and awaited, not returned directly.
 #[test]
 fn test_dynamic_future_direct_output_forbidden() {
     let rng = &mut TestRng::default();
@@ -1535,8 +1535,8 @@ fn test_dynamic_future_direct_output_forbidden() {
             input r0 as u64.public;
             call.dynamic {target_field} {aleo_field} {func_field}
                 with r0 (as u64.public)
-                into r1 (as future.dynamic);
-            output r1 as future.dynamic;
+                into r1 (as dynamic.future);
+            output r1 as dynamic.future;
 
         constructor:
             assert.eq true true;
@@ -1548,7 +1548,7 @@ fn test_dynamic_future_direct_output_forbidden() {
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
     let deploy_result = vm.deploy(&caller_private_key, &program, None, 0, None, rng);
-    assert!(deploy_result.is_err(), "future.dynamic direct output should fail deployment");
+    assert!(deploy_result.is_err(), "dynamic.future direct output should fail deployment");
 }
 
 // Tests `call.dynamic` with local struct parameters (defined in the same program).
@@ -1961,9 +1961,9 @@ fn test_dynamic_call_with_array_parameters() {
 }
 
 // Tests double-spend detection behavior when passing dynamic records through `call.dynamic`.
-// - When a `record.dynamic` is passed to a function expecting a static record, translation occurs
+// - When a `dynamic.record` is passed to a function expecting a static record, translation occurs
 //   and the record is consumed. Passing the same record again causes double-spend.
-// - When a `record.dynamic` is passed to a function expecting `record.dynamic`, no translation
+// - When a `dynamic.record` is passed to a function expecting `dynamic.record`, no translation
 //   occurs and the record is not consumed. The same record can be passed multiple times.
 #[test]
 fn test_dynamic_record_double_spend_detection() {
@@ -2006,7 +2006,7 @@ fn test_dynamic_record_double_spend_detection() {
 
         // Takes a dynamic record as input - no translation, record is not consumed
         function {consume_dynamic_name}:
-            input r0 as record.dynamic;
+            input r0 as dynamic.record;
 
         constructor:
             assert.eq true true;
@@ -2021,16 +2021,16 @@ fn test_dynamic_record_double_spend_detection() {
         // Calls consume_static twice with the same dynamic record
         // This SHOULD FAIL due to double-spend (translation consumes the record)
         function call_static_twice:
-            input r0 as record.dynamic;
-            call.dynamic {base_program_field} {aleo_field} {consume_static_field} with r0 (as record.dynamic);
-            call.dynamic {base_program_field} {aleo_field} {consume_static_field} with r0 (as record.dynamic);
+            input r0 as dynamic.record;
+            call.dynamic {base_program_field} {aleo_field} {consume_static_field} with r0 (as dynamic.record);
+            call.dynamic {base_program_field} {aleo_field} {consume_static_field} with r0 (as dynamic.record);
 
         // Calls consume_dynamic twice with the same dynamic record
-        // This SHOULD SUCCEED (record.dynamic input doesn't consume the record)
+        // This SHOULD SUCCEED (dynamic.record input doesn't consume the record)
         function call_dynamic_twice:
-            input r0 as record.dynamic;
-            call.dynamic {base_program_field} {aleo_field} {consume_dynamic_field} with r0 (as record.dynamic);
-            call.dynamic {base_program_field} {aleo_field} {consume_dynamic_field} with r0 (as record.dynamic);
+            input r0 as dynamic.record;
+            call.dynamic {base_program_field} {aleo_field} {consume_dynamic_field} with r0 (as dynamic.record);
+            call.dynamic {base_program_field} {aleo_field} {consume_dynamic_field} with r0 (as dynamic.record);
 
         constructor:
             assert.eq true true;
@@ -2172,12 +2172,12 @@ fn test_dynamic_call_to_pre_v14_program() {
             input r0 as field.public;
             input r1 as field.public;
             input r2 as field.public;
-            input r3 as record.dynamic;
+            input r3 as dynamic.record;
             input r4 as address.private;
             input r5 as u64.private;
-            call.dynamic r0 r1 r2 with r3 r4 r5 (as record.dynamic address.private u64.private) into r6 (as record.dynamic);
+            call.dynamic r0 r1 r2 with r3 r4 r5 (as dynamic.record address.private u64.private) into r6 (as dynamic.record);
             async call_legacy_transfer into r7;
-            output r6 as record.dynamic;
+            output r6 as dynamic.record;
             output r7 as dynamic_caller.aleo/call_legacy_transfer.future;
 
         finalize call_legacy_transfer:
@@ -2245,7 +2245,7 @@ fn test_dynamic_call_to_pre_v14_program() {
         let vm_process = process.read();
         let stack = vm_process.get_stack(legacy_program_id).unwrap();
         assert!(
-            stack.get_translation_verifying_key(&token_name).is_err(),
+            stack.get_verifying_key(&token_name).is_err(),
             "Verifier VM should NOT have translation key (pre-V14 deployment)"
         );
     }
@@ -2370,9 +2370,9 @@ fn test_replay_attack_prevention_across_blocks() {
         program replay_caller.aleo;
 
         function dynamic_consume:
-            input r0 as record.dynamic;
+            input r0 as dynamic.record;
             call.dynamic {base_program_field} {aleo_field} {consume_field}
-                with r0 (as record.dynamic)
+                with r0 (as dynamic.record)
                 into r1 (as u64.public);
             output r1 as u64.public;
 
@@ -2509,12 +2509,12 @@ fn test_nested_caller_authorization() {
             input r0 as u8.public;
             call.dynamic {recorder_field} {aleo_field} {record_caller_field}
                 with r0 (as u8.public)
-                into r1 (as future.dynamic);
+                into r1 (as dynamic.future);
             async call_recorder r1 into r2;
             output r2 as middle_caller.aleo/call_recorder.future;
 
         finalize call_recorder:
-            input r0 as future.dynamic;
+            input r0 as dynamic.future;
             await r0;
 
         constructor:
@@ -2535,12 +2535,12 @@ fn test_nested_caller_authorization() {
             input r0 as u8.public;
             call.dynamic {middle_field} {aleo_field} {call_recorder_field}
                 with r0 (as u8.public)
-                into r1 (as future.dynamic);
+                into r1 (as dynamic.future);
             async call_middle r1 into r2;
             output r2 as outer_caller.aleo/call_middle.future;
 
         finalize call_middle:
-            input r0 as future.dynamic;
+            input r0 as dynamic.future;
             await r0;
 
         constructor:
@@ -2661,4 +2661,58 @@ fn test_nested_caller_authorization() {
     );
 
     println!("\nSUCCESS: Nested caller authorization correctly identifies immediate caller in dynamic call chains");
+}
+
+/// Tests that a V2 deployment (without record verifying keys)
+/// is rejected when verified at V14.
+#[test]
+fn test_v2_deployment_transaction_rejected_at_v14() {
+    let rng = &mut TestRng::default();
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    // Create a VM at V13 to construct a V2 deployment.
+    let vm_v13 = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V13).unwrap(), rng);
+
+    // Deploy a program with a record at V13. The record means the V14 check will
+    // require record verifying keys, which the pre-V14 deployment won't have.
+    let program = Program::from_str(
+        r"
+program v2_rejected_at_v14_test.aleo;
+
+record token:
+    owner as address.private;
+    amount as u64.private;
+
+function compute:
+    input r0 as u64.private;
+    add r0 1u64 into r1;
+    output r1 as u64.private;
+
+constructor:
+    assert.eq true true;
+",
+    )
+    .unwrap();
+
+    // Create a V2 deployment transaction at V13.
+    let v2_deployment = vm_v13.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
+
+    // Verify it's a pre-V14 deployment (no record verifying keys).
+    match &v2_deployment {
+        Transaction::Deploy(_, _, _, deploy, _) => {
+            assert!(
+                deploy.translation_verifying_keys().is_none(),
+                "Pre-V14 deployment should have no record verifying keys"
+            );
+        }
+        _ => panic!("Expected deploy transaction"),
+    }
+
+    // Now create a VM at V14 and try to verify/include the V2 deployment.
+    let vm_v14 = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    // The V2 deployment should be rejected at V14.
+    let block = sample_next_block(&vm_v14, &caller_private_key, &[v2_deployment], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 0, "V2 deployment should be rejected at V14");
+    assert_eq!(block.aborted_transaction_ids().len(), 1, "V2 deployment should be aborted at V14");
 }

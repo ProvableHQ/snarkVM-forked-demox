@@ -13,12 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{TranslationAssignment, compute_console_nonlocal_record_id};
-
 use super::*;
-
-use console::program::{DynamicRecord, ToFields};
-use rand::{SeedableRng, rngs::StdRng};
 
 impl<N: Network> Stack<N> {
     /// Deploys the given program ID, if it does not exist.
@@ -30,8 +25,9 @@ impl<N: Network> Stack<N> {
         ensure!(!self.program.functions().is_empty(), "Program '{}' has no functions", self.program.id());
 
         // Initialize a vector for the verifying keys and certificates.
-        let mut verifying_keys = Vec::with_capacity(self.program.functions().len());
+        let mut verifying_keys = Vec::with_capacity(self.program.functions().len() + self.program.records().len());
 
+        // Synthesize function verifying keys.
         for function_name in self.program.functions().keys() {
             // Synthesize the proving and verifying key.
             self.synthesize_key::<A, R>(function_name, rng)?;
@@ -51,19 +47,17 @@ impl<N: Network> Stack<N> {
             verifying_keys.push((*function_name, (verifying_key, certificate)));
         }
 
-        // Initialize a vector for the verifying keys and certificates.
-        let mut translation_verifying_keys = Vec::with_capacity(self.program.records().len());
-
+        // Synthesize record (translation) verifying keys.
         for record_name in self.program.records().keys() {
             // Synthesize the proving and verifying key.
             self.synthesize_translation_key::<A, R>(record_name, rng)?;
             lap!(timer, "Synthesize key for translation circuit for {record_name}");
 
             // Retrieve the proving key.
-            let proving_key = self.get_translation_proving_key(record_name)?;
+            let proving_key = self.get_proving_key(record_name)?;
 
             // Retrieve the verifying key.
-            let verifying_key = self.get_translation_verifying_key(record_name)?;
+            let verifying_key = self.get_verifying_key(record_name)?;
             lap!(timer, "Retrieve the keys for translation circuit for {record_name}");
 
             // Certify the circuit.
@@ -71,14 +65,8 @@ impl<N: Network> Stack<N> {
             lap!(timer, "Certify the circuit");
 
             // Add the verifying key and certificate to the bundle.
-            translation_verifying_keys.push((*record_name, (verifying_key, certificate)));
+            verifying_keys.push((*record_name, (verifying_key, certificate)));
         }
-
-        // If there are no program records, do not include translation verifying keys.
-        let translation_verifying_keys = match translation_verifying_keys.is_empty() {
-            true => None,
-            false => Some(translation_verifying_keys),
-        };
 
         finish!(timer);
 
@@ -89,7 +77,6 @@ impl<N: Network> Stack<N> {
             verifying_keys,
             Some(self.program.to_checksum()),
             Some(Address::zero()),
-            translation_verifying_keys,
         )
     }
 
@@ -130,19 +117,24 @@ impl<N: Network> Stack<N> {
         // Get the program ID.
         let program_id = self.program.id();
 
-        // Check that the number of combined variables and constraints does not exceed the deployment limit.
+        // Check that the number of combined variables does not exceed the deployment limit.
         ensure!(deployment.num_combined_variables()? <= N::MAX_DEPLOYMENT_VARIABLES);
+        // Check that the number of combined constraints does not exceed the deployment limit.
         ensure!(deployment.num_combined_constraints()? <= N::MAX_DEPLOYMENT_CONSTRAINTS);
-        ensure!(deployment.num_combined_translation_variables()? <= N::MAX_DEPLOYMENT_VARIABLES);
-        ensure!(deployment.num_combined_translation_constraints()? <= N::MAX_DEPLOYMENT_CONSTRAINTS);
 
         // Construct the call stacks and assignments used to verify the certificates.
-        let mut call_stacks = Vec::with_capacity(deployment.verifying_keys().len());
+        let mut call_stacks = Vec::with_capacity(deployment.function_verifying_keys().len());
 
         // Sample a dummy `root_tvk` for circuit synthesis.
         let root_tvk = None;
         // Sample a dummy `caller` for circuit synthesis.
         let caller = None;
+
+        // Check that the number of functions matches the number of function verifying keys.
+        ensure!(
+            deployment.program().functions().len() == deployment.function_verifying_keys().len(),
+            "The number of functions in the program does not match the number of function verifying keys"
+        );
 
         #[cfg(not(any(test, feature = "test")))]
         // Skip the certificate verification if the consensus version is before ConsensusVersion::V8.
@@ -160,7 +152,7 @@ impl<N: Network> Stack<N> {
 
         // Iterate through the program functions and construct the callstacks and corresponding assignments.
         for (function, (_, (verifying_key, _))) in
-            deployment.program().functions().values().zip_eq(deployment.verifying_keys())
+            deployment.program().functions().values().zip_eq(deployment.function_verifying_keys())
         {
             // Initialize a burner private key.
             let burner_private_key = PrivateKey::new(rng)?;
@@ -231,7 +223,7 @@ impl<N: Network> Stack<N> {
 
         // Verify the certificates.
         let rngs = (0..call_stacks.len()).map(|_| StdRng::from_seed(seeded_rng.r#gen())).collect::<Vec<_>>();
-        cfg_into_iter!(call_stacks).zip_eq(deployment.verifying_keys()).zip_eq(rngs).try_for_each(
+        cfg_into_iter!(call_stacks).zip_eq(deployment.function_verifying_keys()).zip_eq(rngs).try_for_each(
             |(((function_name, call_stack, assignments), (_, (verifying_key, certificate))), mut rng)| {
                 // Synthesize the circuit.
                 if let Err(err) = self.execute_function::<A, _>(call_stack, caller, root_tvk, &mut rng) {
@@ -269,40 +261,40 @@ impl<N: Network> Stack<N> {
                     let record_name = *record_name;
                     let record_static = self.sample_record(&Address::rand(rng), &record_name, Group::rand(rng), rng)?;
                     let record_dynamic = DynamicRecord::<N>::from_record(&record_static)?;
-                    let translation_index = Uniform::rand(rng);
+                    let translation_index: u16 = Uniform::rand(rng);
                     let tvk = Uniform::rand(rng);
-                    let input_output_index = Uniform::rand(rng);
+                    let record_register_index = Uniform::rand(rng);
                     let record_view_key: Option<Field<N>> = Uniform::rand(rng);
                     let gamma: Option<Group<N>> = Uniform::rand(rng);
-                    let id_dynamic = compute_console_nonlocal_record_id(
+                    let id_dynamic = compute_console_dynamic_or_external_record_id(
                         function_id,
                         record_dynamic.to_fields()?,
                         tvk,
-                        U16::new(input_output_index),
+                        U16::new(record_register_index),
                     )?;
-                    let is_input = Uniform::rand(rng);
-                    let static_is_external = Uniform::rand(rng);
+                    let is_to_static = Uniform::rand(rng);
+                    let is_external_record = Uniform::rand(rng);
                     let id_static = Uniform::rand(rng);
 
                     lap!(timer, "Sample the inputs to the translation circuit for record {record_name}");
 
                     Ok((
                         record_name,
+                        translation_index,
                         TranslationAssignment::new(
                             record_static,
                             record_dynamic,
                             program_id,
                             function_id,
                             record_name,
-                            is_input,
-                            static_is_external,
-                            translation_index,
+                            is_to_static,
+                            is_external_record,
                             tvk,
-                            input_output_index,
-                            id_dynamic,
-                            id_static,
                             record_view_key,
                             gamma,
+                            record_register_index,
+                            id_dynamic,
+                            id_static,
                         ),
                     ))
                 })
@@ -310,9 +302,9 @@ impl<N: Network> Stack<N> {
 
             // Verify the translation certificates.
             cfg_into_iter!(translation_names_assignments).zip(translation_verifying_keys).try_for_each(
-            |((record_name, translation_assignment), (_, (verifying_key, certificate)))| {
+            |((record_name, translation_index, translation_assignment), (_, (verifying_key, certificate)))| {
                 // Synthesize the circuit.
-                match translation_assignment.to_circuit_assignment::<A>() {
+                match translation_assignment.to_circuit_assignment::<A>(translation_index) {
                     Err(err) => Err(anyhow!("Failed to synthesize the circuit for '{record_name}': {err}")),
                     Ok(circuit_assignment) => {
                         // Ensure the certificate is valid.

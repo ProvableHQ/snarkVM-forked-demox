@@ -180,7 +180,6 @@ pub trait OutputStorage<N: Network>: Clone + Send + Sync {
         self.future_map().abort_atomic();
         self.dynamic_record_map().abort_atomic();
         self.dynamic_id_map().abort_atomic();
-        // self.dynamic_future_map().abort_atomic();
     }
 
     /// Finishes an atomic batch write operation.
@@ -197,7 +196,6 @@ pub trait OutputStorage<N: Network>: Clone + Send + Sync {
         self.future_map().finish_atomic()?;
         self.dynamic_record_map().finish_atomic()?;
         self.dynamic_id_map().finish_atomic()
-        // self.dynamic_future_map().finish_atomic()
     }
 
     /// Stores the given `(transition ID, output)` pair into storage.

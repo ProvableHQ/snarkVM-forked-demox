@@ -15,36 +15,6 @@
 
 use super::*;
 
-/// Tests that "dynamic" cannot be used as a record name at V14.
-#[test]
-fn test_restricted_keyword_dynamic_record_name() {
-    let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
-
-    let program = Program::from_str(
-        r"
-program dynamic_record_test.aleo;
-
-record dynamic:
-    owner as address.private;
-    amount as u64.private;
-
-function mint:
-    input r0 as address.private;
-    input r1 as u64.private;
-    cast r0 r1 into r2 as dynamic.record;
-    output r2 as dynamic.record;
-",
-    )
-    .unwrap();
-
-    let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
-    let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
-    assert_eq!(block.transactions().num_accepted(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
-}
-
 /// Tests that "dynamic" cannot be used as a struct name at V14.
 #[test]
 fn test_restricted_keyword_dynamic_struct_name() {
@@ -85,6 +55,38 @@ fn test_restricted_keyword_dynamic_function_name() {
 program dynamic_function_test.aleo;
 
 function dynamic:
+    input r0 as u64.private;
+    output r0 as u64.private;
+",
+    )
+    .unwrap();
+
+    let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
+    let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 1);
+}
+
+/// Tests that "dynamic" cannot be used as a record name at V14.
+/// Note: The record is declared but not used in the function body to avoid
+/// parser ambiguity with `dynamic.record` being parsed as `RegisterType::DynamicRecord`.
+/// This is not a vulnerability because "dynamic" is restricted as a keyword at V14,
+/// preventing any deployed program from using it as a record name.
+#[test]
+fn test_restricted_keyword_dynamic_record_name() {
+    let rng = &mut TestRng::default();
+    let caller_private_key = sample_genesis_private_key(rng);
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    let program = Program::from_str(
+        r"
+program dynamic_record_test.aleo;
+
+record dynamic:
+    owner as address.private;
+    amount as u64.private;
+
+function test:
     input r0 as u64.private;
     output r0 as u64.private;
 ",

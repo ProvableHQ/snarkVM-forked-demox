@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{CallStack, Registers, Stack, compute_function_id, error::*, stack::Address, trace::RecordTranslationData};
+use crate::{CallStack, Registers, Stack, compute_function_id, error::*, stack::Address, trace::TranslationAssignment};
 use aleo_std::prelude::{finish, lap, timer};
 use console::{
     account::Field,
@@ -31,6 +31,7 @@ use snarkvm_synthesizer_program::{
     RegistersTrait as _,
     StackTrait,
 };
+use snarkvm_synthesizer_snark::ProvingKey;
 use snarkvm_utilities::dev_eprintln;
 
 use std::sync::Arc;

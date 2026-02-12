@@ -27,7 +27,7 @@ use snarkvm_console::{
 use snarkvm_synthesizer::{
     Process,
     Stack,
-    process::{TranslationAssignment, compute_console_nonlocal_record_id},
+    process::{TranslationAssignment, compute_console_dynamic_or_external_record_id},
     program::StackTrait,
 };
 
@@ -92,16 +92,20 @@ pub fn sample_assignment<N: Network, A: Aleo<Network = N>>(
     // [Output static (at callee) -> dynamic (at caller)]
     let record_static = stack.sample_record(&address, credits_record_name, nonce, rng)?;
     let record_dynamic = DynamicRecord::<N>::from_record(&record_static)?;
-    let translation_index = Uniform::rand(rng);
+    let translation_index: u16 = Uniform::rand(rng);
     let tvk = Uniform::rand(rng);
-    let input_output_index = Uniform::rand(rng);
+    let record_register_index = Uniform::rand(rng);
     let record_view_key: Field<N> = Uniform::rand(rng);
     let gamma = None;
-    let id_dynamic =
-        compute_console_nonlocal_record_id(function_id, record_dynamic.to_fields().unwrap(), tvk, U16::new(input_output_index))
-            .unwrap();
-    let is_input = false;
-    let static_is_external = false;
+    let id_dynamic = compute_console_dynamic_or_external_record_id(
+        function_id,
+        record_dynamic.to_fields().unwrap(),
+        tvk,
+        U16::new(record_register_index),
+    )
+    .unwrap();
+    let is_to_static = false;
+    let is_external_record = false;
     let id_static = record_static.to_commitment(credits_program_id, credits_record_name, &record_view_key).unwrap();
 
     let translation_assignment = TranslationAssignment::new(
@@ -110,32 +114,31 @@ pub fn sample_assignment<N: Network, A: Aleo<Network = N>>(
         *credits_program_id,
         function_id,
         *credits_record_name,
-        is_input,
-        static_is_external,
-        translation_index,
+        is_to_static,
+        is_external_record,
         tvk,
-        input_output_index,
-        id_dynamic,
-        id_static,
         Some(record_view_key),
         gamma,
+        record_register_index,
+        id_dynamic,
+        id_static,
     );
 
     let verifier_inputs = vec![
         // constant 1
         *Field::<N>::one(),
-        // is_input
+        // is_to_static
         *Field::<N>::zero(),
-        // static_is_external
+        // is_external_record
         *Field::<N>::zero(),
         *function_id,
         *Field::<N>::from_u128(translation_index as u128),
-        *Field::<N>::from_u128(input_output_index as u128),
+        *Field::<N>::from_u128(record_register_index as u128),
         *id_static,
         *id_dynamic,
     ];
 
-    Ok((translation_assignment.to_circuit_assignment::<A>()?, verifier_inputs))
+    Ok((translation_assignment.to_circuit_assignment::<A>(translation_index)?, verifier_inputs))
 }
 
 /// Synthesizes the circuit keys for the credits.aleo credits record translation circuit. (cargo run --release --example translation [network])
@@ -145,8 +148,8 @@ pub fn translation<N: Network, A: Aleo<Network = N>>() -> Result<()> {
     let credits_stack = process.get_stack(ProgramID::<N>::from_str("credits.aleo").unwrap())?;
     let transfer_private_function_name = Identifier::<N>::from_str("transfer_private").unwrap();
     let credits_record_name = Identifier::<N>::from_str("credits").unwrap();
-    let proving_key = credits_stack.get_translation_proving_key(&credits_record_name)?;
-    let verifying_key = credits_stack.get_translation_verifying_key(&credits_record_name)?;
+    let proving_key = credits_stack.get_proving_key(&credits_record_name)?;
+    let verifying_key = credits_stack.get_verifying_key(&credits_record_name)?;
 
     // Sample a translation assignment for the credits record for the proving-
     // and verifying-key sanity check.

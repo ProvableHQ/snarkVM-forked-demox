@@ -29,7 +29,7 @@ use console::{
 /// The second operand must resolve to a field element representing the function name.
 /// The remaining operands are the arguments to the call.
 /// The destination registers along with their expected types are specified after the `into` keyword.
-/// i.e. `call.dynamic r0 r1 with r2 r3 (as address.private u64.private) into r4 r5 (as u64 future.dynamic);`
+/// i.e. `call.dynamic r0 r1 with r2 r3 (as address.private u64.private) into r4 r5 (as u64 dynamic.future);`
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct CallDynamic<N: Network> {
     /// The operands.
@@ -53,30 +53,30 @@ impl<N: Network> CallDynamic<N> {
         // Ensure that there are at least three operands: program name, program network, and function name.
         ensure!(
             operands.len() >= 3,
-            "There must be at least two operands: program name, program network, and function name"
+            "There must be at least three operands: program name, program network, and function name"
         );
         // Ensure that the number of operands is within the bounds.
         // Note that the unwrap is safe since we check that `MAX_OPERANDS` is within `u8::MAX`.
         ensure!(
-            operands.len() <= N::MAX_OPERANDS.checked_add(3).unwrap(),
+            operands.len() <= N::MAX_OPERANDS.checked_add(3).expect("MAX_OPERANDS + 3 overflows"),
             "The number of operands must be <= {}",
-            N::MAX_OPERANDS.checked_add(3).unwrap()
+            N::MAX_OPERANDS.checked_add(3).expect("MAX_OPERANDS + 3 overflows")
         );
         // Ensure that the number of operands and operand types match.
         // Note that the unwrap is safe since we check that there are at least three operands.
         ensure!(
-            operands.len().checked_sub(3).unwrap() == operand_types.len(),
+            operands.len().checked_sub(3).expect("operands.len() >= 3 is checked above") == operand_types.len(),
             "The number of operands and operand types must match"
         );
         // Ensure that the operand types do not contain a future, dynamic future, record, or external record type.
         for type_ in &operand_types {
             match type_ {
                 ValueType::Record(_) => {
-                    bail!("A record cannot be passed in as input to a dynamic call, use `record.dynamic` instead.")
+                    bail!("A record cannot be passed in as input to a dynamic call, use `dynamic.record` instead.")
                 }
                 ValueType::ExternalRecord(_) => {
                     bail!(
-                        "An external record cannot be passed in as input to a dynamic call, use `record.dynamic` instead."
+                        "An external record cannot be passed in as input to a dynamic call, use `dynamic.record` instead."
                     )
                 }
                 ValueType::Future(_) => bail!("A future cannot be passed in as input to a dynamic call."),
@@ -85,7 +85,7 @@ impl<N: Network> CallDynamic<N> {
             }
         }
         // Ensure that the number of destinations is within the bounds.
-        ensure!(destinations.len() <= N::MAX_OPERANDS, "The number of destinations must be <= {}", N::MAX_OPERANDS);
+        ensure!(destinations.len() <= N::MAX_OUTPUTS, "The number of destinations must be <= {}", N::MAX_OUTPUTS);
         // Ensure that the number of destinations and destination types match.
         ensure!(
             destinations.len() == destination_types.len(),
@@ -94,11 +94,11 @@ impl<N: Network> CallDynamic<N> {
         // Ensure that the destination types do not contain a future, record, or external record type.
         for type_ in &destination_types {
             match type_ {
-                ValueType::Record(_) => bail!("A dynamic call cannot return a record, use `record.dynamic` instead."),
+                ValueType::Record(_) => bail!("A dynamic call cannot return a record, use `dynamic.record` instead."),
                 ValueType::ExternalRecord(_) => {
-                    bail!("A dynamic call cannot return an external record, use `record.dynamic` instead.")
+                    bail!("A dynamic call cannot return an external record, use `dynamic.record` instead.")
                 }
-                ValueType::Future(_) => bail!("A dynamic call cannot return a future, use `future.dynamic` instead."),
+                ValueType::Future(_) => bail!("A dynamic call cannot return a future, use `dynamic.future` instead."),
                 _ => {}
             }
         }
@@ -138,10 +138,10 @@ impl<N: Network> CallDynamic<N> {
     }
 
     /// Returns whether this instruction refers to an external struct.
-    /// Dynamic calls never reference external structs.
     #[inline]
     pub fn contains_external_struct(&self) -> bool {
-        false
+        self.operand_types.iter().any(|t| t.contains_external_struct())
+            || self.destination_types.iter().any(|t| t.contains_external_struct())
     }
 }
 
@@ -198,12 +198,14 @@ impl<N: Network> CallDynamic<N> {
         }
         // Ensure the number of the input types minus 3 matches the number of operand types.
         // Note that the unwrap is safe since we check that there are at least three input types.
-        if input_types.len().checked_sub(3).unwrap() != self.operand_types.len() {
+        if input_types.len().checked_sub(3).expect("input_types.len() >= 3 is checked above")
+            != self.operand_types.len()
+        {
             bail!(
                 "Instruction '{}' expects {} operand types, found {} operand types",
                 Self::opcode(),
                 self.operand_types.len(),
-                input_types.len().checked_sub(3).unwrap()
+                input_types.len().checked_sub(3).expect("input_types.len() >= 3 is checked above")
             )
         }
         // Ensure the first three input types are field elements.
@@ -259,7 +261,7 @@ impl<N: Network> Parser for CallDynamic<N> {
         }
 
         /// A helper function to parse a non-empty, parenthesis-delimited sequence of value types.
-        /// For example, `(as u64.public future.dynamic)`.
+        /// For example, `(as u64.public dynamic.future)`.
         fn parse_value_types<N: Network>(string: &str) -> ParserResult<Vec<ValueType<N>>> {
             // Parse the whitespace from the string.
             let (string, _) = Sanitizer::parse_whitespaces(string)?;
@@ -430,7 +432,7 @@ impl<N: Network> FromBytes for CallDynamic<N> {
             return Err(error("Failed to read 'call.dynamic' opcode: too few operands."));
         }
         // Determine the number of operand types.
-        let num_operand_types = num_operands - 3;
+        let num_operand_types = num_operands.checked_sub(3).expect("num_operands >= 3 is checked above");
         // Initialize the vector for the operands.
         let mut operands = Vec::with_capacity(num_operands);
         // Read the operands.
@@ -496,13 +498,13 @@ mod tests {
         "call.dynamic r0 r1 r2 with r3 r4 (as u8.public u64.private)",
         "call.dynamic r0 r1 r2 into r3 (as u8.constant)",
         "call.dynamic r0 r1 r2 into r3 r4 (as foo.public bar.private)",
-        "call.dynamic r0 r1 r2 into r3 r4 r5 (as u64.public address.private future.dynamic)",
+        "call.dynamic r0 r1 r2 into r3 r4 r5 (as u64.public address.private dynamic.future)",
         "call.dynamic r0 r1 r2 with r3 (as boolean.private) into r4 (as u8.private)",
         "call.dynamic r0 r1 r2 with r3 r4 (as u8.public foo.private) into r5 (as boolean.public)",
         "call.dynamic r0 r1 r2 with r3 r4 (as u8.public foo.private) into r5 r6 (as u8.private u64.public)",
-        "call.dynamic r0 r1 r2 with r3 r4 r5 (as foo.private record.dynamic boolean.public) into r6 r7 (as u8.private u64.public)",
-        "call.dynamic r0 r1 r2 with r3 r4 r5 (as foo.private bar.public boolean.public) into r6 r7 r8 (as u8.private record.dynamic future.dynamic)",
-        "call.dynamic r0 r1 r2 with r3 r4 (as address.public u64.public) into r5 (as future.dynamic)",
+        "call.dynamic r0 r1 r2 with r3 r4 r5 (as foo.private dynamic.record boolean.public) into r6 r7 (as u8.private u64.public)",
+        "call.dynamic r0 r1 r2 with r3 r4 r5 (as foo.private bar.public boolean.public) into r6 r7 r8 (as u8.private dynamic.record dynamic.future)",
+        "call.dynamic r0 r1 r2 with r3 r4 (as address.public u64.public) into r5 (as dynamic.future)",
     ];
 
     fn check_parser(
@@ -551,7 +553,7 @@ mod tests {
     #[test]
     fn test_parse() {
         check_parser(
-            "call.dynamic r4 r5 r6 with r0.owner r0.token_amount (as address.private u64.private) into r1 r2 r3 (as u64.public u8.private future.dynamic)",
+            "call.dynamic r4 r5 r6 with r0.owner r0.token_amount (as address.private u64.private) into r1 r2 r3 (as u64.public u8.private dynamic.future)",
             vec![
                 Operand::Register(Register::Locator(4)),
                 Operand::Register(Register::Locator(5)),
@@ -569,9 +571,9 @@ mod tests {
             ],
         );
 
-        // // TODO (dynamic_dispatch) Support for this test case.
+        // // TODO (@d0cd) Support for this test case.
         // check_parser(
-        //     "call.dynamic 'credits' 'aleo' 'transfer_public' with aleo1wfyyj2uvwuqw0c0dqa5x70wrawnlkkvuepn4y08xyaqfqqwweqys39jayw 100u64 (as address.private u6.private) into r0 (as future.dynamic)",
+        //     "call.dynamic 'credits' 'aleo' 'transfer_public' with aleo1wfyyj2uvwuqw0c0dqa5x70wrawnlkkvuepn4y08xyaqfqqwweqys39jayw 100u64 (as address.private u6.private) into r0 (as dynamic.future)",
         //     Operand::ProgramID(ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap()),
         //     Operand::Identifier(Identifier::from_str("transfer_public").unwrap()),
         //     vec![
@@ -624,33 +626,25 @@ mod tests {
 
     #[test]
     fn test_external_record_not_allowed_as_input() {
-        // External records are not allowed as input types to call.dynamic.
-        // This is enforced in CallDynamic::new at the operand_types check.
-        // The CallDynamic::new function explicitly checks for ExternalRecord at lines 77-81.
         let result = CallDynamic::<CurrentNetwork>::from_str("call.dynamic r0 r1 r2 with r3 (as foo.aleo/bar.record)");
-        assert!(result.is_err(), "External records should not be allowed as input");
+        assert!(result.is_err());
     }
 
     #[test]
     fn test_record_not_allowed_as_input() {
-        // Records are not allowed as input types to call.dynamic.
-        // The CallDynamic::new function explicitly checks for Record at lines 74-76.
         let result = CallDynamic::<CurrentNetwork>::from_str("call.dynamic r0 r1 r2 with r3 (as bar.record)");
-        assert!(result.is_err(), "Records should not be allowed as input");
+        assert!(result.is_err());
     }
 
     #[test]
     fn test_future_not_allowed_as_input() {
-        // Futures are not allowed as input types to call.dynamic.
-        // The CallDynamic::new function explicitly checks for Future at line 82.
         let result = CallDynamic::<CurrentNetwork>::from_str("call.dynamic r0 r1 r2 with r3 (as foo.aleo/bar.future)");
-        assert!(result.is_err(), "Futures should not be allowed as input");
+        assert!(result.is_err());
     }
 
     #[test]
     fn test_dynamic_record_allowed_as_input() {
-        // Dynamic records ARE allowed as input types to call.dynamic.
-        let result = CallDynamic::<CurrentNetwork>::from_str("call.dynamic r0 r1 r2 with r3 (as record.dynamic)");
-        assert!(result.is_ok(), "Dynamic records should be allowed as input");
+        let result = CallDynamic::<CurrentNetwork>::from_str("call.dynamic r0 r1 r2 with r3 (as dynamic.record)");
+        assert!(result.is_ok());
     }
 }

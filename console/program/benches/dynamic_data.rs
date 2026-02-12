@@ -16,7 +16,7 @@
 #[macro_use]
 extern crate criterion;
 
-use snarkvm_console_network::MainnetV0;
+use snarkvm_console_network::{MainnetV0, Network};
 use snarkvm_console_program::{
     Argument,
     DynamicFuture,
@@ -47,6 +47,21 @@ fn bench_dynamic_future(c: &mut Criterion) {
     }
 }
 
+fn bench_dynamic_future_max_size(c: &mut Criterion) {
+    // Build a maximum-sized array argument (512 field elements).
+    let fields: Vec<String> = (0..CurrentNetwork::MAX_ARRAY_ELEMENTS).map(|j| format!("{j}field")).collect();
+    let max_array_str = format!("[ {} ]", fields.join(", "));
+    let max_array_arg = Argument::Plaintext(Plaintext::from_str(&max_array_str).unwrap());
+
+    for count in [1, 2, 4, 8, 16] {
+        let args: Vec<Argument<CurrentNetwork>> = (0..count).map(|_| max_array_arg.clone()).collect();
+        let future = Future::new(ProgramID::from_str("test.aleo").unwrap(), Identifier::from_str("foo").unwrap(), args);
+        c.bench_function(&format!("DynamicFuture::from_future ({count} max arrays)"), |b| {
+            b.iter(|| DynamicFuture::from_future(&future).unwrap())
+        });
+    }
+}
+
 fn bench_dynamic_record(c: &mut Criterion) {
     let rng = &mut TestRng::default();
 
@@ -63,10 +78,29 @@ fn bench_dynamic_record(c: &mut Criterion) {
     }
 }
 
+fn bench_dynamic_record_max_size(c: &mut Criterion) {
+    // Build a maximum-sized array plaintext (512 field elements).
+    let fields: Vec<String> = (0..CurrentNetwork::MAX_ARRAY_ELEMENTS).map(|j| format!("{j}field")).collect();
+    let max_array_str = format!("[ {} ]", fields.join(", "));
+    let max_array_plaintext = Plaintext::<CurrentNetwork>::from_str(&max_array_str).unwrap();
+
+    for num_entries in [1, 2, 4, 8, 16, 32] {
+        let mut data = indexmap::IndexMap::new();
+        for i in 0..num_entries {
+            let name = Identifier::from_str(&format!("entry_{i}")).unwrap();
+            let entry = Entry::Private(max_array_plaintext.clone());
+            data.insert(name, entry);
+        }
+        c.bench_function(&format!("DynamicRecord::merkleize_data ({num_entries} max arrays)"), |b| {
+            b.iter(|| DynamicRecord::<CurrentNetwork>::merkleize_data(&data).unwrap())
+        });
+    }
+}
+
 criterion_group! {
     name = dynamic_data;
     config = Criterion::default().sample_size(100);
-    targets = bench_dynamic_future, bench_dynamic_record,
+    targets = bench_dynamic_future, bench_dynamic_future_max_size, bench_dynamic_record, bench_dynamic_record_max_size,
 }
 
 criterion_main!(dynamic_data);

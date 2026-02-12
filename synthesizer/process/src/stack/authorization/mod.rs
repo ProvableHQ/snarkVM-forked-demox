@@ -24,7 +24,7 @@ use console::{
     program::{Request, ValueType},
     types::Field,
 };
-use snarkvm_ledger_block::{Execution, Input, Transaction, Transition};
+use snarkvm_ledger_block::{Input, Transaction, Transition};
 use snarkvm_synthesizer_program::StackTrait;
 
 use indexmap::IndexMap;
@@ -273,7 +273,7 @@ impl<N: Network> Authorization<N> {
         if transitions.is_empty() {
             bail!("Cannot compute the execution ID for an empty authorization.");
         }
-        Execution::compute_execution_id(transitions.values())
+        Ok(*Transaction::transitions_tree(transitions.values())?.root())
     }
 }
 

@@ -153,7 +153,6 @@ pub struct Request<A: Aleo> {
     /// The signer commitment.
     scm: Field<A>,
     /// A flag indicating whether or not the request is dynamic.
-    /// Note that this field is intentionally excluded from the circuit representation and is only used to eject back to the console representation.
     is_dynamic: bool,
 }
 
