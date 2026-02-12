@@ -42,7 +42,7 @@ impl<'de, N: Network> Deserialize<'de> for TransitionLeaf<N> {
                 // Parse the leaf from a string into a value.
                 let mut leaf = serde_json::Value::deserialize(deserializer)?;
                 // Recover the leaf.
-                Ok(Self::from(
+                Self::from(
                     // Retrieve the version.
                     DeserializeExt::take_from_value::<D>(&mut leaf, "version")?,
                     // Retrieve the index.
@@ -51,7 +51,8 @@ impl<'de, N: Network> Deserialize<'de> for TransitionLeaf<N> {
                     DeserializeExt::take_from_value::<D>(&mut leaf, "variant")?,
                     // Retrieve the id.
                     DeserializeExt::take_from_value::<D>(&mut leaf, "id")?,
-                ))
+                )
+                .map_err(de::Error::custom)
             }
             false => FromBytesDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "transition leaf"),
         }

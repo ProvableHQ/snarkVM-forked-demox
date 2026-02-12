@@ -213,12 +213,12 @@ fn test_compare_transfer_public() {
             input r1 as u64.public;
             call.dynamic {credits_field} {aleo_field} {transfer_public_field}
                 with r0 r1 (as address.public u64.public)
-                into r2 (as future.dynamic);
+                into r2 (as dynamic.future);
             async transfer_public r2 into r3;
             output r3 as dw_transfer_public.aleo/transfer_public.future;
 
         finalize transfer_public:
-            input r0 as future.dynamic;
+            input r0 as dynamic.future;
             await r0;
 
         constructor:
@@ -352,12 +352,12 @@ fn test_compare_transfer_public_as_signer() {
             input r1 as u64.public;
             call.dynamic {credits_field} {aleo_field} {transfer_public_as_signer_field}
                 with r0 r1 (as address.public u64.public)
-                into r2 (as future.dynamic);
+                into r2 (as dynamic.future);
             async transfer_public_as_signer r2 into r3;
             output r3 as dw_transfer_public_as_signer.aleo/transfer_public_as_signer.future;
 
         finalize transfer_public_as_signer:
-            input r0 as future.dynamic;
+            input r0 as dynamic.future;
             await r0;
 
         constructor:
@@ -489,13 +489,13 @@ fn test_compare_transfer_public_to_private() {
             input r1 as u64.public;
             call.dynamic {credits_field} {aleo_field} {transfer_public_to_private_field}
                 with r0 r1 (as address.private u64.public)
-                into r2 r3 (as record.dynamic future.dynamic);
+                into r2 r3 (as dynamic.record dynamic.future);
             async transfer_public_to_private r3 into r4;
-            output r2 as record.dynamic;
+            output r2 as dynamic.record;
             output r4 as dw_transfer_public_to_private.aleo/transfer_public_to_private.future;
 
         finalize transfer_public_to_private:
-            input r0 as future.dynamic;
+            input r0 as dynamic.future;
             await r0;
 
         constructor:
@@ -582,7 +582,7 @@ fn test_compare_transfer_public_to_private() {
     assert_eq!(static_exec_costs, (3_376, 2_704, 672), "Static execution costs (total, storage, finalize)");
     assert_eq!(dynamic_exec_costs, (3_932, 3_260, 672), "Dynamic execution costs (total, storage, finalize)");
 
-    // Verify static transaction only (dynamic outputs record.dynamic).
+    // Verify static transaction only (dynamic outputs dynamic.record).
     add_and_test(&vm, &caller_private_key, &[static_tx], rng);
 }
 
@@ -623,14 +623,14 @@ fn test_compare_transfer_private() {
         program dw_transfer_private.aleo;
 
         function transfer_private:
-            input r0 as record.dynamic;
+            input r0 as dynamic.record;
             input r1 as address.private;
             input r2 as u64.private;
             call.dynamic {credits_field} {aleo_field} {transfer_private_field}
-                with r0 r1 r2 (as record.dynamic address.private u64.private)
-                into r3 r4 (as record.dynamic record.dynamic);
-            output r3 as record.dynamic;
-            output r4 as record.dynamic;
+                with r0 r1 r2 (as dynamic.record address.private u64.private)
+                into r3 r4 (as dynamic.record dynamic.record);
+            output r3 as dynamic.record;
+            output r4 as dynamic.record;
 
         constructor:
             assert.eq true true;
@@ -663,13 +663,13 @@ fn test_compare_transfer_private() {
     for (name, (vk, _)) in static_deployment.verifying_keys() {
         println!("  Function {}: {} vars, {} constraints", name, vk.num_variables(), vk.circuit_info.num_constraints);
     }
-    println!("  Translation VKs: {:?}", static_deployment.translation_verifying_keys().as_ref().map(|t| t.len()));
+    println!("  Translation VKs: {:?}", static_deployment.translation_verifying_keys().map(|t| t.len()));
 
     println!("DYNAMIC (dw_transfer_private.aleo):");
     for (name, (vk, _)) in dynamic_deployment.verifying_keys() {
         println!("  Function {}: {} vars, {} constraints", name, vk.num_variables(), vk.circuit_info.num_constraints);
     }
-    println!("  Translation VKs: {:?}", dynamic_deployment.translation_verifying_keys().as_ref().map(|t| t.len()));
+    println!("  Translation VKs: {:?}", dynamic_deployment.translation_verifying_keys().map(|t| t.len()));
 
     // Calculate the difference
     let static_vars: u64 = static_deployment.verifying_keys().iter().map(|(_, (vk, _))| vk.num_variables()).sum();
@@ -761,7 +761,7 @@ fn test_compare_transfer_private() {
     assert_eq!(static_exec_costs, (3_236, 3_236, 0), "Static execution costs (total, storage, finalize)");
     assert_eq!(dynamic_exec_costs, (4_108, 4_108, 0), "Dynamic execution costs (total, storage, finalize)");
 
-    // Verify static transaction only (dynamic outputs record.dynamic).
+    // Verify static transaction only (dynamic outputs dynamic.record).
     add_and_test(&vm, &caller_private_key, &[static_tx], rng);
 }
 
@@ -807,18 +807,18 @@ fn test_compare_transfer_private_to_public() {
         program dw_transfer_private_to_public.aleo;
 
         function transfer_private_to_public:
-            input r0 as record.dynamic;
+            input r0 as dynamic.record;
             input r1 as address.public;
             input r2 as u64.public;
             call.dynamic {credits_field} {aleo_field} {transfer_private_to_public_field}
-                with r0 r1 r2 (as record.dynamic address.public u64.public)
-                into r3 r4 (as record.dynamic future.dynamic);
+                with r0 r1 r2 (as dynamic.record address.public u64.public)
+                into r3 r4 (as dynamic.record dynamic.future);
             async transfer_private_to_public r4 into r5;
-            output r3 as record.dynamic;
+            output r3 as dynamic.record;
             output r5 as dw_transfer_private_to_public.aleo/transfer_private_to_public.future;
 
         finalize transfer_private_to_public:
-            input r0 as future.dynamic;
+            input r0 as dynamic.future;
             await r0;
 
         constructor:
@@ -956,12 +956,12 @@ fn test_compare_join() {
         program dw_join.aleo;
 
         function join:
-            input r0 as record.dynamic;
-            input r1 as record.dynamic;
+            input r0 as dynamic.record;
+            input r1 as dynamic.record;
             call.dynamic {credits_field} {aleo_field} {join_field}
-                with r0 r1 (as record.dynamic record.dynamic)
-                into r2 (as record.dynamic);
-            output r2 as record.dynamic;
+                with r0 r1 (as dynamic.record dynamic.record)
+                into r2 (as dynamic.record);
+            output r2 as dynamic.record;
 
         constructor:
             assert.eq true true;
@@ -1094,13 +1094,13 @@ fn test_compare_split() {
         program dw_split.aleo;
 
         function split:
-            input r0 as record.dynamic;
+            input r0 as dynamic.record;
             input r1 as u64.private;
             call.dynamic {credits_field} {aleo_field} {split_field}
-                with r0 r1 (as record.dynamic u64.private)
-                into r2 r3 (as record.dynamic record.dynamic);
-            output r2 as record.dynamic;
-            output r3 as record.dynamic;
+                with r0 r1 (as dynamic.record u64.private)
+                into r2 r3 (as dynamic.record dynamic.record);
+            output r2 as dynamic.record;
+            output r3 as dynamic.record;
 
         constructor:
             assert.eq true true;
@@ -1244,12 +1244,12 @@ fn test_compare_bond_validator() {
             input r2 as u8.public;
             call.dynamic {credits_field} {aleo_field} {bond_validator_field}
                 with r0 r1 r2 (as address.public u64.public u8.public)
-                into r3 (as future.dynamic);
+                into r3 (as dynamic.future);
             async bond_validator r3 into r4;
             output r4 as dw_bond_validator.aleo/bond_validator.future;
 
         finalize bond_validator:
-            input r0 as future.dynamic;
+            input r0 as dynamic.future;
             await r0;
 
         constructor:
@@ -1348,12 +1348,12 @@ fn test_compare_bond_public() {
             input r2 as u64.public;
             call.dynamic {credits_field} {aleo_field} {bond_public_field}
                 with r0 r1 r2 (as address.public address.public u64.public)
-                into r3 (as future.dynamic);
+                into r3 (as dynamic.future);
             async bond_public r3 into r4;
             output r4 as dw_bond_public.aleo/bond_public.future;
 
         finalize bond_public:
-            input r0 as future.dynamic;
+            input r0 as dynamic.future;
             await r0;
 
         constructor:
@@ -1448,12 +1448,12 @@ fn test_compare_unbond_public() {
             input r1 as u64.public;
             call.dynamic {credits_field} {aleo_field} {unbond_public_field}
                 with r0 r1 (as address.public u64.public)
-                into r2 (as future.dynamic);
+                into r2 (as dynamic.future);
             async unbond_public r2 into r3;
             output r3 as dw_unbond_public.aleo/unbond_public.future;
 
         finalize unbond_public:
-            input r0 as future.dynamic;
+            input r0 as dynamic.future;
             await r0;
 
         constructor:
@@ -1546,12 +1546,12 @@ fn test_compare_claim_unbond_public() {
             input r0 as address.public;
             call.dynamic {credits_field} {aleo_field} {claim_unbond_public_field}
                 with r0 (as address.public)
-                into r1 (as future.dynamic);
+                into r1 (as dynamic.future);
             async claim_unbond_public r1 into r2;
             output r2 as dw_claim_unbond.aleo/claim_unbond_public.future;
 
         finalize claim_unbond_public:
-            input r0 as future.dynamic;
+            input r0 as dynamic.future;
             await r0;
 
         constructor:
@@ -1645,12 +1645,12 @@ fn test_compare_set_validator_state() {
             input r0 as boolean.public;
             call.dynamic {credits_field} {aleo_field} {set_validator_state_field}
                 with r0 (as boolean.public)
-                into r1 (as future.dynamic);
+                into r1 (as dynamic.future);
             async set_validator_state r1 into r2;
             output r2 as dw_set_val_state.aleo/set_validator_state.future;
 
         finalize set_validator_state:
-            input r0 as future.dynamic;
+            input r0 as dynamic.future;
             await r0;
 
         constructor:

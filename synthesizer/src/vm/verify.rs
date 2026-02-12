@@ -271,6 +271,25 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     self.process.read().mapping_types_exist(deployment.program())?;
                 }
 
+                // Enforce record verifying key requirements based on consensus version.
+                // Before V14: record verifying keys are not allowed.
+                // At/after V14: record verifying keys are required.
+                if consensus_version < ConsensusVersion::V14 {
+                    let num_functions = deployment.num_functions();
+                    ensure!(
+                        deployment.verifying_keys().len() == num_functions,
+                        "Invalid deployment transaction '{id}' - expected {num_functions} function verifying keys before `ConsensusVersion::V14`"
+                    );
+                } else {
+                    let num_functions = deployment.num_functions();
+                    let num_records = deployment.program().records().len();
+                    let expected = num_functions + num_records;
+                    ensure!(
+                        deployment.verifying_keys().len() == expected,
+                        "Invalid deployment transaction '{id}' - expected {num_functions} function and {num_records} record verifying keys after `ConsensusVersion::V14`"
+                    );
+                }
+
                 // If the program owner exists in the deployment, then verify that it matches the owner in the transaction.
                 if let Some(given_owner) = deployment.program_owner() {
                     // Ensure the program owner matches the owner in the transaction.

@@ -19,7 +19,7 @@ use console::{
     program::{Identifier, Literal, Plaintext, PlaintextType, ProgramID, Register, Value},
 };
 
-/// A dynamic get command, e.g. `get.dynamic r0.r1/r2[r3] into r4;`.
+/// A dynamic get command, e.g. `get.dynamic r0 r1 r2[r3] into r4 as u8;`.
 /// Resolves the `program` and `mapping` operands, gets the value stored at the `key` operand in `mapping`, and stores the result into `destination`.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct GetDynamic<N: Network> {
@@ -46,25 +46,25 @@ impl<N: Network> GetDynamic<N> {
 
     /// Returns the operand containing the program name.
     #[inline]
-    pub const fn program_name(&self) -> &Operand<N> {
+    pub const fn program_name_operand(&self) -> &Operand<N> {
         &self.operands[0]
     }
 
     /// Returns the operand containing the program network.
     #[inline]
-    pub const fn program_network(&self) -> &Operand<N> {
+    pub const fn program_network_operand(&self) -> &Operand<N> {
         &self.operands[1]
     }
 
     /// Returns the operand containing the mapping name.
     #[inline]
-    pub const fn mapping_name(&self) -> &Operand<N> {
+    pub const fn mapping_name_operand(&self) -> &Operand<N> {
         &self.operands[2]
     }
 
     /// Returns the operand containing the key.
     #[inline]
-    pub const fn key(&self) -> &Operand<N> {
+    pub const fn key_operand(&self) -> &Operand<N> {
         &self.operands[3]
     }
 
@@ -91,13 +91,13 @@ impl<N: Network> GetDynamic<N> {
         registers: &mut impl RegistersTrait<N>,
     ) -> Result<()> {
         // Get the program name.
-        let program_name = match registers.load(stack, self.program_name())? {
+        let program_name = match registers.load(stack, self.program_name_operand())? {
             Value::Plaintext(Plaintext::Literal(Literal::Field(field), _)) => Identifier::from_field(&field)?,
             _ => bail!("Expected the first operand of `get.dynamic` to be a field literal."),
         };
 
         // Get the program network.
-        let program_network = match registers.load(stack, self.program_network())? {
+        let program_network = match registers.load(stack, self.program_network_operand())? {
             Value::Plaintext(Plaintext::Literal(Literal::Field(field), _)) => Identifier::from_field(&field)?,
             _ => bail!("Expected the second operand of `get.dynamic` to be a field literal."),
         };
@@ -106,7 +106,7 @@ impl<N: Network> GetDynamic<N> {
         let program_id = ProgramID::try_from((program_name, program_network))?;
 
         // Get the mapping name.
-        let mapping_name = match registers.load(stack, self.mapping_name())? {
+        let mapping_name = match registers.load(stack, self.mapping_name_operand())? {
             Value::Plaintext(Plaintext::Literal(Literal::Field(field), _)) => Identifier::from_field(&field)?,
             _ => bail!("Expected the third operand of `get.dynamic` to be a field literal."),
         };
@@ -117,10 +117,10 @@ impl<N: Network> GetDynamic<N> {
         }
 
         // Load the operand as a plaintext.
-        let key = registers.load_plaintext(stack, self.key())?;
+        let key = registers.load_plaintext(stack, self.key_operand())?;
 
         // Get the mapping definition.
-        let mapping = stack.get_stack_unchecked(&program_id)?.program().get_mapping(&mapping_name)?;
+        let mapping = stack.get_stack_global(&program_id)?.program().get_mapping(&mapping_name)?;
         // Get the key type.
         let mapping_key_type = mapping.key().plaintext_type();
         // Ensure the key operand matches the mapping key type.
@@ -137,29 +137,16 @@ impl<N: Network> GetDynamic<N> {
             self.destination_type
         );
 
-        // Retrieve the value from storage as a literal.
+        // Retrieve the value from storage as a plaintext.
         let value = match store.get_value_speculative(program_id, mapping_name, &key)? {
             Some(Value::Plaintext(plaintext)) => Value::Plaintext(plaintext),
             Some(Value::Record(..)) => bail!("Cannot 'get.dynamic' a 'record'"),
             Some(Value::Future(..)) => bail!("Cannot 'get.dynamic' a 'future'",),
-            Some(Value::DynamicRecord(..)) => bail!("Cannot 'get.dynamic' a 'record.dynamic'"),
-            Some(Value::DynamicFuture(..)) => bail!("Cannot 'get.dynamic' a 'future.dynamic'"),
+            Some(Value::DynamicRecord(..)) => bail!("Cannot 'get.dynamic' a 'dynamic.record'"),
+            Some(Value::DynamicFuture(..)) => bail!("Cannot 'get.dynamic' a 'dynamic.future'"),
             // If a key does not exist, then bail.
             None => bail!("Key '{key}' does not exist in mapping '{program_id}/{mapping_name}'"),
         };
-
-        // Ensure the destin
-        // Check that the value type matches the destination type.
-        match &value {
-            Value::Plaintext(plaintext) => {
-                ensure!(
-                    stack.matches_plaintext(plaintext, self.destination_type()).is_ok(),
-                    "Expected the value to be of type '{}', found '{plaintext}' in 'get.dynamic'",
-                    self.destination_type()
-                )
-            }
-            _ => bail!("Expected a plaintext value in 'get.dynamic'"),
-        }
 
         // Assign the value to the destination register.
         registers.store(stack, &self.destination, value)?;
@@ -265,7 +252,14 @@ impl<N: Network> Display for GetDynamic<N> {
         // Print the command.
         write!(f, "{} ", Self::opcode())?;
         // Print the program name, program network, mapping and key operand.
-        write!(f, "{} {} {}[{}] into ", self.program_name(), self.program_network(), self.mapping_name(), self.key())?;
+        write!(
+            f,
+            "{} {} {}[{}] into ",
+            self.program_name_operand(),
+            self.program_network_operand(),
+            self.mapping_name_operand(),
+            self.key_operand()
+        )?;
         // Print the destination register.
         write!(f, "{} as {};", self.destination, self.destination_type())
     }
@@ -295,13 +289,13 @@ impl<N: Network> ToBytes for GetDynamic<N> {
     /// Writes the command to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         // Write the program name.
-        self.program_name().write_le(&mut writer)?;
+        self.program_name_operand().write_le(&mut writer)?;
         // Write the program network.
-        self.program_network().write_le(&mut writer)?;
+        self.program_network_operand().write_le(&mut writer)?;
         // Write the mapping name.
-        self.mapping_name().write_le(&mut writer)?;
+        self.mapping_name_operand().write_le(&mut writer)?;
         // Write the key operand.
-        self.key().write_le(&mut writer)?;
+        self.key_operand().write_le(&mut writer)?;
         // Write the destination register.
         self.destination.write_le(&mut writer)?;
         // Write the destination type.
@@ -321,10 +315,22 @@ mod tests {
         let (string, get) = GetDynamic::<CurrentNetwork>::parse("get.dynamic r0 r1 r2[r3] into r4 as Baz;").unwrap();
         assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
         assert_eq!(get.operands().len(), 4, "The number of operands is incorrect");
-        assert_eq!(get.program_name(), &Operand::Register(Register::Locator(0)), "The first operand is incorrect");
-        assert_eq!(get.program_network(), &Operand::Register(Register::Locator(1)), "The second operand is incorrect");
-        assert_eq!(get.mapping_name(), &Operand::Register(Register::Locator(2)), "The third operand is incorrect");
-        assert_eq!(get.key(), &Operand::Register(Register::Locator(3)), "The fourth operand is incorrect");
+        assert_eq!(
+            get.program_name_operand(),
+            &Operand::Register(Register::Locator(0)),
+            "The first operand is incorrect"
+        );
+        assert_eq!(
+            get.program_network_operand(),
+            &Operand::Register(Register::Locator(1)),
+            "The second operand is incorrect"
+        );
+        assert_eq!(
+            get.mapping_name_operand(),
+            &Operand::Register(Register::Locator(2)),
+            "The third operand is incorrect"
+        );
+        assert_eq!(get.key_operand(), &Operand::Register(Register::Locator(3)), "The fourth operand is incorrect");
         assert_eq!(get.destination, Register::Locator(4), "The destination register is incorrect");
         assert_eq!(
             get.destination_type,

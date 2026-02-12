@@ -365,7 +365,7 @@ impl<N: Network> Transition<N> {
 
         // Get caller context upfront if the request is dynamic.
         let (caller_input_ids, caller_output_values) = if request.is_dynamic() {
-            (Some(request.caller_input_ids()?), Some(response.caller_outputs()?))
+            (Some(request.to_dynamic_input_ids()?), Some(response.to_dynamic_outputs()?))
         } else {
             (None, None)
         };

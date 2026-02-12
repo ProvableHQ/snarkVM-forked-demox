@@ -687,7 +687,7 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         let Some(transaction) = transactions.get(&transaction_id) else {
             bail!("The transaction '{transaction_id}' for commitment '{commitment}' is not in the block");
         };
-        let transaction_leaf = transaction.to_leaf(&**transition.id())?;
+        let transaction_leaf = transaction.to_leaf(transition.id())?;
         let transaction_path = transaction.to_path(&transaction_leaf)?;
 
         // Construct the block header path.

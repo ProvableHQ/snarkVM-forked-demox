@@ -18,11 +18,7 @@ mod serialize;
 mod string;
 
 use crate::{Transaction, Transition};
-use console::{
-    account::Field,
-    network::prelude::*,
-    program::{ProgramID, TRANSACTION_DEPTH, TransactionLeaf},
-};
+use console::{account::Field, network::prelude::*, program::ProgramID};
 use snarkvm_synthesizer_snark::Proof;
 
 use indexmap::IndexMap;
@@ -74,19 +70,7 @@ impl<N: Network> Execution<N> {
 
     /// Returns the execution ID.
     pub fn to_execution_id(&self) -> Result<Field<N>> {
-        Self::compute_execution_id(self.transitions.values())
-    }
-
-    /// Computes the execution ID from an iterator of transitions.
-    pub fn compute_execution_id<'a>(transitions: impl ExactSizeIterator<Item = &'a Transition<N>>) -> Result<Field<N>> {
-        // Ensure the number of transitions is within bounds.
-        Transaction::<N>::check_execution_size(transitions.len())?;
-        // Build the tree using transition IDs.
-        let leaves = transitions.enumerate().map(|(index, transition)| {
-            Ok::<_, Error>(TransactionLeaf::new_execution(u16::try_from(index)?, **transition.id()).to_bits_le())
-        });
-        // Compute and return the execution ID (tree root).
-        Ok(*N::merkle_tree_bhp::<TRANSACTION_DEPTH>(&leaves.collect::<Result<Vec<_>, _>>()?)?.root())
+        Ok(*Transaction::execution_tree(self)?.root())
     }
 }
 

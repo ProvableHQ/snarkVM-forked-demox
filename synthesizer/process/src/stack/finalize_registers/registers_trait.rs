@@ -103,7 +103,6 @@ impl<N: Network> RegistersTrait<N> for FinalizeRegisters<N> {
             }
             // Ensure the future value matches the register type.
             (Ok(FinalizeType::Future(locator)), Value::Future(future)) => stack.matches_future(future, &locator)?,
-            // Note. There is nothing to further check for a dynamic future, since its definition is fixed.
             (Ok(FinalizeType::DynamicFuture), Value::DynamicFuture(_)) => {}
             // Ensure the load is valid in a finalize context.
             (Ok(finalize_type), stack_value) => bail!(
@@ -144,7 +143,6 @@ impl<N: Network> RegistersTrait<N> for FinalizeRegisters<N> {
                     (Ok(FinalizeType::Future(locator)), Value::Future(future)) => {
                         stack.matches_future(future, &locator)?
                     }
-                    // Note. There is nothing to futher check for dynamic futures, since its definition is fixed.
                     (Ok(FinalizeType::DynamicFuture), Value::DynamicFuture(_)) => {}
                     // Ensure the store is valid in a finalize context.
                     (Ok(finalize_type), stack_value) => bail!(

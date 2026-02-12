@@ -40,9 +40,13 @@ pub enum Input<N: Network> {
     ExternalRecord(Field<N>),
     /// The hash of the dynamic record's (function_id, record, tvk, input index).
     DynamicRecord(Field<N>),
-    /// The serial number, tag, and dynamic ID of a record input called dynamically.
+    /// The serial number, tag, and dynamic ID of a record input in a dynamic call transition.
+    /// The `dynamic_id` is computed from `hash(function_id, record, tvk, index)`.
+    /// From the caller's perspective, this appears as `DynamicRecord(dynamic_id)`.
     RecordWithDynamicID(Field<N>, Field<N>, Field<N>),
-    /// The external record hash and dynamic ID of an external record input called dynamically.
+    /// The external record hash and dynamic ID of an external record input in a dynamic call transition.
+    /// The `dynamic_id` is computed from `hash(function_id, record, tvk, index)`.
+    /// From the caller's perspective, this appears as `DynamicRecord(dynamic_id)`.
     ExternalRecordWithDynamicID(Field<N>, Field<N>),
 }
 
@@ -81,11 +85,13 @@ impl<N: Network> Input<N> {
     pub fn to_transition_leaf(&self, index: u8) -> TransitionLeaf<N> {
         match self {
             // RecordWithDynamicID produces leaf with version 2, variant 3.
-            Input::RecordWithDynamicID(..) => TransitionLeaf::new_dynamic_with_version(index, 3, *self.id()),
+            Input::RecordWithDynamicID(..) => TransitionLeaf::new_record_with_dynamic_id(index, *self.id()),
             // ExternalRecordWithDynamicID produces leaf with version 2, variant 4.
-            Input::ExternalRecordWithDynamicID(..) => TransitionLeaf::new_dynamic_with_version(index, 4, *self.id()),
+            Input::ExternalRecordWithDynamicID(..) => {
+                TransitionLeaf::new_external_record_with_dynamic_id(index, *self.id())
+            }
             // All other variants use their serialization variant byte.
-            _ => TransitionLeaf::new_with_version(index, self.variant(), *self.id()),
+            _ => TransitionLeaf::new(index, self.variant(), *self.id()),
         }
     }
 

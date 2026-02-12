@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Tests for casting static records to `record.dynamic`.
+// Tests for casting static records to `dynamic.record`.
 mod cast;
 
 // Tests for the `get.record.dynamic` instruction.
@@ -32,8 +32,7 @@ mod call_dynamic;
 mod dynamic_futures;
 
 // Tests for recursive dynamic function calls and double-spend detection.
-// NOTE: these tests can be re-enabled if we ever allow cycles, see `fn ensure_acyclic_call_graph`.
-// mod recursion;
+mod recursion;
 
 // Tests for record translation between static and dynamic representations.
 mod translation;

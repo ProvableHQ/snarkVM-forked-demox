@@ -52,9 +52,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             deployment.set_program_checksum_raw(Some(deployment.program().to_checksum()));
             deployment.set_program_owner_raw(Some(Address::try_from(private_key)?));
         }
-        // If the `CONSNESUS_VERSION` is less than `V14`, unset the translation verifying keys,
+        // Before V14: remove record verifying keys from the deployment.
         if consensus_version < ConsensusVersion::V14 {
-            deployment.set_translation_verifying_keys_raw(None);
+            let record_names: Vec<_> = deployment.program().records().keys().cloned().collect();
+            deployment.remove_verifying_keys(&record_names);
         }
         // Compute the deployment ID.
         let deployment_id = deployment.to_deployment_id()?;

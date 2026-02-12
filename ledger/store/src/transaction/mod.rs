@@ -552,14 +552,14 @@ mod tests {
 
         // Sample the transactions.
         for transaction in [
-            snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 0, true, rng),
-            snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 1, false, rng),
-            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, rng),
-            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, false, rng),
-            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, true, rng),
-            snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 0, true, rng),
-            snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 1, false, rng),
-            snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 2, true, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 0, false, true, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 1, false, false, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, false, true, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, false, false, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, false, true, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, true, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, true, false, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, true, true, rng),
             snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(true, rng, 0),
             snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(false, rng, 0),
             snarkvm_ledger_test_helpers::sample_fee_private_transaction(rng),
@@ -601,14 +601,14 @@ mod tests {
 
         // Sample the transactions.
         for transaction in [
-            snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 0, true, rng),
-            snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 1, false, rng),
-            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, rng),
-            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, false, rng),
-            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, true, rng),
-            snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 0, true, rng),
-            snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 1, false, rng),
-            snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 2, true, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 0, false, true, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 1, false, false, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, false, true, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, false, false, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, false, true, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, true, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, true, false, rng),
+            snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, true, true, rng),
             snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(true, rng, 0),
             snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee(true, rng, 1),
             Transaction::from_fee(snarkvm_ledger_test_helpers::sample_fee_private(

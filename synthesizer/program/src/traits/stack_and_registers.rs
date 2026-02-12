@@ -45,57 +45,41 @@ use snarkvm_synthesizer_snark::{ProvingKey, VerifyingKey};
 ///
 /// We make it a trait only to avoid circular dependencies.
 pub trait StackTrait<N: Network> {
-    /// Returns `true` if the proving key for the given function name exists.
-    fn contains_proving_key(&self, function_name: &Identifier<N>) -> bool;
+    /// Returns `true` if the proving key for the given name exists.
+    /// The name can be a function name or a record name (for translation keys).
+    fn contains_proving_key(&self, function_or_record_name: &Identifier<N>) -> bool;
 
-    /// Returns `true` if the translation proving key for the given record name exists.
-    fn contains_translation_proving_key(&self, record_name: &Identifier<N>) -> bool;
+    /// Returns the proving key for the given name.
+    /// The name can be a function name or a record name (for translation keys).
+    fn get_proving_key(&self, function_or_record_name: &Identifier<N>) -> Result<ProvingKey<N>>;
 
-    /// Returns the proving key for the given function name.
-    fn get_proving_key(&self, function_name: &Identifier<N>) -> Result<ProvingKey<N>>;
+    /// Inserts the proving key for the given name.
+    /// The name can be a function name or a record name (for translation keys).
+    fn insert_proving_key(&self, function_or_record_name: &Identifier<N>, proving_key: ProvingKey<N>) -> Result<()>;
 
-    /// Returns the translation proving key for the given record name.
-    fn get_translation_proving_key(&self, record_name: &Identifier<N>) -> Result<ProvingKey<N>>;
+    /// Removes the proving key for the given name.
+    /// The name can be a function name or a record name (for translation keys).
+    fn remove_proving_key(&self, function_or_record_name: &Identifier<N>);
 
-    /// Inserts the proving key for the given function name.
-    fn insert_proving_key(&self, function_name: &Identifier<N>, proving_key: ProvingKey<N>) -> Result<()>;
+    /// Returns `true` if the verifying key for the given name exists.
+    /// The name can be a function name or a record name (for translation keys).
+    fn contains_verifying_key(&self, function_or_record_name: &Identifier<N>) -> bool;
 
-    /// Inserts the translation proving key for the given record name.
-    fn insert_translation_proving_key(&self, record_name: &Identifier<N>, proving_key: ProvingKey<N>) -> Result<()>;
+    /// Returns the verifying key for the given name.
+    /// The name can be a function name or a record name (for translation keys).
+    fn get_verifying_key(&self, function_or_record_name: &Identifier<N>) -> Result<VerifyingKey<N>>;
 
-    /// Removes the proving key for the given function name.
-    fn remove_proving_key(&self, function_name: &Identifier<N>);
-
-    /// Removes the translation proving key for the given record name.
-    fn remove_translation_proving_key(&self, record_name: &Identifier<N>);
-
-    /// Returns `true` if the verifying key for the given function name exists.
-    fn contains_verifying_key(&self, function_name: &Identifier<N>) -> bool;
-
-    /// Returns `true` if the translation verifying key for the given record name exists.
-    fn contains_translation_verifying_key(&self, record_name: &Identifier<N>) -> bool;
-
-    /// Returns the verifying key for the given function name.
-    fn get_verifying_key(&self, function_name: &Identifier<N>) -> Result<VerifyingKey<N>>;
-
-    /// Returns the translation verifying key for the given record name.
-    fn get_translation_verifying_key(&self, record_name: &Identifier<N>) -> Result<VerifyingKey<N>>;
-
-    /// Inserts the verifying key for the given function name.
-    fn insert_verifying_key(&self, function_name: &Identifier<N>, verifying_key: VerifyingKey<N>) -> Result<()>;
-
-    /// Inserts the given translation verifying key for the given record name.
-    fn insert_translation_verifying_key(
+    /// Inserts the verifying key for the given name.
+    /// The name can be a function name or a record name (for translation keys).
+    fn insert_verifying_key(
         &self,
-        record_name: &Identifier<N>,
+        function_or_record_name: &Identifier<N>,
         verifying_key: VerifyingKey<N>,
     ) -> Result<()>;
 
-    /// Removes the verifying key for the given function name.
-    fn remove_verifying_key(&self, function_name: &Identifier<N>);
-
-    /// Removes the translation verifying key for the given record name.
-    fn remove_translation_verifying_key(&self, record_name: &Identifier<N>);
+    /// Removes the verifying key for the given name.
+    /// The name can be a function name or a record name (for translation keys).
+    fn remove_verifying_key(&self, function_or_record_name: &Identifier<N>);
 
     /// Checks that the given value matches the layout of the value type.
     fn matches_value_type(&self, value: &Value<N>, value_type: &ValueType<N>) -> Result<()>;
@@ -149,7 +133,7 @@ pub trait StackTrait<N: Network> {
     /// - The program ID is imported by the current program.
     ///
     /// This function is only to be used for resolution during dynamic dispatch.
-    fn get_stack_unchecked(&self, program_id: &ProgramID<N>) -> Result<Arc<Self>>;
+    fn get_stack_global(&self, program_id: &ProgramID<N>) -> Result<Arc<Self>>;
 
     /// Returns the function with the given function name.
     fn get_function(&self, function_name: &Identifier<N>) -> Result<Function<N>>;
@@ -158,6 +142,7 @@ pub trait StackTrait<N: Network> {
     fn get_function_ref(&self, function_name: &Identifier<N>) -> Result<&Function<N>>;
 
     /// Returns the minimum number of calls for the given function name.
+    /// Note: In a static call graph (no dynamic dispatch), the minimum is the actual count.
     fn get_minimum_number_of_calls(&self, function_name: &Identifier<N>) -> Result<usize>;
 
     /// Returns whether or not a function has a dynamic call in its execution.
