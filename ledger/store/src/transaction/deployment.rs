@@ -59,14 +59,10 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     /// The mapping of `(program ID, edition)` to `checksum`.
     /// This was introduced in `ConsensusVersion::V9`.
     type ChecksumMap: for<'a> Map<'a, (ProgramID<N>, u16), [U8<N>; 32]>;
-    /// The mapping of `(program ID, name, edition)` to `verifying key`.
+    /// The mapping of `(program ID, function or record name, edition)` to `verifying key`.
     type VerifyingKeyMap: for<'a> Map<'a, (ProgramID<N>, Identifier<N>, u16), VerifyingKey<N>>;
-    /// The mapping of `(program ID, name, edition)` to `certificate`.
+    /// The mapping of `(program ID, function or record name, edition)` to `certificate`.
     type CertificateMap: for<'a> Map<'a, (ProgramID<N>, Identifier<N>, u16), Certificate<N>>;
-    /// The mapping of `(program ID, edition)` to a marker indicating the deployment is V3.
-    /// The presence of an entry indicates V3; absence with no records indicates V2.
-    /// This was introduced in `ConsensusVersion::V14`.
-    type ContainsTranslationKeysMap: for<'a> Map<'a, (ProgramID<N>, u16), ()>;
     /// The fee storage.
     type FeeStorage: FeeStorage<N>;
     /// The mapping of `(program ID, edition)` to the next amendment index.
@@ -103,8 +99,6 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     fn verifying_key_map(&self) -> &Self::VerifyingKeyMap;
     /// Returns the certificate map.
     fn certificate_map(&self) -> &Self::CertificateMap;
-    /// Returns the contains-translation-keys map.
-    fn contains_translation_keys_map(&self) -> &Self::ContainsTranslationKeysMap;
     /// Returns the fee storage.
     fn fee_store(&self) -> &FeeStore<N, Self::FeeStorage>;
     /// Returns the amendment next index map.
@@ -136,7 +130,6 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.checksum_map().start_atomic();
         self.verifying_key_map().start_atomic();
         self.certificate_map().start_atomic();
-        self.contains_translation_keys_map().start_atomic();
         self.fee_store().start_atomic();
         self.amendment_next_index_map().start_atomic();
         self.amendment_id_map().start_atomic();
@@ -157,7 +150,6 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             || self.checksum_map().is_atomic_in_progress()
             || self.verifying_key_map().is_atomic_in_progress()
             || self.certificate_map().is_atomic_in_progress()
-            || self.contains_translation_keys_map().is_atomic_in_progress()
             || self.fee_store().is_atomic_in_progress()
             || self.amendment_next_index_map().is_atomic_in_progress()
             || self.amendment_id_map().is_atomic_in_progress()
@@ -178,7 +170,6 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.checksum_map().atomic_checkpoint();
         self.verifying_key_map().atomic_checkpoint();
         self.certificate_map().atomic_checkpoint();
-        self.contains_translation_keys_map().atomic_checkpoint();
         self.fee_store().atomic_checkpoint();
         self.amendment_next_index_map().atomic_checkpoint();
         self.amendment_id_map().atomic_checkpoint();
@@ -199,7 +190,6 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.checksum_map().clear_latest_checkpoint();
         self.verifying_key_map().clear_latest_checkpoint();
         self.certificate_map().clear_latest_checkpoint();
-        self.contains_translation_keys_map().clear_latest_checkpoint();
         self.fee_store().clear_latest_checkpoint();
         self.amendment_next_index_map().clear_latest_checkpoint();
         self.amendment_id_map().clear_latest_checkpoint();
@@ -220,7 +210,6 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.checksum_map().atomic_rewind();
         self.verifying_key_map().atomic_rewind();
         self.certificate_map().atomic_rewind();
-        self.contains_translation_keys_map().atomic_rewind();
         self.fee_store().atomic_rewind();
         self.amendment_next_index_map().atomic_rewind();
         self.amendment_id_map().atomic_rewind();
@@ -241,7 +230,6 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.checksum_map().abort_atomic();
         self.verifying_key_map().abort_atomic();
         self.certificate_map().abort_atomic();
-        self.contains_translation_keys_map().abort_atomic();
         self.fee_store().abort_atomic();
         self.amendment_next_index_map().abort_atomic();
         self.amendment_id_map().abort_atomic();
@@ -262,7 +250,6 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.checksum_map().finish_atomic()?;
         self.verifying_key_map().finish_atomic()?;
         self.certificate_map().finish_atomic()?;
-        self.contains_translation_keys_map().finish_atomic()?;
         self.amendment_next_index_map().finish_atomic()?;
         self.amendment_id_map().finish_atomic()?;
         self.reverse_amendment_id_map().finish_atomic()?;
@@ -295,7 +282,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         // Retrieve the checksum.
         let checksum = deployment.program_checksum();
         // Check if this is an amendment.
-        let is_amendment = deployment.version()? == DeploymentVersion::V4;
+        let is_amendment = deployment.version()? == DeploymentVersion::V3;
 
         // Handle amendments separately from regular deployments.
         if is_amendment {
@@ -326,29 +313,14 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
                 // Store the amendment owner.
                 self.amendment_owner_map().insert((program_id, edition, amendment_index), *owner)?;
 
-                // Store the verifying keys and certificates.
-                for (function_name, (verifying_key, certificate)) in deployment.verifying_keys() {
+                // Store all verifying keys and certificates (unified: functions + records).
+                for (name, (verifying_key, certificate)) in deployment.verifying_keys() {
                     // Store the verifying key.
                     self.amendment_verifying_key_map()
-                        .insert((program_id, *function_name, edition, amendment_index), verifying_key.clone())?;
+                        .insert((program_id, *name, edition, amendment_index), verifying_key.clone())?;
                     // Store the certificate.
                     self.amendment_certificate_map()
-                        .insert((program_id, *function_name, edition, amendment_index), certificate.clone())?;
-                }
-
-                // Store the translation verifying keys and certificates, if they exist.
-                // Note: We do NOT mark the deployment in contains_translation_keys_map here,
-                // because that map tracks the original deployment's version, not the amendment's version.
-                // Amendments are identified by being in the amendment maps, not by this marker.
-                if let Some(translation_verifying_keys) = deployment.translation_verifying_keys() {
-                    for (record_name, (verifying_key, certificate)) in translation_verifying_keys {
-                        // Store the verifying key.
-                        self.amendment_verifying_key_map()
-                            .insert((program_id, *record_name, edition, amendment_index), verifying_key.clone())?;
-                        // Store the certificate.
-                        self.amendment_certificate_map()
-                            .insert((program_id, *record_name, edition, amendment_index), certificate.clone())?;
-                    }
+                        .insert((program_id, *name, edition, amendment_index), certificate.clone())?;
                 }
 
                 // Increment the amendment count.
@@ -391,25 +363,12 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
                     self.checksum_map().insert((program_id, edition), checksum)?;
                 }
 
-                // Store the verifying keys and certificates.
-                for (function_name, (verifying_key, certificate)) in deployment.verifying_keys() {
+                // Store all verifying keys and certificates (unified: functions + records).
+                for (name, (verifying_key, certificate)) in deployment.verifying_keys() {
                     // Store the verifying key.
-                    self.verifying_key_map().insert((program_id, *function_name, edition), verifying_key.clone())?;
+                    self.verifying_key_map().insert((program_id, *name, edition), verifying_key.clone())?;
                     // Store the certificate.
-                    self.certificate_map().insert((program_id, *function_name, edition), certificate.clone())?;
-                }
-
-                // Store the translation verifying keys and certificates, if they exist.
-                // Also mark the deployment as having translation keys (V3+ deployments).
-                if let Some(translation_verifying_keys) = deployment.translation_verifying_keys() {
-                    for (record_name, (verifying_key, certificate)) in translation_verifying_keys {
-                        // Store the verifying key.
-                        self.verifying_key_map().insert((program_id, *record_name, edition), verifying_key.clone())?;
-                        // Store the certificate.
-                        self.certificate_map().insert((program_id, *record_name, edition), certificate.clone())?;
-                    }
-                    // Mark this deployment as having translation keys.
-                    self.contains_translation_keys_map().insert((program_id, edition), ())?;
+                    self.certificate_map().insert((program_id, *name, edition), certificate.clone())?;
                 }
 
                 // Store the fee transition.
@@ -456,7 +415,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
                 // Remove the amendment owner.
                 self.amendment_owner_map().remove(&(program_id, edition, amendment_index))?;
 
-                // Remove the verifying keys and certificates.
+                // Remove all verifying keys and certificates (unified: functions + records).
                 for function_name in program.functions().keys() {
                     self.amendment_verifying_key_map().remove(&(
                         program_id,
@@ -466,8 +425,6 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
                     ))?;
                     self.amendment_certificate_map().remove(&(program_id, *function_name, edition, amendment_index))?;
                 }
-
-                // Remove the translation verifying keys and certificates from amendment maps.
                 for record_name in program.records().keys() {
                     self.amendment_verifying_key_map().remove(&(program_id, *record_name, edition, amendment_index))?;
                     self.amendment_certificate_map().remove(&(program_id, *record_name, edition, amendment_index))?;
@@ -547,15 +504,13 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
                     self.certificate_map().remove(&(program_id, *function_name, edition))?;
                 }
 
-                // Remove the translation verifying keys and certificates.
+                // Remove the record verifying keys and certificates.
                 for record_name in program.records().keys() {
                     // Remove the verifying key.
                     self.verifying_key_map().remove(&(program_id, *record_name, edition))?;
                     // Remove the certificate.
                     self.certificate_map().remove(&(program_id, *record_name, edition))?;
                 }
-                // Remove the contains_translation_keys marker if it exists.
-                self.contains_translation_keys_map().remove(&(program_id, edition))?;
 
                 // Remove the fee transition.
                 self.fee_store().remove(transaction_id)?;
@@ -736,7 +691,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.program_map().get_confirmed(&(*program_id, edition)).map(|p| p.map(|p| p.into_owned()))
     }
 
-    /// Returns the latest verifying key for the given `program ID` and `resource name`.
+    /// Returns the latest verifying key for the given `program ID` and `function or record name`.
     /// If amendments exist, returns the verifying key from the latest amendment.
     fn get_latest_verifying_key(
         &self,
@@ -791,7 +746,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         Ok(Some(verifying_key.into_owned()))
     }
 
-    /// Returns the verifying key for the given `program ID`, `resource name` and `edition`.
+    /// Returns the verifying key for the given `program ID`, `function or record name` and `edition`.
     /// If amendments exist for the given edition, returns the verifying key from the latest amendment.
     fn get_verifying_key_with_edition(
         &self,
@@ -867,7 +822,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         }
     }
 
-    /// Returns the latest certificate for the given `program ID` and `resource name`.
+    /// Returns the latest certificate for the given `program ID` and `function or record name`.
     /// If amendments exist, returns the certificate from the latest amendment.
     fn get_latest_certificate(
         &self,
@@ -914,7 +869,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         Ok(Some(certificate.into_owned()))
     }
 
-    /// Returns the certificate for the given `program ID`, `resource name`, and `edition`.
+    /// Returns the certificate for the given `program ID`, `function or record name`, and `edition`.
     /// If amendments exist for the given edition, returns the certificate from the latest amendment.
     fn get_certificate_with_edition(
         &self,
@@ -953,7 +908,9 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         // No amendments, retrieve from regular certificate map.
         match self.certificate_map().get_confirmed(&(*program_id, *resource_name, edition))? {
             Some(certificate) => Ok(Some(certificate.into_owned())),
-            None => bail!("Failed to get the certificate for '{program_id}/{resource_name}' (edition {edition})"),
+            None => {
+                bail!("Failed to get the certificate for '{program_id}/{resource_name}' (edition {edition})")
+            }
         }
     }
 
@@ -1022,8 +979,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
                 verifying_keys.push((*function_name, (verifying_key, certificate)));
             }
 
-            // Retrieve the translation verifying keys and certificates from amendment maps.
-            let mut translation_verifying_keys = Vec::with_capacity(program.records().len());
+            // Retrieve the translation (record) verifying keys and certificates from amendment maps.
             for record_name in program.records().keys() {
                 // Try to get the translation VK from amendment maps.
                 if let Some(verifying_key) = self
@@ -1040,19 +996,13 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
                             "Failed to get the translation certificate for '{program_id}/{record_name}' (edition {edition}, amendment {amendment_index})"
                         );
                     };
-                    translation_verifying_keys.push((*record_name, (verifying_key, certificate)));
+                    // Append record VKs to the unified verifying keys vector.
+                    verifying_keys.push((*record_name, (verifying_key, certificate)));
                 }
             }
 
-            // V4 deployments always have translation verifying keys (may be empty for programs without records).
-            return Ok(Some(Deployment::new(
-                edition,
-                program,
-                verifying_keys,
-                program_checksum,
-                program_owner,
-                Some(translation_verifying_keys),
-            )?));
+            // V3 deployments use a unified verifying keys vector (functions followed by records).
+            return Ok(Some(Deployment::new(edition, program, verifying_keys, program_checksum, program_owner)?));
         }
 
         // Retrieve the program ID.
@@ -1069,9 +1019,6 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             bail!("Failed to get the deployed program '{program_id}' (edition {edition})");
         };
 
-        // Initialize a vector for the verifying keys and certificates.
-        let mut verifying_keys = Vec::with_capacity(program.functions().len());
-
         // Retrieve the checksum.
         let program_checksum =
             self.checksum_map().get_confirmed(&(program_id, edition))?.map(|checksum| checksum.into_owned());
@@ -1084,7 +1031,20 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             },
         };
 
-        // Retrieve the verifying keys and certificates from regular maps.
+        // Determine if the deployment contains record verifying keys by probing the first record name.
+        let contains_record_keys = match program.records().keys().next() {
+            Some(record_name) => {
+                self.verifying_key_map().get_confirmed(&(program_id, *record_name, edition))?.is_some()
+            }
+            None => false,
+        };
+
+        // Initialize a vector for the verifying keys and certificates.
+        let num_functions = program.functions().len();
+        let num_records = if contains_record_keys { program.records().len() } else { 0 };
+        let mut verifying_keys = Vec::with_capacity(num_functions + num_records);
+
+        // Retrieve the function verifying keys and certificates.
         for function_name in program.functions().keys() {
             // Retrieve the verifying key.
             let Some(verifying_key) =
@@ -1102,52 +1062,32 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             verifying_keys.push((*function_name, (verifying_key, certificate)));
         }
 
-        // Check if this deployment is marked as V3 in the contains_translation_keys_map.
-        let contains_translation_keys =
-            self.contains_translation_keys_map().get_confirmed(&(program_id, edition))?.is_some();
-
-        // Determine translation verifying keys based on V3 status.
-        let translation_verifying_keys = if contains_translation_keys {
-            // V3 deployment: load translation verifying keys (may be empty for programs without records).
-            let mut translation_verifying_keys = Vec::with_capacity(program.records().len());
+        // If the deployment contains record verifying keys, load and append them.
+        if contains_record_keys {
             for record_name in program.records().keys() {
                 // Retrieve the verifying key.
-                let Some(translation_verifying_key) = self
+                let Some(verifying_key) = self
                     .verifying_key_map()
                     .get_confirmed(&(program_id, *record_name, edition))?
                     .map(|x| x.into_owned())
                 else {
                     bail!(
-                        "Failed to get the translation verifying key for '{program_id}/{record_name}' (edition {edition})"
+                        "Failed to get the record verifying key for '{program_id}/{record_name}' (edition {edition})"
                     );
                 };
-                // Retrieve the translation certificate.
+                // Retrieve the certificate.
                 let Some(certificate) =
                     self.certificate_map().get_confirmed(&(program_id, *record_name, edition))?.map(|x| x.into_owned())
                 else {
-                    bail!(
-                        "Failed to get the translation certificate for '{program_id}/{record_name}' (edition {edition})"
-                    );
+                    bail!("Failed to get the record certificate for '{program_id}/{record_name}' (edition {edition})");
                 };
-                // Add the verifying key and certificate to the deployment.
-                translation_verifying_keys.push((*record_name, (translation_verifying_key, certificate)));
+                // Append the record verifying key and certificate.
+                verifying_keys.push((*record_name, (verifying_key, certificate)));
             }
-            // V3 deployments always use Some, even if empty.
-            Some(translation_verifying_keys)
-        } else {
-            // V2 deployment (pre-V14): no translation verifying keys.
-            None
-        };
+        }
 
         // Return the deployment.
-        Ok(Some(Deployment::new(
-            edition,
-            program,
-            verifying_keys,
-            program_checksum,
-            program_owner,
-            translation_verifying_keys,
-        )?))
+        Ok(Some(Deployment::new(edition, program, verifying_keys, program_checksum, program_owner)?))
     }
 
     /// Returns the fee for the given `transaction ID`.
@@ -1347,8 +1287,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             verifying_keys.push((*function_name, (verifying_key, certificate)));
         }
 
-        // Retrieve the translation verifying keys and certificates from amendment maps.
-        let mut translation_verifying_keys = Vec::with_capacity(program.records().len());
+        // Retrieve the translation (record) verifying keys and certificates from amendment maps.
         for record_name in program.records().keys() {
             // Try to get the translation VK from amendment maps.
             if let Some(verifying_key) = self
@@ -1365,20 +1304,14 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
                         "Failed to get the amendment translation certificate for '{program_id}/{record_name}' (edition {edition}, amendment {amendment_index})"
                     );
                 };
-                translation_verifying_keys.push((*record_name, (verifying_key, certificate)));
+                // Append record VKs to the unified verifying keys vector.
+                verifying_keys.push((*record_name, (verifying_key, certificate)));
             }
         }
 
         // Return the deployment.
-        // V4 deployments always have translation verifying keys (may be empty for programs without records).
-        Ok(Some(Deployment::new(
-            edition,
-            program,
-            verifying_keys,
-            program_checksum,
-            program_owner,
-            Some(translation_verifying_keys),
-        )?))
+        // V3 deployments use a unified verifying keys vector (functions followed by records).
+        Ok(Some(Deployment::new(edition, program, verifying_keys, program_checksum, program_owner)?))
     }
 }
 
@@ -1498,23 +1431,23 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
         self.storage.get_program_for_edition(program_id, edition)
     }
 
-    /// Returns the latest verifying key for the given `(program ID, function name)`.
+    /// Returns the latest verifying key for the given `(program ID, function or record name)`.
     pub fn get_latest_verifying_key(
         &self,
         program_id: &ProgramID<N>,
-        function_name: &Identifier<N>,
+        resource_name: &Identifier<N>,
     ) -> Result<Option<VerifyingKey<N>>> {
-        self.storage.get_latest_verifying_key(program_id, function_name)
+        self.storage.get_latest_verifying_key(program_id, resource_name)
     }
 
-    /// Returns the verifying key for the given `(program ID, function name, edition)`.
+    /// Returns the verifying key for the given `(program ID, function or record name, edition)`.
     pub fn get_verifying_key_with_edition(
         &self,
         program_id: &ProgramID<N>,
-        function_name: &Identifier<N>,
+        resource_name: &Identifier<N>,
         edition: u16,
     ) -> Result<Option<VerifyingKey<N>>> {
-        self.storage.get_verifying_key_with_edition(program_id, function_name, edition)
+        self.storage.get_verifying_key_with_edition(program_id, resource_name, edition)
     }
 
     /// Returns the original verifying key for the given `(program ID, function name, edition)`.
@@ -1528,23 +1461,23 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
         self.storage.get_original_verifying_key(program_id, function_name, edition)
     }
 
-    /// Returns the latest certificate for the given `(program ID, function name)`.
+    /// Returns the latest certificate for the given `(program ID, function or record name)`.
     pub fn get_latest_certificate(
         &self,
         program_id: &ProgramID<N>,
-        function_name: &Identifier<N>,
+        resource_name: &Identifier<N>,
     ) -> Result<Option<Certificate<N>>> {
-        self.storage.get_latest_certificate(program_id, function_name)
+        self.storage.get_latest_certificate(program_id, resource_name)
     }
 
-    /// Returns the certificate for the given `(program ID, function name, edition)`.
+    /// Returns the certificate for the given `(program ID, function or record name, edition)`.
     pub fn get_certificate_with_edition(
         &self,
         program_id: &ProgramID<N>,
-        function_name: &Identifier<N>,
+        resource_name: &Identifier<N>,
         edition: u16,
     ) -> Result<Option<Certificate<N>>> {
-        self.storage.get_certificate_with_edition(program_id, function_name, edition)
+        self.storage.get_certificate_with_edition(program_id, resource_name, edition)
     }
 
     /// Returns the original certificate for the given `(program ID, function name, edition)`.
@@ -1780,14 +1713,14 @@ mod tests {
         let deployment_store = DeploymentMemory::open(fee_store).unwrap();
 
         // Sample the transactions.
-        let transaction_0 = snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 0, true, rng);
-        let transaction_1 = snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 1, false, rng);
-        let transaction_2 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, rng);
-        let transaction_3 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, false, rng);
-        let transaction_4 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, true, rng);
-        let transaction_5 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 0, true, rng);
-        let transaction_6 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 1, false, rng);
-        let transaction_7 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 2, true, rng);
+        let transaction_0 = snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 0, false, true, rng);
+        let transaction_1 = snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 1, false, false, rng);
+        let transaction_2 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, false, true, rng);
+        let transaction_3 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, false, false, rng);
+        let transaction_4 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, false, true, rng);
+        let transaction_5 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, true, rng);
+        let transaction_6 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, true, false, rng);
+        let transaction_7 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, true, true, rng);
 
         let transactions = vec![
             transaction_0,
@@ -1824,14 +1757,6 @@ mod tests {
                     assert_eq!(None, candidate);
                 }
             }
-
-            // Check the contains_translation_keys_map.
-            // V3 deployments (those with translation_verifying_keys = Some) should have an entry.
-            // V1 and V2 deployments should not have an entry.
-            let has_translation_keys = transaction.deployment().unwrap().translation_verifying_keys().is_some();
-            let contains_translation_keys_entry =
-                deployment_store.contains_translation_keys_map().get_confirmed(&(program_id, edition)).unwrap();
-            assert_eq!(has_translation_keys, contains_translation_keys_entry.is_some());
 
             // Check that the transaction exists in the ID edition map
             let candidate = deployment_store.id_edition_map().get_confirmed(&transaction_id).unwrap();
@@ -1874,11 +1799,6 @@ mod tests {
             let candidate = deployment_store.id_edition_map().get_confirmed(&transaction_id).unwrap();
             assert_eq!(None, candidate);
 
-            // Ensure the contains_translation_keys_map entry is removed.
-            let contains_translation_keys_entry =
-                deployment_store.contains_translation_keys_map().get_confirmed(&(program_id, edition)).unwrap();
-            assert_eq!(None, contains_translation_keys_entry);
-
             // Insert the deployment transaction again.
             deployment_store.insert(&transaction).unwrap();
         }
@@ -1896,14 +1816,14 @@ mod tests {
         let deployment_store = DeploymentMemory::open(fee_store).unwrap();
 
         // Sample the transactions.
-        let transaction_0 = snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 0, true, rng);
-        let transaction_1 = snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 1, false, rng);
-        let transaction_2 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, rng);
-        let transaction_3 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, false, rng);
-        let transaction_4 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, true, rng);
-        let transaction_5 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 0, true, rng);
-        let transaction_6 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 1, false, rng);
-        let transaction_7 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 2, true, rng);
+        let transaction_0 = snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 0, false, true, rng);
+        let transaction_1 = snarkvm_ledger_test_helpers::sample_deployment_transaction(1, 1, false, false, rng);
+        let transaction_2 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, false, true, rng);
+        let transaction_3 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, false, false, rng);
+        let transaction_4 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, false, true, rng);
+        let transaction_5 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, true, rng);
+        let transaction_6 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 1, true, false, rng);
+        let transaction_7 = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 2, true, true, rng);
 
         let transactions = vec![
             transaction_0,
@@ -1992,7 +1912,7 @@ mod tests {
         let deployment_store = DeploymentMemory::open(fee_store).unwrap();
 
         // First, insert a V2 deployment (the original deployment that the amendment will target).
-        let original_transaction = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, rng);
+        let original_transaction = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, false, true, rng);
         let original_transaction_id = original_transaction.id();
         let original_program_id = *original_transaction.deployment().unwrap().program_id();
         deployment_store.insert(&original_transaction).unwrap();
@@ -2006,8 +1926,8 @@ mod tests {
         assert!(!deployment_store.is_amendment(&original_transaction_id).unwrap());
 
         // Now insert an amendment for the same program.
-        // V4 is the amendment version (uses same program as V2).
-        let amendment_transaction = snarkvm_ledger_test_helpers::sample_deployment_transaction(4, 0, false, rng);
+        // V3 is the amendment version (uses same program as V2).
+        let amendment_transaction = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 0, true, false, rng);
         let amendment_id = amendment_transaction.id();
         let amendment_deployment = amendment_transaction.deployment().unwrap();
         assert_eq!(original_program_id, *amendment_deployment.program_id());
@@ -2070,12 +1990,12 @@ mod tests {
         let deployment_store = DeploymentMemory::open(fee_store).unwrap();
 
         // Insert a V2 deployment (the original deployment).
-        let original_transaction = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, rng);
+        let original_transaction = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, false, true, rng);
         let original_program_id = *original_transaction.deployment().unwrap().program_id();
         deployment_store.insert(&original_transaction).unwrap();
 
-        // Insert multiple amendments sequentially (V4 is the amendment version).
-        let amendment_1 = snarkvm_ledger_test_helpers::sample_deployment_transaction(4, 0, false, rng);
+        // Insert multiple amendments sequentially (V3 is the amendment version).
+        let amendment_1 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 0, true, false, rng);
         let amendment_1_id = amendment_1.id();
         let amendment_1_deployment = amendment_1.deployment().unwrap();
         deployment_store.insert(&amendment_1).unwrap();
@@ -2085,7 +2005,7 @@ mod tests {
         assert_eq!(Some((original_program_id, 0, 0)), deployment_store.get_amendment_info(&amendment_1_id).unwrap());
 
         // Insert second amendment.
-        let amendment_2 = snarkvm_ledger_test_helpers::sample_deployment_transaction(4, 0, true, rng);
+        let amendment_2 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 0, true, true, rng);
         let amendment_2_id = amendment_2.id();
         let amendment_2_deployment = amendment_2.deployment().unwrap();
         deployment_store.insert(&amendment_2).unwrap();
@@ -2129,7 +2049,7 @@ mod tests {
         let deployment_store = DeploymentMemory::open(fee_store).unwrap();
 
         // Insert a V2 original deployment.
-        let original_transaction = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, rng);
+        let original_transaction = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, false, true, rng);
         let original_program_id = *original_transaction.deployment().unwrap().program_id();
         let original_deployment = original_transaction.deployment().unwrap();
         deployment_store.insert(&original_transaction).unwrap();
@@ -2140,8 +2060,8 @@ mod tests {
             assert_eq!(Some(vk.clone()), latest_vk, "original VK should be retrievable");
         }
 
-        // Insert an amendment (V4 is the amendment version).
-        let amendment_transaction = snarkvm_ledger_test_helpers::sample_deployment_transaction(4, 0, false, rng);
+        // Insert an amendment (V3 is the amendment version).
+        let amendment_transaction = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 0, true, false, rng);
         let amendment_deployment = amendment_transaction.deployment().unwrap();
         deployment_store.insert(&amendment_transaction).unwrap();
 
@@ -2191,13 +2111,13 @@ mod tests {
         let deployment_store = DeploymentMemory::open(fee_store).unwrap();
 
         // Insert a V2 original deployment.
-        let original_transaction = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, rng);
+        let original_transaction = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, false, true, rng);
         let original_transaction_id = original_transaction.id();
         let original_program_id = *original_transaction.deployment().unwrap().program_id();
         deployment_store.insert(&original_transaction).unwrap();
 
-        // Insert an amendment (V4 is the amendment version).
-        let amendment_transaction = snarkvm_ledger_test_helpers::sample_deployment_transaction(4, 0, false, rng);
+        // Insert an amendment (V3 is the amendment version).
+        let amendment_transaction = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 0, true, false, rng);
         let amendment_transaction_id = amendment_transaction.id();
         deployment_store.insert(&amendment_transaction).unwrap();
 
@@ -2235,17 +2155,17 @@ mod tests {
         let deployment_store = DeploymentMemory::open(fee_store).unwrap();
 
         // Insert a V2 original deployment.
-        let original_transaction = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, true, rng);
+        let original_transaction = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, false, true, rng);
         let original_program_id = *original_transaction.deployment().unwrap().program_id();
         deployment_store.insert(&original_transaction).unwrap();
 
-        // Insert first amendment (index 0). V4 is the amendment version.
-        let amendment_0 = snarkvm_ledger_test_helpers::sample_deployment_transaction(4, 0, false, rng);
+        // Insert first amendment (index 0). V3 is the amendment version.
+        let amendment_0 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 0, true, false, rng);
         let amendment_0_id = amendment_0.id();
         deployment_store.insert(&amendment_0).unwrap();
 
         // Insert second amendment (index 1).
-        let amendment_1 = snarkvm_ledger_test_helpers::sample_deployment_transaction(4, 0, true, rng);
+        let amendment_1 = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 0, true, true, rng);
         let amendment_1_id = amendment_1.id();
         deployment_store.insert(&amendment_1).unwrap();
 

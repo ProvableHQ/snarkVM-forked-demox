@@ -296,7 +296,7 @@ impl<N: Network> Response<N> {
     /// - converting all record outputs to dynamic record outputs
     /// - converting all future outputs to dynamic future outputs.
     /// - leaving all other outputs unchanged.
-    pub fn caller_outputs(&self) -> Result<Vec<Value<N>>> {
+    pub fn to_dynamic_outputs(&self) -> Result<Vec<Value<N>>> {
         self.outputs
             .iter()
             .map(|output| match output {
@@ -306,7 +306,8 @@ impl<N: Network> Response<N> {
                 }
                 Value::Future(future) => Ok(Value::DynamicFuture(DynamicFuture::from_future(future)?)),
                 Value::DynamicFuture(_) => bail!("A dynamic future cannot be a response output"),
-                _ => Ok(output.clone()),
+                Value::Plaintext(_) => Ok(output.clone()),
+                Value::DynamicRecord(_) => Ok(output.clone()),
             })
             .collect::<Result<Vec<_>>>()
     }
@@ -315,7 +316,7 @@ impl<N: Network> Response<N> {
     /// - converting all record output IDs to dynamic record output IDs
     /// - converting all future output IDs to dynamic future output IDs.
     /// - leaving all other output IDs unchanged.
-    pub fn caller_output_ids(
+    pub fn to_dynamic_output_ids(
         &self,
         network_id: &U16<N>,
         program_id: &ProgramID<N>,
@@ -327,7 +328,7 @@ impl<N: Network> Response<N> {
         // Compute the function ID.
         let function_id = compute_function_id(network_id, program_id, function_name)?;
         // Get the caller outputs.
-        let caller_outputs = self.caller_outputs()?;
+        let caller_outputs = self.to_dynamic_outputs()?;
         // Compute the caller output IDs for the caller outputs.
         caller_outputs
             .iter()
@@ -376,7 +377,11 @@ impl<N: Network> Response<N> {
                         Ok(OutputID::DynamicFuture(output_hash))
                     }
                     // Otherwise, return the output ID unchanged.
-                    _ => Ok(callee_output_id.clone()),
+                    OutputID::Constant(_) => Ok(callee_output_id.clone()),
+                    OutputID::Public(_) => Ok(callee_output_id.clone()),
+                    OutputID::Private(_) => Ok(callee_output_id.clone()),
+                    OutputID::DynamicRecord(_) => Ok(callee_output_id.clone()),
+                    OutputID::DynamicFuture(_) => Ok(callee_output_id.clone()),
                 }
             })
             .collect::<Result<Vec<_>>>()

@@ -914,3 +914,193 @@ fn test_dynamic_record_near_maximum_fields() {
     );
     add_and_test(&vm, &caller_private_key, &[tx_read_last], rng);
 }
+
+// Tests `get.record.dynamic` with explicit visibility suffixes (`.private`, `.public`, `.constant`).
+// Verifies that matching visibility succeeds and mismatching visibility fails.
+#[test]
+fn test_get_record_dynamic_visibility() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
+
+    // Program with a record containing private and public fields.
+    let program_str = format!(
+        r"
+        program visibility_test.aleo;
+
+        record mixed_record:
+            owner as address.private;
+            secret as u64.private;
+            visible as u64.public;
+
+        function mint_mixed:
+            cast {caller_address} 42u64 99u64 into r0 as mixed_record.record;
+            output r0 as mixed_record.record;
+
+        function read_secret_as_private:
+            input r0 as dynamic.record;
+            get.record.dynamic r0.secret into r1 as u64.private;
+            output r1 as u64.public;
+
+        function read_visible_as_public:
+            input r0 as dynamic.record;
+            get.record.dynamic r0.visible into r1 as u64.public;
+            output r1 as u64.public;
+
+        function read_secret_as_public:
+            input r0 as dynamic.record;
+            get.record.dynamic r0.secret into r1 as u64.public;
+            output r1 as u64.public;
+
+        function read_visible_as_private:
+            input r0 as dynamic.record;
+            get.record.dynamic r0.visible into r1 as u64.private;
+            output r1 as u64.public;
+
+        function read_secret_no_visibility:
+            input r0 as dynamic.record;
+            get.record.dynamic r0.secret into r1 as u64;
+            output r1 as u64.public;
+
+        constructor:
+            assert.eq true true;
+        "
+    );
+
+    let program = Program::<CurrentNetwork>::from_str(&program_str).unwrap();
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    // Deploy the program.
+    println!("Deploying program visibility_test.aleo...");
+    let transaction_deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[transaction_deploy], rng);
+
+    // Mint a record with private and public fields.
+    println!("Minting mixed record...");
+    let transaction_mint = vm
+        .execute(
+            &caller_private_key,
+            ("visibility_test.aleo", "mint_mixed"),
+            Vec::<Value<CurrentNetwork>>::new().into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    let mint_output = transaction_mint.transitions().next().unwrap().outputs().iter().next().unwrap();
+    let view_key = ViewKey::try_from(&caller_private_key).unwrap();
+
+    let output_record = match mint_output {
+        Output::Record(_, _, record_ciphertext, _) => record_ciphertext.as_ref().unwrap().decrypt(&view_key).unwrap(),
+        _ => panic!("Expected record output"),
+    };
+
+    add_and_test(&vm, &caller_private_key, &[transaction_mint], rng);
+
+    let dynamic_record = DynamicRecord::<CurrentNetwork>::from_record(&output_record).unwrap();
+
+    /************** Case 1: Read private field with matching .private visibility **************/
+
+    println!("Reading secret as u64.private (should succeed)...");
+    let tx_private_match = vm
+        .execute(
+            &caller_private_key,
+            ("visibility_test.aleo", "read_secret_as_private"),
+            vec![Value::<CurrentNetwork>::DynamicRecord(dynamic_record.clone())].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    let expected_secret = Plaintext::<CurrentNetwork>::from_str("42u64").unwrap();
+    assert!(
+        matches!(tx_private_match.transitions().next().unwrap().outputs(), [Output::Public(_, Some(plaintext))] if *plaintext == expected_secret),
+        "Expected secret = 42u64"
+    );
+    add_and_test(&vm, &caller_private_key, &[tx_private_match], rng);
+
+    /************** Case 2: Read public field with matching .public visibility **************/
+
+    println!("Reading visible as u64.public (should succeed)...");
+    let tx_public_match = vm
+        .execute(
+            &caller_private_key,
+            ("visibility_test.aleo", "read_visible_as_public"),
+            vec![Value::<CurrentNetwork>::DynamicRecord(dynamic_record.clone())].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    let expected_visible = Plaintext::<CurrentNetwork>::from_str("99u64").unwrap();
+    assert!(
+        matches!(tx_public_match.transitions().next().unwrap().outputs(), [Output::Public(_, Some(plaintext))] if *plaintext == expected_visible),
+        "Expected visible = 99u64"
+    );
+    add_and_test(&vm, &caller_private_key, &[tx_public_match], rng);
+
+    /************** Case 3: Read private field with mismatching .public visibility **************/
+
+    println!("Reading secret as u64.public (should fail)...");
+    assert!(
+        vm.execute(
+            &caller_private_key,
+            ("visibility_test.aleo", "read_secret_as_public"),
+            vec![Value::<CurrentNetwork>::DynamicRecord(dynamic_record.clone())].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("Visibility mismatch")
+    );
+
+    /************** Case 4: Read public field with mismatching .private visibility **************/
+
+    println!("Reading visible as u64.private (should fail)...");
+    assert!(
+        vm.execute(
+            &caller_private_key,
+            ("visibility_test.aleo", "read_visible_as_private"),
+            vec![Value::<CurrentNetwork>::DynamicRecord(dynamic_record.clone())].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("Visibility mismatch")
+    );
+
+    /************** Case 5: Read private field without visibility suffix (should succeed) **************/
+
+    println!("Reading secret as u64 (no visibility, should succeed)...");
+    let tx_no_vis = vm
+        .execute(
+            &caller_private_key,
+            ("visibility_test.aleo", "read_secret_no_visibility"),
+            vec![Value::<CurrentNetwork>::DynamicRecord(dynamic_record)].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    assert!(
+        matches!(tx_no_vis.transitions().next().unwrap().outputs(), [Output::Public(_, Some(plaintext))] if *plaintext == expected_secret),
+        "Expected secret = 42u64 (no visibility check)"
+    );
+    add_and_test(&vm, &caller_private_key, &[tx_no_vis], rng);
+}

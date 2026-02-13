@@ -34,7 +34,7 @@ pub struct Deployment<N: Network> {
     edition: u16,
     /// The program.
     program: Program<N>,
-    /// The mapping of function names to their verifying key and certificate.
+    /// The mapping of function (and optionally record names) to their verifying key and certificate.
     verifying_keys: Vec<(Identifier<N>, (VerifyingKey<N>, Certificate<N>))>,
     /// An optional checksum for the program.
     /// This field creates a backwards-compatible implicit versioning mechanism for deployments.
@@ -44,27 +44,17 @@ pub struct Deployment<N: Network> {
     /// An optional owner for the program.
     /// This field creates a backwards-compatible implicit versioning mechanism for deployments.
     /// Before the migration height where this feature is enabled, the owner will **not** be allowed.
-    /// After the migration height where this feature is enabled, the owner will be required, except for V4 (amendment) deployments.
+    /// After the migration height where this feature is enabled, the owner will be required, except for V3 (amendment) deployments.
     program_owner: Option<Address<N>>,
-    /// An optional set of translation verifying keys for the program's records.
-    /// This field should only be set if the program contains records.
-    /// This field creates a backwards-compatible implicit versioning mechanism for deployments.
-    /// Before the migration height where this feature is enabled, the translation verifying keys will **not** be allowed.
-    /// After the migration height where this feature is enabled, the translation verifying keys will be required.
-    translation_verifying_keys: Option<Vec<(Identifier<N>, (VerifyingKey<N>, Certificate<N>))>>,
 }
 
 impl<N: Network> PartialEq for Deployment<N> {
     fn eq(&self, other: &Self) -> bool {
         self.edition == other.edition
-            && self.program == other.program
-            && self.verifying_keys == other.verifying_keys
-            // Note. These fields were added after the original implementation.
-            // This is safe since the deployment ID is computed off a hash of all fields.
-            // All uses of `PartialEq` and `Eq` of `Deployment` use the deployment ID.
             && self.program_checksum == other.program_checksum
             && self.program_owner == other.program_owner
-            && self.translation_verifying_keys == other.translation_verifying_keys
+            && self.verifying_keys == other.verifying_keys
+            && self.program == other.program
     }
 }
 
@@ -78,11 +68,9 @@ impl<N: Network> Deployment<N> {
         verifying_keys: Vec<(Identifier<N>, (VerifyingKey<N>, Certificate<N>))>,
         program_checksum: Option<[U8<N>; 32]>,
         program_owner: Option<Address<N>>,
-        translation_verifying_keys: Option<Vec<(Identifier<N>, (VerifyingKey<N>, Certificate<N>))>>,
     ) -> Result<Self> {
         // Construct the deployment.
-        let deployment =
-            Self { edition, program, verifying_keys, translation_verifying_keys, program_checksum, program_owner };
+        let deployment = Self { edition, program, verifying_keys, program_checksum, program_owner };
         // Ensure the deployment is ordered.
         deployment.check_is_ordered()?;
         // Return the deployment.
@@ -92,6 +80,8 @@ impl<N: Network> Deployment<N> {
     /// Checks that the deployment is ordered.
     pub fn check_is_ordered(&self) -> Result<()> {
         let program_id = self.program.id();
+        let num_functions = self.program.functions().len();
+        let num_records = self.program.records().len();
 
         // Ensure that the appropriate optional fields are present.
         // The call to `Deployment::version` implicitly performs this check.
@@ -111,28 +101,27 @@ impl<N: Network> Deployment<N> {
         );
         // Ensure the number of functions does not exceed the maximum.
         ensure!(
-            self.program.functions().len() <= N::MAX_FUNCTIONS,
+            num_functions <= N::MAX_FUNCTIONS,
             "Deployment has too many functions (maximum is '{}')",
             N::MAX_FUNCTIONS
         );
         // Ensure the number of records does not exceed the maximum.
-        ensure!(
-            self.program.records().len() <= N::MAX_RECORDS,
-            "Deployment has too many records (maximum is '{}')",
-            N::MAX_RECORDS
-        );
+        ensure!(num_records <= N::MAX_RECORDS, "Deployment has too many records (maximum is '{}')", N::MAX_RECORDS);
 
         // Ensure the deployment contains verifying keys.
         ensure!(
             !self.verifying_keys.is_empty(),
             "No verifying keys present in the deployment for program '{program_id}'"
         );
-        // Ensure the number of functions matches the number of verifying keys.
-        if self.program.functions().len() != self.verifying_keys.len() {
-            bail!("Deployment has an incorrect number of verifying keys, according to the program.");
-        }
-        // Ensure the function and verifying keys correspond.
-        for ((function_name, function), (name, _)) in self.program.functions().iter().zip_eq(&self.verifying_keys) {
+        // Ensure the number of verifying keys is either num_functions or num_functions + num_records.
+        ensure!(
+            self.verifying_keys.len() == num_functions || self.verifying_keys.len() == num_functions + num_records,
+            "Deployment has an incorrect number of verifying keys, according to the program."
+        );
+        // Ensure the function verifying keys correspond to the program functions.
+        for ((function_name, function), (name, _)) in
+            self.program.functions().iter().zip_eq(&self.verifying_keys[..num_functions])
+        {
             // Ensure the function name is correct.
             if function_name != function.name() {
                 bail!("The function key is '{function_name}', but the function name is '{}'", function.name())
@@ -145,36 +134,29 @@ impl<N: Network> Deployment<N> {
         // Ensure there are no duplicate verifying keys.
         ensure!(
             !has_duplicates(self.verifying_keys.iter().map(|(name, ..)| name)),
-            "A duplicate function name was found"
+            "A duplicate verifying key name was found"
         );
 
-        // If the translation verifying keys are present, ensure they are well-formed.
-        // Note: V3 deployments use `Some(vec![])` for programs without records.
-        if let Some(translation_verifying_keys) = &self.translation_verifying_keys {
-            // Ensure the number of records matches the number of translation verifying keys.
+        // If record verifying keys are present, ensure they are well-formed.
+        if self.verifying_keys.len() > num_functions {
+            let record_keys = &self.verifying_keys[num_functions..];
+            // Ensure the number of records matches the number of record verifying keys.
             ensure!(
-                self.program.records().len() == translation_verifying_keys.len(),
-                "Expected {} records, but {} translation verifying keys were provided.",
-                self.program.records().len(),
-                translation_verifying_keys.len()
+                num_records == record_keys.len(),
+                "Expected {} records, but {} record verifying keys were provided.",
+                num_records,
+                record_keys.len()
             );
-            // Ensure the records and translation verifying keys correspond.
-            for ((record_name, record), (name, _)) in self.program.records().iter().zip_eq(translation_verifying_keys) {
+            // Ensure the records and record verifying keys correspond.
+            for ((record_name, record), (name, _)) in self.program.records().iter().zip_eq(record_keys) {
                 // Ensure the record name is correct.
                 if record_name != record.name() {
                     bail!("The record key is '{record_name}', but the record name is '{}'", record.name())
                 }
-                // Ensure the record name with the translation verifying key is correct.
+                // Ensure the record name with the record verifying key is correct.
                 if name != record.name() {
-                    bail!("The translation verifying key is '{name}', but the record name is '{}'", record.name())
+                    bail!("The record verifying key is '{name}', but the record name is '{}'", record.name())
                 }
-            }
-            // Ensure there are no duplicate translation verifying keys.
-            if !translation_verifying_keys.is_empty() {
-                ensure!(
-                    !has_duplicates(translation_verifying_keys.iter().map(|(name, ..)| name)),
-                    "A duplicate translation record name was found"
-                );
             }
         }
 
@@ -217,13 +199,20 @@ impl<N: Network> Deployment<N> {
     }
 
     /// Returns the verifying keys.
+    /// The function keys are ordered first, followed by the optional record keys.
     pub const fn verifying_keys(&self) -> &Vec<(Identifier<N>, (VerifyingKey<N>, Certificate<N>))> {
         &self.verifying_keys
     }
 
-    /// Returns the translation verifying keys.
-    pub const fn translation_verifying_keys(&self) -> &Option<Vec<(Identifier<N>, (VerifyingKey<N>, Certificate<N>))>> {
-        &self.translation_verifying_keys
+    /// Returns the function verifying keys.
+    pub fn function_verifying_keys(&self) -> &[(Identifier<N>, (VerifyingKey<N>, Certificate<N>))] {
+        &self.verifying_keys[..self.program.functions().len()]
+    }
+
+    /// Returns the record translation verifying keys, if any are present.
+    pub fn translation_verifying_keys(&self) -> Option<&[(Identifier<N>, (VerifyingKey<N>, Certificate<N>))]> {
+        let num_functions = self.program.functions().len();
+        if self.verifying_keys.len() > num_functions { Some(&self.verifying_keys[num_functions..]) } else { None }
     }
 
     /// Returns the sum of the variable counts in this deployment.
@@ -238,7 +227,7 @@ impl<N: Network> Deployment<N> {
         // Initialize the accumulator.
         let mut num_combined_variables = 0u64;
         // Iterate over the function verifying keys.
-        for (_, (vk, _)) in &self.verifying_keys {
+        for (_, (vk, _)) in self.function_verifying_keys() {
             // Add the number of variables.
             num_combined_variables = num_combined_variables
                 .checked_add(vk.num_variables())
@@ -248,13 +237,13 @@ impl<N: Network> Deployment<N> {
         Ok(num_combined_variables)
     }
 
-    /// Returns the sum of the variable counts for all translations in this deployment.
+    /// Returns the sum of the variable counts for all record translations in this deployment.
     pub fn num_combined_translation_variables(&self) -> Result<u64> {
         // Initialize the accumulator.
         let mut num_combined_variables = 0u64;
-        // Iterate over the translation verifying keys.
-        if let Some(translation_vks) = &self.translation_verifying_keys {
-            for (_, (vk, _)) in translation_vks {
+        // Iterate over the record verifying keys, if any.
+        if let Some(record_vks) = self.translation_verifying_keys() {
+            for (_, (vk, _)) in record_vks {
                 // Add the number of variables.
                 num_combined_variables = num_combined_variables
                     .checked_add(vk.num_variables())
@@ -277,7 +266,7 @@ impl<N: Network> Deployment<N> {
         // Initialize the accumulator.
         let mut num_combined_constraints = 0u64;
         // Iterate over the function verifying keys.
-        for (_, (vk, _)) in &self.verifying_keys {
+        for (_, (vk, _)) in self.function_verifying_keys() {
             // Add the number of constraints.
             num_combined_constraints = num_combined_constraints
                 .checked_add(vk.circuit_info.num_constraints as u64)
@@ -287,13 +276,13 @@ impl<N: Network> Deployment<N> {
         Ok(num_combined_constraints)
     }
 
-    /// Returns the sum of the constraint counts for all translations in this deployment.
+    /// Returns the sum of the constraint counts for all record translations in this deployment.
     pub fn num_combined_translation_constraints(&self) -> Result<u64> {
         // Initialize the accumulator.
         let mut num_combined_constraints = 0u64;
-        // Iterate over the translation verifying keys.
-        if let Some(translation_vks) = &self.translation_verifying_keys {
-            for (_, (vk, _)) in translation_vks {
+        // Iterate over the record verifying keys, if any.
+        if let Some(record_vks) = self.translation_verifying_keys() {
+            for (_, (vk, _)) in record_vks {
                 // Add the number of constraints.
                 num_combined_constraints = num_combined_constraints
                     .checked_add(vk.circuit_info.num_constraints as u64)
@@ -326,42 +315,32 @@ impl<N: Network> Deployment<N> {
         self.program_owner = program_owner;
     }
 
-    /// Sets the translation verifying keys.
+    /// Removes the verifying key entry with the given name.
     /// Note: This method is intended to be used by the synthesizer **only**, and should not be called by the user.
     #[doc(hidden)]
-    pub fn set_translation_verifying_keys_raw(
-        &mut self,
-        translation_verifying_keys: Option<Vec<(Identifier<N>, (VerifyingKey<N>, Certificate<N>))>>,
-    ) {
-        self.translation_verifying_keys = translation_verifying_keys;
+    pub fn remove_verifying_key(&mut self, name: &Identifier<N>) {
+        self.verifying_keys.retain(|(n, _)| n != name);
+    }
+
+    /// Removes all verifying key entries whose names are in the given set.
+    /// Note: This method is intended to be used by the synthesizer **only**, and should not be called by the user.
+    #[doc(hidden)]
+    pub fn remove_verifying_keys(&mut self, names: &[Identifier<N>]) {
+        self.verifying_keys.retain(|(n, _)| !names.contains(n));
     }
 
     /// Returns the implicit deployment version.
     /// This function implicitly checks that the deployment checksum and owner is well-formed.
     pub fn version(&self) -> Result<DeploymentVersion> {
-        match (
-            self.program_checksum.is_some(),
-            self.program_owner.is_some(),
-            self.translation_verifying_keys().is_some(),
-        ) {
-            // V1: No checksum, no owner, no translation VKs.
-            (false, false, false) => Ok(DeploymentVersion::V1),
-            // Invalid: Translation VKs require checksum.
-            (false, false, true) => {
-                bail!("The deployment contains translation verifying keys, but the program checksum is absent.")
-            }
-            // V2: Checksum + owner, no translation VKs.
-            (true, true, false) => Ok(DeploymentVersion::V2),
-            // V3: Checksum + owner + translation VKs.
-            (true, true, true) => Ok(DeploymentVersion::V3),
-            // V4: Checksum, no owner, with translation VKs (amendments).
-            (true, false, true) => Ok(DeploymentVersion::V4),
-            // Invalid: Checksum without owner and without translation VKs.
-            (true, false, false) => {
-                bail!("The deployment has a checksum but is missing both owner and translation verifying keys.")
-            }
+        match (self.program_checksum.is_some(), self.program_owner.is_some()) {
+            // V1: No checksum, no owner.
+            (false, false) => Ok(DeploymentVersion::V1),
+            // V2: Checksum + owner.
+            (true, true) => Ok(DeploymentVersion::V2),
+            // V3: Checksum, no owner (amendment).
+            (true, false) => Ok(DeploymentVersion::V3),
             // Invalid: Owner without checksum.
-            (false, true, _) => {
+            (false, true) => {
                 bail!("The program owner is present, but the program checksum is absent.")
             }
         }
@@ -376,14 +355,10 @@ pub enum DeploymentVersion {
     V1 = 1,
     /// A deployment with both a program checksum and program owner (V2).
     /// Active after consensus version >= V9.
-    /// Inactive after consensus version >= V14.
     V2 = 2,
-    /// A deployment with checksum, owner, and translation verifying keys (V3).
-    /// Active after consensus version >= V14.
-    V3 = 3,
-    /// A deployment with a program checksum but without a program owner (V4).
+    /// A deployment with a program checksum but without a program owner (V3).
     /// This is used for amendments.
-    V4 = 4,
+    V3 = 3,
 }
 
 #[cfg(test)]
@@ -434,12 +409,14 @@ function compute:
             deployment.verifying_keys().clone(),
             None,
             None,
-            None,
         )
         .unwrap()
     }
 
-    pub(crate) fn sample_deployment_v2(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
+    pub(crate) fn sample_deployment_v2_without_translation_keys(
+        edition: u16,
+        rng: &mut TestRng,
+    ) -> Deployment<CurrentNetwork> {
         static INSTANCE: OnceLock<Deployment<CurrentNetwork>> = OnceLock::new();
         let deployment = INSTANCE
             .get_or_init(|| {
@@ -475,12 +452,14 @@ function compute:
             deployment.verifying_keys().clone(),
             deployment.program_checksum(),
             Some(Address::rand(rng)),
-            None,
         )
         .unwrap()
     }
 
-    pub(crate) fn sample_deployment_v3(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
+    pub(crate) fn sample_deployment_v2_with_translation_keys(
+        edition: u16,
+        rng: &mut TestRng,
+    ) -> Deployment<CurrentNetwork> {
         static INSTANCE: OnceLock<Deployment<CurrentNetwork>> = OnceLock::new();
         let deployment = INSTANCE
             .get_or_init(|| {
@@ -521,14 +500,13 @@ function compute:
             deployment.verifying_keys().clone(),
             deployment.program_checksum(),
             Some(Address::rand(rng)),
-            deployment.translation_verifying_keys().clone(),
         )
         .unwrap()
     }
 
-    /// Samples a V4 deployment (amendment) for the same program as V2.
-    /// Note: This program has no records, so translation VKs is an empty vec.
-    pub(crate) fn sample_deployment_v4(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
+    /// Samples a V3 deployment (amendment) for the same program as V2.
+    /// V3 = checksum + no owner.
+    pub(crate) fn sample_deployment_v3(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
         static INSTANCE: OnceLock<Deployment<CurrentNetwork>> = OnceLock::new();
         let deployment = INSTANCE
             .get_or_init(|| {
@@ -551,26 +529,20 @@ function compute:
                 // Construct the process.
                 let process = Process::load().unwrap();
                 // Compute the deployment (regenerates VKs).
-                let mut deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
-                // Set the program checksum.
-                deployment.set_program_checksum_raw(Some(deployment.program().to_checksum()));
-                // Amendments have no program owner.
-                deployment.set_program_owner_raw(None);
-                // V4 deployments have translation VKs (empty vec for programs without records).
-                deployment.set_translation_verifying_keys_raw(Some(vec![]));
+                let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
                 // Return the deployment.
                 // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
                 Deployment::from_str(&deployment.to_string()).unwrap()
             })
             .clone();
         // Create a new deployment with the desired edition.
+        // V3 deployments have a checksum but no owner.
         Deployment::<CurrentNetwork>::new(
             edition,
             deployment.program().clone(),
             deployment.verifying_keys().clone(),
-            deployment.program_checksum(),
-            None,         // No owner for V4 (amendments).
-            Some(vec![]), // V4 has translation VKs (empty for programs without records).
+            Some(deployment.program().to_checksum()),
+            None, // No owner for V3 (amendments).
         )
         .unwrap()
     }

@@ -58,14 +58,14 @@ impl<N: Network> CallDynamic<N> {
         // Ensure that the number of operands is within the bounds.
         // Note that the unwrap is safe since we check that `MAX_OPERANDS` is within `u8::MAX`.
         ensure!(
-            operands.len() <= N::MAX_OPERANDS.checked_add(3).unwrap(),
+            operands.len() <= N::MAX_OPERANDS.checked_add(3).expect("MAX_OPERANDS + 3 overflows"),
             "The number of operands must be <= {}",
-            N::MAX_OPERANDS.checked_add(3).unwrap()
+            N::MAX_OPERANDS.checked_add(3).expect("MAX_OPERANDS + 3 overflows")
         );
         // Ensure that the number of operands and operand types match.
         // Note that the unwrap is safe since we check that there are at least three operands.
         ensure!(
-            operands.len().checked_sub(3).unwrap() == operand_types.len(),
+            operands.len().checked_sub(3).expect("operands.len() >= 3 is checked above") == operand_types.len(),
             "The number of operands and operand types must match"
         );
         // Ensure that the operand types do not contain a future, dynamic future, record, or external record type.
@@ -138,10 +138,10 @@ impl<N: Network> CallDynamic<N> {
     }
 
     /// Returns whether this instruction refers to an external struct.
-    /// Dynamic calls never reference external structs.
     #[inline]
     pub fn contains_external_struct(&self) -> bool {
-        false
+        self.operand_types.iter().any(|t| t.contains_external_struct())
+            || self.destination_types.iter().any(|t| t.contains_external_struct())
     }
 }
 
@@ -198,12 +198,14 @@ impl<N: Network> CallDynamic<N> {
         }
         // Ensure the number of the input types minus 3 matches the number of operand types.
         // Note that the unwrap is safe since we check that there are at least three input types.
-        if input_types.len().checked_sub(3).unwrap() != self.operand_types.len() {
+        if input_types.len().checked_sub(3).expect("input_types.len() >= 3 is checked above")
+            != self.operand_types.len()
+        {
             bail!(
                 "Instruction '{}' expects {} operand types, found {} operand types",
                 Self::opcode(),
                 self.operand_types.len(),
-                input_types.len().checked_sub(3).unwrap()
+                input_types.len().checked_sub(3).expect("input_types.len() >= 3 is checked above")
             )
         }
         // Ensure the first three input types are field elements.
@@ -430,8 +432,7 @@ impl<N: Network> FromBytes for CallDynamic<N> {
             return Err(error("Failed to read 'call.dynamic' opcode: too few operands."));
         }
         // Determine the number of operand types.
-        // Note: This is safe because we checked that `num_operands >= 3` above.
-        let num_operand_types = num_operands.checked_sub(3).unwrap();
+        let num_operand_types = num_operands.checked_sub(3).expect("num_operands >= 3 is checked above");
         // Initialize the vector for the operands.
         let mut operands = Vec::with_capacity(num_operands);
         // Read the operands.
@@ -626,26 +627,24 @@ mod tests {
     #[test]
     fn test_external_record_not_allowed_as_input() {
         let result = CallDynamic::<CurrentNetwork>::from_str("call.dynamic r0 r1 r2 with r3 (as foo.aleo/bar.record)");
-        assert!(result.is_err(), "External records should not be allowed as input");
+        assert!(result.is_err());
     }
 
     #[test]
     fn test_record_not_allowed_as_input() {
         let result = CallDynamic::<CurrentNetwork>::from_str("call.dynamic r0 r1 r2 with r3 (as bar.record)");
-        assert!(result.is_err(), "Records should not be allowed as input");
+        assert!(result.is_err());
     }
 
     #[test]
     fn test_future_not_allowed_as_input() {
-        // The CallDynamic::new function explicitly checks for Future at line 82.
         let result = CallDynamic::<CurrentNetwork>::from_str("call.dynamic r0 r1 r2 with r3 (as foo.aleo/bar.future)");
-        assert!(result.is_err(), "Futures should not be allowed as input");
+        assert!(result.is_err());
     }
 
     #[test]
     fn test_dynamic_record_allowed_as_input() {
-        // Dynamic records ARE allowed as input types to call.dynamic.
         let result = CallDynamic::<CurrentNetwork>::from_str("call.dynamic r0 r1 r2 with r3 (as dynamic.record)");
-        assert!(result.is_ok(), "Dynamic records should be allowed as input");
+        assert!(result.is_ok());
     }
 }

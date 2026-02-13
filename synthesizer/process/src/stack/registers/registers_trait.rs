@@ -31,7 +31,7 @@ impl<N: Network, A: circuit::Aleo<Network = N>> RegistersSigner<N> for Registers
     /// Returns the root transition view key.
     #[inline]
     fn root_tvk(&self) -> Result<Field<N>> {
-        self.root_tvk.ok_or_else(|| anyhow!("Root tvk  (console) is not set in the registers."))
+        self.root_tvk.ok_or_else(|| anyhow!("Root tvk (console) is not set in the registers."))
     }
 
     /// Sets the root transition view key.

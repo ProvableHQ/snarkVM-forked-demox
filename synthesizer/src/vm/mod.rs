@@ -1639,7 +1639,6 @@ function do:
             vks_with_overreport,
             deployment.program_checksum(),
             deployment.program_owner(),
-            deployment.translation_verifying_keys().clone(),
         )
         .unwrap();
         let adjusted_transaction = Transaction::from_deployment(program_owner, adjusted_deployment, fee).unwrap();
@@ -1701,7 +1700,6 @@ function do:
             vks_with_underreport,
             deployment.program_checksum(),
             deployment.program_owner(),
-            deployment.translation_verifying_keys().clone(),
         )
         .unwrap();
         let deployment_id = adjusted_deployment.to_deployment_id().unwrap();
@@ -1783,7 +1781,6 @@ function do:
             vks_with_underreport,
             deployment.program_checksum(),
             deployment.program_owner(),
-            deployment.translation_verifying_keys().clone(),
         )
         .unwrap();
         let deployment_id = adjusted_deployment.to_deployment_id().unwrap();
@@ -2504,8 +2501,6 @@ finalize transfer_public_to_private:
 
         // Get the address of the wrapper program.
         let wrapper_program_id = ProgramID::from_str("credits_wrapper.aleo").unwrap();
-
-        println!("PRINT STRART");
 
         // Deploy the wrapper program.
         let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();

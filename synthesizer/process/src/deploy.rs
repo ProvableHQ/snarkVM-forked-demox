@@ -14,7 +14,6 @@
 // limitations under the License.
 
 use super::*;
-use crate::error::ProcessDeployError;
 
 impl<N: Network> Process<N> {
     /// Deploys the given program ID, if it does not exist.
@@ -23,7 +22,7 @@ impl<N: Network> Process<N> {
         &self,
         program: &Program<N>,
         rng: &mut R,
-    ) -> Result<Deployment<N>, ProcessDeployError> {
+    ) -> Result<Deployment<N>> {
         let timer = timer!("Process::deploy");
 
         // Compute the stack.
@@ -31,12 +30,11 @@ impl<N: Network> Process<N> {
         lap!(timer, "Compute the stack");
 
         // Return the deployment.
-        let deployment = stack.deploy::<A, R>(rng)?;
+        let deployment = stack.deploy::<A, R>(rng);
         lap!(timer, "Construct the deployment");
 
         finish!(timer);
-
-        Ok(deployment)
+        deployment
     }
 
     /// Adds the newly-deployed program.
@@ -50,7 +48,7 @@ impl<N: Network> Process<N> {
 
         // Load the deployment based on its version.
         let stack = match version {
-            DeploymentVersion::V1 | DeploymentVersion::V2 | DeploymentVersion::V3 => {
+            DeploymentVersion::V1 | DeploymentVersion::V2 => {
                 // Compute the program stack.
                 let mut stack = Stack::new(self, deployment.program())?;
                 lap!(timer, "Compute the stack");
@@ -58,24 +56,16 @@ impl<N: Network> Process<N> {
                 // Set the program owner.
                 stack.set_program_owner(deployment.program_owner());
 
-                // Insert the function verifying keys.
-                for (function_name, (verifying_key, _)) in deployment.verifying_keys() {
-                    stack.insert_verifying_key(function_name, verifying_key.clone())?;
+                // Insert all verifying keys (unified: functions + records).
+                for (name, (verifying_key, _)) in deployment.verifying_keys() {
+                    stack.insert_verifying_key(name, verifying_key.clone())?;
                 }
-                lap!(timer, "Insert the function verifying keys");
-
-                // Insert the translation verifying keys.
-                if let Some(translation_verifying_keys) = deployment.translation_verifying_keys() {
-                    for (record_name, (verifying_key, _)) in translation_verifying_keys {
-                        stack.insert_verifying_key(record_name, verifying_key.clone())?;
-                    }
-                }
-                lap!(timer, "Insert the translation verifying keys");
+                lap!(timer, "Insert the verifying keys");
 
                 stack
             }
-            DeploymentVersion::V4 => {
-                // Get the existing stack.
+            DeploymentVersion::V3 => {
+                // V3 is an amendment — get the existing stack.
                 let existing_stack = self.get_stack(deployment.program_id())?;
 
                 // Compute a new stack with the same program and edition.
@@ -86,19 +76,11 @@ impl<N: Network> Process<N> {
                 // Set the program owner to the existing owner.
                 stack.set_program_owner(*existing_stack.program_owner());
 
-                // Insert the verifying keys.
-                for (function_name, (verifying_key, _)) in deployment.verifying_keys() {
-                    stack.insert_verifying_key(function_name, verifying_key.clone())?;
+                // Insert all verifying keys (unified: functions + records).
+                for (name, (verifying_key, _)) in deployment.verifying_keys() {
+                    stack.insert_verifying_key(name, verifying_key.clone())?;
                 }
                 lap!(timer, "Insert the verifying keys");
-
-                // Insert the translation verifying keys if present.
-                if let Some(translation_verifying_keys) = deployment.translation_verifying_keys() {
-                    for (record_name, (verifying_key, _)) in translation_verifying_keys {
-                        stack.insert_verifying_key(record_name, verifying_key.clone())?;
-                    }
-                }
-                lap!(timer, "Insert the translation verifying keys");
 
                 stack
             }

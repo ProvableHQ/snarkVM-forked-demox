@@ -23,13 +23,11 @@ impl<N: Network> Serialize for Deployment<N> {
                 // Note: `Deployment::version` checks optional fields to determine the version.
                 // V1: edition, program, verifying_keys (3 fields)
                 // V2: + program_checksum, program_owner (5 fields)
-                // V3: + translation_verifying_keys (6 fields)
-                // V4: edition, program, verifying_keys, program_checksum, translation_verifying_keys (5 fields, no owner)
+                // V3: + program_checksum (4 fields, no owner)
                 let len = match self.version().map_err(ser::Error::custom)? {
                     DeploymentVersion::V1 => 3,
                     DeploymentVersion::V2 => 5,
-                    DeploymentVersion::V3 => 6,
-                    DeploymentVersion::V4 => 5,
+                    DeploymentVersion::V3 => 4,
                 };
                 let mut deployment = serializer.serialize_struct("Deployment", len)?;
                 deployment.serialize_field("edition", &self.edition)?;
@@ -40,9 +38,6 @@ impl<N: Network> Serialize for Deployment<N> {
                 }
                 if let Some(program_owner) = &self.program_owner {
                     deployment.serialize_field("program_owner", program_owner)?;
-                }
-                if let Some(translation_verifying_keys) = &self.translation_verifying_keys {
-                    deployment.serialize_field("translation_verifying_keys", translation_verifying_keys)?;
                 }
                 deployment.end()
             }
@@ -77,11 +72,6 @@ impl<'de, N: Network> Deserialize<'de> for Deployment<N> {
                         deployment.get_mut("program_owner").unwrap_or(&mut serde_json::Value::Null).take(),
                     )
                     .map_err(de::Error::custom)?,
-                    // Retrieve the translation verifying keys, if it exists.
-                    serde_json::from_value(
-                        deployment.get_mut("translation_verifying_keys").unwrap_or(&mut serde_json::Value::Null).take(),
-                    )
-                    .map_err(de::Error::custom)?,
                 )
                 .map_err(de::Error::custom)?;
 
@@ -103,9 +93,9 @@ mod tests {
         // Sample the deployments.
         for expected in [
             test_helpers::sample_deployment_v1(Uniform::rand(rng), rng),
-            test_helpers::sample_deployment_v2(Uniform::rand(rng), rng),
+            test_helpers::sample_deployment_v2_without_translation_keys(Uniform::rand(rng), rng),
+            test_helpers::sample_deployment_v2_with_translation_keys(Uniform::rand(rng), rng),
             test_helpers::sample_deployment_v3(Uniform::rand(rng), rng),
-            test_helpers::sample_deployment_v4(Uniform::rand(rng), rng),
         ] {
             // Serialize
             let expected_string = &expected.to_string();
@@ -127,9 +117,9 @@ mod tests {
         // Sample the deployments
         for expected in [
             test_helpers::sample_deployment_v1(Uniform::rand(rng), rng),
-            test_helpers::sample_deployment_v2(Uniform::rand(rng), rng),
+            test_helpers::sample_deployment_v2_without_translation_keys(Uniform::rand(rng), rng),
+            test_helpers::sample_deployment_v2_with_translation_keys(Uniform::rand(rng), rng),
             test_helpers::sample_deployment_v3(Uniform::rand(rng), rng),
-            test_helpers::sample_deployment_v4(Uniform::rand(rng), rng),
         ] {
             // Serialize
             let expected_bytes = expected.to_bytes_le()?;

@@ -92,16 +92,16 @@ pub fn sample_assignment<N: Network, A: Aleo<Network = N>>(
     // [Output static (at callee) -> dynamic (at caller)]
     let record_static = stack.sample_record(&address, credits_record_name, nonce, rng)?;
     let record_dynamic = DynamicRecord::<N>::from_record(&record_static)?;
-    let translation_index = Uniform::rand(rng);
+    let translation_index: u16 = Uniform::rand(rng);
     let tvk = Uniform::rand(rng);
-    let input_output_index = Uniform::rand(rng);
+    let record_register_index = Uniform::rand(rng);
     let record_view_key: Field<N> = Uniform::rand(rng);
     let gamma = None;
     let id_dynamic = compute_console_dynamic_or_external_record_id(
         function_id,
         record_dynamic.to_fields().unwrap(),
         tvk,
-        U16::new(input_output_index),
+        U16::new(record_register_index),
     )
     .unwrap();
     let is_to_static = false;
@@ -116,13 +116,12 @@ pub fn sample_assignment<N: Network, A: Aleo<Network = N>>(
         *credits_record_name,
         is_to_static,
         is_external_record,
-        translation_index,
         tvk,
-        input_output_index,
-        id_dynamic,
-        id_static,
         Some(record_view_key),
         gamma,
+        record_register_index,
+        id_dynamic,
+        id_static,
     );
 
     let verifier_inputs = vec![
@@ -134,12 +133,12 @@ pub fn sample_assignment<N: Network, A: Aleo<Network = N>>(
         *Field::<N>::zero(),
         *function_id,
         *Field::<N>::from_u128(translation_index as u128),
-        *Field::<N>::from_u128(input_output_index as u128),
+        *Field::<N>::from_u128(record_register_index as u128),
         *id_static,
         *id_dynamic,
     ];
 
-    Ok((translation_assignment.to_circuit_assignment::<A>()?, verifier_inputs))
+    Ok((translation_assignment.to_circuit_assignment::<A>(translation_index)?, verifier_inputs))
 }
 
 /// Synthesizes the circuit keys for the credits.aleo credits record translation circuit. (cargo run --release --example translation [network])

@@ -22,9 +22,9 @@ use console::{
 use snarkvm_ledger_block::Transaction;
 use snarkvm_synthesizer_program::StackTrait;
 
-/// Helper to create a V4 deployment transaction (amendment) with a properly connected fee.
-/// V4 deployments have checksum but no owner. They retain translation VKs if the program has records.
-fn create_v4_deployment_transaction<C: ConsensusStorage<CurrentNetwork>, R: Rng + CryptoRng>(
+/// Helper to create a V3 deployment transaction (amendment) with a properly connected fee.
+/// V3 deployments have checksum but no owner. They retain translation VKs if the program has records.
+fn create_v3_deployment_transaction<C: ConsensusStorage<CurrentNetwork>, R: Rng + CryptoRng>(
     vm: &VM<CurrentNetwork, C>,
     private_key: &PrivateKey<CurrentNetwork>,
     program: &Program<CurrentNetwork>,
@@ -32,42 +32,42 @@ fn create_v4_deployment_transaction<C: ConsensusStorage<CurrentNetwork>, R: Rng 
     rng: &mut R,
 ) -> Result<Transaction<CurrentNetwork>> {
     // Create a deployment for the program.
-    let mut v4_deployment = vm.process().read().deploy::<CurrentAleo, _>(program, rng)?;
+    let mut v3_deployment = vm.process().read().deploy::<CurrentAleo, _>(program, rng)?;
 
-    // Set the V4 deployment fields (amendment: checksum but no owner).
+    // Set the V3 deployment fields (amendment: checksum but no owner).
     // Translation VKs are retained if the program has records.
-    v4_deployment.set_edition_raw(edition);
-    v4_deployment.set_program_checksum_raw(Some(program.to_checksum()));
-    v4_deployment.set_program_owner_raw(None);
+    v3_deployment.set_edition_raw(edition);
+    v3_deployment.set_program_checksum_raw(Some(program.to_checksum()));
+    v3_deployment.set_program_owner_raw(None);
 
     // Compute the deployment ID.
-    let deployment_id = v4_deployment.to_deployment_id()?;
+    let deployment_id = v3_deployment.to_deployment_id()?;
 
     // Create the owner signature.
     let owner = ProgramOwner::new(private_key, deployment_id, rng)?;
 
     // Compute the deployment cost.
     let consensus_version = CurrentNetwork::CONSENSUS_VERSION(vm.block_store().current_block_height())?;
-    let (minimum_cost, _) = deployment_cost(&vm.process().read(), &v4_deployment, consensus_version)?;
+    let (minimum_cost, _) = deployment_cost(&vm.process().read(), &v3_deployment, consensus_version)?;
 
     // Authorize and execute the fee.
     let fee_authorization = vm.authorize_fee_public(private_key, minimum_cost, 0, deployment_id, rng)?;
     let fee = vm.execute_fee_authorization(fee_authorization, None, rng)?;
 
-    // Return the V4 deployment transaction.
-    Transaction::from_deployment(owner, v4_deployment, fee)
+    // Return the V3 deployment transaction.
+    Transaction::from_deployment(owner, v3_deployment, fee)
 }
 
 // This test verifies that:
-// - V4 deployments (amendments) are rejected before ConsensusVersion::V14
-// - V4 deployments (amendments) are accepted at ConsensusVersion::V14
+// - V3 deployments (amendments) are rejected before ConsensusVersion::V14
+// - V3 deployments (amendments) are accepted at ConsensusVersion::V14
 //
 // Test flow:
 // 1. V9: Deploy a program with records as V2 (checksum + owner, NO translation VKs)
 // 2. V14: Create an amendment (checksum, no owner, WITH translation VKs for records)
 // 3. Validation passes because translation VKs were added (didn't exist in original V2)
 #[test]
-fn test_v4_deployment_requires_v14() -> Result<()> {
+fn test_v3_deployment_requires_v14() -> Result<()> {
     let rng = &mut TestRng::default();
 
     // Initialize a new caller.
@@ -113,17 +113,17 @@ constructor:
     let stack = vm.process().read().get_stack("amendment_test.aleo")?;
     assert_eq!(*stack.program_edition(), 0);
 
-    // Create a V4 deployment (amendment).
+    // Create a V3 deployment (amendment).
     let deployed_program = stack.program().clone();
 
-    // Create a V4 deployment transaction with proper fee.
-    let v4_transaction = create_v4_deployment_transaction(&vm, &caller_private_key, &deployed_program, 0, rng)?;
+    // Create a V3 deployment transaction with proper fee.
+    let v3_transaction = create_v3_deployment_transaction(&vm, &caller_private_key, &deployed_program, 0, rng)?;
 
-    // Attempt to add the V4 deployment before V14 - it should be aborted.
-    let block = sample_next_block(&vm, &caller_private_key, &[v4_transaction.clone()], rng)?;
-    assert_eq!(block.transactions().num_accepted(), 0, "V4 should be rejected before V14");
+    // Attempt to add the V3 deployment before V14 - it should be aborted.
+    let block = sample_next_block(&vm, &caller_private_key, &[v3_transaction.clone()], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 0, "V3 should be rejected before V14");
     assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids().len(), 1, "V4 should be aborted before V14");
+    assert_eq!(block.aborted_transaction_ids().len(), 1, "V3 should be aborted before V14");
     vm.add_next_block(&block)?;
 
     // Advance the VM to V14 height.
@@ -136,17 +136,17 @@ constructor:
     // Verify we're at V14.
     assert!(vm.block_store().current_block_height() >= v14_height);
 
-    // Create a new V4 deployment transaction (need fresh fee).
-    let v4_transaction = create_v4_deployment_transaction(&vm, &caller_private_key, &deployed_program, 0, rng)?;
+    // Create a new V3 deployment transaction (need fresh fee).
+    let v3_transaction = create_v3_deployment_transaction(&vm, &caller_private_key, &deployed_program, 0, rng)?;
 
-    // Attempt to add the V4 deployment at V14 - it should succeed.
-    let block = sample_next_block(&vm, &caller_private_key, &[v4_transaction], rng)?;
-    assert_eq!(block.transactions().num_accepted(), 1, "V4 should be accepted at V14");
+    // Attempt to add the V3 deployment at V14 - it should succeed.
+    let block = sample_next_block(&vm, &caller_private_key, &[v3_transaction], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 1, "V3 should be accepted at V14");
     assert_eq!(block.transactions().num_rejected(), 0);
     assert_eq!(block.aborted_transaction_ids().len(), 0);
     vm.add_next_block(&block)?;
 
-    // Verify the edition hasn't changed (V4 doesn't change edition).
+    // Verify the edition hasn't changed (V3 doesn't change edition).
     let stack = vm.process().read().get_stack("amendment_test.aleo")?;
     assert_eq!(*stack.program_edition(), 0, "Edition should remain 0 after an amendment");
 
@@ -235,10 +235,10 @@ constructor:
     let stack = vm.process().read().get_stack("vk_test.aleo")?;
     let deployed_program = stack.program().clone();
 
-    // Create and apply a V4 deployment (amendment) that adds translation VKs.
-    let v4_transaction = create_v4_deployment_transaction(&vm, &caller_private_key, &deployed_program, 0, rng)?;
+    // Create and apply a V3 deployment (amendment) that adds translation VKs.
+    let v3_transaction = create_v3_deployment_transaction(&vm, &caller_private_key, &deployed_program, 0, rng)?;
 
-    let block = sample_next_block(&vm, &caller_private_key, &[v4_transaction], rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, &[v3_transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1, "Amendment should be accepted");
     vm.add_next_block(&block)?;
 
@@ -347,7 +347,7 @@ constructor:
 
     // The transaction is created, but should be aborted due to checksum mismatch.
     let block = sample_next_block(&vm, &caller_private_key, &[wrong_checksum_tx], rng)?;
-    assert_eq!(block.transactions().num_accepted(), 0, "V4 with wrong checksum should be rejected");
+    assert_eq!(block.transactions().num_accepted(), 0, "V3 with wrong checksum should be rejected");
     assert_eq!(block.aborted_transaction_ids().len(), 1);
     vm.add_next_block(&block)?;
 
@@ -380,15 +380,15 @@ constructor:
     let nonexistent_tx = Transaction::from_deployment(owner, nonexistent_deployment, fee)?;
 
     let block = sample_next_block(&vm, &caller_private_key, &[nonexistent_tx], rng)?;
-    assert_eq!(block.transactions().num_accepted(), 0, "V4 for non-existent program should be rejected");
+    assert_eq!(block.transactions().num_accepted(), 0, "V3 for non-existent program should be rejected");
     assert_eq!(block.aborted_transaction_ids().len(), 1);
     vm.add_next_block(&block)?;
 
     // Test 3: Valid amendment should succeed (adds translation VKs).
-    let v4_transaction = create_v4_deployment_transaction(&vm, &caller_private_key, &deployed_program, 0, rng)?;
+    let v3_transaction = create_v3_deployment_transaction(&vm, &caller_private_key, &deployed_program, 0, rng)?;
 
-    let block = sample_next_block(&vm, &caller_private_key, &[v4_transaction], rng)?;
-    assert_eq!(block.transactions().num_accepted(), 1, "Valid V4 should be accepted");
+    let block = sample_next_block(&vm, &caller_private_key, &[v3_transaction], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 1, "Valid V3 should be accepted");
     assert_eq!(block.aborted_transaction_ids().len(), 0);
     vm.add_next_block(&block)?;
 
@@ -473,11 +473,11 @@ constructor:
 
     // Submit an amendment as the OTHER user (not the original owner).
     // This will add translation VKs since the original deployment didn't have them.
-    let v4_transaction = create_v4_deployment_transaction(&vm, &other_user, &deployed_program, 0, rng)?;
+    let v3_transaction = create_v3_deployment_transaction(&vm, &other_user, &deployed_program, 0, rng)?;
 
     // The amendment should be accepted even though submitted by a different user.
-    let block = sample_next_block(&vm, &original_owner, &[v4_transaction], rng)?;
-    assert_eq!(block.transactions().num_accepted(), 1, "V4 from different user should be accepted");
+    let block = sample_next_block(&vm, &original_owner, &[v3_transaction], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 1, "V3 from different user should be accepted");
     vm.add_next_block(&block)?;
 
     // Verify the program owner hasn't changed.
@@ -492,7 +492,7 @@ constructor:
 }
 
 // This test verifies that:
-// - credits.aleo cannot be amended with V4.
+// - credits.aleo cannot be amended with V3.
 // Note: credits.aleo is protected at multiple levels:
 //   1. Process::deploy blocks re-initialization of credits.aleo
 //   2. The verification logic also checks for credits.aleo amendments
@@ -508,7 +508,7 @@ fn test_credits_cannot_be_amended() -> Result<()> {
     // Get the credits program.
     let credits_program = Program::credits()?;
 
-    // Attempt to create a V4 deployment for credits.aleo - this should fail.
+    // Attempt to create a V3 deployment for credits.aleo - this should fail.
     let result = vm.process().read().deploy::<CurrentAleo, _>(&credits_program, rng);
 
     // Verify that creating a deployment for credits.aleo fails.
@@ -583,9 +583,9 @@ constructor:
     }
 
     // First amendment: Adds translation VKs - should succeed.
-    let v4_transaction = create_v4_deployment_transaction(&vm, &caller_private_key, &deployed_program, 0, rng)?;
+    let v3_transaction = create_v3_deployment_transaction(&vm, &caller_private_key, &deployed_program, 0, rng)?;
 
-    let block = sample_next_block(&vm, &caller_private_key, &[v4_transaction], rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, &[v3_transaction], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1, "First amendment should be accepted (adds translation VKs)");
     vm.add_next_block(&block)?;
 
@@ -600,9 +600,9 @@ constructor:
     assert_eq!(*stack.program_edition(), 0, "Edition should remain 0 after amendment");
 
     // Second amendment: No VK changes (deterministic circuits) - should fail.
-    let v4_transaction_2 = create_v4_deployment_transaction(&vm, &caller_private_key, &deployed_program, 0, rng)?;
+    let v3_transaction_2 = create_v3_deployment_transaction(&vm, &caller_private_key, &deployed_program, 0, rng)?;
 
-    let block = sample_next_block(&vm, &caller_private_key, &[v4_transaction_2], rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, &[v3_transaction_2], rng)?;
     assert_eq!(block.transactions().num_accepted(), 0, "Second amendment should be rejected (no VK changes)");
     assert_eq!(block.aborted_transaction_ids().len(), 1);
     vm.add_next_block(&block)?;

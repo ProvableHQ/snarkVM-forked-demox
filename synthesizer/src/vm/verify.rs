@@ -201,18 +201,22 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     self.process.read().mapping_types_exist(deployment.program())?;
                 }
 
-                // Enforce translation verifying key requirements based on consensus version.
-                // Before V14: translation verifying keys are not allowed (V2 format).
-                // At/after V14: translation verifying keys are required (V3 format).
+                // Enforce record verifying key requirements based on consensus version.
+                // Before V14: record verifying keys are not allowed.
+                // At/after V14: record verifying keys are required.
                 if consensus_version < ConsensusVersion::V14 {
+                    let num_functions = deployment.num_functions();
                     ensure!(
-                        deployment.translation_verifying_keys().is_none(),
-                        "Invalid deployment transaction '{id}' - translation verifying keys are not allowed before `ConsensusVersion::V14`"
+                        deployment.verifying_keys().len() == num_functions,
+                        "Invalid deployment transaction '{id}' - expected {num_functions} function verifying keys before `ConsensusVersion::V14`"
                     );
                 } else {
+                    let num_functions = deployment.num_functions();
+                    let num_records = deployment.program().records().len();
+                    let expected = num_functions + num_records;
                     ensure!(
-                        deployment.translation_verifying_keys().is_some(),
-                        "Invalid deployment transaction '{id}' - missing translation verifying keys after `ConsensusVersion::V14`"
+                        deployment.verifying_keys().len() == expected,
+                        "Invalid deployment transaction '{id}' - expected {num_functions} function and {num_records} record verifying keys after `ConsensusVersion::V14`"
                     );
                 }
 
@@ -233,7 +237,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
                 // Perform additional checks based on the deployment version.
                 match version {
-                    DeploymentVersion::V1 | DeploymentVersion::V2 | DeploymentVersion::V3 => {
+                    DeploymentVersion::V1 | DeploymentVersion::V2 => {
                         // For `V1` and `V2` deployments,
                         // If the edition is zero, then check that:
                         //  - The program does not exist in the store or process.
@@ -352,8 +356,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         // Note: This is safe to check for programs deployed before `ConsensusVersion::V8` because `credits.aleo/upgrade` was not yet introduced.
                         deployment.program().check_external_calls_to_credits_upgrade()?;
                     }
-                    DeploymentVersion::V4 => {
-                        // For `V4` (amendment) deployments, check that:
+                    DeploymentVersion::V3 => {
+                        // For `V3` (amendment) deployments, check that:
                         // - The program is not `credits.aleo`.
                         // - The program already exists in the store and process.
                         // - The existing program, checksum, and edition matches the one in the deployment.
@@ -381,7 +385,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             "Invalid deployment transaction '{id}' - new program does not match the existing program"
                         );
                         // Ensure the existing program checksum matches the deployment checksum.
-                        // Note that this unwrap is safe since `V4` deployments always have a program checksum.
+                        // Note that this unwrap is safe since `V3` deployments always have a program checksum.
                         ensure!(
                             existing_program.to_checksum() == deployment.program_checksum().unwrap(),
                             "Invalid deployment transaction '{id}' - program checksum does not match the existing program checksum"
@@ -414,8 +418,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         }
 
                         // Check if any translation verifying key changed or was added.
-                        // This handles the case where a V2 deployment (no translation VKs) is amended
-                        // with a V4 deployment that adds translation VKs for programs with records.
+                        // This handles the case where a V2 deployment (no record VKs) is amended
+                        // with a V3 deployment that includes record VKs.
                         if !has_vk_change {
                             if let Some(translation_vks) = deployment.translation_verifying_keys() {
                                 for (record_name, (new_vk, _)) in translation_vks {
@@ -791,14 +795,14 @@ fn validate_deployment_for_consensus_version<N: Network>(
     }
     if consensus_version >= ConsensusVersion::V9 {
         ensure!(
-            matches!(version, DeploymentVersion::V2 | DeploymentVersion::V3 | DeploymentVersion::V4),
-            "Invalid deployment transaction '{id}' - the deployment version should be `V2`, `V3`, or `V4` at `ConsensusVersion::V9` and beyond"
+            matches!(version, DeploymentVersion::V2 | DeploymentVersion::V3),
+            "Invalid deployment transaction '{id}' - the deployment version should be `V2` or `V3` at `ConsensusVersion::V9` and beyond"
         );
     }
     if consensus_version < ConsensusVersion::V14 {
         ensure!(
-            !matches!(version, DeploymentVersion::V3 | DeploymentVersion::V4),
-            "Invalid deployment transaction '{id}' - the deployment version cannot be `V3` or `V4` before `ConsensusVersion::V14`"
+            !matches!(version, DeploymentVersion::V3),
+            "Invalid deployment transaction '{id}' - the deployment version cannot be `V3` before `ConsensusVersion::V14`"
         );
     }
 

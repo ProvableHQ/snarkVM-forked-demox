@@ -203,12 +203,11 @@ function compute:
         deployment.verifying_keys().clone(),
         None,
         None,
-        None,
     )
     .unwrap()
 }
 
-pub fn sample_deployment_v2(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
+pub fn sample_deployment_v2_without_translation_keys(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
     static INSTANCE: OnceLock<Deployment<CurrentNetwork>> = OnceLock::new();
     let deployment = INSTANCE
         .get_or_init(|| {
@@ -244,12 +243,11 @@ function compute:
         deployment.verifying_keys().clone(),
         deployment.program_checksum(),
         Some(Address::rand(rng)),
-        None,
     )
     .unwrap()
 }
 
-pub fn sample_deployment_v3(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
+pub fn sample_deployment_v2_with_translation_keys(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
     static INSTANCE: OnceLock<Deployment<CurrentNetwork>> = OnceLock::new();
     let deployment = INSTANCE
         .get_or_init(|| {
@@ -290,15 +288,14 @@ function compute:
         deployment.verifying_keys().clone(),
         deployment.program_checksum(),
         Some(Address::rand(rng)),
-        deployment.translation_verifying_keys().clone(),
     )
     .unwrap()
 }
 
-/// Samples a V4 deployment (amendment) for the same program as V2.
+/// Samples a V3 deployment (amendment) for the same program as V2.
 /// The edition must match an existing deployment's edition.
-/// Note: This program has no records, so translation VKs is an empty vec.
-pub fn sample_deployment_v4(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
+/// V3 = checksum + no owner.
+pub fn sample_deployment_v3(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
     static INSTANCE: OnceLock<Deployment<CurrentNetwork>> = OnceLock::new();
     let deployment = INSTANCE
         .get_or_init(|| {
@@ -321,27 +318,20 @@ function compute:
             // Construct the process.
             let process = Process::load().unwrap();
             // Compute the deployment (regenerates VKs).
-            let mut deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
-            // Set the program checksum.
-            deployment.set_program_checksum_raw(Some(deployment.program().to_checksum()));
-            // V4 deployments (amendments) have no program owner.
-            deployment.set_program_owner_raw(None);
-            // V4 deployments have translation VKs (empty vec for programs without records).
-            deployment.set_translation_verifying_keys_raw(Some(vec![]));
+            let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
             // Return the deployment.
             // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
             Deployment::from_str(&deployment.to_string()).unwrap()
         })
         .clone();
     // Create a new deployment with the desired edition.
-    // V4 deployments have translation VKs (empty vec for programs without records).
+    // V3 deployments have a checksum but no owner.
     Deployment::<CurrentNetwork>::new(
         edition,
         deployment.program().clone(),
         deployment.verifying_keys().clone(),
-        deployment.program_checksum(),
-        None,         // V4 (amendments) have no program owner.
-        Some(vec![]), // V4 has translation VKs (empty for programs without records).
+        Some(deployment.program().to_checksum()),
+        None, // No owner for V3 (amendments).
     )
     .unwrap()
 }
@@ -350,14 +340,16 @@ function compute:
 pub fn sample_rejected_deployment(
     version: u8,
     edition: u16,
+    has_translation_keys: bool,
     is_fee_private: bool,
     rng: &mut TestRng,
 ) -> Rejected<CurrentNetwork> {
     // Sample a deploy transaction.
-    let deployment = match crate::sample_deployment_transaction(version, edition, is_fee_private, rng) {
-        Transaction::Deploy(_, _, _, deployment, _) => (*deployment).clone(),
-        _ => unreachable!(),
-    };
+    let deployment =
+        match crate::sample_deployment_transaction(version, edition, has_translation_keys, is_fee_private, rng) {
+            Transaction::Deploy(_, _, _, deployment, _) => (*deployment).clone(),
+            _ => unreachable!(),
+        };
 
     // Sample a new program owner.
     let private_key = PrivateKey::new(rng).unwrap();
@@ -447,7 +439,7 @@ pub fn sample_fee_private(deployment_or_execution_id: Field<CurrentNetwork>, rng
     block_store.insert(&FromStr::from_str(&block.to_string()).unwrap()).unwrap();
 
     // Prepare the assignments.
-    trace.prepare(&process, &Query::from(block_store)).unwrap();
+    trace.prepare(&Query::from(block_store)).unwrap();
     // Compute the proof and construct the fee.
     let fee = trace.prove_fee::<CurrentAleo, _>(VarunaVersion::V1, rng).unwrap();
 
@@ -500,7 +492,7 @@ pub fn sample_fee_public(deployment_or_execution_id: Field<CurrentNetwork>, rng:
     block_store.insert(&FromStr::from_str(&block.to_string()).unwrap()).unwrap();
 
     // Prepare the assignments.
-    trace.prepare(&process, &Query::from(block_store)).unwrap();
+    trace.prepare(&Query::from(block_store)).unwrap();
     // Compute the proof and construct the fee.
     let fee = trace.prove_fee::<CurrentAleo, _>(VarunaVersion::V1, rng).unwrap();
 
@@ -549,39 +541,32 @@ function large_transaction:
 pub fn sample_deployment_transaction(
     version: u8,
     edition: u16,
+    has_translation_keys: bool,
     is_fee_private: bool,
     rng: &mut TestRng,
 ) -> Transaction<CurrentNetwork> {
     // Sample a private key.
     let private_key = PrivateKey::new(rng).unwrap();
     // Sample a deployment.
-    let deployment = match version {
-        1 => sample_deployment_v1(edition, rng),
-        2 => {
-            let mut deployment = sample_deployment_v2(edition, rng);
+    let deployment = match (version, has_translation_keys) {
+        (1, false) => sample_deployment_v1(edition, rng),
+        (2, false) => {
+            let mut deployment = sample_deployment_v2_without_translation_keys(edition, rng);
             // Set the program owner to the address of the private key.
             deployment.set_program_owner_raw(Some(Address::try_from(&private_key).unwrap()));
-            // Return the deployment.
             deployment
         }
-        3 => {
-            let mut deployment = sample_deployment_v3(edition, rng);
+        (2, true) => {
+            let mut deployment = sample_deployment_v2_with_translation_keys(edition, rng);
             // Set the program owner to the address of the private key.
             deployment.set_program_owner_raw(Some(Address::try_from(&private_key).unwrap()));
-            // Return the deployment.
             deployment
         }
-        4 => {
-            // V4 is an amendment - uses the same program as V2 but with new VKs and no program_owner.
-            let mut deployment = sample_deployment_v4(edition, rng);
-            // Ensure the checksum is set.
-            deployment.set_program_checksum_raw(Some(deployment.program().to_checksum()));
-            // V4 deployments (amendments) have no program owner.
-            deployment.set_program_owner_raw(None);
-            // Return the deployment.
-            deployment
+        (3, _) => {
+            // V3 is an amendment - uses the same program as V2 but with new VKs and no program_owner.
+            sample_deployment_v3(edition, rng)
         }
-        _ => panic!("Invalid deployment version: {version}"),
+        _ => panic!("Invalid deployment version ({version}) or translation keys combination."),
     };
 
     // Compute the deployment ID.
@@ -658,7 +643,7 @@ pub fn sample_large_execution_transaction(rng: &mut TestRng) -> Transaction<Curr
             .unwrap();
 
             // Prepare the assignments.
-            trace.prepare(&process, &snarkvm_ledger_query::Query::from(block_store)).unwrap();
+            trace.prepare(&snarkvm_ledger_query::Query::from(block_store)).unwrap();
             // Compute the proof and construct the execution.
             let execution = trace.prove_execution::<CurrentAleo, _>("testing.aleo", VarunaVersion::V1, rng).unwrap();
             // Reconstruct the execution from bytes.
@@ -768,7 +753,7 @@ pub fn sample_genesis_block_and_components_uncached(
             let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
 
             // Prepare the assignments.
-            trace.prepare(&process, &Query::from(block_store)).unwrap();
+            trace.prepare(&Query::from(block_store)).unwrap();
             // Compute the proof and construct the execution.
             let execution = trace.prove_execution::<CurrentAleo, _>(locator.0, VarunaVersion::V1, rng).unwrap();
             // Convert the execution.

@@ -24,7 +24,7 @@ const VISIBILITY_PRIVATE: [bool; 2] = [true, false];
 
 impl<A: Aleo> Entry<A, Plaintext<A>> {
     /// Returns this entry as a list of **little-endian** bits, with the specified mode.
-    pub(super) fn write_bits_le_with_mode(&self, vec: &mut Vec<Boolean<A>>, mode: Mode) {
+    pub(super) fn write_bits_le_with_visibility_as_mode(&self, vec: &mut Vec<Boolean<A>>, mode: Mode) {
         // A helper function to construct a `Boolean` with the specified mode.
         // This is needed to avoid introducing new variables for constant booleans.
         let boolean_new = |mode: Mode, value: bool| match mode {
@@ -53,7 +53,7 @@ impl<A: Aleo> ToBits for Entry<A, Plaintext<A>> {
 
     /// Returns this entry as a list of **little-endian** bits.
     fn write_bits_le(&self, vec: &mut Vec<Boolean<A>>) {
-        self.write_bits_le_with_mode(vec, Mode::Constant);
+        self.write_bits_le_with_visibility_as_mode(vec, Mode::Constant);
     }
 
     /// Returns this entry as a list of **big-endian** bits.

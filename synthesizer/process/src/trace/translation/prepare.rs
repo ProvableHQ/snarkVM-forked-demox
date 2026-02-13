@@ -19,17 +19,22 @@ use super::*;
 
 impl<N: Network> Translation<N> {
     /// Returns the translation assignments for the given transitions grouped by
-    /// program ID and record name.
+    /// program ID and record name, each paired with its proving key.
+    /// Each assignment is accompanied by its translation index (a sequential counter
+    /// used as a public input for proof verification).
     pub fn prepare(
         &self,
         transitions: &[Transition<N>],
         call_graph: &HashMap<N::TransitionID, Vec<N::TransitionID>>,
-    ) -> Result<Vec<((ProgramID<N>, Identifier<N>), Vec<TranslationAssignment<N>>)>> {
-        // Initialize a vector for the batched assignments.
-        let mut batched_assignments: HashMap<(ProgramID<N>, Identifier<N>), Vec<TranslationAssignment<N>>> =
-            HashMap::new();
+    ) -> Result<Vec<(ProvingKey<N>, Vec<(TranslationAssignment<N>, u16)>)>> {
+        // Initialize a map for the batched assignments, keyed by (program_id, record_name).
+        // Each entry stores the proving key (taken from the first item in the group) and the assignments.
+        let mut batched_assignments: HashMap<
+            (ProgramID<N>, Identifier<N>),
+            (ProvingKey<N>, Vec<(TranslationAssignment<N>, u16)>),
+        > = HashMap::new();
 
-        let mut translation_index = 0;
+        let mut translation_index: u16 = 0;
 
         // Traversal order affects the translation count as well as the internal order of each batch input to proving/verification.
         // Order is irrelevant as long as it is consistent between the prover and verifier. (cf. Translation::prepare_verifier_inputs).
@@ -64,7 +69,7 @@ impl<N: Network> Translation<N> {
             // This unwrap is safe as caller_id_to_next_task is constructed using the keys of self.translation_tasks.
             let next_task = caller_id_to_next_task.get_mut(&caller_id).unwrap();
 
-            let translation_task = translation_tasks.get(*next_task).ok_or_else(
+            let (assignment, proving_key) = translation_tasks.get(*next_task).ok_or_else(
                 || anyhow!(
                     "Translation task not found for (caller) transition ID {}: queried task with index {} but only {} are available",
                     caller_id,
@@ -76,41 +81,14 @@ impl<N: Network> Translation<N> {
             // Update the pointer to read the next translation task next time.
             *next_task += 1;
 
-            let RecordTranslationData {
-                record_dynamic,
-                record_static,
-                program_id,
-                function_id,
-                record_name,
-                is_to_static,
-                is_external_record,
-                tvk,
-                record_view_key,
-                gamma,
-                id_static,
-                id_dynamic,
-                input_output_index,
-            } = translation_task;
+            // Insert the assignment into the batch for this (program_id, record_name) group.
+            // The proving key is the same `Arc` for all entries in a given group, so we take it from the first item.
+            let (_, assignments) = batched_assignments
+                .entry((assignment.program_id, assignment.record_name))
+                // Note: `ProvingKey` is `Arc`-wrapped, so cloning is cheap (reference count bump).
+                .or_insert_with(|| (proving_key.clone(), Vec::new()));
 
-            // Checks associated to input-record translation
-            let batch = &mut batched_assignments.entry((*program_id, *record_name)).or_default();
-
-            batch.push(TranslationAssignment::new(
-                record_static.clone(),
-                record_dynamic.clone(),
-                *program_id,
-                *function_id,
-                *record_name,
-                *is_to_static,
-                *is_external_record,
-                translation_index,
-                *tvk,
-                *input_output_index,
-                *id_dynamic,
-                *id_static,
-                *record_view_key,
-                *gamma,
-            ));
+            assignments.push((assignment.clone(), translation_index));
 
             translation_index += 1;
 
@@ -146,7 +124,7 @@ impl<N: Network> Translation<N> {
             }
         }
 
-        // Ensure all translation tasks have been consumed
+        // Ensure all translation tasks have been consumed.
         for (transition_id, next_task) in caller_id_to_next_task.iter() {
             ensure!(
                 // The unwrap is safe as caller_id_to_next_task is constructed using the keys of self.translation_tasks.
@@ -158,17 +136,18 @@ impl<N: Network> Translation<N> {
             );
         }
 
-        Ok(batched_assignments.into_iter().collect())
+        // Collect the batched assignments, discarding the (program_id, record_name) key.
+        Ok(batched_assignments.into_values().collect())
     }
 
     /// Returns the inclusion assignments for the given transitions.
-    // Note that the `Translation::prepare` is already async-compatibile because it does not do any blocking operations.
+    // Note that the `Translation::prepare` is already async-compatible because it does not do any blocking operations.
     #[cfg(feature = "async")]
     pub async fn prepare_async(
         &self,
         transitions: &[Transition<N>],
         call_graph: &HashMap<N::TransitionID, Vec<N::TransitionID>>,
-    ) -> Result<Vec<((ProgramID<N>, Identifier<N>), Vec<TranslationAssignment<N>>)>> {
+    ) -> Result<Vec<(ProvingKey<N>, Vec<(TranslationAssignment<N>, u16)>)>> {
         self.prepare(transitions, call_graph)
     }
 }

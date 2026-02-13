@@ -49,9 +49,9 @@ impl<N: Network> Process<N> {
                 // and is `None` for all programs deployed before the `V9` migration.
                 stack.set_program_owner(deployment.program_owner());
 
-                // Insert the verifying keys.
-                for (function_name, (verifying_key, _)) in deployment.verifying_keys() {
-                    stack.insert_verifying_key(function_name, verifying_key.clone())?;
+                // Insert all verifying keys (unified: functions + records).
+                for (name, (verifying_key, _)) in deployment.verifying_keys() {
+                    stack.insert_verifying_key(name, verifying_key.clone())?;
                 }
                 lap!(timer, "Insert the verifying keys");
 
@@ -113,91 +113,10 @@ impl<N: Network> Process<N> {
                 })
             }
             DeploymentVersion::V3 => {
-                // Compute the program stack.
-                let mut stack = Stack::new(self, deployment.program())?;
-                lap!(timer, "Compute the stack");
-
-                // Set the program owner.
-                // Note: The program owner is only enforced to be `Some` after `ConsensusVersion::V9`
-                // and is `None` for all programs deployed before the `V9` migration.
-                stack.set_program_owner(deployment.program_owner());
-
-                // Insert the verifying keys.
-                for (function_name, (verifying_key, _)) in deployment.verifying_keys() {
-                    stack.insert_verifying_key(function_name, verifying_key.clone())?;
-                }
-                lap!(timer, "Insert the verifying keys");
-
-                // Insert the translation verifying keys.
-                if let Some(translation_verifying_keys) = deployment.translation_verifying_keys() {
-                    for (record_name, (verifying_key, _)) in translation_verifying_keys {
-                        stack.insert_verifying_key(record_name, verifying_key.clone())?;
-                    }
-                }
-                lap!(timer, "Insert the translation verifying keys");
-
-                // Determine which mappings must be initialized.
-                let mappings = match deployment.edition().is_zero() {
-                    true => deployment.program().mappings().values().collect::<Vec<_>>(),
-                    false => {
-                        // Get the existing stack.
-                        let existing_stack = self.get_stack(deployment.program_id())?;
-                        // Get the existing mappings.
-                        let existing_mappings = existing_stack.program().mappings();
-                        // Determine and return the new mappings
-                        let mut new_mappings = Vec::new();
-                        for mapping in deployment.program().mappings().values() {
-                            if !existing_mappings.contains_key(mapping.name()) {
-                                new_mappings.push(mapping);
-                            }
-                        }
-                        new_mappings
-                    }
-                };
-                lap!(timer, "Retrieve the mappings to initialize");
-
-                // Initialize the mappings, and store their finalize operations.
-                atomic_batch_scope!(store, {
-                    // Initialize a list for the finalize operations.
-                    let mut finalize_operations = Vec::with_capacity(deployment.program().mappings().len());
-
-                    /* Finalize the fee. */
-
-                    // Retrieve the fee stack.
-                    let fee_stack = self.get_stack(fee.program_id())?;
-                    // Finalize the fee transition.
-                    finalize_operations.extend(finalize_fee_transition(state, store, &fee_stack, fee)?);
-                    lap!(timer, "Finalize transition for '{}/{}'", fee.program_id(), fee.function_name());
-
-                    /* Finalize the deployment. */
-
-                    // Retrieve the program ID.
-                    let program_id = deployment.program_id();
-                    // Iterate over the mappings that must be initialized.
-                    for mapping in mappings {
-                        // Initialize the mapping.
-                        finalize_operations.push(store.initialize_mapping(*program_id, *mapping.name())?);
-                    }
-                    lap!(timer, "Initialize the program mappings");
-
-                    // If the program has a constructor, execute it and extend the finalize operations.
-                    // This must happen after the mappings are initialized as the constructor may depend on them.
-                    if deployment.program().contains_constructor() {
-                        let operations = finalize_constructor(state, store, &stack, N::TransitionID::default())?;
-                        finalize_operations.extend(operations);
-                        lap!(timer, "Execute the constructor");
-                    }
-
-                    finish!(timer, "Finished finalizing the deployment");
-                    // Return the stack and finalize operations.
-                    Ok((stack, finalize_operations))
-                })
-            }
-            DeploymentVersion::V4 => {
                 // Ensure that the program is not `credits.aleo`.
                 ensure!(
                     deployment.program().id() != &ProgramID::credits(),
-                    "The 'credits.aleo' program cannot be deployed with DeploymentVersion::V4"
+                    "The 'credits.aleo' program cannot be deployed with DeploymentVersion::V3"
                 );
 
                 // Get the existing stack.
@@ -211,21 +130,11 @@ impl<N: Network> Process<N> {
                 // Set the program owner to the existing owner.
                 stack.set_program_owner(*existing_stack.program_owner());
 
-                // Insert the verifying keys.
-                for (function_name, (verifying_key, _)) in deployment.verifying_keys() {
-                    stack.insert_verifying_key(function_name, verifying_key.clone())?;
+                // Insert all verifying keys (unified: functions + records).
+                for (name, (verifying_key, _)) in deployment.verifying_keys() {
+                    stack.insert_verifying_key(name, verifying_key.clone())?;
                 }
                 lap!(timer, "Insert the verifying keys");
-
-                // Insert the translation verifying keys if present.
-                // Amendments may add translation VKs to programs that were deployed before V14
-                // (when translation VKs were introduced for programs with records).
-                if let Some(translation_verifying_keys) = deployment.translation_verifying_keys() {
-                    for (record_name, (verifying_key, _)) in translation_verifying_keys {
-                        stack.insert_verifying_key(record_name, verifying_key.clone())?;
-                    }
-                }
-                lap!(timer, "Insert the translation verifying keys");
 
                 // Finalize the fee (amendments don't initialize mappings or run constructors).
                 atomic_batch_scope!(store, {
@@ -237,7 +146,7 @@ impl<N: Network> Process<N> {
                     finalize_operations.extend(finalize_fee_transition(state, store, &fee_stack, fee)?);
                     lap!(timer, "Finalize transition for '{}/{}'", fee.program_id(), fee.function_name());
 
-                    finish!(timer, "Finished finalizing the V4 deployment");
+                    finish!(timer, "Finished finalizing the V3 deployment");
                     Ok((stack, finalize_operations))
                 })
             }
@@ -265,29 +174,29 @@ impl<N: Network> Process<N> {
         let transition = execution.peek()?;
         // Retrieve the stack.
         let stack = self.get_stack(transition.program_id())?;
+        // Calculate the minimum number of calls for the root transition.
+        let minimum_number_of_calls = stack.get_minimum_number_of_calls(transition.function_name())?;
         // If the root transition contains a dynamic call,
         // - ensure that the number of calls is less than or equal to the number of transitions.
         // - otherwise, ensure that the number of calls matches the number of transitions.
         if stack.contains_dynamic_call(transition.function_name())? {
             ensure!(
-                stack.get_minimum_number_of_calls(transition.function_name())? <= execution.len(),
-                "The number of transitions in the execution is incorrect. Expected at least {}, but found {}",
-                stack.get_minimum_number_of_calls(transition.function_name())?,
+                minimum_number_of_calls <= execution.len(),
+                "The number of transitions in the execution is incorrect. Expected at least {minimum_number_of_calls}, but found {}",
                 execution.len()
             );
         } else {
             ensure!(
-                stack.get_minimum_number_of_calls(transition.function_name())? == execution.len(),
-                "The number of transitions in the execution is incorrect. Expected {}, but found {}",
-                stack.get_minimum_number_of_calls(transition.function_name())?,
+                minimum_number_of_calls == execution.len(),
+                "The number of transitions in the execution is incorrect. Expected {minimum_number_of_calls}, but found {}",
                 execution.len()
             );
         }
         lap!(timer, "Verify the number of transitions");
 
         // Collect all of the futures in the execution's transitions and compute their corresponding dynamic future keys.
-        // The key is (program_name, program_network, function_name, root) to uniquely identify each future,
-        // since different futures may have the same root if their arguments happen to be identical.
+        // The key is (program_name, program_network, function_name, checksum) to uniquely identify each future,
+        // since different futures may have the same checksum if their arguments happen to be identical.
         let dynamic_future_to_future: HashMap<(Field<N>, Field<N>, Field<N>, Field<N>), &Future<N>> = execution
             .transitions()
             .filter_map(|transition| {
@@ -297,7 +206,7 @@ impl<N: Network> Process<N> {
                         *dynamic_future.program_name(),
                         *dynamic_future.program_network(),
                         *dynamic_future.function_name(),
-                        *dynamic_future.root(),
+                        *dynamic_future.checksum(),
                     );
                     Some((key, future))
                 })
@@ -735,7 +644,7 @@ fn setup_await<N: Network>(
                 *dynamic_future.program_name(),
                 *dynamic_future.program_network(),
                 *dynamic_future.function_name(),
-                *dynamic_future.root(),
+                *dynamic_future.checksum(),
             );
             // Look up the corresponding future from the dynamic future key.
             match dynamic_future_to_future.get(&key) {

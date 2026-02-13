@@ -30,7 +30,7 @@ impl<N: Network> Process<N> {
         let program_id = deployment.program().id();
         // Check if this deployment is an amendment.
         let version = deployment.version()?;
-        let is_amendment = matches!(version, DeploymentVersion::V4);
+        let is_amendment = matches!(version, DeploymentVersion::V3);
         // If the deployment is an amendment, verify that the program exists.
         // If the edition is zero (and not an amendment), verify that the program does not exist.
         // Otherwise, verify that the program exists.
