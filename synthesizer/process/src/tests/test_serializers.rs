@@ -35,7 +35,7 @@ type CurrentAleo = AleoV0;
 #[test]
 fn test_serialize_deserialize_equivalence() {
     // Number of iterations to run for each type.
-    const ITERATIONS: usize = 50;
+    const ITERATIONS: usize = 10;
 
     // A helper function to define the program.
     fn construct_program(

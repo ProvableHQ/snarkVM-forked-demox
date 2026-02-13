@@ -592,6 +592,21 @@ impl<N: Network> RegisterTypes<N> {
                 bail!("Forbidden operation: Instruction '{instruction}' cannot invoke command '{opcode}'.");
             }
             Opcode::Commit(opcode) => Self::check_commit_opcode(opcode, instruction)?,
+            Opcode::Deserialize(opcode) => Self::check_deserialize_opcode(opcode, instruction)?,
+            Opcode::ECDSA(opcode) => {
+                bail!("Forbidden operation: Instruction '{instruction}' cannot invoke command '{opcode}'.")
+            }
+            Opcode::GetRecordDynamic(_) => {
+                ensure!(instruction.operands().len() == 1, "Expected 1 operand.");
+                ensure!(
+                    instruction.destinations().len() == 1,
+                    "Instruction '{instruction}' has multiple destinations."
+                );
+                ensure!(
+                    matches!(instruction, Instruction::GetRecordDynamic(..)),
+                    "Instruction '{instruction}' is not a get.record.dynamic operation."
+                );
+            }
             Opcode::Hash(opcode) => Self::check_hash_opcode(opcode, instruction)?,
             Opcode::Is(opcode) => match opcode {
                 "is.eq" => ensure!(
@@ -604,6 +619,7 @@ impl<N: Network> RegisterTypes<N> {
                 ),
                 _ => bail!("Instruction '{instruction}' is not for opcode '{opcode}'."),
             },
+            Opcode::Serialize(opcode) => Self::check_serialize_opcode(opcode, instruction)?,
             Opcode::Sign(_) => {
                 // Ensure the instruction has one destination register.
                 ensure!(
@@ -611,21 +627,8 @@ impl<N: Network> RegisterTypes<N> {
                     "Instruction '{instruction}' has multiple destinations."
                 );
             }
-            Opcode::ECDSA(opcode) => {
+            Opcode::Snark(opcode) => {
                 bail!("Forbidden operation: Instruction '{instruction}' cannot invoke command '{opcode}'.")
-            }
-            Opcode::Serialize(opcode) => Self::check_serialize_opcode(opcode, instruction)?,
-            Opcode::Deserialize(opcode) => Self::check_deserialize_opcode(opcode, instruction)?,
-            Opcode::GetRecordDynamic(_) => {
-                ensure!(instruction.operands().len() == 1, "Expected 1 operand.");
-                ensure!(
-                    instruction.destinations().len() == 1,
-                    "Instruction '{instruction}' has multiple destinations."
-                );
-                ensure!(
-                    matches!(instruction, Instruction::GetRecordDynamic(..)),
-                    "Instruction '{instruction}' is not a get.record.dynamic operation."
-                );
             }
         }
         Ok(())

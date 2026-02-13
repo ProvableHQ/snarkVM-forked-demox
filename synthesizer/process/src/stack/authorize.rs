@@ -14,7 +14,7 @@
 // limitations under the License.
 
 use super::*;
-use crate::error::*;
+use snarkvm_synthesizer_error::*;
 
 impl<N: Network> Stack<N> {
     /// Authorizes a call to the program function for the given inputs.

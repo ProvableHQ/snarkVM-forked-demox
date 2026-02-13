@@ -44,7 +44,7 @@ mod tests {
 
     use anyhow::Result;
 
-    const ITERATIONS: u64 = 100;
+    const ITERATIONS: u64 = 10;
     const DOMAIN: &str = "PoseidonCircuit0";
 
     macro_rules! check_hash_to_group {

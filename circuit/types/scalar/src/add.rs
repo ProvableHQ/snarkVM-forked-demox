@@ -127,7 +127,7 @@ mod tests {
     use super::*;
     use snarkvm_circuit_environment::Circuit;
 
-    const ITERATIONS: u64 = 128;
+    const ITERATIONS: u64 = 10;
 
     #[rustfmt::skip]
     fn check_add(

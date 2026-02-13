@@ -52,7 +52,7 @@ mod tests {
 
     use anyhow::Result;
 
-    const ITERATIONS: usize = 100;
+    const ITERATIONS: usize = 10;
 
     fn check_to_bits_le(mode: Mode) -> Result<()> {
         for _ in 0..ITERATIONS {

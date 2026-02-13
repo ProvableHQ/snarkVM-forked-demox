@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use snarkvm_synthesizer_process::{ProcessAuthError, ProcessDeployError, ProcessExecError};
+use crate::{ProcessAuthError, ProcessDeployError, ProcessExecError};
 use thiserror::Error;
 
 // NOTE: Many errors in this module temporarily contain `Anyhow` variants.

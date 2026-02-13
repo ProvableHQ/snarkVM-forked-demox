@@ -32,6 +32,8 @@ pub enum Opcode {
     Commit(&'static str),
     /// The opcdode is a for a deserialize operation (i.e. `deserialize.bytes.raw`).
     Deserialize(&'static str),
+    /// The opcode is for ECDSA signature verification (i.e. `ecdsa.verify.keccak`).
+    ECDSA(&'static str),
     /// The opcode is for a get.record.dynamic operation (i.e. `get.record.dynamic`).
     GetRecordDynamic(&'static str),
     /// The opcode is for a hash operation (i.e. `hash.psd4`).
@@ -44,8 +46,8 @@ pub enum Opcode {
     Serialize(&'static str),
     /// The opcode is for signature verification (i.e. `sign.verify`).
     Sign(&'static str),
-    /// The opcode is for ECDSA signature verification (i.e. `ecdsa.verify.keccak`).
-    ECDSA(&'static str),
+    /// The opcode is for snark verification (i.e. `snark.verify`).
+    Snark(&'static str),
 }
 
 impl Deref for Opcode {
@@ -61,13 +63,14 @@ impl Deref for Opcode {
             Opcode::Command(opcode) => opcode,
             Opcode::Commit(opcode) => opcode,
             Opcode::Deserialize(opcode) => opcode,
+            Opcode::ECDSA(opcode) => opcode,
             Opcode::GetRecordDynamic(opcode) => opcode,
             Opcode::Hash(opcode) => opcode,
             Opcode::Is(opcode) => opcode,
             Opcode::Literal(opcode) => opcode,
             Opcode::Serialize(opcode) => opcode,
             Opcode::Sign(opcode) => opcode,
-            Opcode::ECDSA(opcode) => opcode,
+            Opcode::Snark(opcode) => opcode,
         }
     }
 }
@@ -90,13 +93,14 @@ impl Display for Opcode {
             Self::Command(opcode) => write!(f, "{opcode}"),
             Self::Commit(opcode) => write!(f, "{opcode}"),
             Self::Deserialize(opcode) => write!(f, "{opcode}"),
+            Self::ECDSA(opcode) => write!(f, "{opcode}"),
             Self::GetRecordDynamic(opcode) => write!(f, "{opcode}"),
             Self::Hash(opcode) => write!(f, "{opcode}"),
             Self::Is(opcode) => write!(f, "{opcode}"),
             Self::Literal(opcode) => write!(f, "{opcode}"),
             Self::Serialize(opcode) => write!(f, "{opcode}"),
             Self::Sign(opcode) => write!(f, "{opcode}"),
-            Self::ECDSA(opcode) => write!(f, "{opcode}"),
+            Self::Snark(opcode) => write!(f, "{opcode}"),
         }
     }
 }

@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{CallStack, Registers, Stack, compute_function_id, error::*, stack::Address, trace::TranslationAssignment};
+use crate::{CallStack, Registers, Stack, compute_function_id, stack::Address, trace::TranslationAssignment};
 use aleo_std::prelude::{finish, lap, timer};
 use console::{
     account::Field,
@@ -21,6 +21,7 @@ use console::{
     program::{Identifier, InputID, Literal, OutputID, Plaintext, ProgramID, Register, Request, Value, ValueType},
     types::{Group, U16},
 };
+use snarkvm_synthesizer_error::*;
 use snarkvm_synthesizer_program::{
     Call,
     CallDynamic,

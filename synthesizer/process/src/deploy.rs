@@ -14,7 +14,7 @@
 // limitations under the License.
 
 use super::*;
-use crate::error::ProcessDeployError;
+use snarkvm_synthesizer_error::*;
 
 impl<N: Network> Process<N> {
     /// Deploys the given program ID, if it does not exist.

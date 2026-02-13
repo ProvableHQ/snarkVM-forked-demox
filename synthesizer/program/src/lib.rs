@@ -58,6 +58,7 @@ mod to_checksum;
 use console::{
     network::{
         ConsensusVersion,
+        consensus_config_value,
         prelude::{
             Debug,
             Deserialize,
@@ -102,7 +103,7 @@ use console::{
     program::{Identifier, PlaintextType, ProgramID, RecordType, StructType},
     types::U8,
 };
-use snarkvm_utilities::cfg_iter;
+use snarkvm_utilities::{cfg_find_map, cfg_iter};
 
 use indexmap::{IndexMap, IndexSet};
 use std::collections::BTreeSet;
@@ -989,12 +990,8 @@ impl<N: Network> ProgramCore<N> {
     /// This includes:
     /// 1. `.raw` hash or signature verification variants
     /// 2. `ecdsa.verify.*` opcodes
-    /// 3. arrays that exceed the previous maximum length of 32.
     #[inline]
     pub fn contains_v11_syntax(&self) -> bool {
-        // The previous maximum array size before V11.
-        const V10_MAX_ARRAY_ELEMENTS: u32 = 32;
-
         // Helper to check if any of the opcodes:
         // - start with `ecdsa.verify`, `serialize`, or `deserialize`
         // - end with `.raw` or `.native`
@@ -1023,10 +1020,7 @@ impl<N: Network> ProgramCore<N> {
             .chain(cfg_iter!(self.constructor).flat_map(|constructor| constructor.commands()))
             .any(|command| matches!(command, Command::Instruction(instruction) if has_op(*instruction.opcode())));
 
-        // Determine if any of the array types exceed the previous maximum length of 32.
-        let array_size_exceeds = self.exceeds_max_array_size(V10_MAX_ARRAY_ELEMENTS);
-
-        function_contains || closure_contains || command_contains || array_size_exceeds
+        function_contains || closure_contains || command_contains
     }
 
     /// Returns `true` if a program contains any V12 syntax.
@@ -1043,6 +1037,83 @@ impl<N: Network> ProgramCore<N> {
                 })
             })
         })
+    }
+
+    /// Checks that the program size does not exceed the maximum allowed size for the given block height.
+    pub fn check_program_size(&self, block_height: u32) -> Result<()> {
+        // Calculate the program size.
+        let program_size = self.to_string().len();
+        // Determine the maximum allowed program size for the current consensus version.
+        let maximum_allowed_program_size = consensus_config_value!(N, MAX_PROGRAM_SIZE, block_height)
+            .ok_or(anyhow!("Failed to fetch maximum program size"))?;
+
+        ensure!(
+            program_size <= maximum_allowed_program_size,
+            "Program size of {program_size} bytes exceeds the maximum allowed size of {maximum_allowed_program_size} bytes for the current height {block_height} (consensus version {}).",
+            N::CONSENSUS_VERSION(block_height)?
+        );
+
+        Ok(())
+    }
+
+    /// Checks that the program writes size does not exceed the maximum allowed size for the given block height.
+    pub fn check_program_writes(&self, block_height: u32) -> Result<()> {
+        // Determine the maximum allowed program size for the current consensus version.
+        let max_num_writes = consensus_config_value!(N, MAX_WRITES, block_height)
+            .ok_or(anyhow!("Failed to fetch maximum program size"))?;
+
+        // Check if the constructor exceeds the maximum number of writes.
+        if self.constructor().is_some_and(|constructor| constructor.num_writes() > max_num_writes) {
+            bail!(
+                "Program constructor exceeds the maximum allowed writes ({max_num_writes}) for the current height {block_height} (consensus version {}).",
+                N::CONSENSUS_VERSION(block_height)?
+            );
+        }
+
+        // Find the first function whose finalize logic exceeds the maximum writes.
+        if let Some(name) = cfg_find_map!(self.functions(), |function| {
+            function
+                .finalize_logic()
+                .is_some_and(|finalize| finalize.num_writes() > max_num_writes)
+                .then(|| *function.name())
+        }) {
+            bail!(
+                "Program function '{name}' exceeds the maximum allowed writes ({max_num_writes}) for the current height {block_height} (consensus version {}).",
+                N::CONSENSUS_VERSION(block_height)?
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Returns `true` if a program contains any V14 syntax.
+    /// This includes:
+    /// 1. `snark.verify.*` opcodes
+    /// 2. `Operand::AleoGenerator` or `Operand::AleoGeneratorPowers`.
+    #[inline]
+    pub fn contains_v14_syntax(&self) -> bool {
+        // Helper to check if any of the opcodes start with `snark.verify` or uses AleoGenerator/AleoGeneratorPowers operands
+        let has_op = |instr: &Instruction<N>| {
+            instr.opcode().starts_with("snark.verify")
+                || cfg_iter!(instr.operands())
+                    .any(|operand| matches!(operand, Operand::AleoGenerator | Operand::AleoGeneratorPowers(_)))
+        };
+
+        // Determine if any function instructions contain the new syntax.
+        let function_contains =
+            cfg_iter!(self.functions()).flat_map(|(_, function)| function.instructions()).any(has_op);
+
+        // Determine if any closure instructions contain the new syntax.
+        let closure_contains = cfg_iter!(self.closures()).flat_map(|(_, closure)| closure.instructions()).any(has_op);
+
+        // Determine if any finalize commands or constructor commands contain the new syntax.
+        let command_contains = cfg_iter!(self.functions())
+            .flat_map(|(_, function)| function.finalize_logic().map(|finalize| finalize.commands()))
+            .flatten()
+            .chain(cfg_iter!(self.constructor).flat_map(|constructor| constructor.commands()))
+            .any(|command| matches!(command, Command::Instruction(instruction) if has_op(instruction)));
+
+        function_contains || closure_contains || command_contains
     }
 
     /// Returns `true` if a program contains any string type.

@@ -206,6 +206,8 @@ pub enum TransitionMap {
 pub enum ProgramMap {
     ProgramID = DataID::ProgramIDMap as u16,
     KeyValueID = DataID::KeyValueMap as u16,
+    MappingUpdate = DataID::MappingUpdateMap as u16,
+    MappingUpdateHeights = DataID::MappingUpdateHeightsMap as u16,
 }
 
 /// The RocksDB map prefix for test-related entries.
@@ -307,6 +309,10 @@ enum DataID {
     IDEditionMap,
     // Track deployments that contain an optional checksum
     DeploymentChecksumMap,
+    // Historical mappings.
+    MappingUpdateMap,
+    // Historical mapping update heights.
+    MappingUpdateHeightsMap,
 
     // Track dynamic record inputs.
     InputDynamicRecordMap,

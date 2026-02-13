@@ -54,6 +54,9 @@ pub use serialize::*;
 mod sign_verify;
 pub use sign_verify::*;
 
+mod snark_verify;
+pub use snark_verify::*;
+
 use crate::Opcode;
 use console::network::prelude::*;
 

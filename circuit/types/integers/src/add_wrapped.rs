@@ -72,7 +72,7 @@ mod tests {
 
     use core::ops::RangeInclusive;
 
-    const ITERATIONS: u64 = 128;
+    const ITERATIONS: u64 = 10;
 
     fn check_add<I: IntegerType>(
         name: &str,

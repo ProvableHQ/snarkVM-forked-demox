@@ -25,6 +25,7 @@ use console::{
 use snarkvm_synthesizer_program::{Operand, RegistersCircuit, RegistersSigner, RegistersTrait, StackTrait};
 
 use indexmap::IndexMap;
+use std::{cell::OnceCell, sync::OnceLock};
 
 #[derive(Clone)]
 /// Registers are a collection of console/circuit values and metadata used in a particular transition context.

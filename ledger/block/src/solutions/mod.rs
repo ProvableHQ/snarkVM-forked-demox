@@ -34,10 +34,10 @@ pub struct Solutions<N: Network> {
 
 impl<N: Network> Solutions<N> {
     /// The maximum number of aborted solutions allowed in a block.
-    pub fn max_aborted_solutions() -> Result<usize> {
-        Ok(BatchHeader::<N>::MAX_TRANSMISSIONS_PER_BATCH
+    pub fn max_aborted_solutions() -> usize {
+        BatchHeader::<N>::MAX_TRANSMISSIONS_PER_BATCH
             * BatchHeader::<N>::MAX_GC_ROUNDS
-            * Committee::<N>::max_committee_size()? as usize)
+            * Committee::<N>::max_committee_size() as usize
     }
 }
 

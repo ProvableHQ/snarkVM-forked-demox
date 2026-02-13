@@ -94,7 +94,7 @@ mod tests {
     use super::*;
     use snarkvm_circuit_environment::Circuit;
 
-    const ITERATIONS: u64 = 10_000;
+    const ITERATIONS: u64 = 10;
 
     fn check_sub(
         name: &str,

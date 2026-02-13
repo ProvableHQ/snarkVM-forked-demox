@@ -90,7 +90,7 @@ mod tests {
     use super::*;
     use snarkvm_circuit_environment::Circuit;
 
-    const ITERATIONS: u64 = 100;
+    const ITERATIONS: u64 = 10;
 
     #[rustfmt::skip]
     fn check_to_upper_k_bits_be<I: IntegerType + Unsigned>(

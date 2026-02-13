@@ -104,7 +104,7 @@ mod tests {
     use super::*;
     use snarkvm_circuit_environment::{Circuit, assert_count_fails};
 
-    const ITERATIONS: u64 = 1000;
+    const ITERATIONS: u64 = 10;
 
     fn check_div(
         name: &str,

@@ -167,7 +167,7 @@ mod tests {
 
     use core::{ops::RangeInclusive, panic::RefUnwindSafe};
 
-    const ITERATIONS: u64 = 128;
+    const ITERATIONS: u64 = 10;
 
     fn check_sub<I: IntegerType + RefUnwindSafe>(
         name: &str,

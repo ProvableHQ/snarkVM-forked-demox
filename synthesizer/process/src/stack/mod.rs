@@ -91,7 +91,10 @@ use locktick::parking_lot::RwLock;
 #[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
 use rand::{CryptoRng, Rng, SeedableRng, rngs::StdRng};
-use std::sync::{Arc, Weak};
+use std::{
+    cell::OnceCell,
+    sync::{Arc, Weak},
+};
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;

@@ -145,7 +145,7 @@ impl<N: Network> Parser for Entry<N, Plaintext<N>> {
                         false => return Err(error("Members of an array have different visibilities")),
                     };
                     // Ensure the number of array elements is within the maximum limit.
-                    match members.len() <= N::MAX_ARRAY_ELEMENTS {
+                    match members.len() <= N::LATEST_MAX_ARRAY_ELEMENTS() {
                         // Return the members and the visibility.
                         true => Ok((members.into_iter().map(|(p, _)| p).collect::<Vec<_>>(), mode)),
                         false => Err(error(format!("Found an array that exceeds size ({})", members.len()))),

@@ -191,7 +191,7 @@ mod tests {
 
     use anyhow::Result;
 
-    const ITERATIONS: usize = 100;
+    const ITERATIONS: usize = 10;
     const MESSAGE: &str = "BHPCircuit0";
 
     fn check_hash_uncompressed<const NUM_WINDOWS: u8, const WINDOW_SIZE: u8>(

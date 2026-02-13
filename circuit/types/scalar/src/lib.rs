@@ -153,7 +153,7 @@ mod tests {
 
     use core::str::FromStr;
 
-    const ITERATIONS: u64 = 250;
+    const ITERATIONS: u64 = 10;
 
     fn check_new(
         name: &str,

@@ -14,7 +14,7 @@
 // limitations under the License.
 
 use super::*;
-use crate::error::ProcessEvalError;
+use snarkvm_synthesizer_error::*;
 
 impl<N: Network> Process<N> {
     /// Evaluates a program function on the given request.

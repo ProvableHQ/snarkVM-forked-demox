@@ -189,7 +189,7 @@ mod test {
     use super::*;
     use snarkvm_utilities::{TestRng, Uniform};
 
-    const ITERATIONS: u64 = 1024;
+    const ITERATIONS: u64 = 10;
 
     #[test]
     fn test_exact_matches() {

@@ -110,6 +110,18 @@ impl<N: Network> RegisterTypes<N> {
                 Operand::NetworkID => bail!(
                     "Struct member '{struct_name}.{member_name}' cannot be from a network ID in a non-finalize scope"
                 ),
+                // If the operand is a generator, throw an error.
+                Operand::AleoGenerator => {
+                    bail!(
+                        "Struct member '{struct_name}.{member_name}' cannot be from a generator in a non-finalize scope"
+                    )
+                }
+                // If the operand is the generator pwers, throw an error.
+                Operand::AleoGeneratorPowers(_) => {
+                    bail!(
+                        "Struct member '{struct_name}.{member_name}' cannot be from generator powers in a non-finalize scope"
+                    )
+                }
                 // If the operand is a checksum type, throw an error.
                 Operand::Checksum(_) => {
                     bail!(
@@ -140,8 +152,8 @@ impl<N: Network> RegisterTypes<N> {
             bail!("'{array_type}' must have at least {} operand(s)", N::MIN_ARRAY_ELEMENTS)
         }
         // Ensure the number of elements not exceed the maximum.
-        if operands.len() > N::MAX_ARRAY_ELEMENTS {
-            bail!("'{array_type}' cannot exceed {} elements", N::MAX_ARRAY_ELEMENTS)
+        if operands.len() > N::LATEST_MAX_ARRAY_ELEMENTS() {
+            bail!("'{array_type}' cannot exceed {} elements", N::LATEST_MAX_ARRAY_ELEMENTS())
         }
 
         // Ensure the number of operands matches the length of the array.
@@ -213,6 +225,14 @@ impl<N: Network> RegisterTypes<N> {
                 }
                 // If the operand is a network ID type, throw an error.
                 Operand::NetworkID => bail!("Array element cannot be from a network ID in a non-finalize scope"),
+                // If the operand is a generator, throw an error.
+                Operand::AleoGenerator => {
+                    bail!("Array element cannot be from a generator in a non-finalize scope")
+                }
+                // If the operand is the generator powers, throw an error.
+                Operand::AleoGeneratorPowers(_) => {
+                    bail!("Array element cannot be from generator powers in a non-finalize scope")
+                }
                 // If the operand is a checksum type, throw an error.
                 Operand::Checksum(_) => {
                     bail!("Array element cannot be from a checksum in a non-finalize scope")
@@ -287,6 +307,12 @@ impl<N: Network> RegisterTypes<N> {
             }
             Operand::NetworkID => {
                 bail!("Forbidden operation: Cannot cast a network ID as a record owner")
+            }
+            Operand::AleoGenerator => {
+                bail!("Forbidden operation: Cannot cast a generator as a record owner")
+            }
+            Operand::AleoGeneratorPowers(_) => {
+                bail!("Forbidden operation: Cannot cast generator powers as a record owner")
             }
             Operand::Checksum(_) => {
                 bail!("Forbidden operation: Cannot cast a checksum as a record owner")
@@ -375,6 +401,18 @@ impl<N: Network> RegisterTypes<N> {
                         Operand::NetworkID => {
                             bail!(
                                 "Record entry '{record_name}.{entry_name}' expects a '{plaintext_type}', but found a network ID in the operand '{operand}'."
+                            )
+                        }
+                        // Fail if the operand is a generator
+                        Operand::AleoGenerator => {
+                            bail!(
+                                "Record entry '{record_name}.{entry_name}' expects a '{plaintext_type}', but found a generator in the operand '{operand}'."
+                            )
+                        }
+                        // Fail if the operand is generator powers
+                        Operand::AleoGeneratorPowers(_) => {
+                            bail!(
+                                "Record entry '{record_name}.{entry_name}' expects a '{plaintext_type}', but found generator powers in the operand '{operand}'."
                             )
                         }
                         // Fail if the operand is a checksum.

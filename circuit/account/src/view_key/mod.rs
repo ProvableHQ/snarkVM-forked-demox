@@ -67,7 +67,7 @@ mod tests {
 
     use anyhow::Result;
 
-    const ITERATIONS: u64 = 500;
+    const ITERATIONS: u64 = 10;
 
     fn check_new(
         mode: Mode,

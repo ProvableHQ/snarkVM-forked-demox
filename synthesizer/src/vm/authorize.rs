@@ -15,6 +15,8 @@
 
 use super::*;
 
+use snarkvm_synthesizer_error::*;
+
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Authorizes a call to the program function for the given inputs.
     #[inline]

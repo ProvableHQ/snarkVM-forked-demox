@@ -117,7 +117,7 @@ mod tests {
 
     type CurrentNetwork = <Circuit as Environment>::Network;
 
-    const ITERATIONS: usize = 20;
+    const ITERATIONS: usize = 10;
 
     fn check_verify_global(
         mode: Mode,

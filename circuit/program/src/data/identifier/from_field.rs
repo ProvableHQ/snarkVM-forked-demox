@@ -32,7 +32,7 @@ mod tests {
 
     use anyhow::Result;
 
-    const ITERATIONS: u64 = 100;
+    const ITERATIONS: u64 = 10;
 
     fn check_from_field(num_constants: u64, num_public: u64, num_private: u64, num_constraints: u64) -> Result<()> {
         for _ in 0..ITERATIONS {

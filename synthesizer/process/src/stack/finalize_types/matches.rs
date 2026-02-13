@@ -67,11 +67,13 @@ impl<N: Network> FinalizeTypes<N> {
                         "Struct member '{struct_name}.{member_name}' expects {member_type}, but found '{plaintext_type}' in the operand '{operand}'.",
                     )
                 }
-                // Ensure the program ID, block height, block timestamp, network ID, checksum, edition, and program owner types matches the member type.
+                // Ensure the program ID, block height, block timestamp, network ID, generator, checksum, edition, and program owner types matches the member type.
                 Operand::ProgramID(..)
                 | Operand::BlockHeight
                 | Operand::BlockTimestamp
                 | Operand::NetworkID
+                | Operand::AleoGenerator
+                | Operand::AleoGeneratorPowers(_)
                 | Operand::Checksum(_)
                 | Operand::Edition(_)
                 | Operand::ProgramOwner(_) => {
@@ -108,8 +110,8 @@ impl<N: Network> FinalizeTypes<N> {
             bail!("'{array_type}' must have at least {} operand(s)", N::MIN_ARRAY_ELEMENTS)
         }
         // Ensure the number of elements not exceed the maximum.
-        if operands.len() > N::MAX_ARRAY_ELEMENTS {
-            bail!("'{array_type}' cannot exceed {} elements", N::MAX_ARRAY_ELEMENTS)
+        if operands.len() > N::LATEST_MAX_ARRAY_ELEMENTS() {
+            bail!("'{array_type}' cannot exceed {} elements", N::LATEST_MAX_ARRAY_ELEMENTS())
         }
 
         // Ensure the number of operands matches the length of the array.
@@ -149,11 +151,13 @@ impl<N: Network> FinalizeTypes<N> {
                         array_type.next_element_type()
                     )
                 }
-                // Ensure the program ID, block height, network ID, checksum, edition, and program owner types matches the element type.
+                // Ensure the program ID, block height, network ID, generator, checksum, edition, and program owner types matches the element type.
                 Operand::ProgramID(..)
                 | Operand::BlockHeight
                 | Operand::BlockTimestamp
                 | Operand::NetworkID
+                | Operand::AleoGenerator
+                | Operand::AleoGeneratorPowers(_)
                 | Operand::Checksum(_)
                 | Operand::Edition(_)
                 | Operand::ProgramOwner(_) => {

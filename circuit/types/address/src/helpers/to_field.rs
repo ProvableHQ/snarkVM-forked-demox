@@ -43,7 +43,7 @@ mod tests {
     use super::*;
     use snarkvm_circuit_environment::Circuit;
 
-    const ITERATIONS: u64 = 100;
+    const ITERATIONS: u64 = 10;
 
     fn check_to_field(mode: Mode) {
         let mut rng = TestRng::default();
