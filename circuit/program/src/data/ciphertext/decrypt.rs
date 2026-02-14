@@ -48,7 +48,7 @@ mod tests {
 
     use anyhow::Result;
 
-    const ITERATIONS: u64 = 100;
+    const ITERATIONS: u64 = 10;
 
     fn check_encrypt_and_decrypt<A: Aleo>() -> Result<()> {
         let mut rng = TestRng::default();

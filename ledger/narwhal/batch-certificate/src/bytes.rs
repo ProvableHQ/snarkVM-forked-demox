@@ -21,10 +21,10 @@ impl<N: Network> BatchCertificate<N> {
         // Read the number of signatures.
         let num_signatures = u16::read_le(&mut reader)?;
         // Ensure the number of signatures is within bounds.
-        if num_signatures > Self::max_signatures().map_err(error)? {
+        if num_signatures > Self::max_signatures() {
             return Err(error(format!(
                 "Number of signatures ({num_signatures}) exceeds the maximum ({})",
-                Self::max_signatures().map_err(error)?
+                Self::max_signatures()
             )));
         }
         // Read the signature bytes.

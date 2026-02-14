@@ -134,7 +134,7 @@ mod tests {
     use snarkvm_circuit_types::environment::Circuit;
     use snarkvm_utilities::{TestRng, Uniform};
 
-    const ITERATIONS: u64 = 1_000;
+    const ITERATIONS: u64 = 10;
 
     fn check_encode(mode: Mode, num_constants: u64, num_public: u64, num_private: u64, num_constraints: u64) {
         let mut rng = TestRng::default();

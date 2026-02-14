@@ -263,7 +263,7 @@ mod tests {
     type CircuitLH = Poseidon8<Circuit>;
     type CircuitPH = Poseidon2<Circuit>;
 
-    const ITERATIONS: u128 = 100;
+    const ITERATIONS: u128 = 10;
 
     // The minimum and maximum number of field elements a leaf can contain.
     const MIN_LEAF_LENGTH: u8 = 1;

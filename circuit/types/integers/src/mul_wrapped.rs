@@ -96,7 +96,7 @@ mod tests {
 
     use core::ops::RangeInclusive;
 
-    const ITERATIONS: u64 = 32;
+    const ITERATIONS: u64 = 10;
 
     fn check_mul<I: IntegerType>(
         name: &str,

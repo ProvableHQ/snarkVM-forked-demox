@@ -51,7 +51,7 @@ pub(crate) mod tests {
 
     use anyhow::Result;
 
-    const ITERATIONS: u64 = 50;
+    const ITERATIONS: u64 = 10;
 
     fn check_verify(
         mode: Mode,

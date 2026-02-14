@@ -79,6 +79,9 @@ workspace = true
 [dependencies.snarkvm-ledger-store]
 workspace = true
 
+[dependencies.snarkvm-synthesizer-error]
+workspace = true
+
 [dependencies.snarkvm-synthesizer-program]
 workspace = true
 
@@ -89,9 +92,6 @@ workspace = true
 workspace = true
 
 [dependencies.aleo-std]
-workspace = true
-
-[dependencies.anyhow]
 workspace = true
 
 [dependencies.colored]
@@ -125,9 +125,6 @@ optional = true
 [dependencies.serde_json]
 workspace = true
 features = [ "preserve_order" ]
-
-[dependencies.thiserror]
-workspace = true
 
 [dev-dependencies.bincode]
 workspace = true

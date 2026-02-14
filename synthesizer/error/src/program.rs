@@ -15,8 +15,8 @@
 
 //! Errors for instruction operations.
 
-use circuit::environment::ConstraintUnsatisfied;
-use console::network::prelude::Error as AnyhowError;
+use snarkvm_circuit_environment::ConstraintUnsatisfied;
+use snarkvm_console_network::prelude::Error as AnyhowError;
 use thiserror::Error;
 
 // NOTE: Many errors in this module temporarily contain `Anyhow` variants.

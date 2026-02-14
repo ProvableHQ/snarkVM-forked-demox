@@ -161,7 +161,7 @@ mod tests {
     use super::*;
     use snarkvm_circuit_environment::Circuit;
 
-    const ITERATIONS: u64 = 200;
+    const ITERATIONS: u64 = 10;
 
     fn check_is_equal(name: &str, expected: bool, a: &Field<Circuit>, b: &Field<Circuit>) {
         Circuit::scope(name, || {

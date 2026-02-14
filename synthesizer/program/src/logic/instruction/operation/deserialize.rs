@@ -935,8 +935,8 @@ mod tests {
 
     /// Randomly sample a source type.
     fn sample_source_type<N: Network, const VARIANT: u8>(rng: &mut TestRng) -> ArrayType<N> {
-        // Generate a random array length between 1 and N::MAX_ARRAY_ELEMENTS.
-        let array_length = 1 + (u32::rand(rng) % u32::try_from(N::MAX_ARRAY_ELEMENTS).unwrap());
+        // Generate a random array length between 1 and N::LATEST_MAX_ARRAY_ELEMENTS().
+        let array_length = 1 + (u32::rand(rng) % u32::try_from(N::LATEST_MAX_ARRAY_ELEMENTS()).unwrap());
         match VARIANT {
             0 | 1 => {
                 ArrayType::new(PlaintextType::Literal(LiteralType::Boolean), vec![U32::new(array_length)]).unwrap()

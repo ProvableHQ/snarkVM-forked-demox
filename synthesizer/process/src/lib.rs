@@ -25,9 +25,6 @@ extern crate snarkvm_console as console;
 mod cost;
 pub use cost::*;
 
-mod error;
-pub use error::*;
-
 mod stack;
 pub use stack::*;
 

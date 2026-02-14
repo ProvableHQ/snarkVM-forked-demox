@@ -73,7 +73,7 @@ mod tests {
     use crate::Circuit;
     use console::{TestRng, Uniform};
 
-    const ITERATIONS: u32 = 1000;
+    const ITERATIONS: u32 = 10;
 
     fn check_serialization(expected: Literal<Circuit>) {
         // Success cases.

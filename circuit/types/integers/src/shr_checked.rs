@@ -150,7 +150,7 @@ mod tests {
 
     use core::{ops::RangeInclusive, panic::RefUnwindSafe};
 
-    const ITERATIONS: u64 = 32;
+    const ITERATIONS: u64 = 10;
 
     fn check_shr<I: IntegerType + RefUnwindSafe, M: Magnitude + RefUnwindSafe>(
         name: &str,

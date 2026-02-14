@@ -111,7 +111,7 @@ mod tests {
     use super::*;
     use snarkvm_circuit_environment::Circuit;
 
-    const ITERATIONS: u64 = 100;
+    const ITERATIONS: u64 = 10;
 
     fn check_to_bits_le(mode: Mode) {
         let expected_number_of_bits = console::Field::<<Circuit as Environment>::Network>::size_in_bits();

@@ -16,10 +16,8 @@
 use super::*;
 
 use crate::vm::test_helpers::*;
-
-use snarkvm_synthesizer_program::Program;
-
 use console::network::ConsensusVersion;
+use snarkvm_synthesizer_program::Program;
 use snarkvm_utilities::TestRng;
 
 // This test verifies that a program with external structs cannot be deployed on

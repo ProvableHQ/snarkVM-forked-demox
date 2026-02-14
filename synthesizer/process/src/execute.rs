@@ -14,7 +14,7 @@
 // limitations under the License.
 
 use super::*;
-use crate::error::ProcessExecError;
+use snarkvm_synthesizer_error::*;
 
 impl<N: Network> Process<N> {
     /// Executes the given authorization.

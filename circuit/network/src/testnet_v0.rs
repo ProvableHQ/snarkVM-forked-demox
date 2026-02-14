@@ -148,6 +148,11 @@ impl Aleo for AleoTestnetV0 {
         SERIAL_NUMBER_DOMAIN.with(|domain| domain.clone())
     }
 
+    /// Returns the powers of `G`.
+    fn g_powers() -> Vec<Group<Self>> {
+        GENERATOR_G.with(|g| g.clone())
+    }
+
     /// Returns the scalar multiplication on the generator `G`.
     #[inline]
     fn g_scalar_multiply(scalar: &Scalar<Self>) -> Group<Self> {
@@ -554,7 +559,10 @@ impl Display for AleoTestnetV0 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use console::{TestRng, prelude::Uniform};
     use snarkvm_circuit_types::Field;
+
+    const ITERATIONS: usize = 100;
 
     type CurrentAleo = AleoTestnetV0;
 
@@ -603,5 +611,22 @@ mod tests {
             assert_eq!(0, CurrentAleo::num_private_in_scope());
             assert_eq!(0, CurrentAleo::num_constraints_in_scope());
         })
+    }
+
+    #[test]
+    fn test_g_scalar_multiply() {
+        let rng = &mut TestRng::default();
+
+        for _ in 0..ITERATIONS {
+            let scalar = Scalar::<CurrentAleo>::new(Mode::Public, snarkvm_console_types::Scalar::rand(rng));
+            let expected = CurrentAleo::g_scalar_multiply(&scalar);
+            let g_powers = CurrentAleo::g_powers();
+            let group = g_powers[0].clone() * scalar;
+            assert_eq!(expected.eject_value(), group.eject_value());
+
+            CurrentAleo::assert(expected.is_equal(&group)).unwrap();
+
+            assert!(E::is_satisfied());
+        }
     }
 }

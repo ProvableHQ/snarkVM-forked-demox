@@ -49,7 +49,7 @@ fn bench_dynamic_future(c: &mut Criterion) {
 
 fn bench_dynamic_future_max_size(c: &mut Criterion) {
     // Build a maximum-sized array argument (512 field elements).
-    let fields: Vec<String> = (0..CurrentNetwork::MAX_ARRAY_ELEMENTS).map(|j| format!("{j}field")).collect();
+    let fields: Vec<String> = (0..CurrentNetwork::LATEST_MAX_ARRAY_ELEMENTS()).map(|j| format!("{j}field")).collect();
     let max_array_str = format!("[ {} ]", fields.join(", "));
     let max_array_arg = Argument::Plaintext(Plaintext::from_str(&max_array_str).unwrap());
 
@@ -80,7 +80,7 @@ fn bench_dynamic_record(c: &mut Criterion) {
 
 fn bench_dynamic_record_max_size(c: &mut Criterion) {
     // Build a maximum-sized array plaintext (512 field elements).
-    let fields: Vec<String> = (0..CurrentNetwork::MAX_ARRAY_ELEMENTS).map(|j| format!("{j}field")).collect();
+    let fields: Vec<String> = (0..CurrentNetwork::LATEST_MAX_ARRAY_ELEMENTS()).map(|j| format!("{j}field")).collect();
     let max_array_str = format!("[ {} ]", fields.join(", "));
     let max_array_plaintext = Plaintext::<CurrentNetwork>::from_str(&max_array_str).unwrap();
 

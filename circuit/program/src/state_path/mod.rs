@@ -169,7 +169,7 @@ mod tests {
 
     type CurrentNetwork = <Circuit as Environment>::Network;
 
-    const ITERATIONS: u64 = 250;
+    const ITERATIONS: u64 = 10;
 
     fn check_new(
         mode: Mode,

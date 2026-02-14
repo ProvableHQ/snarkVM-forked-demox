@@ -32,10 +32,10 @@ impl<N: Network> FromBytes for Committee<N> {
         // Read the number of members.
         let num_members = u16::read_le(&mut reader)?;
         // Ensure the number of members is within the allowed limit.
-        if num_members > Self::max_committee_size().map_err(error)? {
+        if num_members > Self::max_committee_size() {
             return Err(error(format!(
                 "Committee cannot exceed {} members, found {num_members}",
-                Self::max_committee_size().map_err(error)?,
+                Self::max_committee_size(),
             )));
         }
 

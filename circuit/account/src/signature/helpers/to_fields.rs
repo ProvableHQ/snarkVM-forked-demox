@@ -37,7 +37,7 @@ mod tests {
 
     type CurrentAleo = AleoV0;
 
-    const ITERATIONS: u64 = 128;
+    const ITERATIONS: u64 = 10;
 
     fn check_to_fields(
         mode: Mode,

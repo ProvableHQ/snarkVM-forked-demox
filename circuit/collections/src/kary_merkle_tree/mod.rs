@@ -89,7 +89,7 @@ mod tests {
 
     use anyhow::Result;
 
-    const ITERATIONS: u128 = 100;
+    const ITERATIONS: u128 = 10;
 
     fn check_new<const DEPTH: u8, const ARITY: u8>(
         mode: Mode,

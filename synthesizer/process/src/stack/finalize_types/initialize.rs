@@ -889,6 +889,11 @@ impl<N: Network> FinalizeTypes<N> {
                 bail!("Fatal error: Cannot check command '{opcode}' as an instruction.")
             }
             Opcode::Commit(opcode) => RegisterTypes::check_commit_opcode(opcode, instruction)?,
+            Opcode::Deserialize(opcode) => RegisterTypes::check_deserialize_opcode(opcode, instruction)?,
+            Opcode::ECDSA(opcode) => RegisterTypes::check_ecdsa_opcode(opcode, instruction)?,
+            Opcode::GetRecordDynamic(_) => {
+                bail!("Illegal operation: Cannot read from a dynamic record in a finalize scope.")
+            }
             Opcode::Hash(opcode) => RegisterTypes::check_hash_opcode(opcode, instruction)?,
             Opcode::Is(opcode) => match opcode {
                 "is.eq" => ensure!(
@@ -901,6 +906,7 @@ impl<N: Network> FinalizeTypes<N> {
                 ),
                 _ => bail!("Instruction '{instruction}' is not for opcode '{opcode}'."),
             },
+            Opcode::Serialize(opcode) => RegisterTypes::check_serialize_opcode(opcode, instruction)?,
             Opcode::Sign(_) => {
                 // Ensure the instruction has one destination register.
                 ensure!(
@@ -908,11 +914,12 @@ impl<N: Network> FinalizeTypes<N> {
                     "Instruction '{instruction}' has multiple destinations."
                 );
             }
-            Opcode::ECDSA(opcode) => RegisterTypes::check_ecdsa_opcode(opcode, instruction)?,
-            Opcode::Serialize(opcode) => RegisterTypes::check_serialize_opcode(opcode, instruction)?,
-            Opcode::Deserialize(opcode) => RegisterTypes::check_deserialize_opcode(opcode, instruction)?,
-            Opcode::GetRecordDynamic(_) => {
-                bail!("Illegal operation: Cannot read from a dynamic record in a finalize scope.")
+            Opcode::Snark(_) => {
+                // Ensure the instruction has one destination register.
+                ensure!(
+                    instruction.destinations().len() == 1,
+                    "Instruction '{instruction}' has multiple destinations."
+                );
             }
         }
         Ok(())

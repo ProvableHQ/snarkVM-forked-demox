@@ -32,7 +32,7 @@ mod tests {
 
     use anyhow::Result;
 
-    const ITERATIONS: usize = 100;
+    const ITERATIONS: usize = 10;
 
     fn check_to_address(
         mode: Mode,

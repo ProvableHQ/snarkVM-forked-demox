@@ -43,6 +43,18 @@ mod compare_calls_to_credits;
 // Tests for restricted keywords at V14.
 mod restricted_keywords;
 
+// Tests for aleo generator opcodes migration.
+mod generators;
+
+// Tests for max writes migration.
+mod max_writes;
+
+// Tests for increased program size limits.
+mod program_size;
+
+// Tests for snark.verify opcode.
+mod snark_verify;
+
 // Tests for V3 deployments (amendments).
 mod amendments;
 

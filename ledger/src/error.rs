@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use snarkvm_synthesizer::{VmDeployError, VmExecError};
+use snarkvm_synthesizer_error::{VmDeployError, VmExecError};
 use thiserror::Error;
 
 // NOTE: Many errors in this module temporarily contain `Anyhow` variants.
