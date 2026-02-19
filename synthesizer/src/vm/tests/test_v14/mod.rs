@@ -55,6 +55,9 @@ mod program_size;
 // Tests for snark.verify opcode.
 mod snark_verify;
 
+// Tests for record, external record, and dynamic record types as closure inputs and outputs.
+mod closure_records;
+
 use super::*;
 
 use crate::{
