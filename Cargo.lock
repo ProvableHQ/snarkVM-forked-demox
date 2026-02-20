@@ -3122,6 +3122,8 @@ dependencies = [
  "aleo-std",
  "criterion",
  "indexmap 2.13.0",
+ "locktick",
+ "parking_lot",
  "rayon",
  "serde",
  "snarkvm-console-algorithms",
