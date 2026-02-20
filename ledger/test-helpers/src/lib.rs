@@ -296,8 +296,8 @@ function compute:
 /// The edition must match an existing deployment's edition.
 /// V3 = checksum + no owner.
 pub fn sample_deployment_v3(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
-    // Sample a V2 deployment with translation keys, then remove the owner.
-    let mut deployment = sample_deployment_v2_with_translation_keys(edition, rng);
+    // Sample a V2 deployment without translation keys, then remove the owner.
+    let mut deployment = sample_deployment_v2_without_translation_keys(edition, rng);
     deployment.set_program_owner_raw(None);
     deployment
 }

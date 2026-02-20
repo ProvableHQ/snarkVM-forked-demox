@@ -44,7 +44,8 @@ fn test_circuit_dynamic_record_from_record() {
         let reported_on_month = format!("{}u8", <u8 as Uniform>::rand(&mut rng));
         let reported_on_year = format!("{}u16", <u16 as Uniform>::rand(&mut rng));
         let reported_on_privacy = if Uniform::rand(&mut rng) { "public" } else { "private" };
-        let jewels_len = rng.gen_range(1..CurrentNetwork::LATEST_MAX_ARRAY_ELEMENTS());
+        // Cap the array length to stay within MAX_DATA_SIZE_IN_FIELDS when serialized.
+        let jewels_len = rng.gen_range(1..512);
         let jewel_privacy = if Uniform::rand(&mut rng) { "public" } else { "private" };
         let jewel_iter = (0..jewels_len)
             .map(|_| {
