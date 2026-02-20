@@ -324,7 +324,10 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
                 }
 
                 // Increment the amendment count.
-                self.amendment_next_index_map().insert((program_id, edition), amendment_index.saturating_add(1))?;
+                let next_index = amendment_index.checked_add(1).ok_or_else(|| {
+                    anyhow!("Amendment index overflow for program '{program_id}' (edition {edition})")
+                })?;
+                self.amendment_next_index_map().insert((program_id, edition), next_index)?;
 
                 // Store the fee transition.
                 self.fee_store().insert(*transaction_id, fee)?;
@@ -948,7 +951,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             };
 
             // Initialize a vector for the verifying keys and certificates.
-            let mut verifying_keys = Vec::with_capacity(program.functions().len());
+            let mut verifying_keys = Vec::with_capacity(program.functions().len() + program.records().len());
 
             // Amendments derive the checksum from the program.
             let program_checksum = Some(program.to_checksum());
@@ -980,25 +983,27 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             }
 
             // Retrieve the translation (record) verifying keys and certificates from amendment maps.
+            // Note: V3 amendments require V14+, which mandates record VKs for all records.
             for record_name in program.records().keys() {
-                // Try to get the translation VK from amendment maps.
-                if let Some(verifying_key) = self
+                let Some(verifying_key) = self
                     .amendment_verifying_key_map()
                     .get_confirmed(&(program_id, *record_name, edition, amendment_index))?
                     .map(|x| x.into_owned())
-                {
-                    let Some(certificate) = self
-                        .amendment_certificate_map()
-                        .get_confirmed(&(program_id, *record_name, edition, amendment_index))?
-                        .map(|x| x.into_owned())
-                    else {
-                        bail!(
-                            "Failed to get the translation certificate for '{program_id}/{record_name}' (edition {edition}, amendment {amendment_index})"
-                        );
-                    };
-                    // Append record VKs to the unified verifying keys vector.
-                    verifying_keys.push((*record_name, (verifying_key, certificate)));
-                }
+                else {
+                    bail!(
+                        "Failed to get the translation verifying key for '{program_id}/{record_name}' (edition {edition}, amendment {amendment_index})"
+                    );
+                };
+                let Some(certificate) = self
+                    .amendment_certificate_map()
+                    .get_confirmed(&(program_id, *record_name, edition, amendment_index))?
+                    .map(|x| x.into_owned())
+                else {
+                    bail!(
+                        "Failed to get the translation certificate for '{program_id}/{record_name}' (edition {edition}, amendment {amendment_index})"
+                    );
+                };
+                verifying_keys.push((*record_name, (verifying_key, certificate)));
             }
 
             // V3 deployments use a unified verifying keys vector (functions followed by records).
@@ -1253,7 +1258,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         };
 
         // Initialize a vector for the verifying keys and certificates.
-        let mut verifying_keys = Vec::with_capacity(program.functions().len());
+        let mut verifying_keys = Vec::with_capacity(program.functions().len() + program.records().len());
 
         // Amendments derive the checksum from the program.
         let program_checksum = Some(program.to_checksum());
@@ -1288,25 +1293,27 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         }
 
         // Retrieve the translation (record) verifying keys and certificates from amendment maps.
+        // Note: V3 amendments require V14+, which mandates record VKs for all records.
         for record_name in program.records().keys() {
-            // Try to get the translation VK from amendment maps.
-            if let Some(verifying_key) = self
+            let Some(verifying_key) = self
                 .amendment_verifying_key_map()
                 .get_confirmed(&(*program_id, *record_name, edition, amendment_index))?
                 .map(|x| x.into_owned())
-            {
-                let Some(certificate) = self
-                    .amendment_certificate_map()
-                    .get_confirmed(&(*program_id, *record_name, edition, amendment_index))?
-                    .map(|x| x.into_owned())
-                else {
-                    bail!(
-                        "Failed to get the amendment translation certificate for '{program_id}/{record_name}' (edition {edition}, amendment {amendment_index})"
-                    );
-                };
-                // Append record VKs to the unified verifying keys vector.
-                verifying_keys.push((*record_name, (verifying_key, certificate)));
-            }
+            else {
+                bail!(
+                    "Failed to get the amendment translation verifying key for '{program_id}/{record_name}' (edition {edition}, amendment {amendment_index})"
+                );
+            };
+            let Some(certificate) = self
+                .amendment_certificate_map()
+                .get_confirmed(&(*program_id, *record_name, edition, amendment_index))?
+                .map(|x| x.into_owned())
+            else {
+                bail!(
+                    "Failed to get the amendment translation certificate for '{program_id}/{record_name}' (edition {edition}, amendment {amendment_index})"
+                );
+            };
+            verifying_keys.push((*record_name, (verifying_key, certificate)));
         }
 
         // Return the deployment.

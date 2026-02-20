@@ -296,44 +296,10 @@ function compute:
 /// The edition must match an existing deployment's edition.
 /// V3 = checksum + no owner.
 pub fn sample_deployment_v3(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
-    static INSTANCE: OnceLock<Deployment<CurrentNetwork>> = OnceLock::new();
-    let deployment = INSTANCE
-        .get_or_init(|| {
-            // Use the same program as V2.
-            let (string, program) = Program::<CurrentNetwork>::parse(
-                r"
-program testing_two.aleo;
-
-mapping store:
-    key as u32.public;
-    value as u32.public;
-
-function compute:
-    input r0 as u32.private;
-    add r0 r0 into r1;
-    output r1 as u32.public;",
-            )
-            .unwrap();
-            assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
-            // Construct the process.
-            let process = Process::load().unwrap();
-            // Compute the deployment (regenerates VKs).
-            let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
-            // Return the deployment.
-            // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
-            Deployment::from_str(&deployment.to_string()).unwrap()
-        })
-        .clone();
-    // Create a new deployment with the desired edition.
-    // V3 deployments have a checksum but no owner.
-    Deployment::<CurrentNetwork>::new(
-        edition,
-        deployment.program().clone(),
-        deployment.verifying_keys().clone(),
-        Some(deployment.program().to_checksum()),
-        None, // No owner for V3 (amendments).
-    )
-    .unwrap()
+    // Sample a V2 deployment with translation keys, then remove the owner.
+    let mut deployment = sample_deployment_v2_with_translation_keys(edition, rng);
+    deployment.set_program_owner_raw(None);
+    deployment
 }
 
 /// Samples a rejected deployment.

@@ -433,11 +433,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
                         // Ensure at least one VK (function or translation) has changed or been added.
                         // This prevents spam amendments that don't actually modify anything.
+                        // Note: `deployment.verifying_keys()` returns the unified vector of
+                        // function and record (translation) VKs, so this covers both.
                         let mut has_vk_change = false;
-
-                        // Check if any function verifying key changed or was added.
-                        for (function_name, (new_vk, _)) in deployment.verifying_keys() {
-                            match stack.get_verifying_key(function_name) {
+                        for (name, (new_vk, _)) in deployment.verifying_keys() {
+                            match stack.get_verifying_key(name) {
                                 Ok(existing_vk) => {
                                     if *new_vk != existing_vk {
                                         has_vk_change = true;
@@ -445,32 +445,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                     }
                                 }
                                 Err(_) => {
-                                    // New function VK added.
+                                    // New VK added.
                                     has_vk_change = true;
                                     break;
-                                }
-                            }
-                        }
-
-                        // Check if any translation verifying key changed or was added.
-                        // This handles the case where a V2 deployment (no record VKs) is amended
-                        // with a V3 deployment that includes record VKs.
-                        if !has_vk_change {
-                            if let Some(translation_vks) = deployment.translation_verifying_keys() {
-                                for (record_name, (new_vk, _)) in translation_vks {
-                                    match stack.get_verifying_key(record_name) {
-                                        Ok(existing_vk) => {
-                                            if *new_vk != existing_vk {
-                                                has_vk_change = true;
-                                                break;
-                                            }
-                                        }
-                                        Err(_) => {
-                                            // New translation VK added.
-                                            has_vk_change = true;
-                                            break;
-                                        }
-                                    }
                                 }
                             }
                         }
