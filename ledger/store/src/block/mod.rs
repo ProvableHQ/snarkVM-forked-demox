@@ -1055,7 +1055,8 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
         }
         // Insert the (state root, block height) pair.
         self.storage.insert((*updated_tree.root()).into(), block)?;
-        // Update the block tree.
+        // Update the block tree, preserving the previous Merkle tree.
+        updated_tree.update_previous_tree(&mut tree);
         *tree = updated_tree;
         // Add the block to the block cache (unless it is a genesis block).
         if block.height() != 0

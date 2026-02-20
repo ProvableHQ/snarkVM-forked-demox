@@ -26,13 +26,17 @@ use snarkvm_console_types::prelude::*;
 
 use aleo_std::prelude::*;
 
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::Mutex;
+#[cfg(not(feature = "locktick"))]
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, mem};
 
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(bound = "E: Serialize + DeserializeOwned, LH: Serialize + DeserializeOwned, PH: Serialize + DeserializeOwned")]
 pub struct MerkleTree<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>>, const DEPTH: u8> {
     /// The leaf hasher for the Merkle tree.
@@ -47,6 +51,25 @@ pub struct MerkleTree<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHas
     empty_hash: Field<E>,
     /// The number of hashed leaves in the tree.
     number_of_leaves: usize,
+    /// An optimization: the previous tree reused in prepare_append.
+    #[serde(skip)]
+    previous_tree: Mutex<Option<Vec<PH::Hash>>>,
+}
+
+impl<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>>, const DEPTH: u8> Clone
+    for MerkleTree<E, LH, PH, DEPTH>
+{
+    fn clone(&self) -> Self {
+        Self {
+            leaf_hasher: self.leaf_hasher.clone(),
+            path_hasher: self.path_hasher.clone(),
+            root: self.root,
+            tree: self.tree.clone(),
+            empty_hash: self.empty_hash,
+            number_of_leaves: self.number_of_leaves,
+            previous_tree: Default::default(),
+        }
+    }
 }
 
 impl<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>>, const DEPTH: u8>
@@ -137,6 +160,7 @@ impl<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>
             tree,
             empty_hash,
             number_of_leaves: leaves.len(),
+            previous_tree: Default::default(),
         })
     }
 
@@ -159,8 +183,10 @@ impl<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>
         // Compute the number of padded levels.
         let padding_depth = DEPTH - tree_depth;
 
-        // Initialize the Merkle tree.
-        let mut tree = vec![self.empty_hash; num_nodes];
+        // Reuse the previous Merkle tree, or initialize it if missing.
+        let mut tree = self.previous_tree.lock().take().unwrap_or_else(|| vec![self.empty_hash; num_nodes]);
+
+        tree.truncate(num_nodes);
         // Extend the new Merkle tree with the existing leaf hashes.
         tree.extend(self.leaf_hashes()?);
         // Extend the new Merkle tree with the new leaf hashes.
@@ -220,6 +246,7 @@ impl<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>
             tree,
             empty_hash: self.empty_hash,
             number_of_leaves: self.number_of_leaves + new_leaves.len(),
+            previous_tree: Default::default(), // Placeholder; will be updated at the callsite using Self::update_previous_tree
         })
     }
 
@@ -325,6 +352,7 @@ impl<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>
             tree,
             empty_hash: self.empty_hash,
             number_of_leaves: self.number_of_leaves,
+            previous_tree: Default::default(),
         })
     }
 
@@ -542,6 +570,7 @@ impl<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>
             tree,
             empty_hash: self.empty_hash,
             number_of_leaves: updated_number_of_leaves,
+            previous_tree: Default::default(),
         })
     }
 
@@ -767,6 +796,11 @@ impl<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>
         finish!(timer);
 
         Ok(())
+    }
+
+    /// Save the previous tree in order to reuse its allocation later on.
+    pub fn update_previous_tree(&self, previous: &mut Self) {
+        *self.previous_tree.lock() = Some(mem::take(&mut previous.tree));
     }
 }
 
