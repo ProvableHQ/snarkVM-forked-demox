@@ -201,58 +201,22 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 let version = deployment.version()?;
 
                 // Validate deployment constraints based on consensus version.
-                validate_deployment_for_consensus_version(deployment, version, consensus_version, *id)?;
+                validate_deployment_for_consensus_version(
+                    deployment,
+                    version,
+                    consensus_version,
+                    current_block_height,
+                    *id,
+                )?;
 
                 // If the consensus version is V13 or later, verify the program's mappings do not use non-existent structs.
                 if consensus_version >= ConsensusVersion::V13 {
                     self.process.read().mapping_types_exist(deployment.program())?;
                 }
+                // Before V14, check that future argument bit sizes do not exceed u16::MAX.
                 if consensus_version < ConsensusVersion::V14 {
-                    ensure!(
-                        !deployment.program().contains_v14_syntax(),
-                        "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V14`"
-                    );
-                    // Check that all future argument bit sizes do not exceed the maximum allowed size of u16::MAX.
                     let stack = Stack::new(&self.process().read(), deployment.program())?;
                     check_future_argument_bit_size(deployment.program(), &stack, u16::MAX as usize)?;
-                }
-
-                // Determine if any of the array types exceed the maximum array elements.
-                // Do not perform this check if the consensus version is beyond the latest version threshold for `MAX_ARRAY_ELEMENTS`.
-                if let Some((latest_version_threshold, _)) = N::MAX_ARRAY_ELEMENTS.last()
-                    && consensus_version < *latest_version_threshold
-                {
-                    let max_array_elements = consensus_config_value!(N, MAX_ARRAY_ELEMENTS, current_block_height)
-                        .ok_or_else(|| anyhow!("Missing consensus config value: MAX_ARRAY_ELEMENTS"))?;
-                    ensure!(
-                        !deployment.program().exceeds_max_array_size(u32::try_from(max_array_elements)?),
-                        "Invalid deployment transaction '{id}' - program contains an array that exceeds the maximum allowed size of {max_array_elements} elements",
-                    );
-                }
-
-                // Ensure the program size is bounded properly based on the current block height.
-                deployment.program().check_program_size(current_block_height)?;
-
-                // Ensure the program writes do not exceed the maximum allowed based on the current block height.
-                deployment.program().check_program_writes(current_block_height)?;
-
-                // Enforce record verifying key requirements based on consensus version.
-                // Before V14: record verifying keys are not allowed.
-                // At/after V14: record verifying keys are required.
-                if consensus_version < ConsensusVersion::V14 {
-                    let num_functions = deployment.num_functions();
-                    ensure!(
-                        deployment.verifying_keys().len() == num_functions,
-                        "Invalid deployment transaction '{id}' - expected {num_functions} function verifying keys before `ConsensusVersion::V14`"
-                    );
-                } else {
-                    let num_functions = deployment.num_functions();
-                    let num_records = deployment.program().records().len();
-                    let expected = num_functions + num_records;
-                    ensure!(
-                        deployment.verifying_keys().len() == expected,
-                        "Invalid deployment transaction '{id}' - expected {num_functions} function and {num_records} record verifying keys after `ConsensusVersion::V14`"
-                    );
                 }
 
                 // If the program owner exists in the deployment, then verify that it matches the owner in the transaction.
@@ -803,6 +767,7 @@ fn validate_deployment_for_consensus_version<N: Network>(
     deployment: &Deployment<N>,
     version: DeploymentVersion,
     consensus_version: ConsensusVersion,
+    current_block_height: u32,
     id: N::TransactionID,
 ) -> Result<()> {
     // Edition constraints.
@@ -825,17 +790,15 @@ fn validate_deployment_for_consensus_version<N: Network>(
             version == DeploymentVersion::V1,
             "Invalid deployment transaction '{id}' - the deployment version should be `V1` before `ConsensusVersion::V9`"
         );
-    }
-    if consensus_version >= ConsensusVersion::V9 {
+    } else if consensus_version < ConsensusVersion::V14 {
+        ensure!(
+            version == DeploymentVersion::V2,
+            "Invalid deployment transaction '{id}' - the deployment version should be `V2` from `ConsensusVersion::V9` to `ConsensusVersion::V13`"
+        );
+    } else {
         ensure!(
             matches!(version, DeploymentVersion::V2 | DeploymentVersion::V3),
-            "Invalid deployment transaction '{id}' - the deployment version should be `V2` or `V3` at `ConsensusVersion::V9` and beyond"
-        );
-    }
-    if consensus_version < ConsensusVersion::V14 {
-        ensure!(
-            !matches!(version, DeploymentVersion::V3),
-            "Invalid deployment transaction '{id}' - the deployment version cannot be `V3` before `ConsensusVersion::V14`"
+            "Invalid deployment transaction '{id}' - the deployment version should be `V2` or `V3` from `ConsensusVersion::V14` onwards"
         );
     }
 
@@ -870,6 +833,51 @@ fn validate_deployment_for_consensus_version<N: Network>(
             "Invalid deployment transaction '{id}' - external structs may only be used beginning with `ConsensusVersion::V13`"
         );
     }
+    if consensus_version < ConsensusVersion::V14 {
+        ensure!(
+            !deployment.program().contains_v14_syntax(),
+            "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V14`"
+        );
+    }
+
+    // Enforce record verifying key requirements based on consensus version.
+    // Before V14: record verifying keys are not allowed.
+    // At/after V14: record verifying keys are required.
+    if consensus_version < ConsensusVersion::V14 {
+        let num_functions = deployment.num_functions();
+        ensure!(
+            deployment.verifying_keys().len() == num_functions,
+            "Invalid deployment transaction '{id}' - expected {num_functions} function verifying keys before `ConsensusVersion::V14`"
+        );
+    } else {
+        let num_functions = deployment.num_functions();
+        let num_records = deployment.program().records().len();
+        let expected = num_functions + num_records;
+        ensure!(
+            deployment.verifying_keys().len() == expected,
+            "Invalid deployment transaction '{id}' - expected {num_functions} function and {num_records} record verifying keys after `ConsensusVersion::V14`"
+        );
+    }
+
+    // Size constraints.
+    // Determine if any of the array types exceed the maximum array elements.
+    // Do not perform this check if the consensus version is beyond the latest version threshold for `MAX_ARRAY_ELEMENTS`.
+    if let Some((latest_version_threshold, _)) = N::MAX_ARRAY_ELEMENTS.last()
+        && consensus_version < *latest_version_threshold
+    {
+        let max_array_elements = consensus_config_value!(N, MAX_ARRAY_ELEMENTS, current_block_height)
+            .ok_or_else(|| anyhow!("Missing consensus config value: MAX_ARRAY_ELEMENTS"))?;
+        ensure!(
+            !deployment.program().exceeds_max_array_size(u32::try_from(max_array_elements)?),
+            "Invalid deployment transaction '{id}' - program contains an array that exceeds the maximum allowed size of {max_array_elements} elements",
+        );
+    }
+
+    // Ensure the program size is bounded properly based on the current block height.
+    deployment.program().check_program_size(current_block_height)?;
+
+    // Ensure the program writes do not exceed the maximum allowed based on the current block height.
+    deployment.program().check_program_writes(current_block_height)?;
 
     Ok(())
 }

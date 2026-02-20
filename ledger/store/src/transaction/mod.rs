@@ -428,64 +428,66 @@ impl<N: Network, T: TransactionStorage<N>> TransactionStore<N, T> {
         self.storage.deployment_store().get_program_for_edition(program_id, edition)
     }
 
-    /// Returns the latest verifying key for the given `(program ID, function name)`.
+    /// Returns the latest verifying key for the given `(program ID, resource name)`.
     pub fn get_latest_verifying_key(
         &self,
         program_id: &ProgramID<N>,
-        function_name: &Identifier<N>,
+        resource_name: &Identifier<N>,
     ) -> Result<Option<VerifyingKey<N>>> {
-        self.storage.deployment_store().get_latest_verifying_key(program_id, function_name)
+        self.storage.deployment_store().get_latest_verifying_key(program_id, resource_name)
     }
 
-    /// Returns the verifying key for the given `(program ID, function name, edition)`.
-    pub fn get_verifying_key_with_edition(
+    /// Returns the latest verifying key for the given `(program ID, resource name, edition)`.
+    /// If amendments exist for the given edition, returns the verifying key from the latest amendment.
+    pub fn get_latest_verifying_key_with_edition(
         &self,
         program_id: &ProgramID<N>,
-        function_name: &Identifier<N>,
+        resource_name: &Identifier<N>,
         edition: u16,
     ) -> Result<Option<VerifyingKey<N>>> {
-        self.storage.deployment_store().get_verifying_key_with_edition(program_id, function_name, edition)
+        self.storage.deployment_store().get_latest_verifying_key_with_edition(program_id, resource_name, edition)
     }
 
-    /// Returns the original verifying key for the given `(program ID, function name, edition)`.
+    /// Returns the original verifying key for the given `(program ID, resource name, edition)`.
     /// This method ignores any amendments and always returns the VK from the original deployment.
     pub fn get_original_verifying_key(
         &self,
         program_id: &ProgramID<N>,
-        function_name: &Identifier<N>,
+        resource_name: &Identifier<N>,
         edition: u16,
     ) -> Result<Option<VerifyingKey<N>>> {
-        self.storage.deployment_store().get_original_verifying_key(program_id, function_name, edition)
+        self.storage.deployment_store().get_original_verifying_key(program_id, resource_name, edition)
     }
 
-    /// Returns the latest certificate for the given `(program ID, function name)`.
+    /// Returns the latest certificate for the given `(program ID, resource name)`.
     pub fn get_latest_certificate(
         &self,
         program_id: &ProgramID<N>,
-        function_name: &Identifier<N>,
+        resource_name: &Identifier<N>,
     ) -> Result<Option<Certificate<N>>> {
-        self.storage.deployment_store().get_latest_certificate(program_id, function_name)
+        self.storage.deployment_store().get_latest_certificate(program_id, resource_name)
     }
 
-    /// Returns the certificate for the given `(program ID, function name, edition)`.
-    pub fn get_certificate_with_edition(
+    /// Returns the latest certificate for the given `(program ID, resource name, edition)`.
+    /// If amendments exist for the given edition, returns the certificate from the latest amendment.
+    pub fn get_latest_certificate_with_edition(
         &self,
         program_id: &ProgramID<N>,
-        function_name: &Identifier<N>,
+        resource_name: &Identifier<N>,
         edition: u16,
     ) -> Result<Option<Certificate<N>>> {
-        self.storage.deployment_store().get_certificate_with_edition(program_id, function_name, edition)
+        self.storage.deployment_store().get_latest_certificate_with_edition(program_id, resource_name, edition)
     }
 
-    /// Returns the original certificate for the given `(program ID, function name, edition)`.
+    /// Returns the original certificate for the given `(program ID, resource name, edition)`.
     /// This method ignores any amendments and always returns the certificate from the original deployment.
     pub fn get_original_certificate(
         &self,
         program_id: &ProgramID<N>,
-        function_name: &Identifier<N>,
+        resource_name: &Identifier<N>,
         edition: u16,
     ) -> Result<Option<Certificate<N>>> {
-        self.storage.deployment_store().get_original_certificate(program_id, function_name, edition)
+        self.storage.deployment_store().get_original_certificate(program_id, resource_name, edition)
     }
 }
 

@@ -295,7 +295,9 @@ impl<N: Network> Stack<N> {
     }
 
     /// Partially initializes a new stack, given the process and the program, without checking for validity.
-    /// Note. This method should be used with caution as it does not completely check for validity.
+    /// Unlike `Stack::new`, this method accepts an explicit edition and skips upgrade validation,
+    /// which is necessary for amendments that preserve the existing edition rather than incrementing it.
+    /// A `Stack` created by this method must also call `initialize_and_check`.
     pub fn new_raw(process: &Process<N>, program: &Program<N>, edition: u16) -> Result<Self> {
         // Check that the program is well-formed.
         check_program_is_well_formed(program)?;

@@ -57,6 +57,8 @@ impl<N: Network> Process<N> {
         //   that is only available in a finalize scope.
         let stack = if is_amendment {
             // For amendments, use the existing edition instead of incrementing.
+            // Note: `Stack::new` cannot be used here because it would increment the edition.
+            // Amendments must preserve the existing edition. Validity is verified by `initialize_and_check`.
             let existing_stack = self.get_stack(program_id)?;
             let stack = Stack::new_raw(self, deployment.program(), *existing_stack.program_edition())?;
             stack.initialize_and_check(self)?;

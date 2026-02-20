@@ -45,8 +45,6 @@ impl<N: Network> Process<N> {
                 lap!(timer, "Compute the stack");
 
                 // Set the program owner.
-                // Note: The program owner is only enforced to be `Some` after `ConsensusVersion::V9`
-                // and is `None` for all programs deployed before the `V9` migration.
                 stack.set_program_owner(deployment.program_owner());
 
                 // Insert all verifying keys (unified: functions + records).
@@ -123,6 +121,8 @@ impl<N: Network> Process<N> {
                 let existing_stack = self.get_stack(deployment.program_id())?;
 
                 // Compute a new stack with the same program and edition.
+                // Note: `Stack::new` cannot be used here because it would increment the edition.
+                // Amendments must preserve the existing edition. Validity is verified by `initialize_and_check`.
                 let mut stack = Stack::new_raw(self, deployment.program(), *existing_stack.program_edition())?;
                 stack.initialize_and_check(self)?;
                 lap!(timer, "Compute the stack");

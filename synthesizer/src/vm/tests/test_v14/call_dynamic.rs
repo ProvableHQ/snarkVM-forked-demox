@@ -2123,12 +2123,12 @@ fn test_dynamic_record_double_spend_detection() {
     println!("Successfully passed same dynamic record to dynamic-input function twice.");
 }
 
-// Tests dynamic calls to programs deployed before V14 (without translation keys).
+// Tests dynamic calls to programs deployed before V14, then after a program upgrade.
 // Verifies that:
 // 1. Pre-V14 deployments do not include translation keys.
-// 2. V14 deployments include translation keys.
-// 3. A prover VM with translation keys can create transactions.
-// 4. A verifier VM without translation keys rejects the transaction.
+// 2. A verifier VM without translation keys rejects the prover's transaction.
+// 3. After a program upgrade at V14, the verifier VM gains translation keys.
+// 4. The verifier VM with translation keys (from upgrade) can verify and accept the transaction.
 #[test]
 fn test_dynamic_call_to_pre_v14_program() {
     let rng = &mut TestRng::default();
@@ -2244,6 +2244,7 @@ fn test_dynamic_call_to_pre_v14_program() {
         let process = verifier_vm.process();
         let vm_process = process.read();
         let stack = vm_process.get_stack(legacy_program_id).unwrap();
+        assert_eq!(*stack.program_edition(), 0, "Verifier should have edition 0 before upgrade");
         assert!(
             stack.get_verifying_key(&token_name).is_err(),
             "Verifier VM should NOT have translation key (pre-V14 deployment)"
@@ -2321,9 +2322,90 @@ fn test_dynamic_call_to_pre_v14_program() {
     // Prover VM can verify its own transaction.
     prover_vm.check_transaction(&transaction, None, rng).expect("Prover VM should verify its own transaction");
 
-    // Verifier VM (without translation keys) should fail to verify.
-    let verify_result = verifier_vm.check_transaction(&transaction, None, rng);
-    assert!(verify_result.is_err(), "Verifier VM without translation keys should reject transaction");
+    // Verifier VM (without translation keys) should abort the transaction.
+    let block = sample_next_block(&verifier_vm, &caller_private_key, &[transaction], rng).unwrap();
+    assert_eq!(block.aborted_transaction_ids().len(), 1, "Transaction should be aborted without translation keys");
+    verifier_vm.add_next_block(&block).unwrap();
+
+    // --- Upgrade verifier VM (program upgrade adds translation keys) ---
+
+    // Re-deploy legacy program on verifier VM (program upgrade with new edition, includes translation keys).
+    let upgrade_legacy = verifier_vm.deploy(&caller_private_key, &legacy_program, None, 0, None, rng).unwrap();
+
+    if let Transaction::Deploy(_, _, _, deployment, _) = &upgrade_legacy {
+        assert!(
+            deployment.translation_verifying_keys().is_some(),
+            "V14 program upgrade should include translation keys"
+        );
+    }
+
+    add_and_test(&verifier_vm, &caller_private_key, &[upgrade_legacy], rng);
+
+    // Verify the verifier VM now HAS translation keys after upgrade, and the edition incremented.
+    {
+        let process = verifier_vm.process();
+        let vm_process = process.read();
+        let stack = vm_process.get_stack(legacy_program_id).unwrap();
+        assert_eq!(*stack.program_edition(), 1, "Verifier should have edition 1 after upgrade");
+        assert!(
+            stack.get_verifying_key(&token_name).is_ok(),
+            "Verifier VM should have translation key after program upgrade"
+        );
+    }
+
+    // Mint a fresh token on prover VM and create a new transaction.
+    let prover_mint_tx_2 = prover_vm
+        .execute(
+            &caller_private_key,
+            ("legacy_token.aleo", "mint"),
+            vec![Value::from_str(&caller_address.to_string()).unwrap(), Value::from_str("1000u64").unwrap()]
+                .into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    let prover_minted_record_2 = prover_mint_tx_2
+        .execution()
+        .unwrap()
+        .transitions()
+        .last()
+        .unwrap()
+        .outputs()
+        .iter()
+        .find_map(|output| match output {
+            Output::Record(_, _, Some(record), _) => Some(record.decrypt(&caller_view_key).unwrap()),
+            _ => None,
+        })
+        .unwrap();
+    add_and_test(&prover_vm, &caller_private_key, &[prover_mint_tx_2], rng);
+
+    let dynamic_record_2 = DynamicRecord::<CurrentNetwork>::from_record(&prover_minted_record_2).unwrap();
+
+    let transaction_2 = prover_vm
+        .execute(
+            &caller_private_key,
+            ("dynamic_caller.aleo", "call_legacy_transfer"),
+            vec![
+                Value::from_str(&format!("{legacy_program_field}")).unwrap(),
+                Value::from_str(&format!("{aleo_field}")).unwrap(),
+                Value::from_str(&format!("{transfer_field}")).unwrap(),
+                Value::DynamicRecord(dynamic_record_2),
+                Value::from_str(&caller_address.to_string()).unwrap(),
+                Value::from_str("500u64").unwrap(),
+            ]
+            .into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .expect("Prover should create fresh transaction after upgrade");
+
+    // Verifier VM (with translation keys from upgrade) should now accept the fresh transaction.
+    add_and_test(&verifier_vm, &caller_private_key, &[transaction_2], rng);
 }
 
 // Tests that a consumed record cannot be reused in a subsequent block.

@@ -294,10 +294,10 @@ function compute:
 
 /// Samples a V3 deployment (amendment) for the same program as V2.
 /// The edition must match an existing deployment's edition.
-/// V3 = checksum + no owner.
+/// V3 = checksum + no owner + translation VKs.
 pub fn sample_deployment_v3(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
-    // Sample a V2 deployment without translation keys, then remove the owner.
-    let mut deployment = sample_deployment_v2_without_translation_keys(edition, rng);
+    // Sample a V2 deployment with translation keys, then remove the owner.
+    let mut deployment = sample_deployment_v2_with_translation_keys(edition, rng);
     deployment.set_program_owner_raw(None);
     deployment
 }
@@ -529,7 +529,7 @@ pub fn sample_deployment_transaction(
             deployment
         }
         (3, _) => {
-            // V3 is an amendment - uses the same program as V2 but with new VKs and no program_owner.
+            // V3 is an amendment - uses the same program as V2 but with additional translation VKs and no program_owner.
             sample_deployment_v3(edition, rng)
         }
         _ => panic!("Invalid deployment version ({version}) or translation keys combination."),

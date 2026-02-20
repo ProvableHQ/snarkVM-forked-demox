@@ -42,6 +42,9 @@ use std::borrow::Cow;
 ///   is interpreted as the latest edition for the program ID. The `ChecksumMap` did not exist.
 /// - **ConsensusVersion::V9**: The deployment edition can be any value from zero to `u16::MAX`. The `ChecksumMap` is introduced and
 ///   stores the program checksum, required in each deployment after `ConsensusVersion::V9`.
+/// - **ConsensusVersion::V14**: V3 deployments (amendments) are introduced. Amendments update VKs for an existing
+///   `(program ID, edition)` without changing the edition. Amendments must target the latest edition
+///   and require at least one VK to differ from the existing deployment.
 pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     /// The mapping of `transaction ID` to `program ID`.
     type IDMap: for<'a> Map<'a, N::TransactionID, ProgramID<N>>;
@@ -59,9 +62,11 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     /// The mapping of `(program ID, edition)` to `checksum`.
     /// This was introduced in `ConsensusVersion::V9`.
     type ChecksumMap: for<'a> Map<'a, (ProgramID<N>, u16), [U8<N>; 32]>;
-    /// The mapping of `(program ID, function or record name, edition)` to `verifying key`.
+    /// The mapping of `(program ID, resource name, edition)` to `verifying key`.
+    /// The resource name is a function or record identifier.
     type VerifyingKeyMap: for<'a> Map<'a, (ProgramID<N>, Identifier<N>, u16), VerifyingKey<N>>;
-    /// The mapping of `(program ID, function or record name, edition)` to `certificate`.
+    /// The mapping of `(program ID, resource name, edition)` to `certificate`.
+    /// The resource name is a function or record identifier.
     type CertificateMap: for<'a> Map<'a, (ProgramID<N>, Identifier<N>, u16), Certificate<N>>;
     /// The fee storage.
     type FeeStorage: FeeStorage<N>;
@@ -71,9 +76,11 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     type AmendmentIDMap: for<'a> Map<'a, (ProgramID<N>, u16, u64), N::TransactionID>;
     /// The mapping of `transaction ID` to `(program ID, edition, amendment index)`.
     type ReverseAmendmentIDMap: for<'a> Map<'a, N::TransactionID, (ProgramID<N>, u16, u64)>;
-    /// The mapping of `(program ID, function name, edition, amendment index)` to `verifying key`.
+    /// The mapping of `(program ID, resource name, edition, amendment index)` to `verifying key`.
+    /// The resource name is a function or record identifier.
     type AmendmentVerifyingKeyMap: for<'a> Map<'a, (ProgramID<N>, Identifier<N>, u16, u64), VerifyingKey<N>>;
-    /// The mapping of `(program ID, function name, edition, amendment index)` to `certificate`.
+    /// The mapping of `(program ID, resource name, edition, amendment index)` to `certificate`.
+    /// The resource name is a function or record identifier.
     type AmendmentCertificateMap: for<'a> Map<'a, (ProgramID<N>, Identifier<N>, u16, u64), Certificate<N>>;
     /// The mapping of `(program ID, edition, amendment index)` to `ProgramOwner`.
     type AmendmentOwnerMap: for<'a> Map<'a, (ProgramID<N>, u16, u64), ProgramOwner<N>>;
@@ -298,17 +305,20 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             );
 
             // Get the current amendment count, or initialize to 0 if this is the first amendment.
+            // This is the only site that assigns and increments amendment indices.
             let amendment_index =
                 self.amendment_next_index_map().get_confirmed(&(program_id, edition))?.map(|c| *c).unwrap_or(0);
 
             atomic_batch_scope!(self, {
-                // Store the program ID and edition for faster lookups.
+                // Store the program ID.
                 self.id_map().insert(*transaction_id, program_id)?;
+                // Store the edition for the transaction ID.
+                // Note: Amendments reuse the same `(program_id, edition)` as the base deployment.
                 self.id_edition_map().insert(*transaction_id, edition)?;
 
-                // Store the amendment ID mapping.
+                // Store the amendment ID mapping for (program_id, edition, amendment_index) -> transaction_id.
                 self.amendment_id_map().insert((program_id, edition, amendment_index), *transaction_id)?;
-                // Store the reverse mapping.
+                // Store the reverse amendment ID mapping for transaction_id -> (program_id, edition, amendment_index).
                 self.reverse_amendment_id_map().insert(*transaction_id, (program_id, edition, amendment_index))?;
                 // Store the amendment owner.
                 self.amendment_owner_map().insert((program_id, edition, amendment_index), *owner)?;
@@ -324,6 +334,10 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
                 }
 
                 // Increment the amendment count.
+                // Note: Overflow is unreachable in practice — this is the only site that increments
+                // the counter, and each increment requires a full transaction with a fee. If overflow
+                // somehow occurred, this bail would cause a liveness failure (valid-looking blocks that
+                // fail at storage insertion), so the single-increment invariant must be preserved.
                 let next_index = amendment_index.checked_add(1).ok_or_else(|| {
                     anyhow!("Amendment index overflow for program '{program_id}' (edition {edition})")
                 })?;
@@ -395,8 +409,13 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             let count = *current_count;
 
             // Verify that we're removing the latest amendment.
+            let latest_index = count.checked_sub(1).ok_or_else(|| {
+                anyhow!(
+                    "Amendment count is zero for program '{program_id}' (edition {edition}), but an amendment exists"
+                )
+            })?;
             ensure!(
-                amendment_index == count.saturating_sub(1),
+                amendment_index == latest_index,
                 "Failed to remove amendment for transaction '{transaction_id}' because it is not the latest amendment"
             );
 
@@ -434,11 +453,17 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
                 }
 
                 // Update the amendment count.
+                // Note: `count` is guaranteed >= 1 from the `checked_sub(1)` above.
                 match count == 1 {
-                    // If this was the only amendment, remove the count entry.
+                    // If this was the only amendment, remove the count entry entirely.
                     true => self.amendment_next_index_map().remove(&(program_id, edition))?,
-                    // Otherwise, decrement the count.
-                    false => self.amendment_next_index_map().insert((program_id, edition), count.saturating_sub(1))?,
+                    // Otherwise, decrement the count. Safe because count >= 2 in this branch.
+                    false => {
+                        let decremented = count.checked_sub(1).ok_or_else(|| {
+                            anyhow!("Amendment count underflow for program '{program_id}' (edition {edition})")
+                        })?;
+                        self.amendment_next_index_map().insert((program_id, edition), decremented)?
+                    }
                 }
 
                 // Remove the fee transition.
@@ -542,17 +567,12 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             return Ok(None);
         };
 
-        // Check if there are amendments for this program/edition.
-        if let Some(amendment_count) = self.amendment_next_index_map().get_confirmed(&(*program_id, edition))? {
-            let count = *amendment_count;
-            if count > 0 {
-                // Return the latest amendment transaction ID.
-                let latest_index = count.saturating_sub(1);
-                if let Some(transaction_id) =
-                    self.amendment_id_map().get_confirmed(&(*program_id, edition, latest_index))?
-                {
-                    return Ok(Some(*transaction_id));
-                }
+        // If amendments exist, return the latest amendment transaction ID.
+        if let Some(latest_index) = self.get_latest_amendment_index(program_id, edition)? {
+            if let Some(transaction_id) =
+                self.amendment_id_map().get_confirmed(&(*program_id, edition, latest_index))?
+            {
+                return Ok(Some(*transaction_id));
             }
         }
 
@@ -598,17 +618,12 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             return Ok(None);
         }
 
-        // Check if there are amendments for this program/edition.
-        if let Some(amendment_count) = self.amendment_next_index_map().get_confirmed(&(*program_id, edition))? {
-            let count = *amendment_count;
-            if count > 0 {
-                // Return the latest amendment transaction ID.
-                let latest_index = count.saturating_sub(1);
-                if let Some(transaction_id) =
-                    self.amendment_id_map().get_confirmed(&(*program_id, edition, latest_index))?
-                {
-                    return Ok(Some(*transaction_id));
-                }
+        // If amendments exist, return the latest amendment transaction ID.
+        if let Some(latest_index) = self.get_latest_amendment_index(program_id, edition)? {
+            if let Some(transaction_id) =
+                self.amendment_id_map().get_confirmed(&(*program_id, edition, latest_index))?
+            {
+                return Ok(Some(*transaction_id));
             }
         }
 
@@ -667,8 +682,9 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
                 // Check if the program exists in the store.
                 match self.id_map().get_confirmed(transaction_id)?.is_none() {
                     true => Ok(None),
-                    // If a program is not in the `IDEditionMap` but exists in the store,
-                    // then it must have been deployed prior to `ConsensusVersion::V8` when editions were exclusively zero.
+                    // If a program is not in the `IDEditionMap` but exists in the `IDMap`,
+                    // then it was deployed before `ConsensusVersion::V8` when editions were not tracked.
+                    // These deployments are always edition zero, so returning `Some(0)` is safe.
                     false => Ok(Some(0)),
                 }
             }
@@ -694,8 +710,9 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.program_map().get_confirmed(&(*program_id, edition)).map(|p| p.map(|p| p.into_owned()))
     }
 
-    /// Returns the latest verifying key for the given `program ID` and `function or record name`.
+    /// Returns the latest verifying key for the given `program ID` and `resource name`.
     /// If amendments exist, returns the verifying key from the latest amendment.
+    /// Bails if the program exists but the key is missing.
     fn get_latest_verifying_key(
         &self,
         program_id: &ProgramID<N>,
@@ -721,24 +738,20 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         };
 
         // Check if there are amendments for this program/edition.
-        if let Some(amendment_count) = self.amendment_next_index_map().get_confirmed(&(*program_id, edition))? {
-            let count = *amendment_count;
-            if count > 0 {
-                // Return the verifying key from the latest amendment.
-                let latest_index = count.saturating_sub(1);
-                let Some(verifying_key) = self.amendment_verifying_key_map().get_confirmed(&(
-                    *program_id,
-                    *resource_name,
-                    edition,
-                    latest_index,
-                ))?
-                else {
-                    bail!(
-                        "Failed to get the amendment verifying key for '{program_id}/{resource_name}' (edition {edition}, amendment {latest_index})"
-                    );
-                };
-                return Ok(Some(verifying_key.into_owned()));
-            }
+        // If amendments exist, return the verifying key from the latest amendment.
+        if let Some(latest_index) = self.get_latest_amendment_index(program_id, edition)? {
+            let Some(verifying_key) = self.amendment_verifying_key_map().get_confirmed(&(
+                *program_id,
+                *resource_name,
+                edition,
+                latest_index,
+            ))?
+            else {
+                bail!(
+                    "Failed to get the amendment verifying key for '{program_id}/{resource_name}' (edition {edition}, amendment {latest_index})"
+                );
+            };
+            return Ok(Some(verifying_key.into_owned()));
         }
 
         // No amendments, retrieve from regular verifying key map.
@@ -749,9 +762,10 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         Ok(Some(verifying_key.into_owned()))
     }
 
-    /// Returns the verifying key for the given `program ID`, `function or record name` and `edition`.
+    /// Returns the verifying key for the given `program ID`, `resource name` and `edition`.
     /// If amendments exist for the given edition, returns the verifying key from the latest amendment.
-    fn get_verifying_key_with_edition(
+    /// Bails if the program exists but the key is missing.
+    fn get_latest_verifying_key_with_edition(
         &self,
         program_id: &ProgramID<N>,
         resource_name: &Identifier<N>,
@@ -772,24 +786,20 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         }
 
         // Check if there are amendments for this program/edition.
-        if let Some(amendment_count) = self.amendment_next_index_map().get_confirmed(&(*program_id, edition))? {
-            let count = *amendment_count;
-            if count > 0 {
-                // Return the verifying key from the latest amendment.
-                let latest_index = count.saturating_sub(1);
-                let Some(verifying_key) = self.amendment_verifying_key_map().get_confirmed(&(
-                    *program_id,
-                    *resource_name,
-                    edition,
-                    latest_index,
-                ))?
-                else {
-                    bail!(
-                        "Failed to get the amendment verifying key for '{program_id}/{resource_name}' (edition {edition}, amendment {latest_index})"
-                    );
-                };
-                return Ok(Some(verifying_key.into_owned()));
-            }
+        // If amendments exist, return the verifying key from the latest amendment.
+        if let Some(latest_index) = self.get_latest_amendment_index(program_id, edition)? {
+            let Some(verifying_key) = self.amendment_verifying_key_map().get_confirmed(&(
+                *program_id,
+                *resource_name,
+                edition,
+                latest_index,
+            ))?
+            else {
+                bail!(
+                    "Failed to get the amendment verifying key for '{program_id}/{resource_name}' (edition {edition}, amendment {latest_index})"
+                );
+            };
+            return Ok(Some(verifying_key.into_owned()));
         }
 
         // No amendments, retrieve from regular verifying key map.
@@ -799,19 +809,20 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         }
     }
 
-    /// Returns the original verifying key for the given `program ID`, `function name` and `edition`.
+    /// Returns the original verifying key for the given `program ID`, `resource name` and `edition`.
     /// This method ignores any amendments and always returns the VK from the original deployment.
+    /// Returns `None` if the key was not stored (e.g., record VKs before V14).
     fn get_original_verifying_key(
         &self,
         program_id: &ProgramID<N>,
-        function_name: &Identifier<N>,
+        resource_name: &Identifier<N>,
         edition: u16,
     ) -> Result<Option<VerifyingKey<N>>> {
         // Check if the program ID is for 'credits.aleo'.
         // This case is handled separately, as it is a default program of the VM.
         if program_id == &ProgramID::from_str("credits.aleo")? {
             // Load the verifying key.
-            let verifying_key = N::get_credits_verifying_key(function_name.to_string())?;
+            let verifying_key = N::get_credits_verifying_key(resource_name.to_string())?;
             // Retrieve the number of public and private variables.
             let num_variables = verifying_key.circuit_info.num_public_and_private_variables as u64;
             // Return the verifying key.
@@ -819,14 +830,15 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         }
 
         // Retrieve from the original verifying key map, ignoring any amendments.
-        match self.verifying_key_map().get_confirmed(&(*program_id, *function_name, edition))? {
+        match self.verifying_key_map().get_confirmed(&(*program_id, *resource_name, edition))? {
             Some(verifying_key) => Ok(Some(verifying_key.into_owned())),
             None => Ok(None),
         }
     }
 
-    /// Returns the latest certificate for the given `program ID` and `function or record name`.
+    /// Returns the latest certificate for the given `program ID` and `resource name`.
     /// If amendments exist, returns the certificate from the latest amendment.
+    /// Bails if the program exists but the certificate is missing.
     fn get_latest_certificate(
         &self,
         program_id: &ProgramID<N>,
@@ -844,25 +856,20 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             return Ok(None);
         };
 
-        // Check if there are amendments for this program/edition.
-        if let Some(amendment_count) = self.amendment_next_index_map().get_confirmed(&(*program_id, edition))? {
-            let count = *amendment_count;
-            if count > 0 {
-                // Return the certificate from the latest amendment.
-                let latest_index = count.saturating_sub(1);
-                let Some(certificate) = self.amendment_certificate_map().get_confirmed(&(
-                    *program_id,
-                    *resource_name,
-                    edition,
-                    latest_index,
-                ))?
-                else {
-                    bail!(
-                        "Failed to get the amendment certificate for '{program_id}/{resource_name}' (edition {edition}, amendment {latest_index})"
-                    );
-                };
-                return Ok(Some(certificate.into_owned()));
-            }
+        // If amendments exist, return the certificate from the latest amendment.
+        if let Some(latest_index) = self.get_latest_amendment_index(program_id, edition)? {
+            let Some(certificate) = self.amendment_certificate_map().get_confirmed(&(
+                *program_id,
+                *resource_name,
+                edition,
+                latest_index,
+            ))?
+            else {
+                bail!(
+                    "Failed to get the amendment certificate for '{program_id}/{resource_name}' (edition {edition}, amendment {latest_index})"
+                );
+            };
+            return Ok(Some(certificate.into_owned()));
         }
 
         // No amendments, retrieve from regular certificate map.
@@ -872,9 +879,10 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         Ok(Some(certificate.into_owned()))
     }
 
-    /// Returns the certificate for the given `program ID`, `function or record name`, and `edition`.
+    /// Returns the certificate for the given `program ID`, `resource name`, and `edition`.
     /// If amendments exist for the given edition, returns the certificate from the latest amendment.
-    fn get_certificate_with_edition(
+    /// Bails if the program exists but the certificate is missing.
+    fn get_latest_certificate_with_edition(
         &self,
         program_id: &ProgramID<N>,
         resource_name: &Identifier<N>,
@@ -887,25 +895,20 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             return Ok(None);
         }
 
-        // Check if there are amendments for this program/edition.
-        if let Some(amendment_count) = self.amendment_next_index_map().get_confirmed(&(*program_id, edition))? {
-            let count = *amendment_count;
-            if count > 0 {
-                // Return the certificate from the latest amendment.
-                let latest_index = count.saturating_sub(1);
-                let Some(certificate) = self.amendment_certificate_map().get_confirmed(&(
-                    *program_id,
-                    *resource_name,
-                    edition,
-                    latest_index,
-                ))?
-                else {
-                    bail!(
-                        "Failed to get the amendment certificate for '{program_id}/{resource_name}' (edition {edition}, amendment {latest_index})"
-                    );
-                };
-                return Ok(Some(certificate.into_owned()));
-            }
+        // If amendments exist, return the certificate from the latest amendment.
+        if let Some(latest_index) = self.get_latest_amendment_index(program_id, edition)? {
+            let Some(certificate) = self.amendment_certificate_map().get_confirmed(&(
+                *program_id,
+                *resource_name,
+                edition,
+                latest_index,
+            ))?
+            else {
+                bail!(
+                    "Failed to get the amendment certificate for '{program_id}/{resource_name}' (edition {edition}, amendment {latest_index})"
+                );
+            };
+            return Ok(Some(certificate.into_owned()));
         }
 
         // No amendments, retrieve from regular certificate map.
@@ -917,12 +920,13 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         }
     }
 
-    /// Returns the original certificate for the given `program ID`, `function name` and `edition`.
+    /// Returns the original certificate for the given `program ID`, `resource name` and `edition`.
     /// This method ignores any amendments and always returns the certificate from the original deployment.
+    /// Returns `None` if the certificate was not stored (e.g., record certificates before V14).
     fn get_original_certificate(
         &self,
         program_id: &ProgramID<N>,
-        function_name: &Identifier<N>,
+        resource_name: &Identifier<N>,
         edition: u16,
     ) -> Result<Option<Certificate<N>>> {
         // Check if the program ID is for 'credits.aleo'.
@@ -932,13 +936,16 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         }
 
         // Retrieve from the original certificate map, ignoring any amendments.
-        match self.certificate_map().get_confirmed(&(*program_id, *function_name, edition))? {
+        match self.certificate_map().get_confirmed(&(*program_id, *resource_name, edition))? {
             Some(certificate) => Ok(Some(certificate.into_owned())),
             None => Ok(None),
         }
     }
 
     /// Returns the deployment for the given `transaction ID`.
+    /// If the transaction is an amendment, returns the deployment with updated VKs and no owner.
+    /// Use `get_transaction()` to retrieve the amendment owner.
+    /// Otherwise, returns the original base deployment.
     fn get_deployment(&self, transaction_id: &N::TransactionID) -> Result<Option<Deployment<N>>> {
         // Check if this is an amendment.
         if let Some(amendment_info) = self.reverse_amendment_id_map().get_confirmed(transaction_id)? {
@@ -1027,7 +1034,8 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         // Retrieve the checksum.
         let program_checksum =
             self.checksum_map().get_confirmed(&(program_id, edition))?.map(|checksum| checksum.into_owned());
-        // If the checksum is present, retrieve the owner address (both must be present or absent).
+        // If the checksum is present, retrieve the owner address.
+        // For base deployments, both must be present (V2) or both absent (V1).
         let program_owner = match program_checksum.is_some() {
             false => None,
             true => match self.owner_map().get_confirmed(&(program_id, edition))? {
@@ -1037,6 +1045,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         };
 
         // Determine if the deployment contains record verifying keys by probing the first record name.
+        // Record VKs are all-or-nothing: either every record has a VK or none do.
         let contains_record_keys = match program.records().keys().next() {
             Some(record_name) => {
                 self.verifying_key_map().get_confirmed(&(program_id, *record_name, edition))?.is_some()
@@ -1077,14 +1086,16 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
                     .map(|x| x.into_owned())
                 else {
                     bail!(
-                        "Failed to get the record verifying key for '{program_id}/{record_name}' (edition {edition})"
+                        "Missing record verifying key for '{program_id}/{record_name}' (edition {edition}) - record VKs must either all exist or none exist"
                     );
                 };
                 // Retrieve the certificate.
                 let Some(certificate) =
                     self.certificate_map().get_confirmed(&(program_id, *record_name, edition))?.map(|x| x.into_owned())
                 else {
-                    bail!("Failed to get the record certificate for '{program_id}/{record_name}' (edition {edition})");
+                    bail!(
+                        "Missing record certificate for '{program_id}/{record_name}' (edition {edition}) - record VKs must either all exist or none exist"
+                    );
                 };
                 // Append the record verifying key and certificate.
                 verifying_keys.push((*record_name, (verifying_key, certificate)));
@@ -1122,7 +1133,8 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         Ok(Some(*owner))
     }
 
-    /// Returns the owner for the given `program ID` and `edition`.
+    /// Returns the base deployment owner for the given `program ID` and `edition`.
+    /// Returns `None` for `credits.aleo`. Does not include amendment owners.
     fn get_owner_with_edition(&self, program_id: &ProgramID<N>, edition: u16) -> Result<Option<ProgramOwner<N>>> {
         // Check if the program ID is for 'credits.aleo'.
         // This case is handled separately, as it is a default program of the VM.
@@ -1139,6 +1151,8 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     }
 
     /// Returns the transaction for the given `transaction ID`.
+    /// If the transaction is an amendment, reconstructs it using amendment-specific VKs and owner.
+    /// Otherwise, returns the original deployment transaction.
     fn get_transaction(&self, transaction_id: &N::TransactionID) -> Result<Option<Transaction<N>>> {
         // Check if this is an amendment.
         if let Some(amendment_info) = self.reverse_amendment_id_map().get_confirmed(transaction_id)? {
@@ -1195,6 +1209,16 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     /// Returns the number of amendments for the given `program ID` and `edition`.
     fn get_amendment_count(&self, program_id: &ProgramID<N>, edition: u16) -> Result<Option<u64>> {
         Ok(self.amendment_next_index_map().get_confirmed(&(*program_id, edition))?.map(|c| *c))
+    }
+
+    /// Returns the latest amendment index for the given `program ID` and `edition`.
+    /// Returns `None` if no amendments exist or the count is zero.
+    fn get_latest_amendment_index(&self, program_id: &ProgramID<N>, edition: u16) -> Result<Option<u64>> {
+        match self.amendment_next_index_map().get_confirmed(&(*program_id, edition))? {
+            // The `count > 0` guard ensures the subtraction does not underflow.
+            Some(count) if *count > 0 => Ok(Some(*count - 1)),
+            _ => Ok(None),
+        }
     }
 
     /// Returns `true` if the given `transaction ID` is an amendment.
@@ -1448,13 +1472,13 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
     }
 
     /// Returns the verifying key for the given `(program ID, function or record name, edition)`.
-    pub fn get_verifying_key_with_edition(
+    pub fn get_latest_verifying_key_with_edition(
         &self,
         program_id: &ProgramID<N>,
         resource_name: &Identifier<N>,
         edition: u16,
     ) -> Result<Option<VerifyingKey<N>>> {
-        self.storage.get_verifying_key_with_edition(program_id, resource_name, edition)
+        self.storage.get_latest_verifying_key_with_edition(program_id, resource_name, edition)
     }
 
     /// Returns the original verifying key for the given `(program ID, function name, edition)`.
@@ -1478,13 +1502,13 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
     }
 
     /// Returns the certificate for the given `(program ID, function or record name, edition)`.
-    pub fn get_certificate_with_edition(
+    pub fn get_latest_certificate_with_edition(
         &self,
         program_id: &ProgramID<N>,
         resource_name: &Identifier<N>,
         edition: u16,
     ) -> Result<Option<Certificate<N>>> {
-        self.storage.get_certificate_with_edition(program_id, resource_name, edition)
+        self.storage.get_latest_certificate_with_edition(program_id, resource_name, edition)
     }
 
     /// Returns the original certificate for the given `(program ID, function name, edition)`.
@@ -1555,7 +1579,7 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
         self.storage.find_transaction_id_from_program_id_edition_and_amendment(program_id, edition, amendment_index)
     }
 
-    /// Returns the transaction ID that deployed the given `transition ID`.
+    /// Returns the transaction ID that contains the given `transition ID`.
     pub fn find_transaction_id_from_transition_id(
         &self,
         transition_id: &N::TransitionID,

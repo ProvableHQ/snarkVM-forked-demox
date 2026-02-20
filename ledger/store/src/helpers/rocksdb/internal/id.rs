@@ -330,9 +330,6 @@ enum DataID {
     // Track dynamic IDs for outputs.
     OutputDynamicIDMap,
 
-    // Deprecated: was DeploymentContainsTranslationKeysMap.
-    _DeprecatedContainsTranslationKeysMap,
-
     // Amendment maps.
     DeploymentAmendmentCountMap,
     DeploymentAmendmentIDMap,

@@ -58,12 +58,6 @@ impl<N: Network> Process<N> {
                 // Set the program owner.
                 stack.set_program_owner(deployment.program_owner());
 
-                // Insert all verifying keys (unified: functions + records).
-                for (name, (verifying_key, _)) in deployment.verifying_keys() {
-                    stack.insert_verifying_key(name, verifying_key.clone())?;
-                }
-                lap!(timer, "Insert the verifying keys");
-
                 stack
             }
             DeploymentVersion::V3 => {
@@ -71,6 +65,8 @@ impl<N: Network> Process<N> {
                 let existing_stack = self.get_stack(deployment.program_id())?;
 
                 // Compute a new stack with the same program and edition.
+                // Note: `Stack::new` cannot be used here because it would increment the edition.
+                // Amendments must preserve the existing edition. Validity is verified by `initialize_and_check`.
                 let mut stack = Stack::new_raw(self, deployment.program(), *existing_stack.program_edition())?;
                 stack.initialize_and_check(self)?;
                 lap!(timer, "Compute the stack");
@@ -78,15 +74,15 @@ impl<N: Network> Process<N> {
                 // Set the program owner to the existing owner.
                 stack.set_program_owner(*existing_stack.program_owner());
 
-                // Insert all verifying keys (unified: functions + records).
-                for (name, (verifying_key, _)) in deployment.verifying_keys() {
-                    stack.insert_verifying_key(name, verifying_key.clone())?;
-                }
-                lap!(timer, "Insert the verifying keys");
-
                 stack
             }
         };
+
+        // Insert all verifying keys (unified: functions + records).
+        for (name, (verifying_key, _)) in deployment.verifying_keys() {
+            stack.insert_verifying_key(name, verifying_key.clone())?;
+        }
+        lap!(timer, "Insert the verifying keys");
 
         // Add the stack to the process.
         self.add_stack(stack);

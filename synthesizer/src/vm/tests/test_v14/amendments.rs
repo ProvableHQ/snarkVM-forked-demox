@@ -19,7 +19,7 @@ use console::{
     program::{Identifier, ProgramOwner},
     types::U8,
 };
-use snarkvm_ledger_block::Transaction;
+use snarkvm_ledger_block::{Output, Transaction};
 use snarkvm_synthesizer_program::StackTrait;
 
 /// Helper to create a V3 deployment transaction (amendment) with a properly connected fee.
@@ -620,4 +620,288 @@ constructor:
     assert!(vm.check_transaction(&execution, None, rng).is_ok());
 
     Ok(())
+}
+
+// Tests dynamic calls to programs deployed before V14, then after a V3 amendment.
+// Verifies that:
+// 1. Pre-V14 deployments do not include translation keys.
+// 2. A verifier VM without translation keys rejects the prover's transaction.
+// 3. After a V3 amendment at V14, the verifier VM gains translation keys.
+// 4. The verifier VM with translation keys (from amendment) can verify and accept the transaction.
+#[test]
+fn test_dynamic_call_after_amendment() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
+
+    let legacy_program = Program::<CurrentNetwork>::from_str(
+        r"
+        program legacy_token_amend.aleo;
+
+        record token:
+            owner as address.private;
+            amount as u64.private;
+
+        function mint:
+            input r0 as address.private;
+            input r1 as u64.private;
+            cast r0 r1 into r2 as token.record;
+            output r2 as token.record;
+
+        function transfer:
+            input r0 as token.record;
+            input r1 as address.private;
+            input r2 as u64.private;
+            cast r1 r2 into r3 as token.record;
+            output r3 as token.record;
+
+        constructor:
+            assert.eq true true;
+        ",
+    )
+    .unwrap();
+
+    let caller_program = Program::<CurrentNetwork>::from_str(
+        r"
+        program dynamic_caller_amend.aleo;
+
+        function call_legacy_transfer:
+            input r0 as field.public;
+            input r1 as field.public;
+            input r2 as field.public;
+            input r3 as dynamic.record;
+            input r4 as address.private;
+            input r5 as u64.private;
+            call.dynamic r0 r1 r2 with r3 r4 r5 (as dynamic.record address.private u64.private) into r6 (as dynamic.record);
+            async call_legacy_transfer into r7;
+            output r6 as dynamic.record;
+            output r7 as dynamic_caller_amend.aleo/call_legacy_transfer.future;
+
+        finalize call_legacy_transfer:
+            assert.eq true true;
+
+        constructor:
+            assert.eq true true;
+        ",
+    )
+    .unwrap();
+
+    let legacy_program_field =
+        Identifier::<CurrentNetwork>::from_str("legacy_token_amend").unwrap().to_field().unwrap();
+    let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+    let transfer_field = Identifier::<CurrentNetwork>::from_str("transfer").unwrap().to_field().unwrap();
+
+    // --- Set up verifier VM (pre-V14 deployment, then V3 amendment for translation keys) ---
+    let pre_v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V13).unwrap_or(1);
+    let verifier_vm = sample_vm_at_height(pre_v14_height, rng);
+
+    // Deploy legacy program before V14.
+    let deploy_legacy_pre_v14 = verifier_vm.deploy(&caller_private_key, &legacy_program, None, 0, None, rng).unwrap();
+
+    if let Transaction::Deploy(_, _, _, deployment, _) = &deploy_legacy_pre_v14 {
+        assert!(
+            deployment.translation_verifying_keys().is_none(),
+            "Pre-V14 deployment should not have translation keys"
+        );
+    }
+
+    add_and_test(&verifier_vm, &caller_private_key, &[deploy_legacy_pre_v14], rng);
+
+    // Mint a token on verifier VM.
+    let mint_tx = verifier_vm
+        .execute(
+            &caller_private_key,
+            ("legacy_token_amend.aleo", "mint"),
+            vec![Value::from_str(&caller_address.to_string()).unwrap(), Value::from_str("1000u64").unwrap()]
+                .into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    add_and_test(&verifier_vm, &caller_private_key, &[mint_tx], rng);
+
+    // Advance verifier VM to V14.
+    let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
+    for _ in verifier_vm.block_store().current_block_height()..v14_height {
+        let block = sample_next_block(&verifier_vm, &caller_private_key, &[], rng).unwrap();
+        verifier_vm.add_next_block(&block).unwrap();
+    }
+
+    // Deploy caller program on verifier VM at V14.
+    let deploy_caller_verifier = verifier_vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
+    add_and_test(&verifier_vm, &caller_private_key, &[deploy_caller_verifier], rng);
+
+    // Verify the verifier VM does NOT have translation keys for `legacy_token_amend.aleo/token`.
+    let legacy_program_id = console::program::ProgramID::<CurrentNetwork>::from_str("legacy_token_amend.aleo").unwrap();
+    let token_name = Identifier::<CurrentNetwork>::from_str("token").unwrap();
+
+    {
+        let process = verifier_vm.process();
+        let vm_process = process.read();
+        let stack = vm_process.get_stack(legacy_program_id).unwrap();
+        assert_eq!(*stack.program_edition(), 0, "Verifier should have edition 0 before amendment");
+        assert!(
+            stack.get_verifying_key(&token_name).is_err(),
+            "Verifier VM should NOT have translation key (pre-V14 deployment)"
+        );
+    }
+
+    // --- Set up prover VM (V14 deployment, has translation keys) ---
+    let prover_vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    // Deploy legacy program at V14 (includes translation keys).
+    let deploy_legacy_v14 = prover_vm.deploy(&caller_private_key, &legacy_program, None, 0, None, rng).unwrap();
+
+    if let Transaction::Deploy(_, _, _, deployment, _) = &deploy_legacy_v14 {
+        assert!(deployment.translation_verifying_keys().is_some(), "V14 deployment should include translation keys");
+    }
+
+    add_and_test(&prover_vm, &caller_private_key, &[deploy_legacy_v14], rng);
+
+    // Deploy caller program on prover VM.
+    let deploy_caller_prover = prover_vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
+    add_and_test(&prover_vm, &caller_private_key, &[deploy_caller_prover], rng);
+
+    // Mint a token on prover VM.
+    let prover_mint_tx = prover_vm
+        .execute(
+            &caller_private_key,
+            ("legacy_token_amend.aleo", "mint"),
+            vec![Value::from_str(&caller_address.to_string()).unwrap(), Value::from_str("1000u64").unwrap()]
+                .into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    let prover_minted_record = prover_mint_tx
+        .execution()
+        .unwrap()
+        .transitions()
+        .last()
+        .unwrap()
+        .outputs()
+        .iter()
+        .find_map(|output| match output {
+            Output::Record(_, _, Some(record), _) => Some(record.decrypt(&caller_view_key).unwrap()),
+            _ => None,
+        })
+        .unwrap();
+    add_and_test(&prover_vm, &caller_private_key, &[prover_mint_tx], rng);
+
+    // Prover creates a transaction requiring translation.
+    let dynamic_record = DynamicRecord::<CurrentNetwork>::from_record(&prover_minted_record).unwrap();
+
+    let transaction = prover_vm
+        .execute(
+            &caller_private_key,
+            ("dynamic_caller_amend.aleo", "call_legacy_transfer"),
+            vec![
+                Value::from_str(&format!("{legacy_program_field}")).unwrap(),
+                Value::from_str(&format!("{aleo_field}")).unwrap(),
+                Value::from_str(&format!("{transfer_field}")).unwrap(),
+                Value::DynamicRecord(dynamic_record),
+                Value::from_str(&caller_address.to_string()).unwrap(),
+                Value::from_str("500u64").unwrap(),
+            ]
+            .into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .expect("Prover with translation keys should create transaction");
+
+    // Prover VM can verify its own transaction.
+    prover_vm.check_transaction(&transaction, None, rng).expect("Prover VM should verify its own transaction");
+
+    // Verifier VM (without translation keys) should abort the transaction.
+    let block = sample_next_block(&verifier_vm, &caller_private_key, &[transaction], rng).unwrap();
+    assert_eq!(block.aborted_transaction_ids().len(), 1, "Transaction should be aborted without translation keys");
+    verifier_vm.add_next_block(&block).unwrap();
+
+    // --- Amend verifier VM (V3 amendment adds translation keys) ---
+
+    // Create a V3 amendment on verifier VM to add translation keys.
+    let stack = verifier_vm.process().read().get_stack("legacy_token_amend.aleo").unwrap();
+    let deployed_program = stack.program().clone();
+    let edition = *stack.program_edition();
+    drop(stack);
+
+    let v3_transaction =
+        create_v3_deployment_transaction(&verifier_vm, &caller_private_key, &deployed_program, edition, rng).unwrap();
+    add_and_test(&verifier_vm, &caller_private_key, &[v3_transaction], rng);
+
+    // Verify the verifier VM now HAS translation keys after amendment, and edition is unchanged.
+    {
+        let process = verifier_vm.process();
+        let vm_process = process.read();
+        let stack = vm_process.get_stack(legacy_program_id).unwrap();
+        assert_eq!(*stack.program_edition(), 0, "Edition should remain 0 after amendment");
+        assert!(
+            stack.get_verifying_key(&token_name).is_ok(),
+            "Verifier VM should have translation key after amendment"
+        );
+    }
+
+    // Mint a fresh token on prover VM and create a new transaction.
+    let prover_mint_tx_2 = prover_vm
+        .execute(
+            &caller_private_key,
+            ("legacy_token_amend.aleo", "mint"),
+            vec![Value::from_str(&caller_address.to_string()).unwrap(), Value::from_str("1000u64").unwrap()]
+                .into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    let prover_minted_record_2 = prover_mint_tx_2
+        .execution()
+        .unwrap()
+        .transitions()
+        .last()
+        .unwrap()
+        .outputs()
+        .iter()
+        .find_map(|output| match output {
+            Output::Record(_, _, Some(record), _) => Some(record.decrypt(&caller_view_key).unwrap()),
+            _ => None,
+        })
+        .unwrap();
+    add_and_test(&prover_vm, &caller_private_key, &[prover_mint_tx_2], rng);
+
+    let dynamic_record_2 = DynamicRecord::<CurrentNetwork>::from_record(&prover_minted_record_2).unwrap();
+
+    let transaction_2 = prover_vm
+        .execute(
+            &caller_private_key,
+            ("dynamic_caller_amend.aleo", "call_legacy_transfer"),
+            vec![
+                Value::from_str(&format!("{legacy_program_field}")).unwrap(),
+                Value::from_str(&format!("{aleo_field}")).unwrap(),
+                Value::from_str(&format!("{transfer_field}")).unwrap(),
+                Value::DynamicRecord(dynamic_record_2),
+                Value::from_str(&caller_address.to_string()).unwrap(),
+                Value::from_str("500u64").unwrap(),
+            ]
+            .into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .expect("Prover should create fresh transaction after amendment");
+
+    // Verifier VM (with translation keys from amendment) should now accept the fresh transaction.
+    add_and_test(&verifier_vm, &caller_private_key, &[transaction_2], rng);
 }
