@@ -200,23 +200,144 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // This implicitly checks that the program checksum and program owner fields are set correctly.
                 let version = deployment.version()?;
 
-                // Validate deployment constraints based on consensus version.
-                validate_deployment_for_consensus_version(
-                    deployment,
-                    version,
-                    consensus_version,
-                    current_block_height,
-                    *id,
-                )?;
-
-                // If the consensus version is V13 or later, verify the program's mappings do not use non-existent structs.
+                // If the `CONSENSUS_VERSION` is less than `V8`, ensure that
+                //   - the deployment edition is zero.
+                // If the `CONSENSUS_VERSION` is less than `V9` ensure that
+                //   - the deployment edition is zero or one.
+                //   - the program checksum is **not** present in the deployment,
+                //   - the program owner is **not** present in the deployment
+                //   - the program does not use constructors, `Operand::Checksum`, `Operand::Edition`, or `Operand::ProgramOwner`
+                // If the `CONSENSUS_VERSION` is greater than or equal to `V9`, then verify that:
+                //   - the program checksum is present in the deployment
+                //   - the program owner is present in the deployment (except for V3 amendments)
+                // If the `CONSENSUS_VERSION` is less than `V11`, ensure that
+                //   - the program does not include V11 syntax
+                // If the `CONSENSUS_VERSION` is less than `V12`, ensure that
+                //   - the program does not include V12 syntax
+                // If the `CONSENSUS_VERSION` is less than `V13`, ensure that
+                //   - the program does not include V13 syntax
+                //   - the program does not use the external struct syntax `some_program.aleo/Struct`
+                // If the `CONSENSUS_VERSION` is greater than or equal to `V13`, then verify that:
+                //   - the program's mappings do not use non-existent structs.
+                // If the `CONSENSUS_VERSION` is less than `V14`, ensure that
+                //   - the program does not include V14 syntax
+                //   - the argument bit size of futures does not exceed the maximum allowed size of u16::MAX.
+                //   - V3 deployments (amendments) are not allowed.
+                if consensus_version < ConsensusVersion::V8 {
+                    ensure!(
+                        deployment.edition().is_zero(),
+                        "Invalid deployment transaction '{id}' - edition should be zero before `ConsensusVersion::V8`",
+                    );
+                }
+                if consensus_version < ConsensusVersion::V9 {
+                    ensure!(
+                        deployment.edition() <= 1,
+                        "Invalid deployment transaction '{id}' - edition should be zero or one for before `ConsensusVersion::V9`"
+                    );
+                    ensure!(
+                        deployment.program_checksum().is_none(),
+                        "Invalid deployment transaction '{id}' - should not contain program checksum"
+                    );
+                    ensure!(
+                        deployment.program_owner().is_none(),
+                        "Invalid deployment transaction '{id}' - should not contain program owner"
+                    );
+                    ensure!(
+                        !deployment.program().contains_v9_syntax(),
+                        "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V9`"
+                    );
+                }
+                if consensus_version >= ConsensusVersion::V9 {
+                    ensure!(
+                        deployment.program_checksum().is_some(),
+                        "Invalid deployment transaction '{id}' - missing program checksum"
+                    );
+                    // V3 deployments (amendments) do not include a program owner in the deployment.
+                    if version != DeploymentVersion::V3 {
+                        ensure!(
+                            deployment.program_owner().is_some(),
+                            "Invalid deployment transaction '{id}' - missing program owner"
+                        );
+                    }
+                }
+                if consensus_version < ConsensusVersion::V11 {
+                    ensure!(
+                        !deployment.program().contains_v11_syntax(),
+                        "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V11`"
+                    );
+                }
+                if consensus_version < ConsensusVersion::V12 {
+                    ensure!(
+                        !deployment.program().contains_v12_syntax(),
+                        "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V12`"
+                    );
+                }
+                if consensus_version >= ConsensusVersion::V12 {
+                    ensure!(
+                        !deployment.program().contains_string_type(),
+                        "Invalid deployment transaction '{id}' - program uses string type after `ConsensusVersion::V12`"
+                    );
+                }
+                if consensus_version < ConsensusVersion::V13 {
+                    ensure!(
+                        !deployment.program().contains_external_struct(),
+                        "Invalid deployment transaction '{id}' - external structs may only be used beginning with `ConsensusVersion::V13`"
+                    );
+                }
                 if consensus_version >= ConsensusVersion::V13 {
                     self.process.read().mapping_types_exist(deployment.program())?;
                 }
-                // Before V14, check that future argument bit sizes do not exceed u16::MAX.
                 if consensus_version < ConsensusVersion::V14 {
+                    ensure!(
+                        !deployment.program().contains_v14_syntax(),
+                        "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V14`"
+                    );
+                    // Check that all future argument bit sizes do not exceed the maximum allowed size of u16::MAX.
                     let stack = Stack::new(&self.process().read(), deployment.program())?;
                     check_future_argument_bit_size(deployment.program(), &stack, u16::MAX as usize)?;
+                    // V3 deployments (amendments) are not allowed before V14.
+                    ensure!(
+                        version != DeploymentVersion::V3,
+                        "Invalid deployment transaction '{id}' - V3 deployments are not allowed before `ConsensusVersion::V14`"
+                    );
+                }
+
+                // Determine if any of the array types exceed the maximum array elements.
+                // Do not perform this check if the consensus version is beyond the latest version threshold for `MAX_ARRAY_ELEMENTS`.
+                if let Some((latest_version_threshold, _)) = N::MAX_ARRAY_ELEMENTS.last()
+                    && consensus_version < *latest_version_threshold
+                {
+                    let max_array_elements = consensus_config_value!(N, MAX_ARRAY_ELEMENTS, current_block_height)
+                        .ok_or_else(|| anyhow!("Missing consensus config value: MAX_ARRAY_ELEMENTS"))?;
+                    ensure!(
+                        !deployment.program().exceeds_max_array_size(u32::try_from(max_array_elements)?),
+                        "Invalid deployment transaction '{id}' - program contains an array that exceeds the maximum allowed size of {max_array_elements} elements",
+                    );
+                }
+
+                // Ensure the program size is bounded properly based on the current block height.
+                deployment.program().check_program_size(current_block_height)?;
+
+                // Ensure the program writes do not exceed the maximum allowed based on the current block height.
+                deployment.program().check_program_writes(current_block_height)?;
+
+                // Enforce record verifying key requirements based on consensus version.
+                // Before V14: record verifying keys are not allowed.
+                // At/after V14: record verifying keys are required.
+                if consensus_version < ConsensusVersion::V14 {
+                    let num_functions = deployment.num_functions();
+                    ensure!(
+                        deployment.verifying_keys().len() == num_functions,
+                        "Invalid deployment transaction '{id}' - expected {num_functions} function verifying keys before `ConsensusVersion::V14`"
+                    );
+                } else {
+                    let num_functions = deployment.num_functions();
+                    let num_records = deployment.program().records().len();
+                    let expected = num_functions + num_records;
+                    ensure!(
+                        deployment.verifying_keys().len() == expected,
+                        "Invalid deployment transaction '{id}' - expected {num_functions} function and {num_records} record verifying keys after `ConsensusVersion::V14`"
+                    );
                 }
 
                 // If the program owner exists in the deployment, then verify that it matches the owner in the transaction.
@@ -234,193 +355,185 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 let is_program_in_storage = self.transaction_store().contains_program_id(deployment.program_id())?;
                 let is_program_in_process = self.contains_program(deployment.program_id());
 
-                // Perform additional checks based on the deployment version.
-                match version {
-                    DeploymentVersion::V1 | DeploymentVersion::V2 => {
-                        // For `V1` and `V2` deployments,
-                        // If the edition is zero, then check that:
-                        //  - The program does not exist in the store or process.
-                        //  - The program contains a constructor after `ConsensusVersion::V9`.
-                        // Otherwise, check that:
-                        //  - The program exists in the store and process.
-                        //  - The new edition increments the old edition by 1.
-                        //  - If the new program does not contain a constructor
-                        //      - the existing program does not have a constructor
-                        //      - the new program exactly matches the existing program
-                        //      - the edition is exactly one.
-                        //  - Otherwise, if the new program contains a constructor.
-                        //      - the existing program has a constructor.
-                        //      - if the consensus version is V10 or greater, then check that each function's **record** output registers match the existing program.
-                        //      - Note. Constructor validity is checked at a later point.
-                        //      - Note. The remaining syntactic checks on upgrades are done in `Stack::check_upgrade_is_valid`.
-                        match deployment.edition() {
-                            0 => {
-                                // Ensure the program ID does not already exist in the store.
-                                ensure!(
-                                    !is_program_in_storage,
-                                    "Program ID '{}' is already deployed",
-                                    deployment.program_id()
-                                );
-                                // Ensure the program does not already exist in the process.
-                                ensure!(
-                                    !is_program_in_process,
-                                    "Program ID '{}' already exists",
-                                    deployment.program_id()
-                                );
-                                // Ensure that the program contains a constructor if the program is deployed after `ConsensusVersion::V9`.
-                                if consensus_version >= ConsensusVersion::V9 {
-                                    // Check that the program contains a constructor.
-                                    ensure!(
-                                        deployment.program().contains_constructor(),
-                                        "Invalid deployment transaction '{id}' - a new program after `ConsensusVersion::V9` must contain a constructor"
-                                    );
+                // Handle V3 amendments separately from V1/V2 deployments.
+                if version == DeploymentVersion::V3 {
+                    // For `V3` (amendment) deployments, check that:
+                    // - The program is not `credits.aleo`.
+                    // - The program already exists in the store and process.
+                    // - The existing program, checksum, and edition matches the one in the deployment.
+
+                    // Check that the program is not `credits.aleo`.
+                    ensure!(deployment.program_id() != &ProgramID::credits(), "Cannot deploy 'credits.aleo'");
+
+                    // Check that the program exists.
+                    ensure!(
+                        is_program_in_storage,
+                        "Invalid deployment transaction '{id}' - program does not exist in the store"
+                    );
+                    ensure!(
+                        is_program_in_process,
+                        "Invalid deployment transaction '{id}' - program does not exist in the process"
+                    );
+
+                    // Get the existing program.
+                    let stack = self.process().read().get_stack(deployment.program_id())?;
+                    let existing_program = stack.program();
+
+                    // Ensure the existing program matches the deployment program.
+                    ensure!(
+                        existing_program == deployment.program(),
+                        "Invalid deployment transaction '{id}' - new program does not match the existing program"
+                    );
+                    // Ensure the existing program checksum matches the deployment checksum.
+                    // Note: This unwrap is safe since `V3` deployments always have a program checksum.
+                    ensure!(
+                        existing_program.to_checksum() == deployment.program_checksum().unwrap(),
+                        "Invalid deployment transaction '{id}' - program checksum does not match the existing program checksum"
+                    );
+                    // Ensure the existing program edition matches the deployment edition.
+                    ensure!(
+                        *stack.program_edition() == deployment.edition(),
+                        "Invalid deployment transaction '{id}' - program edition does not match the existing program edition"
+                    );
+
+                    // Ensure at least one VK (function or translation) has changed or been added.
+                    // This prevents spam amendments that don't actually modify anything.
+                    // Note: `deployment.verifying_keys()` returns the unified vector of
+                    // function and record (translation) VKs, so this covers both.
+                    let mut has_vk_change = false;
+                    for (name, (new_vk, _)) in deployment.verifying_keys() {
+                        match stack.get_verifying_key(name) {
+                            Ok(existing_vk) => {
+                                if *new_vk != existing_vk {
+                                    has_vk_change = true;
+                                    break;
                                 }
                             }
-                            new_edition => {
-                                // Check that the program exists.
-                                ensure!(
-                                    is_program_in_storage,
-                                    "Invalid deployment transaction '{id}' - program does not exist in the store"
-                                );
-                                ensure!(
-                                    is_program_in_process,
-                                    "Invalid deployment transaction '{id}' - program does not exist in the process"
-                                );
-                                // Get the existing program.
-                                // It should be the case that the stored program matches the process program.
-                                let stack = self.process().read().get_stack(deployment.program_id())?;
-                                let existing_program = stack.program();
-                                // Check that the new edition increments the old edition by 1.
-                                let old_edition = *stack.program_edition();
-                                let expected_edition = old_edition.checked_add(1).ok_or_else(|| {
-                                    anyhow!("Invalid deployment transaction '{id}' - next edition overflows")
-                                })?;
-                                ensure!(
-                                    expected_edition == new_edition,
-                                    "Invalid deployment transaction '{id}' - next edition ('{new_edition}') does not match the expected edition ('{expected_edition}')",
-                                );
+                            Err(_) => {
+                                // New VK added.
+                                has_vk_change = true;
+                                break;
+                            }
+                        }
+                    }
 
-                                // Validate the deployment depending on whether the program has a constructor.
-                                // The exact rules are listed above.
-                                match deployment.program().contains_constructor() {
-                                    false => {
-                                        // Check that the existing program does not have a constructor.
-                                        ensure!(
-                                            !existing_program.contains_constructor(),
-                                            "Invalid deployment transaction '{id}' - the existing program has a constructor, but the deployment program does not"
-                                        );
-                                        // Ensure the new program matches the old program.
-                                        ensure!(
-                                            existing_program == deployment.program(),
-                                            "Invalid deployment transaction '{id}' - new program does not match the old program"
-                                        );
-                                        // Ensure that the new edition is exactly one.
-                                        ensure!(
-                                            new_edition == 1,
-                                            "Invalid deployment transaction '{id}' - programs without constructors can only be re-deployed one time."
-                                        );
-                                    }
-                                    true => {
-                                        // Ensure the existing program has a constructor.
-                                        ensure!(
-                                            existing_program.contains_constructor(),
-                                            "Invalid deployment transaction '{id}' - the existing program does not have a constructor, but the deployment program does"
-                                        );
-                                        // If the consensus version is V10 or greater, then check that each function's **record** output registers match the existing program.
-                                        if consensus_version >= ConsensusVersion::V10 {
-                                            if let Err(e) = check_output_register_indices_unchanged(
-                                                existing_program,
-                                                deployment.program(),
-                                            ) {
-                                                bail!("Invalid deployment transaction '{id}' - {e}")
-                                            }
+                    ensure!(
+                        has_vk_change,
+                        "Invalid deployment transaction '{id}' - amendment must add or modify at least one verifying key"
+                    );
+                } else {
+                    // If the edition is zero, then check that:
+                    //  - The program does not exist in the store or process.
+                    //  - The program contains a constructor.
+                    // Otherwise, check that:
+                    //  - The program exists in the store and process.
+                    //  - The new edition increments the old edition by 1.
+                    //  - If the new program does not contain a constructor
+                    //      - the existing program does not have a constructor
+                    //      - the new program exactly matches the existing program
+                    //      - the edition is exactly one.
+                    //  - Otherwise, if the new program contains a constructor.
+                    //      - the existing program has a constructor.
+                    //      - if the consensus version is V10 or greater, then check that each function's **record** output registers match the existing program.
+                    //      - Note. Constructor validity is checked at a later point.
+                    //      - Note. The remaining syntactic checks on upgrades are done in `Stack::check_upgrade_is_valid`.
+                    match deployment.edition() {
+                        0 => {
+                            // Ensure the program ID does not already exist in the store.
+                            ensure!(
+                                !is_program_in_storage,
+                                "Program ID '{}' is already deployed",
+                                deployment.program_id()
+                            );
+                            // Ensure the program does not already exist in the process.
+                            ensure!(!is_program_in_process, "Program ID '{}' already exists", deployment.program_id());
+                            // Ensure that the program contains a constructor if the program is deployed after `ConsensusVersion::V9`.
+                            if consensus_version >= ConsensusVersion::V9 {
+                                // Check that the program contains a constructor.
+                                ensure!(
+                                    deployment.program().contains_constructor(),
+                                    "Invalid deployment transaction '{id}' - a new program after `ConsensusVersion::V9` must contain a constructor"
+                                );
+                            }
+                        }
+                        new_edition => {
+                            // Check that the program exists.
+                            ensure!(
+                                is_program_in_storage,
+                                "Invalid deployment transaction '{id}' - program does not exist in the store"
+                            );
+                            ensure!(
+                                is_program_in_process,
+                                "Invalid deployment transaction '{id}' - program does not exist in the process"
+                            );
+                            // Get the existing program.
+                            // It should be the case that the stored program matches the process program.
+                            let stack = self.process().read().get_stack(deployment.program_id())?;
+                            let existing_program = stack.program();
+                            // Check that the new edition increments the old edition by 1.
+                            let old_edition = *stack.program_edition();
+                            let expected_edition = old_edition.checked_add(1).ok_or_else(|| {
+                                anyhow!("Invalid deployment transaction '{id}' - next edition overflows")
+                            })?;
+                            ensure!(
+                                expected_edition == new_edition,
+                                "Invalid deployment transaction '{id}' - next edition ('{new_edition}') does not match the expected edition ('{expected_edition}')",
+                            );
+
+                            // Validate the deployment depending on whether the program has a constructor.
+                            // The exact rules are listed above.
+                            match deployment.program().contains_constructor() {
+                                false => {
+                                    // Check that the existing program does not have a constructor.
+                                    ensure!(
+                                        !existing_program.contains_constructor(),
+                                        "Invalid deployment transaction '{id}' - the existing program has a constructor, but the deployment program does not"
+                                    );
+                                    // Ensure the new program matches the old program.
+                                    ensure!(
+                                        existing_program == deployment.program(),
+                                        "Invalid deployment transaction '{id}' - new program does not match the old program"
+                                    );
+                                    // Ensure that the new edition is exactly one.
+                                    ensure!(
+                                        new_edition == 1,
+                                        "Invalid deployment transaction '{id}' - programs without constructors can only be re-deployed one time."
+                                    );
+                                }
+                                true => {
+                                    // Ensure the existing program has a constructor.
+                                    ensure!(
+                                        existing_program.contains_constructor(),
+                                        "Invalid deployment transaction '{id}' - the existing program does not have a constructor, but the deployment program does"
+                                    );
+                                    // If the consensus version is V10 or greater, then check that each function's **record** output registers match the existing program.
+                                    if consensus_version >= ConsensusVersion::V10 {
+                                        if let Err(e) = check_output_register_indices_unchanged(
+                                            existing_program,
+                                            deployment.program(),
+                                        ) {
+                                            bail!("Invalid deployment transaction '{id}' - {e}")
                                         }
                                     }
                                 }
                             }
                         }
-
-                        // Enforce the syntax restrictions on the programs based on the current consensus version.
-                        // Note: We do not enforce this restriction for programs with non-zero editions without constructors, since they may have been deployed before the restrictions were introduced.
-                        //  However, we do enforce that programs with edition one, EXACTLY match their previous edition.
-                        if deployment.edition() == 0 || deployment.program().contains_constructor() {
-                            // Check restricted keywords for the consensus version.
-                            deployment.program().check_restricted_keywords_for_consensus_version(consensus_version)?;
-                            // Perform additional program checks if the consensus version is V7 or beyond.
-                            if consensus_version >= ConsensusVersion::V7 {
-                                deployment.program().check_program_naming_structure()?;
-                            }
-                        }
-                        // Check that the program does not make any calls to `credits.aleo/upgrade`.
-                        // Note: This is safe to check for programs deployed before `ConsensusVersion::V8` because `credits.aleo/upgrade` was not yet introduced.
-                        deployment.program().check_external_calls_to_credits_upgrade()?;
                     }
-                    DeploymentVersion::V3 => {
-                        // For `V3` (amendment) deployments, check that:
-                        // - The program is not `credits.aleo`.
-                        // - The program already exists in the store and process.
-                        // - The existing program, checksum, and edition matches the one in the deployment.
 
-                        // Check that the program is not `credits.aleo`.
-                        ensure!(deployment.program_id() != &ProgramID::credits(), "Cannot deploy 'credits.aleo'");
-
-                        // Check that the program exists.
-                        ensure!(
-                            is_program_in_storage,
-                            "Invalid deployment transaction '{id}' - program does not exist in the store"
-                        );
-                        ensure!(
-                            is_program_in_process,
-                            "Invalid deployment transaction '{id}' - program does not exist in the process"
-                        );
-
-                        // Get the existing program.
-                        let stack = self.process().read().get_stack(deployment.program_id())?;
-                        let existing_program = stack.program();
-
-                        // Ensure the existing program matches the deployment program.
-                        ensure!(
-                            existing_program == deployment.program(),
-                            "Invalid deployment transaction '{id}' - new program does not match the existing program"
-                        );
-                        // Ensure the existing program checksum matches the deployment checksum.
-                        // Note that this unwrap is safe since `V3` deployments always have a program checksum.
-                        ensure!(
-                            existing_program.to_checksum() == deployment.program_checksum().unwrap(),
-                            "Invalid deployment transaction '{id}' - program checksum does not match the existing program checksum"
-                        );
-                        // Ensure the existing program edition matches the deployment edition.
-                        ensure!(
-                            *stack.program_edition() == deployment.edition(),
-                            "Invalid deployment transaction '{id}' - program edition does not match the existing program edition"
-                        );
-
-                        // Ensure at least one VK (function or translation) has changed or been added.
-                        // This prevents spam amendments that don't actually modify anything.
-                        // Note: `deployment.verifying_keys()` returns the unified vector of
-                        // function and record (translation) VKs, so this covers both.
-                        let mut has_vk_change = false;
-                        for (name, (new_vk, _)) in deployment.verifying_keys() {
-                            match stack.get_verifying_key(name) {
-                                Ok(existing_vk) => {
-                                    if *new_vk != existing_vk {
-                                        has_vk_change = true;
-                                        break;
-                                    }
-                                }
-                                Err(_) => {
-                                    // New VK added.
-                                    has_vk_change = true;
-                                    break;
-                                }
-                            }
+                    // Enforce the syntax restrictions on the programs based on the current consensus version.
+                    // Note: We do not enforce this restriction for programs with non-zero editions without constructors, since they may have been deployed before the restrictions were introduced.
+                    //  However, we do enforce that programs with edition one, EXACTLY match their previous edition.
+                    if deployment.edition() == 0 || deployment.program().contains_constructor() {
+                        // Check restricted keywords for the consensus version.
+                        deployment.program().check_restricted_keywords_for_consensus_version(consensus_version)?;
+                        // Perform additional program checks if the consensus version is V7 or beyond.
+                        if consensus_version >= ConsensusVersion::V7 {
+                            deployment.program().check_program_naming_structure()?;
                         }
-
-                        ensure!(
-                            has_vk_change,
-                            "Invalid deployment transaction '{id}' - amendment must add or modify at least one verifying key"
-                        );
                     }
+                    // Check that the program does not make any calls to `credits.aleo/upgrade`.
+                    // Note: This is safe to check for programs deployed before `ConsensusVersion::V8` because `credits.aleo/upgrade` was not yet introduced.
+                    deployment.program().check_external_calls_to_credits_upgrade()?;
                 }
 
                 // Verify the deployment if it has not been verified before.
@@ -749,137 +862,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         finish!(timer, "Check the global state root");
         result
     }
-}
-
-/// Validates deployment constraints based on consensus version.
-///
-/// # Constraints by Consensus Version
-///
-/// - **< V8**: Edition must be zero.
-/// - **< V9**: Edition must be zero or one; deployment version must be `V1`; program cannot use V9 syntax.
-/// - **≥ V9**: Deployment version must be `V2` or `V3`.
-/// - **< V11**: Program cannot use V11 syntax.
-/// - **< V12**: Program cannot use V12 syntax.
-/// - **≥ V12**: Program cannot use string type.
-/// - **< V13**: Program cannot use external structs.
-/// - **< V14**: Deployment version cannot be `V3`.
-fn validate_deployment_for_consensus_version<N: Network>(
-    deployment: &Deployment<N>,
-    version: DeploymentVersion,
-    consensus_version: ConsensusVersion,
-    current_block_height: u32,
-    id: N::TransactionID,
-) -> Result<()> {
-    // Edition constraints.
-    if consensus_version < ConsensusVersion::V8 {
-        ensure!(
-            deployment.edition().is_zero(),
-            "Invalid deployment transaction '{id}' - edition should be zero before `ConsensusVersion::V8`",
-        );
-    }
-    if consensus_version < ConsensusVersion::V9 {
-        ensure!(
-            deployment.edition() <= 1,
-            "Invalid deployment transaction '{id}' - edition should be zero or one before `ConsensusVersion::V9`"
-        );
-    }
-
-    // Deployment version constraints.
-    if consensus_version < ConsensusVersion::V9 {
-        ensure!(
-            version == DeploymentVersion::V1,
-            "Invalid deployment transaction '{id}' - the deployment version should be `V1` before `ConsensusVersion::V9`"
-        );
-    } else if consensus_version < ConsensusVersion::V14 {
-        ensure!(
-            version == DeploymentVersion::V2,
-            "Invalid deployment transaction '{id}' - the deployment version should be `V2` from `ConsensusVersion::V9` to `ConsensusVersion::V13`"
-        );
-    } else {
-        ensure!(
-            matches!(version, DeploymentVersion::V2 | DeploymentVersion::V3),
-            "Invalid deployment transaction '{id}' - the deployment version should be `V2` or `V3` from `ConsensusVersion::V14` onwards"
-        );
-    }
-
-    // Syntax constraints.
-    if consensus_version < ConsensusVersion::V9 {
-        ensure!(
-            !deployment.program().contains_v9_syntax(),
-            "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V9`"
-        );
-    }
-    if consensus_version < ConsensusVersion::V11 {
-        ensure!(
-            !deployment.program().contains_v11_syntax(),
-            "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V11`"
-        );
-    }
-    if consensus_version < ConsensusVersion::V12 {
-        ensure!(
-            !deployment.program().contains_v12_syntax(),
-            "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V12`"
-        );
-    }
-    if consensus_version >= ConsensusVersion::V12 {
-        ensure!(
-            !deployment.program().contains_string_type(),
-            "Invalid deployment transaction '{id}' - program uses string type after `ConsensusVersion::V12`"
-        );
-    }
-    if consensus_version < ConsensusVersion::V13 {
-        ensure!(
-            !deployment.program().contains_external_struct(),
-            "Invalid deployment transaction '{id}' - external structs may only be used beginning with `ConsensusVersion::V13`"
-        );
-    }
-    if consensus_version < ConsensusVersion::V14 {
-        ensure!(
-            !deployment.program().contains_v14_syntax(),
-            "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V14`"
-        );
-    }
-
-    // Enforce record verifying key requirements based on consensus version.
-    // Before V14: record verifying keys are not allowed.
-    // At/after V14: record verifying keys are required.
-    if consensus_version < ConsensusVersion::V14 {
-        let num_functions = deployment.num_functions();
-        ensure!(
-            deployment.verifying_keys().len() == num_functions,
-            "Invalid deployment transaction '{id}' - expected {num_functions} function verifying keys before `ConsensusVersion::V14`"
-        );
-    } else {
-        let num_functions = deployment.num_functions();
-        let num_records = deployment.program().records().len();
-        let expected = num_functions + num_records;
-        ensure!(
-            deployment.verifying_keys().len() == expected,
-            "Invalid deployment transaction '{id}' - expected {num_functions} function and {num_records} record verifying keys after `ConsensusVersion::V14`"
-        );
-    }
-
-    // Size constraints.
-    // Determine if any of the array types exceed the maximum array elements.
-    // Do not perform this check if the consensus version is beyond the latest version threshold for `MAX_ARRAY_ELEMENTS`.
-    if let Some((latest_version_threshold, _)) = N::MAX_ARRAY_ELEMENTS.last()
-        && consensus_version < *latest_version_threshold
-    {
-        let max_array_elements = consensus_config_value!(N, MAX_ARRAY_ELEMENTS, current_block_height)
-            .ok_or_else(|| anyhow!("Missing consensus config value: MAX_ARRAY_ELEMENTS"))?;
-        ensure!(
-            !deployment.program().exceeds_max_array_size(u32::try_from(max_array_elements)?),
-            "Invalid deployment transaction '{id}' - program contains an array that exceeds the maximum allowed size of {max_array_elements} elements",
-        );
-    }
-
-    // Ensure the program size is bounded properly based on the current block height.
-    deployment.program().check_program_size(current_block_height)?;
-
-    // Ensure the program writes do not exceed the maximum allowed based on the current block height.
-    deployment.program().check_program_writes(current_block_height)?;
-
-    Ok(())
 }
 
 #[cfg(test)]

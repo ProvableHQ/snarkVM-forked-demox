@@ -569,11 +569,13 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
 
         // If amendments exist, return the latest amendment transaction ID.
         if let Some(latest_index) = self.get_latest_amendment_index(program_id, edition)? {
-            if let Some(transaction_id) =
-                self.amendment_id_map().get_confirmed(&(*program_id, edition, latest_index))?
-            {
-                return Ok(Some(*transaction_id));
-            }
+            let Some(transaction_id) = self.amendment_id_map().get_confirmed(&(*program_id, edition, latest_index))?
+            else {
+                bail!(
+                    "Failed to find the amendment transaction ID for program '{program_id}' (edition {edition}, index {latest_index})"
+                );
+            };
+            return Ok(Some(*transaction_id));
         }
 
         // No amendments, retrieve the base deployment transaction ID.
@@ -620,11 +622,13 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
 
         // If amendments exist, return the latest amendment transaction ID.
         if let Some(latest_index) = self.get_latest_amendment_index(program_id, edition)? {
-            if let Some(transaction_id) =
-                self.amendment_id_map().get_confirmed(&(*program_id, edition, latest_index))?
-            {
-                return Ok(Some(*transaction_id));
-            }
+            let Some(transaction_id) = self.amendment_id_map().get_confirmed(&(*program_id, edition, latest_index))?
+            else {
+                bail!(
+                    "Failed to find the amendment transaction ID for program '{program_id}' (edition {edition}, index {latest_index})"
+                );
+            };
+            return Ok(Some(*transaction_id));
         }
 
         // No amendments, return the original deployment transaction ID.
@@ -1036,6 +1040,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             self.checksum_map().get_confirmed(&(program_id, edition))?.map(|checksum| checksum.into_owned());
         // If the checksum is present, retrieve the owner address.
         // For base deployments, both must be present (V2) or both absent (V1).
+        // Note that amendments were handled in the separate branch above, so we are guaranteed to be retrieving a base deployment.
         let program_owner = match program_checksum.is_some() {
             false => None,
             true => match self.owner_map().get_confirmed(&(program_id, edition))? {
@@ -2223,5 +2228,80 @@ mod tests {
         // Now removing amendment 0 should succeed (it's now the latest).
         deployment_store.remove(&amendment_0_id).unwrap();
         assert_eq!(None, deployment_store.get_amendment_count(&original_program_id, 0).unwrap());
+    }
+
+    #[test]
+    fn test_find_latest_transaction_id_with_amendments() {
+        let rng = &mut TestRng::default();
+
+        // Initialize stores.
+        let transition_store = TransitionStore::open(StorageMode::Test(None)).unwrap();
+        let fee_store = FeeStore::open(transition_store).unwrap();
+        let deployment_store = DeploymentMemory::open(fee_store).unwrap();
+
+        // Insert a V2 original deployment.
+        let original_transaction = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, false, true, rng);
+        let original_transaction_id = original_transaction.id();
+        let original_program_id = *original_transaction.deployment().unwrap().program_id();
+        deployment_store.insert(&original_transaction).unwrap();
+
+        // Before any amendment, find_latest should return the original transaction ID.
+        let latest = deployment_store.find_latest_transaction_id_from_program_id(&original_program_id).unwrap();
+        assert_eq!(Some(original_transaction_id), latest, "Should return original when no amendments exist");
+
+        // Also test the edition-specific variant.
+        let latest_for_edition =
+            deployment_store.find_latest_transaction_id_from_program_id_and_edition(&original_program_id, 0).unwrap();
+        assert_eq!(Some(original_transaction_id), latest_for_edition);
+
+        // Insert an amendment.
+        let amendment = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 0, true, false, rng);
+        let amendment_id = amendment.id();
+        deployment_store.insert(&amendment).unwrap();
+
+        // After amendment, find_latest should return the amendment transaction ID.
+        let latest = deployment_store.find_latest_transaction_id_from_program_id(&original_program_id).unwrap();
+        assert_eq!(Some(amendment_id), latest, "Should return amendment when one exists");
+
+        // Edition-specific variant should also return the amendment.
+        let latest_for_edition =
+            deployment_store.find_latest_transaction_id_from_program_id_and_edition(&original_program_id, 0).unwrap();
+        assert_eq!(Some(amendment_id), latest_for_edition);
+
+        // The amendment-specific lookup should work.
+        let amendment_tx = deployment_store
+            .find_transaction_id_from_program_id_edition_and_amendment(&original_program_id, 0, 0)
+            .unwrap();
+        assert_eq!(Some(amendment_id), amendment_tx);
+
+        // A non-existent amendment index should return None.
+        let nonexistent = deployment_store
+            .find_transaction_id_from_program_id_edition_and_amendment(&original_program_id, 0, 999)
+            .unwrap();
+        assert_eq!(None, nonexistent);
+
+        // Remove the amendment and verify we get the original again.
+        deployment_store.remove(&amendment_id).unwrap();
+        let latest = deployment_store.find_latest_transaction_id_from_program_id(&original_program_id).unwrap();
+        assert_eq!(Some(original_transaction_id), latest, "Should return original after amendment removed");
+    }
+
+    #[test]
+    fn test_amendment_on_wrong_edition_fails() {
+        let rng = &mut TestRng::default();
+
+        // Initialize stores.
+        let transition_store = TransitionStore::open(StorageMode::Test(None)).unwrap();
+        let fee_store = FeeStore::open(transition_store).unwrap();
+        let deployment_store = DeploymentMemory::open(fee_store).unwrap();
+
+        // Insert a V2 deployment at edition 0.
+        let original_transaction = snarkvm_ledger_test_helpers::sample_deployment_transaction(2, 0, false, true, rng);
+        deployment_store.insert(&original_transaction).unwrap();
+
+        // Attempt to insert a V3 amendment targeting edition 1 (which doesn't exist).
+        let bad_amendment = snarkvm_ledger_test_helpers::sample_deployment_transaction(3, 1, true, false, rng);
+        let result = deployment_store.insert(&bad_amendment);
+        assert!(result.is_err(), "Amendment targeting non-latest edition should fail");
     }
 }

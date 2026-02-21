@@ -153,15 +153,19 @@ constructor:
     Ok(())
 }
 
-// This test verifies that:
-// - After an amendment adds translation VKs, the program can still be executed.
-// - The amendment correctly adds the translation VKs to the stack.
+// This test verifies the complete amendment lifecycle:
+// - An amendment adds translation VKs to a pre-V14 deployment.
+// - The program executes correctly before and after the amendment.
+// - A duplicate amendment (no VK changes) is rejected.
 //
 // Test flow:
-// 1. Deploy a program with records at V9 (V2: checksum + owner, NO translation VKs)
-// 2. Execute the program to verify it works
-// 3. Advance to V14 and create an amendment (adds translation VKs)
-// 4. Execute the program again to verify it still works with the new VKs
+// 1. V9: Deploy a program with records (V2: checksum + owner, NO translation VKs)
+// 2. Execute the program pre-amendment
+// 3. Advance to V14
+// 4. First amendment succeeds (adds translation VKs)
+// 5. Verify VKs added and edition unchanged
+// 6. Execute the program post-amendment
+// 7. Second amendment fails (no VK changes since circuits are deterministic)
 #[test]
 fn test_amendment_updates_vks() -> Result<()> {
     let rng = &mut TestRng::default();
@@ -209,7 +213,7 @@ constructor:
         "V2 deployment at V9 should NOT have translation VKs"
     );
 
-    // Execute the program to verify it works.
+    // Execute the program to verify it works before the amendment.
     let execution = vm.execute(
         &caller_private_key,
         ("vk_test.aleo", "add_numbers"),
@@ -220,7 +224,7 @@ constructor:
         rng,
     )?;
     assert!(vm.check_transaction(&execution, None, rng).is_ok());
-    let block = sample_next_block(&vm, &caller_private_key, &[execution.clone()], rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, &[execution], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
     vm.add_next_block(&block)?;
 
@@ -235,11 +239,10 @@ constructor:
     let stack = vm.process().read().get_stack("vk_test.aleo")?;
     let deployed_program = stack.program().clone();
 
-    // Create and apply a V3 deployment (amendment) that adds translation VKs.
+    // First amendment: Adds translation VKs - should succeed.
     let v3_transaction = create_v3_deployment_transaction(&vm, &caller_private_key, &deployed_program, 0, rng)?;
-
     let block = sample_next_block(&vm, &caller_private_key, &[v3_transaction], rng)?;
-    assert_eq!(block.transactions().num_accepted(), 1, "Amendment should be accepted");
+    assert_eq!(block.transactions().num_accepted(), 1, "First amendment should be accepted (adds translation VKs)");
     vm.add_next_block(&block)?;
 
     // Verify the translation VK was added by the amendment.
@@ -250,7 +253,7 @@ constructor:
     );
 
     // Verify the edition is still 0.
-    assert_eq!(*stack.program_edition(), 0);
+    assert_eq!(*stack.program_edition(), 0, "Edition should remain 0 after amendment");
 
     // Execute the program again - should still work with the new translation VKs.
     let execution = vm.execute(
@@ -265,6 +268,13 @@ constructor:
     assert!(vm.check_transaction(&execution, None, rng).is_ok());
     let block = sample_next_block(&vm, &caller_private_key, &[execution], rng)?;
     assert_eq!(block.transactions().num_accepted(), 1);
+    vm.add_next_block(&block)?;
+
+    // Second amendment: No VK changes (deterministic circuits) - should fail.
+    let v3_transaction_2 = create_v3_deployment_transaction(&vm, &caller_private_key, &deployed_program, 0, rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, &[v3_transaction_2], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 0, "Second amendment should be rejected (no VK changes)");
+    assert_eq!(block.aborted_transaction_ids().len(), 1);
     vm.add_next_block(&block)?;
 
     Ok(())
@@ -515,109 +525,6 @@ fn test_credits_cannot_be_amended() -> Result<()> {
     assert!(result.is_err(), "Creating a deployment for credits.aleo should fail");
     let error = result.unwrap_err().to_string();
     assert!(error.contains("credits.aleo"), "Error should mention credits.aleo: {error}");
-
-    Ok(())
-}
-
-// This test verifies that:
-// - An amendment that adds translation VKs succeeds.
-// - A subsequent amendment with no VK changes is rejected.
-//
-// Test flow:
-// 1. Deploy a program with records at V9 (no translation VKs)
-// 2. Advance to V14
-// 3. First amendment succeeds (adds translation VKs)
-// 4. Second amendment fails (no VK changes since circuits are deterministic)
-#[test]
-fn test_multiple_amendments() -> Result<()> {
-    let rng = &mut TestRng::default();
-
-    // Initialize a new caller.
-    let caller_private_key = sample_genesis_private_key(rng);
-
-    // Get the V9 and V14 heights.
-    let v9_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V9)?;
-    let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14)?;
-
-    // Initialize the VM at V9 height.
-    let vm = sample_vm_at_height(v9_height, rng);
-
-    // Define a program with records.
-    let program = Program::from_str(
-        r"
-program multi_amend.aleo;
-
-record token:
-    owner as address.private;
-    amount as u64.private;
-
-function increment:
-    input r0 as u32.public;
-    add r0 1u32 into r1;
-    output r1 as u32.public;
-
-constructor:
-    assert.eq true true;
-",
-    )?;
-
-    // Deploy the program at V9 (no translation VKs).
-    let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
-    let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng)?;
-    assert_eq!(block.transactions().num_accepted(), 1);
-    vm.add_next_block(&block)?;
-
-    // Verify deployed without translation VKs.
-    let stack = vm.process().read().get_stack("multi_amend.aleo")?;
-    assert!(
-        stack.get_verifying_key(&Identifier::from_str("token")?).is_err(),
-        "V2 deployment should not have translation VKs"
-    );
-    let deployed_program = stack.program().clone();
-
-    // Advance the VM to V14 height.
-    let transactions: [Transaction<CurrentNetwork>; 0] = [];
-    while vm.block_store().current_block_height() < v14_height {
-        let block = sample_next_block(&vm, &caller_private_key, &transactions, rng)?;
-        vm.add_next_block(&block)?;
-    }
-
-    // First amendment: Adds translation VKs - should succeed.
-    let v3_transaction = create_v3_deployment_transaction(&vm, &caller_private_key, &deployed_program, 0, rng)?;
-
-    let block = sample_next_block(&vm, &caller_private_key, &[v3_transaction], rng)?;
-    assert_eq!(block.transactions().num_accepted(), 1, "First amendment should be accepted (adds translation VKs)");
-    vm.add_next_block(&block)?;
-
-    // Verify the translation VK was added.
-    let stack = vm.process().read().get_stack("multi_amend.aleo")?;
-    assert!(
-        stack.get_verifying_key(&Identifier::from_str("token")?).is_ok(),
-        "First amendment should have added translation VKs"
-    );
-
-    // Verify edition is still 0.
-    assert_eq!(*stack.program_edition(), 0, "Edition should remain 0 after amendment");
-
-    // Second amendment: No VK changes (deterministic circuits) - should fail.
-    let v3_transaction_2 = create_v3_deployment_transaction(&vm, &caller_private_key, &deployed_program, 0, rng)?;
-
-    let block = sample_next_block(&vm, &caller_private_key, &[v3_transaction_2], rng)?;
-    assert_eq!(block.transactions().num_accepted(), 0, "Second amendment should be rejected (no VK changes)");
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
-    vm.add_next_block(&block)?;
-
-    // Execute the program to verify it still works after the first amendment.
-    let execution = vm.execute(
-        &caller_private_key,
-        ("multi_amend.aleo", "increment"),
-        vec![Value::from_str("42u32")?].into_iter(),
-        None,
-        0,
-        None,
-        rng,
-    )?;
-    assert!(vm.check_transaction(&execution, None, rng).is_ok());
 
     Ok(())
 }
