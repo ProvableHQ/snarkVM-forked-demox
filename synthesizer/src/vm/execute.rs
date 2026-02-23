@@ -211,8 +211,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 cast_mut_ref!(trace as Trace<N>).prepare(query)?;
                 lap!(timer, "Prepare the assignments");
 
-                // Check record existence
-                $process.ensure_records_exist(trace.transitions().iter(), trace.call_graph().clone())?;
+                // From consensus version V14 onwards, check record existence
+                if consensus_version >= ConsensusVersion::V14 {
+                    $process.ensure_records_exist(trace.transitions().iter(), trace.call_graph().clone())?;
+                    lap!(timer, "Check record existence");
+                }
 
                 // Compute the proof and construct the execution.
                 let execution = trace.prove_execution::<$aleo, _>(&locator, varuna_version, rng)?;
@@ -263,8 +266,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 cast_mut_ref!(trace as Trace<N>).prepare(query)?;
                 lap!(timer, "Prepare the assignments");
 
-                // Check record existence
-                $process.ensure_records_exist(trace.transitions().iter(), trace.call_graph().clone())?;
+                // From consensus version V14 onwards, check record existence
+                if consensus_version >= ConsensusVersion::V14 {
+                    $process.ensure_records_exist(trace.transitions().iter(), trace.call_graph().clone())?;
+                    lap!(timer, "Check record existence");
+                }
 
                 // Compute the proof and construct the fee.
                 let fee = trace.prove_fee::<$aleo, _>(varuna_version, rng)?;
