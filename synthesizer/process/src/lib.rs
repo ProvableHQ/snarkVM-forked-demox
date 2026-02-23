@@ -68,11 +68,13 @@ use snarkvm_ledger_block::{Deployment, Execution, Fee, Input, Output, Transactio
 use snarkvm_ledger_store::{FinalizeStorage, FinalizeStore, atomic_batch_scope};
 use snarkvm_synthesizer_program::{
     Branch,
+    CastType,
     Command,
     FinalizeGlobalState,
     FinalizeOperation,
     Function,
     Instruction,
+    Operand,
     Program,
     StackTrait,
 };
@@ -80,12 +82,16 @@ use snarkvm_synthesizer_snark::{ProvingKey, UniversalSRS, VerifyingKey};
 use snarkvm_utilities::{defer, dev_println};
 
 use aleo_std::prelude::{finish, lap, timer};
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
+use itertools::izip;
 #[cfg(feature = "locktick")]
 use locktick::parking_lot::RwLock;
 #[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 #[derive(Clone)]
 pub struct Process<N: Network> {

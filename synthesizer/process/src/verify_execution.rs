@@ -70,6 +70,11 @@ impl<N: Network> Process<N> {
         // Construct the call graph of the execution.
         let call_graph = self.construct_call_graph(execution.transitions())?;
 
+        // From ConsensusVersion::V14 onwards, ensure non-static records exist on the ledger.
+        if consensus_version >= ConsensusVersion::V14 {
+            self.ensure_records_exist(execution.transitions(), call_graph.clone())?;
+        }
+
         // Construct the reverse call graph of the execution.
         // Note: This is a mapping of the child transition ID to the parent transition ID.
         let reverse_call_graph = Self::reverse_call_graph(&call_graph);
@@ -741,5 +746,350 @@ impl<N: Network> Process<N> {
             }
         }
         reverse_call_graph
+    }
+
+    /// Checks that, for each function in the execution (whether transition or
+    /// closure), each `ExternalRecord` and `DynamicRecord` received as an input
+    /// or from a callee corresponds to a static `Record` that exists on the
+    /// ledger at the end of the execution (whether spent or not).
+    ///
+    /// Input `transitions`: Iterator over the transitions in the execution. The
+    /// root transition must be last.
+    ///
+    /// Input `call_graph`: A copy of the call graph (which will be modified in
+    /// place). It is assumed to contain all transitions in `transitions`. All
+    /// children of a given Transition ID must appear in the same order as the
+    /// corresponding calls happen in the function.
+    pub fn ensure_records_exist<'a>(
+        &self,
+        transitions: impl ExactSizeIterator<Item = &'a Transition<N>> + DoubleEndedIterator + Clone,
+        mut call_graph: HashMap<N::TransitionID, Vec<N::TransitionID>>,
+    ) -> Result<()> {
+        let mut register_families: Vec<IndexSet<(N::TransitionID, u64)>> = Vec::new();
+
+        let root_transition = transitions.clone().last().ok_or_else(|| anyhow!("Empty transition list"))?;
+
+        let tid_to_transition = transitions
+            .clone()
+            .map(|transition| (*transition.id(), transition))
+            .collect::<HashMap<N::TransitionID, &Transition<N>>>();
+
+        // Recursively explore the execution, keeping track of record relations across the relevant casts and calls.
+        self.process_transition(
+            &mut register_families,
+            root_transition.id(),
+            None,
+            &tid_to_transition,
+            &mut call_graph,
+        )?;
+
+        // Sanity check
+        for (parent, children) in call_graph {
+            if !children.is_empty() {
+                let caller_transition = tid_to_transition
+                    .get(&parent)
+                    .ok_or_else(|| anyhow!("Missing caller transition with ID {parent}"))?;
+                bail!(
+                    "Entry for Transition ID {parent} ({}/{}) in the call graph has unprocessed children",
+                    caller_transition.program_id(),
+                    caller_transition.function_name(),
+                );
+            }
+        }
+
+        if register_families.is_empty() {
+            Ok(())
+        } else {
+            let non_existing_register = register_families[0][0];
+            let root_program = root_transition.program_id();
+            let root_function = root_transition.function_name();
+
+            Err(anyhow!(
+                "Non-static record input at register r{} of function {}/{} is not known to correspond to a record on the ledger",
+                non_existing_register.1,
+                root_program,
+                root_function
+            ))
+        }
+    }
+
+    // Auxiliary function for `ensure_records_exist` that connects the relevant
+    // record families of the given transition, tracking linked and connected
+    // records. Furthermore, it also checks that locally minted records which
+    // should materialise are output.
+    fn process_transition(
+        &self,
+        register_families: &mut Vec<IndexSet<(N::TransitionID, u64)>>,
+        transition_id: &N::TransitionID,
+        // For non-root transitions, Some containing:
+        //  - transition ID of the caller
+        //  - indices of the caller input registers
+        //  - indices of the caller output registers
+        caller_info: Option<(N::TransitionID, Vec<u64>, Vec<u64>)>,
+        tid_to_transition: &HashMap<N::TransitionID, &Transition<N>>,
+        call_graph: &mut HashMap<N::TransitionID, Vec<N::TransitionID>>,
+    ) -> Result<()> {
+        let transition = tid_to_transition
+            .get(transition_id)
+            .ok_or_else(|| anyhow!("Missing transition with ID {transition_id}"))?;
+        let function = self.get_stack(transition.program_id())?.get_function(transition.function_name())?;
+        let locator = Locator::new(*transition.program_id(), *transition.function_name());
+
+        let inputs = transition.inputs();
+        let input_registers = function.inputs().iter().map(|input| input.register().locator()).collect::<Vec<u64>>();
+
+        // Contains the registers of static Records minted locally. Used for the local check.
+        let mut locally_minted_static = HashSet::new();
+
+        // For each instruction which casts a static Record at register r_i into a DynamicRecord at register r_j, if r_i was minted locally, this map contains an entry r_j -> r_i. Used for the local check.
+        let mut locally_minted_dynamic = HashMap::new();
+
+        // Contains the locally minted static records which must be output because they are cast to dynamic and passed to a call or output. Used for the local check.
+        let mut must_be_output = HashSet::new();
+
+        // Processing the inputs
+        if let Some((caller_tid, caller_input_registers, _)) = &caller_info {
+            // Non-root transition case
+
+            ensure!(
+                inputs.len() == input_registers.len() && inputs.len() == caller_input_registers.len(),
+                "Mismatch in the number of callee/caller inputs and registers in call to {} (transition ID {})",
+                transition.function_name(),
+                transition_id,
+            );
+
+            for (caller_input_register, callee_input_register, callee_input) in
+                izip!(caller_input_registers, input_registers, inputs)
+            {
+                match callee_input {
+                    Input::Record(..) => {
+                        Self::mark_existing(register_families, (*transition_id, *caller_input_register));
+                    }
+                    Input::ExternalRecord(..) | Input::DynamicRecord(..) => {
+                        let old_record = (*caller_tid, *caller_input_register);
+                        let new_record = (*transition_id, callee_input_register);
+                        Self::add_to_family(register_families, old_record, new_record);
+                    }
+                    _ => {}
+                }
+            }
+        } else {
+            // Root transition case
+
+            ensure!(
+                input_registers.len() == transition.inputs().len(),
+                "Mismatch in the number of inputs and registers in the root call"
+            );
+
+            for (input, register) in transition.inputs().iter().zip(input_registers.iter()) {
+                if matches!(input, Input::DynamicRecord(..) | Input::ExternalRecord(..)) {
+                    register_families.push(IndexSet::from_iter([(*transition_id, *register)]));
+                }
+            }
+
+            // Early return if the root transition does not receive non-static records
+            if register_families.is_empty() {
+                return Ok(());
+            }
+        }
+
+        for instruction in function.instructions() {
+            match instruction {
+                Instruction::Cast(cast) => {
+                    match cast.cast_type() {
+                        CastType::DynamicRecord => {
+                            let operand_register = match cast.operands().first() {
+                                Some(Operand::Register(register)) => register.locator(),
+                                _ => bail!("Failed to retrieve operand register for cast to DynamicRecord instruction"),
+                            };
+
+                            let destination_register = cast.destinations()[0].locator();
+
+                            let old_record = (*transition_id, operand_register);
+                            let new_record = (*transition_id, destination_register);
+
+                            // Since static records never exist in any family and add_to_family only adds the new record if the old record exists in some family, this call only handles the external-to-dynamic case, as desired.
+                            Self::add_to_family(register_families, old_record, new_record);
+
+                            // If the operand is a locally minted static record, keep track of this cast for the local check.
+                            if locally_minted_static.contains(&operand_register) {
+                                locally_minted_dynamic.insert(destination_register, operand_register);
+                            }
+                        }
+                        CastType::Record(_) => {
+                            locally_minted_static.insert(cast.destinations()[0].locator());
+                        }
+                        _ => {}
+                    }
+                }
+                Instruction::Call(..) | Instruction::CallDynamic(..) => {
+                    // TODO treat the closure case
+
+                    let remaining_children = call_graph.get_mut(transition_id).unwrap();
+
+                    ensure!(
+                        !remaining_children.is_empty(),
+                        "Entry with Transition ID {transition_id} ({locator}) in the call graph has fewer elements than the number of calls in the corresponding function",
+                    );
+
+                    let tid_callee = remaining_children.remove(0);
+
+                    let caller_input_operands = if matches!(instruction, Instruction::Call(..)) {
+                        instruction.operands()
+                    } else {
+                        &instruction.operands()[3..]
+                    };
+
+                    // Any dynamic records which are passed to a call and come from locally minted static records must be output. This is part of the local check.
+                    for input_register in caller_input_operands.iter() {
+                        if let Operand::Register(register) = input_register {
+                            if let Some(static_record) = locally_minted_dynamic.get(&register.locator()) {
+                                must_be_output.insert(*static_record);
+                            }
+                        }
+                    }
+
+                    let caller_input_registers: Vec<u64> = caller_input_operands
+                        .iter()
+                        .map(|operand| {
+                            if let Operand::Register(register) = operand {
+                                register.locator()
+                            } else {
+                                // Since an operand which is not a register can never correspond to a dynamic, external or static record, this value will never be used when processing the child.
+                                0
+                            }
+                        })
+                        .collect();
+
+                    let caller_output_registers = instruction
+                        .operands()
+                        .iter()
+                        .map(|operand| {
+                            if let Operand::Register(register) = operand {
+                                register.locator()
+                            } else {
+                                // Since an operand which is not a register can never correspond to a dynamic, external or static record, this value will never be used when processing the child.
+                                0
+                            }
+                        })
+                        .collect();
+
+                    self.process_transition(
+                        register_families,
+                        &tid_callee,
+                        Some((*transition_id, caller_input_registers, caller_output_registers)),
+                        tid_to_transition,
+                        call_graph,
+                    )?;
+                }
+                _ => {}
+            }
+        }
+
+        // Processing the outputs
+
+        // Track which dynamic records coming from locally minted static records are output.
+        function.outputs().iter().for_each(|output| {
+            if let Operand::Register(output_register) = output.operand() {
+                if let Some(static_record) = locally_minted_dynamic.get(&output_register.locator()) {
+                    must_be_output.insert(*static_record);
+                }
+            }
+        });
+
+        // In a second pass, ensure all static records which must be output (according to the local check) are so
+        function.outputs().iter().for_each(|output| {
+            if let Operand::Register(output_register) = output.operand() {
+                let _ = must_be_output.remove(&output_register.locator());
+            }
+        });
+
+        ensure!(
+            must_be_output.is_empty(),
+            "In function {}, Some dynamic records which are passed to a call or are output come from locally minted static records which are not output. Static-record registers: {:?}",
+            function.name(),
+            must_be_output
+        );
+
+        let output_registers = function
+            .outputs()
+            .iter()
+            .map(|output| {
+                if let Operand::Register(register) = output.operand() {
+                    register.locator()
+                } else {
+                    // Since an operand which is not a register can never correspond to a dynamic, external or static record, this value will never be used when processing the outputs.
+                    0
+                }
+            })
+            .collect::<Vec<u64>>();
+
+        // For non-root calls, keep track of record families
+        if let Some((caller_tid, _, caller_output_registers)) = &caller_info {
+            let outputs = transition.outputs();
+
+            ensure!(
+                outputs.len() == caller_output_registers.len() && outputs.len() == output_registers.len(),
+                "Mismatch in the number of callee/caller outputs and registers in call to {} (transition ID {})",
+                transition.function_name(),
+                transition_id,
+            );
+
+            for (caller_output_register, callee_output_register, callee_output) in
+                izip!(caller_output_registers, output_registers, outputs)
+            {
+                if matches!(callee_output, Output::ExternalRecord(..) | Output::DynamicRecord(..)) {
+                    let old_record = (*transition_id, callee_output_register);
+                    let new_record = (*caller_tid, *caller_output_register);
+                    Self::add_to_family(register_families, old_record, new_record);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    // Auxiliary function for ensure_records_exist that adds a record to the set
+    // containing another record, of any, thus connecting their linking status.
+    // A debug_assert ensures that at most one family contains each of the given
+    // records.
+    fn add_to_family(
+        register_families: &mut [IndexSet<(N::TransitionID, u64)>],
+        old_record: (N::TransitionID, u64),
+        new_record: (N::TransitionID, u64),
+    ) {
+        for record in [old_record, new_record] {
+            debug_assert!(
+                register_families.iter().filter(|family| family.contains(&record)).count() <= 1,
+                "Multiple families contain register {} for transition ID {}",
+                record.1,
+                record.0
+            );
+        }
+
+        let family = register_families.iter_mut().find(|family| family.contains(&old_record));
+
+        if let Some(found_family) = family {
+            found_family.insert(new_record);
+        }
+    }
+
+    // Auxiliary function for ensure_records_exist that removes the set
+    // containing a given record, if any, from register_families, thus
+    // implicitly marking it as existing. A debug_assert ensures that at most
+    // one family contains the given record.
+    fn mark_existing(register_families: &mut Vec<IndexSet<(N::TransitionID, u64)>>, record: (N::TransitionID, u64)) {
+        debug_assert!(
+            register_families.iter().filter(|family| family.contains(&record)).count() <= 1,
+            "Multiple families contain register {} for transition ID {}",
+            record.1,
+            record.0
+        );
+
+        let family = register_families.iter().position(|family| family.contains(&record));
+
+        if let Some(family_index) = family {
+            register_families.remove(family_index);
+        }
     }
 }
