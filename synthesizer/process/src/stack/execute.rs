@@ -418,7 +418,6 @@ impl<N: Network> Stack<N> {
                 _ => {}
             }
 
-            // Any dynamic records which are passed to a call and come from locally minted static records must be output. This is part of the local record-existence check.
             if matches!(instruction, Instruction::Call(..) | Instruction::CallDynamic(..)) {
                 let input_operands = if matches!(instruction, Instruction::Call(..)) {
                     instruction.operands()
@@ -428,8 +427,18 @@ impl<N: Network> Stack<N> {
 
                 for input_register in input_operands.iter() {
                     if let Operand::Register(register) = input_register {
+                        let register_index = register.locator();
+
+                        // Any dynamic records which are passed to a call and come from locally minted static
+                        // records must be output. This is part of the local record-existence check.
                         if let Some(static_record) = locally_minted_dynamic.get(&register.locator()) {
                             must_be_output.insert(*static_record);
+                        }
+
+                        // Furthermore, any static records which are passed to calls (necessarily as
+                        // external records) must be output.
+                        if locally_minted_static.contains(&register_index) {
+                            must_be_output.insert(register_index);
                         }
                     }
                 }

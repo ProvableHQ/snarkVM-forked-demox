@@ -841,10 +841,12 @@ impl<N: Network> Process<N> {
         // Contains the registers of static Records minted locally. Used for the local check.
         let mut locally_minted_static = HashSet::new();
 
-        // For each instruction which casts a static Record at register r_i into a DynamicRecord at register r_j, if r_i was minted locally, this map contains an entry r_j -> r_i. Used for the local check.
+        // For each instruction which casts a static Record at register r_i into a DynamicRecord at register r_j,
+        // if r_i was minted locally, this map contains an entry r_j -> r_i. Used for the local check.
         let mut locally_minted_dynamic = HashMap::new();
 
-        // Contains the locally minted static records which must be output because they are cast to dynamic and passed to a call or output. Used for the local check.
+        // Contains the locally minted static records which must be output because they are cast to dynamic
+        // and passed to a call or output. Used for the local check.
         let mut must_be_output = HashSet::new();
 
         // Processing the inputs
@@ -908,7 +910,8 @@ impl<N: Network> Process<N> {
                             let old_record = (*transition_id, operand_register);
                             let new_record = (*transition_id, destination_register);
 
-                            // Since static records never exist in any family and add_to_family only adds the new record if the old record exists in some family, this call only handles the external-to-dynamic case, as desired.
+                            // Since static records never exist in any family and add_to_family only adds the newrecord if the
+                            // old record exists in some family, this call only handles the external-to-dynamic case, as desired.
                             Self::add_to_family(register_families, old_record, new_record);
 
                             // If the operand is a locally minted static record, keep track of this cast for the local check.
@@ -940,11 +943,18 @@ impl<N: Network> Process<N> {
                         &instruction.operands()[3..]
                     };
 
-                    // Any dynamic records which are passed to a call and come from locally minted static records must be output. This is part of the local check.
                     for input_register in caller_input_operands.iter() {
                         if let Operand::Register(register) = input_register {
-                            if let Some(static_record) = locally_minted_dynamic.get(&register.locator()) {
+                            let register_index = register.locator();
+                            // Any dynamic records which are passed to a call and come from locally minted
+                            // static records must be output. This is part of the local check.
+                            if let Some(static_record) = locally_minted_dynamic.get(&register_index) {
                                 must_be_output.insert(*static_record);
+                            }
+                            // Furthermore, any static records which are passed to calls (necessarily as
+                            // external records) must be output.
+                            if locally_minted_static.contains(&register_index) {
+                                must_be_output.insert(register_index);
                             }
                         }
                     }
@@ -955,7 +965,8 @@ impl<N: Network> Process<N> {
                             if let Operand::Register(register) = operand {
                                 register.locator()
                             } else {
-                                // Since an operand which is not a register can never correspond to a dynamic, external or static record, this value will never be used when processing the child.
+                                // Since an operand which is not a register can never correspond to a dynamic,
+                                // external or static record, this value will never be used when processing the child.
                                 0
                             }
                         })
@@ -968,7 +979,8 @@ impl<N: Network> Process<N> {
                             if let Operand::Register(register) = operand {
                                 register.locator()
                             } else {
-                                // Since an operand which is not a register can never correspond to a dynamic, external or static record, this value will never be used when processing the child.
+                                // Since an operand which is not a register can never correspond to a dynamic,
+                                // external or static record, this value will never be used when processing the child.
                                 0
                             }
                         })
@@ -1018,7 +1030,8 @@ impl<N: Network> Process<N> {
                 if let Operand::Register(register) = output.operand() {
                     register.locator()
                 } else {
-                    // Since an operand which is not a register can never correspond to a dynamic, external or static record, this value will never be used when processing the outputs.
+                    // Since an operand which is not a register can never correspond to a dynamic,
+                    // external or static record, this value will never be used when processing the outputs.
                     0
                 }
             })
