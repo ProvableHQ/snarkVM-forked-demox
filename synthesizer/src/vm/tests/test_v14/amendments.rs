@@ -758,8 +758,10 @@ fn test_dynamic_call_after_amendment() {
         );
     }
 
-    // Mint a fresh token on prover VM and create a new transaction.
-    let prover_mint_tx_2 = prover_vm
+    // Mint a fresh token on verifier VM and execute the dynamic call directly.
+    // This verifies the verifier VM can create and accept dynamic call transactions
+    // after getting translation keys via V3 amendment.
+    let verifier_mint_tx_2 = verifier_vm
         .execute(
             &caller_private_key,
             ("legacy_token_amend.aleo", "mint"),
@@ -772,7 +774,7 @@ fn test_dynamic_call_after_amendment() {
         )
         .unwrap();
 
-    let prover_minted_record_2 = prover_mint_tx_2
+    let verifier_minted_record_2 = verifier_mint_tx_2
         .execution()
         .unwrap()
         .transitions()
@@ -785,11 +787,11 @@ fn test_dynamic_call_after_amendment() {
             _ => None,
         })
         .unwrap();
-    add_and_test(&prover_vm, &caller_private_key, &[prover_mint_tx_2], rng);
+    add_and_test(&verifier_vm, &caller_private_key, &[verifier_mint_tx_2], rng);
 
-    let dynamic_record_2 = DynamicRecord::<CurrentNetwork>::from_record(&prover_minted_record_2).unwrap();
+    let dynamic_record_2 = DynamicRecord::<CurrentNetwork>::from_record(&verifier_minted_record_2).unwrap();
 
-    let transaction_2 = prover_vm
+    let transaction_2 = verifier_vm
         .execute(
             &caller_private_key,
             ("dynamic_caller_amend.aleo", "call_legacy_transfer"),
@@ -807,8 +809,8 @@ fn test_dynamic_call_after_amendment() {
             None,
             rng,
         )
-        .expect("Prover should create fresh transaction after amendment");
+        .expect("Verifier VM should create transaction after getting translation keys via amendment");
 
-    // Verifier VM (with translation keys from amendment) should now accept the fresh transaction.
+    // Verifier VM (with translation keys from amendment) should accept the transaction.
     add_and_test(&verifier_vm, &caller_private_key, &[transaction_2], rng);
 }

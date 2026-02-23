@@ -18,15 +18,15 @@ outputs:
   execute:
     test_rand.aleo/rand_chacha_check:
       outputs:
-      - '{"type":"future","id":"746545381627269942056971804265088486926111520161800421538758330814778471010field","value":"{\n  program_id: test_rand.aleo,\n  function_name: rand_chacha_check,\n  arguments: [\n    1field,\n    false\n  ]\n}"}'
-  speculate: the execution was rejected
+      - '{"type":"future","id":"7260020437123023538461081094330972156325047587557902531131038592991935619194field","value":"{\n  program_id: test_rand.aleo,\n  function_name: rand_chacha_check,\n  arguments: [\n    1field,\n    true\n  ]\n}"}'
+  speculate: the execution was accepted
   add_next_block: succeeded.
 - verified: true
   execute:
     test_rand.aleo/rand_chacha_check:
       outputs:
-      - '{"type":"future","id":"7959858885373972058168480751284007882110163109985353663075336223286753118497field","value":"{\n  program_id: test_rand.aleo,\n  function_name: rand_chacha_check,\n  arguments: [\n    4field,\n    true\n  ]\n}"}'
-  speculate: the execution was rejected
+      - '{"type":"future","id":"5465537420967341785051338684360667145871623888457094422753603899192062140053field","value":"{\n  program_id: test_rand.aleo,\n  function_name: rand_chacha_check,\n  arguments: [\n    4field,\n    false\n  ]\n}"}'
+  speculate: the execution was accepted
   add_next_block: succeeded.
 additional:
 - child_outputs:
