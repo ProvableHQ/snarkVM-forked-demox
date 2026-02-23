@@ -13,8 +13,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::{HashMap, HashSet};
+
 use super::*;
 use snarkvm_synthesizer_error::*;
+use snarkvm_synthesizer_program::CastType;
 
 impl<N: Network> Stack<N> {
     /// Executes a program closure on the given inputs.
@@ -347,6 +350,15 @@ impl<N: Network> Stack<N> {
         // Initialize a tracker to determine if there are any function calls.
         let mut contains_function_call = false;
 
+        // Contains the registers of static Records minted locally. Used for the local record-existence check.
+        let mut locally_minted_static = HashSet::new();
+
+        // For each instruction which casts a static Record at register r_i into a DynamicRecord at register r_j, if r_i was minted locally, this map contains an entry r_j -> r_i. Used for the local record-existence check.
+        let mut locally_minted_dynamic = HashMap::new();
+
+        // Contains the locally minted static Records which must be output because they are cast to dynamic and either passed to a call or output. Used for the local record-existence check.
+        let mut must_be_output = HashSet::new();
+
         // Execute the instructions.
         for (ix, instruction) in function.instructions().iter().enumerate() {
             // If the circuit is in execute mode, then evaluate the instructions.
@@ -404,6 +416,48 @@ impl<N: Network> Stack<N> {
                     contains_function_call = true;
                 }
                 _ => {}
+            }
+
+            // Any dynamic records which are passed to a call and come from locally minted static records must be output. This is part of the local record-existence check.
+            if matches!(instruction, Instruction::Call(..) | Instruction::CallDynamic(..)) {
+                let input_operands = if matches!(instruction, Instruction::Call(..)) {
+                    instruction.operands()
+                } else {
+                    &instruction.operands()[3..]
+                };
+
+                for input_register in input_operands.iter() {
+                    if let Operand::Register(register) = input_register {
+                        if let Some(static_record) = locally_minted_dynamic.get(&register.locator()) {
+                            must_be_output.insert(*static_record);
+                        }
+                    }
+                }
+            }
+
+            if let Instruction::Cast(cast) = instruction {
+                let destination_register = cast.destinations()[0].locator();
+
+                match cast.cast_type() {
+                    CastType::Record(_) => {
+                        locally_minted_static.insert(destination_register);
+                    }
+                    CastType::DynamicRecord => {
+                        let operand_register = if let Some(Operand::Register(register)) = cast.operands().first() {
+                            register.locator()
+                        } else {
+                            return Err(anyhow!(
+                                "Failed to retrieve operand register for cast to DynamicRecord instruction"
+                            )
+                            .into());
+                        };
+
+                        if locally_minted_static.contains(&operand_register) {
+                            locally_minted_dynamic.insert(destination_register, operand_register);
+                        }
+                    }
+                    _ => {}
+                }
             }
         }
         lap!(timer, "Execute the instructions");
@@ -500,6 +554,30 @@ impl<N: Network> Stack<N> {
             .collect::<Vec<_>>();
 
         Self::log_circuit::<A>(format!("Function '{}()'", function.name()), &call_stack_type);
+
+        // First output pass of the local record-existence check: Track which dynamic records coming from locally minted static records are output.
+        output_registers.iter().for_each(|output| {
+            if let Some(register) = output {
+                if let Some(static_record) = locally_minted_dynamic.get(&register.locator()) {
+                    must_be_output.insert(*static_record);
+                }
+            }
+        });
+
+        // Second output pass of the local record-existence check: Ensure all static records which must be output are so
+        output_registers.iter().for_each(|output| {
+            if let Some(register) = output {
+                let _ = must_be_output.remove(&register.locator());
+            }
+        });
+
+        if !must_be_output.is_empty() {
+            return Err(anyhow!(
+                "In function {}, Some dynamic records which are passed to a call or are output refer to locally minted static records which are not output. Static-record registers: {:?}",
+                function.name(),
+                must_be_output
+            ).into());
+        }
 
         // Retrieve the number of constraints for executing the function in the circuit.
         let num_function_constraints = A::num_constraints().saturating_sub(num_request_constraints);

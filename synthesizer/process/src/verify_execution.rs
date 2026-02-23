@@ -1006,7 +1006,7 @@ impl<N: Network> Process<N> {
 
         ensure!(
             must_be_output.is_empty(),
-            "In function {}, Some dynamic records which are passed to a call or are output come from locally minted static records which are not output. Static-record registers: {:?}",
+            "In function {}, Some dynamic records which are passed to a call or are output refer to locally minted static records which are not output. Static-record registers: {:?}",
             function.name(),
             must_be_output
         );

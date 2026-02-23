@@ -124,6 +124,9 @@ impl<N: Network> Package<N> {
         // Prepare the trace.
         trace.prepare(&query)?;
 
+        // Check record existence
+        process.ensure_records_exist(trace.transitions().iter(), trace.call_graph().clone())?;
+
         // Prove the execution.
         let execution = trace.prove_execution::<A, R>(&locator.to_string(), varuna_version, rng)?;
         // Return the response, execution, and call metrics.
