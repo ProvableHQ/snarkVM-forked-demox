@@ -185,8 +185,8 @@ impl<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>
 
         // Reuse the previous Merkle tree, or initialize it if missing.
         let mut tree = self.previous_tree.lock().take().unwrap_or_else(|| vec![self.empty_hash; num_nodes]);
+        tree.resize(num_nodes, self.empty_hash);
 
-        tree.truncate(num_nodes);
         // Extend the new Merkle tree with the existing leaf hashes.
         tree.extend(self.leaf_hashes()?);
         // Extend the new Merkle tree with the new leaf hashes.
