@@ -864,10 +864,11 @@ impl<N: Network> Process<N> {
                 izip!(caller_input_registers, input_registers, inputs)
             {
                 match callee_input {
-                    Input::Record(..) => {
-                        Self::mark_existing(register_families, (*transition_id, *caller_input_register));
+                    Input::RecordWithDynamicID(..) => {
+                        println!("  marked existing");
+                        Self::mark_existing(register_families, (*caller_tid, *caller_input_register));
                     }
-                    Input::ExternalRecord(..) | Input::DynamicRecord(..) => {
+                    Input::ExternalRecord(..) | Input::ExternalRecordWithDynamicID(..) | Input::DynamicRecord(..) => {
                         let old_record = (*caller_tid, *caller_input_register);
                         let new_record = (*transition_id, callee_input_register);
                         Self::add_to_family(register_families, old_record, new_record);
@@ -972,19 +973,8 @@ impl<N: Network> Process<N> {
                         })
                         .collect();
 
-                    let caller_output_registers = instruction
-                        .operands()
-                        .iter()
-                        .map(|operand| {
-                            if let Operand::Register(register) = operand {
-                                register.locator()
-                            } else {
-                                // Since an operand which is not a register can never correspond to a dynamic,
-                                // external or static record, this value will never be used when processing the child.
-                                0
-                            }
-                        })
-                        .collect();
+                    let caller_output_registers =
+                        instruction.destinations().iter().map(|destination| destination.locator()).collect();
 
                     self.process_transition(
                         register_families,
