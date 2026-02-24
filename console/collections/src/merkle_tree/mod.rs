@@ -51,9 +51,9 @@ pub struct MerkleTree<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHas
     empty_hash: Field<E>,
     /// The number of hashed leaves in the tree.
     number_of_leaves: usize,
-    /// An optimization: the previous tree reused in prepare_append.
+    /// An optimization: the previous tree allocation reused in prepare_append.
     #[serde(skip)]
-    previous_tree: Mutex<Option<Vec<PH::Hash>>>,
+    preserved_tree_allocation: Mutex<Option<Vec<PH::Hash>>>,
 }
 
 impl<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>>, const DEPTH: u8> Clone
@@ -67,7 +67,7 @@ impl<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>
             tree: self.tree.clone(),
             empty_hash: self.empty_hash,
             number_of_leaves: self.number_of_leaves,
-            previous_tree: Default::default(),
+            preserved_tree_allocation: Default::default(),
         }
     }
 }
@@ -160,7 +160,7 @@ impl<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>
             tree,
             empty_hash,
             number_of_leaves: leaves.len(),
-            previous_tree: Default::default(),
+            preserved_tree_allocation: Default::default(),
         })
     }
 
@@ -184,7 +184,11 @@ impl<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>
         let padding_depth = DEPTH - tree_depth;
 
         // Reuse the previous Merkle tree, or initialize it if missing.
-        let mut tree = self.previous_tree.lock().take().unwrap_or_else(|| vec![self.empty_hash; num_nodes]);
+        // All the (inner) nodes are rewritten, so their current values are irrelevant.
+        // The slowest part is populating the values, but large allocations are also slow.
+        let mut tree = self.preserved_tree_allocation.lock().take().unwrap_or_else(|| vec![self.empty_hash; num_nodes]);
+        // The number of nodes in the preserved allocation is too small if the depth increases.
+        // This is basically a noop if there are sufficient nodes already.
         tree.resize(num_nodes, self.empty_hash);
 
         // Extend the new Merkle tree with the existing leaf hashes.
@@ -246,7 +250,7 @@ impl<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>
             tree,
             empty_hash: self.empty_hash,
             number_of_leaves: self.number_of_leaves + new_leaves.len(),
-            previous_tree: Default::default(), // Placeholder; will be updated at the callsite using Self::update_previous_tree
+            preserved_tree_allocation: Default::default(), // Placeholder; will be updated at the callsite using Self::preserve_tree_allocation
         })
     }
 
@@ -352,7 +356,7 @@ impl<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>
             tree,
             empty_hash: self.empty_hash,
             number_of_leaves: self.number_of_leaves,
-            previous_tree: Default::default(),
+            preserved_tree_allocation: Default::default(),
         })
     }
 
@@ -570,7 +574,7 @@ impl<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>
             tree,
             empty_hash: self.empty_hash,
             number_of_leaves: updated_number_of_leaves,
-            previous_tree: Default::default(),
+            preserved_tree_allocation: Default::default(),
         })
     }
 
@@ -799,8 +803,8 @@ impl<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>
     }
 
     /// Save the previous tree in order to reuse its allocation later on.
-    pub fn update_previous_tree(&self, previous: &mut Self) {
-        *self.previous_tree.lock() = Some(mem::take(&mut previous.tree));
+    pub fn preserve_tree_allocation(&self, previous: &mut Self) {
+        *self.preserved_tree_allocation.lock() = Some(mem::take(&mut previous.tree));
     }
 }
 
