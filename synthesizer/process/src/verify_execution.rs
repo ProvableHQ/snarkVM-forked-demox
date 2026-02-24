@@ -823,9 +823,9 @@ impl<N: Network> Process<N> {
         transition_id: &N::TransitionID,
         // For non-root transitions, Some containing:
         //  - transition ID of the caller
-        //  - indices of the caller input registers
+        //  - indices of the caller input registers, with None for inputs that are not registers
         //  - indices of the caller output registers
-        caller_info: Option<(N::TransitionID, Vec<u64>, Vec<u64>)>,
+        caller_info: Option<(N::TransitionID, Vec<Option<u64>>, Vec<u64>)>,
         tid_to_transition: &HashMap<N::TransitionID, &Transition<N>>,
         call_graph: &mut HashMap<N::TransitionID, Vec<N::TransitionID>>,
     ) -> Result<()> {
@@ -860,20 +860,23 @@ impl<N: Network> Process<N> {
                 transition_id,
             );
 
-            for (caller_input_register, callee_input_register, callee_input) in
+            for (caller_input_register_opt, callee_input_register, callee_input) in
                 izip!(caller_input_registers, input_registers, inputs)
             {
-                match callee_input {
-                    Input::RecordWithDynamicID(..) => {
-                        println!("  marked existing");
-                        Self::mark_existing(register_families, (*caller_tid, *caller_input_register));
+                if let Some(caller_input_register) = caller_input_register_opt {
+                    match callee_input {
+                        Input::RecordWithDynamicID(..) => {
+                            Self::mark_existing(register_families, (*caller_tid, *caller_input_register));
+                        }
+                        Input::ExternalRecord(..)
+                        | Input::ExternalRecordWithDynamicID(..)
+                        | Input::DynamicRecord(..) => {
+                            let old_register = (*caller_tid, *caller_input_register);
+                            let new_register = (*transition_id, callee_input_register);
+                            Self::add_to_family(register_families, old_register, new_register);
+                        }
+                        _ => {}
                     }
-                    Input::ExternalRecord(..) | Input::ExternalRecordWithDynamicID(..) | Input::DynamicRecord(..) => {
-                        let old_register = (*caller_tid, *caller_input_register);
-                        let new_register = (*transition_id, callee_input_register);
-                        Self::add_to_family(register_families, old_register, new_register);
-                    }
-                    _ => {}
                 }
             }
         } else {
@@ -911,7 +914,7 @@ impl<N: Network> Process<N> {
                             let old_register = (*transition_id, operand_register);
                             let new_register = (*transition_id, destination_register);
 
-                            // Since static records never exist in any family and add_to_family only adds the newrecord if the
+                            // Since static records never exist in any family and add_to_family only adds the new record if the
                             // old record exists in some family, this call only handles the external-to-dynamic case, as desired.
                             Self::add_to_family(register_families, old_register, new_register);
 
@@ -927,8 +930,6 @@ impl<N: Network> Process<N> {
                     }
                 }
                 Instruction::Call(..) | Instruction::CallDynamic(..) => {
-                    // TODO treat the closure case
-
                     let remaining_children = call_graph.get_mut(transition_id).unwrap();
 
                     ensure!(
@@ -960,18 +961,13 @@ impl<N: Network> Process<N> {
                         }
                     }
 
-                    let caller_input_registers: Vec<u64> = caller_input_operands
-                        .iter()
-                        .map(|operand| {
-                            if let Operand::Register(register) = operand {
-                                register.locator()
-                            } else {
-                                // Since an operand which is not a register can never correspond to a dynamic,
-                                // external or static record, this value will never be used when processing the child.
-                                0
-                            }
-                        })
-                        .collect();
+                    let caller_input_registers: Vec<Option<u64>> =
+                        caller_input_operands
+                            .iter()
+                            .map(|operand| {
+                                if let Operand::Register(register) = operand { Some(register.locator()) } else { None }
+                            })
+                            .collect();
 
                     let caller_output_registers =
                         instruction.destinations().iter().map(|destination| destination.locator()).collect();
@@ -1013,36 +1009,24 @@ impl<N: Network> Process<N> {
             must_be_output
         );
 
-        let output_registers = function
-            .outputs()
-            .iter()
-            .map(|output| {
-                if let Operand::Register(register) = output.operand() {
-                    register.locator()
-                } else {
-                    // Since an operand which is not a register can never correspond to a dynamic,
-                    // external or static record, this value will never be used when processing the outputs.
-                    0
-                }
-            })
-            .collect::<Vec<u64>>();
-
         // For non-root calls, keep track of record families
         if let Some((caller_tid, _, caller_output_registers)) = &caller_info {
             let outputs = transition.outputs();
 
             ensure!(
-                outputs.len() == caller_output_registers.len() && outputs.len() == output_registers.len(),
+                outputs.len() == caller_output_registers.len() && outputs.len() == function.outputs().len(),
                 "Mismatch in the number of callee/caller outputs and registers in call to {} (transition ID {})",
                 transition.function_name(),
                 transition_id,
             );
 
-            for (caller_output_register, callee_output_register, callee_output) in
-                izip!(caller_output_registers, output_registers, outputs)
+            for (caller_output_register, callee_output_operand, callee_output) in
+                izip!(caller_output_registers, function.outputs(), outputs)
             {
-                if matches!(callee_output, Output::ExternalRecord(..) | Output::DynamicRecord(..)) {
-                    let old_register = (*transition_id, callee_output_register);
+                if let Operand::Register(callee_output_register) = callee_output_operand.operand()
+                    && matches!(callee_output, Output::ExternalRecord(..) | Output::DynamicRecord(..))
+                {
+                    let old_register = (*transition_id, callee_output_register.locator());
                     let new_register = (*caller_tid, *caller_output_register);
                     Self::add_to_family(register_families, old_register, new_register);
                 }
