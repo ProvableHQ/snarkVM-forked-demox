@@ -783,7 +783,7 @@ impl<N: Network> Process<N> {
             &mut call_graph,
         )?;
 
-        // Sanity check
+        // Sanity check: exploration should have consumed all calls in all functions.
         for (parent, children) in call_graph {
             if !children.is_empty() {
                 let caller_transition = tid_to_transition
@@ -869,9 +869,9 @@ impl<N: Network> Process<N> {
                         Self::mark_existing(register_families, (*caller_tid, *caller_input_register));
                     }
                     Input::ExternalRecord(..) | Input::ExternalRecordWithDynamicID(..) | Input::DynamicRecord(..) => {
-                        let old_record = (*caller_tid, *caller_input_register);
-                        let new_record = (*transition_id, callee_input_register);
-                        Self::add_to_family(register_families, old_record, new_record);
+                        let old_register = (*caller_tid, *caller_input_register);
+                        let new_register = (*transition_id, callee_input_register);
+                        Self::add_to_family(register_families, old_register, new_register);
                     }
                     _ => {}
                 }
@@ -908,12 +908,12 @@ impl<N: Network> Process<N> {
 
                             let destination_register = cast.destinations()[0].locator();
 
-                            let old_record = (*transition_id, operand_register);
-                            let new_record = (*transition_id, destination_register);
+                            let old_register = (*transition_id, operand_register);
+                            let new_register = (*transition_id, destination_register);
 
                             // Since static records never exist in any family and add_to_family only adds the newrecord if the
                             // old record exists in some family, this call only handles the external-to-dynamic case, as desired.
-                            Self::add_to_family(register_families, old_record, new_record);
+                            Self::add_to_family(register_families, old_register, new_register);
 
                             // If the operand is a locally minted static record, keep track of this cast for the local check.
                             if locally_minted_static.contains(&operand_register) {
@@ -1042,9 +1042,9 @@ impl<N: Network> Process<N> {
                 izip!(caller_output_registers, output_registers, outputs)
             {
                 if matches!(callee_output, Output::ExternalRecord(..) | Output::DynamicRecord(..)) {
-                    let old_record = (*transition_id, callee_output_register);
-                    let new_record = (*caller_tid, *caller_output_register);
-                    Self::add_to_family(register_families, old_record, new_record);
+                    let old_register = (*transition_id, callee_output_register);
+                    let new_register = (*caller_tid, *caller_output_register);
+                    Self::add_to_family(register_families, old_register, new_register);
                 }
             }
         }
@@ -1058,10 +1058,10 @@ impl<N: Network> Process<N> {
     // records.
     fn add_to_family(
         register_families: &mut [IndexSet<(N::TransitionID, u64)>],
-        old_record: (N::TransitionID, u64),
-        new_record: (N::TransitionID, u64),
+        old_register: (N::TransitionID, u64),
+        new_register: (N::TransitionID, u64),
     ) {
-        for record in [old_record, new_record] {
+        for record in [old_register, new_register] {
             debug_assert!(
                 register_families.iter().filter(|family| family.contains(&record)).count() <= 1,
                 "Multiple families contain register {} for transition ID {}",
@@ -1070,10 +1070,10 @@ impl<N: Network> Process<N> {
             );
         }
 
-        let family = register_families.iter_mut().find(|family| family.contains(&old_record));
+        let family = register_families.iter_mut().find(|family| family.contains(&old_register));
 
         if let Some(found_family) = family {
-            found_family.insert(new_record);
+            found_family.insert(new_register);
         }
     }
 

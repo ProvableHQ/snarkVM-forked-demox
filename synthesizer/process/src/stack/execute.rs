@@ -13,11 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::{HashMap, HashSet};
-
 use super::*;
-use snarkvm_synthesizer_error::*;
-use snarkvm_synthesizer_program::CastType;
 
 impl<N: Network> Stack<N> {
     /// Executes a program closure on the given inputs.
@@ -622,6 +618,10 @@ impl<N: Network> Stack<N> {
 
         // Eject the response.
         let response = response.eject_value();
+
+        if response.outputs().len() != output_types.len() {
+            return Err(anyhow!("Number of outputs does not match number of output types").into());
+        }
 
         // Ensure the outputs matches the expected value types.
         response.outputs().iter().zip_eq(&output_types).try_for_each(|(output, output_type)| {
