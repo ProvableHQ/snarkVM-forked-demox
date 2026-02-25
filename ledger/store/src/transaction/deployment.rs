@@ -257,13 +257,13 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
         self.checksum_map().finish_atomic()?;
         self.verifying_key_map().finish_atomic()?;
         self.certificate_map().finish_atomic()?;
+        self.fee_store().finish_atomic()?;
         self.amendment_next_index_map().finish_atomic()?;
         self.amendment_id_map().finish_atomic()?;
         self.reverse_amendment_id_map().finish_atomic()?;
         self.amendment_verifying_key_map().finish_atomic()?;
         self.amendment_certificate_map().finish_atomic()?;
-        self.amendment_owner_map().finish_atomic()?;
-        self.fee_store().finish_atomic()
+        self.amendment_owner_map().finish_atomic()
     }
 
     /// Stores the given `deployment transaction` into storage.
