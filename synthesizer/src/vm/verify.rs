@@ -189,10 +189,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         match transaction {
             Transaction::Deploy(id, deployment_id, owner, deployment, _) => {
                 // Sanity check that the program is not `credits.aleo`.
-                ensure!(
-                    deployment.program_id() != &ProgramID::from_str("credits.aleo")?,
-                    "Cannot deploy 'credits.aleo'"
-                );
+                ensure!(deployment.program_id() != &ProgramID::credits(), "Cannot deploy 'credits.aleo'");
                 // Verify the signature corresponds to the transaction ID.
                 ensure!(owner.verify(*deployment_id), "Invalid owner signature for deployment transaction '{id}'");
 
@@ -288,6 +285,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     self.process.read().mapping_types_exist(deployment.program())?;
                 }
                 if consensus_version < ConsensusVersion::V14 {
+                    // V3 deployments (amendments) are not allowed before V14.
+                    ensure!(
+                        version != DeploymentVersion::V3,
+                        "Invalid deployment transaction '{id}' - V3 deployments are not allowed before `ConsensusVersion::V14`"
+                    );
                     ensure!(
                         !deployment.program().contains_v14_syntax(),
                         "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V14`"
@@ -295,11 +297,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     // Check that all future argument bit sizes do not exceed the maximum allowed size of u16::MAX.
                     let stack = Stack::new(&self.process().read(), deployment.program())?;
                     check_future_argument_bit_size(deployment.program(), &stack, u16::MAX as usize)?;
-                    // V3 deployments (amendments) are not allowed before V14.
-                    ensure!(
-                        version != DeploymentVersion::V3,
-                        "Invalid deployment transaction '{id}' - V3 deployments are not allowed before `ConsensusVersion::V14`"
-                    );
                 }
 
                 // Determine if any of the array types exceed the maximum array elements.
@@ -358,12 +355,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // Handle V3 amendments separately from V1/V2 deployments.
                 if version == DeploymentVersion::V3 {
                     // For `V3` (amendment) deployments, check that:
-                    // - The program is not `credits.aleo`.
                     // - The program already exists in the store and process.
                     // - The existing program, checksum, and edition matches the one in the deployment.
-
-                    // Check that the program is not `credits.aleo`.
-                    ensure!(deployment.program_id() != &ProgramID::credits(), "Cannot deploy 'credits.aleo'");
 
                     // Check that the program exists.
                     ensure!(

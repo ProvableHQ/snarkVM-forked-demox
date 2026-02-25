@@ -438,6 +438,9 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
                 self.amendment_owner_map().remove(&(program_id, edition, amendment_index))?;
 
                 // Remove all verifying keys and certificates (unified: functions + records).
+                // Note: This enumerates from the program's functions and records, which is equivalent
+                // to the `deployment.verifying_keys()` used during insert, as `check_is_ordered` guarantees
+                // the deployment contains exactly one VK per function followed by one VK per record.
                 for function_name in program.functions().keys() {
                     self.amendment_verifying_key_map().remove(&(
                         program_id,
@@ -1117,6 +1120,9 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
     }
 
     /// Returns the latest owner for the given `program ID`.
+    /// If amendments exist for the latest edition, returns the owner from the latest amendment.
+    /// Otherwise, returns the original deployment owner.
+    // TODO (raychu86): Consider program upgrades and edition changes.
     fn get_latest_owner(&self, program_id: &ProgramID<N>) -> Result<Option<ProgramOwner<N>>> {
         // Check if the program ID is for 'credits.aleo'.
         // This case is handled separately, as it is a default program of the VM.
@@ -1125,22 +1131,37 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             return Ok(None);
         }
 
-        // TODO (raychu86): Consider program upgrades and edition changes.
         // Retrieve the latest edition.
         let Some(edition) = self.get_latest_edition_for_program(program_id)? else {
             return Ok(None);
         };
 
-        // Retrieve the owner.
+        // Check if there are amendments for this program/edition.
+        // If amendments exist, return the owner from the latest amendment.
+        if let Some(latest_index) = self.get_latest_amendment_index(program_id, edition)? {
+            let Some(owner) = self.amendment_owner_map().get_confirmed(&(*program_id, edition, latest_index))? else {
+                bail!(
+                    "Failed to get the amendment owner for '{program_id}' (edition {edition}, amendment {latest_index})"
+                );
+            };
+            return Ok(Some(*owner));
+        }
+
+        // No amendments, retrieve from the base owner map.
         let Some(owner) = self.owner_map().get_confirmed(&(*program_id, edition))? else {
             bail!("Failed to find the Owner for program '{program_id}' (edition {edition})");
         };
         Ok(Some(*owner))
     }
 
-    /// Returns the base deployment owner for the given `program ID` and `edition`.
-    /// Returns `None` for `credits.aleo`. Does not include amendment owners.
-    fn get_owner_with_edition(&self, program_id: &ProgramID<N>, edition: u16) -> Result<Option<ProgramOwner<N>>> {
+    /// Returns the owner for the given `program ID` and `edition`.
+    /// If amendments exist for the given edition, returns the owner from the latest amendment.
+    /// Otherwise, returns the original deployment owner.
+    fn get_latest_owner_with_edition(
+        &self,
+        program_id: &ProgramID<N>,
+        edition: u16,
+    ) -> Result<Option<ProgramOwner<N>>> {
         // Check if the program ID is for 'credits.aleo'.
         // This case is handled separately, as it is a default program of the VM.
         // TODO (howardwu): After we update 'fee' rules and 'Ratify' in genesis, we can remove this.
@@ -1148,7 +1169,36 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             return Ok(None);
         }
 
-        // Retrieve the owner.
+        // Check if there are amendments for this program/edition.
+        // If amendments exist, return the owner from the latest amendment.
+        if let Some(latest_index) = self.get_latest_amendment_index(program_id, edition)? {
+            let Some(owner) = self.amendment_owner_map().get_confirmed(&(*program_id, edition, latest_index))? else {
+                bail!(
+                    "Failed to get the amendment owner for '{program_id}' (edition {edition}, amendment {latest_index})"
+                );
+            };
+            return Ok(Some(*owner));
+        }
+
+        // No amendments, retrieve from the base owner map.
+        match self.owner_map().get_confirmed(&(*program_id, edition))? {
+            Some(owner) => Ok(Some(*owner)),
+            None => bail!("Failed to find the Owner for program '{program_id}' (edition {edition})"),
+        }
+    }
+
+    /// Returns the original deployment owner for the given `program ID` and `edition`.
+    /// This method ignores any amendments and always returns the owner from the base deployment.
+    /// Returns `None` for `credits.aleo`.
+    fn get_original_owner(&self, program_id: &ProgramID<N>, edition: u16) -> Result<Option<ProgramOwner<N>>> {
+        // Check if the program ID is for 'credits.aleo'.
+        // This case is handled separately, as it is a default program of the VM.
+        // TODO (howardwu): After we update 'fee' rules and 'Ratify' in genesis, we can remove this.
+        if program_id == &ProgramID::from_str("credits.aleo")? {
+            return Ok(None);
+        }
+
+        // Retrieve the owner from the base deployment, ignoring any amendments.
         match self.owner_map().get_confirmed(&(*program_id, edition))? {
             Some(owner) => Ok(Some(*owner)),
             None => bail!("Failed to find the Owner for program '{program_id}' (edition {edition})"),
@@ -1198,7 +1248,7 @@ pub trait DeploymentStorage<N: Network>: Clone + Send + Sync {
             bail!("Failed to get the fee for transaction '{transaction_id}'");
         };
         // Retrieve the owner.
-        let Some(owner) = self.get_owner_with_edition(deployment.program_id(), deployment.edition())? else {
+        let Some(owner) = self.get_original_owner(deployment.program_id(), deployment.edition())? else {
             bail!("Failed to get the owner for transaction '{transaction_id}'");
         };
 
@@ -1533,13 +1583,25 @@ impl<N: Network, D: DeploymentStorage<N>> DeploymentStore<N, D> {
     }
 
     /// Returns the latest owner for the given `program ID`.
+    /// If amendments exist, returns the owner from the latest amendment.
     pub fn get_latest_owner(&self, program_id: &ProgramID<N>) -> Result<Option<ProgramOwner<N>>> {
         self.storage.get_latest_owner(program_id)
     }
 
     /// Returns the owner for the given `program ID` and `edition`.
-    pub fn get_owner_with_edition(&self, program_id: &ProgramID<N>, edition: u16) -> Result<Option<ProgramOwner<N>>> {
-        self.storage.get_owner_with_edition(program_id, edition)
+    /// If amendments exist for the given edition, returns the owner from the latest amendment.
+    pub fn get_latest_owner_with_edition(
+        &self,
+        program_id: &ProgramID<N>,
+        edition: u16,
+    ) -> Result<Option<ProgramOwner<N>>> {
+        self.storage.get_latest_owner_with_edition(program_id, edition)
+    }
+
+    /// Returns the original deployment owner for the given `program ID` and `edition`.
+    /// This method ignores any amendments and always returns the owner from the base deployment.
+    pub fn get_original_owner(&self, program_id: &ProgramID<N>, edition: u16) -> Result<Option<ProgramOwner<N>>> {
+        self.storage.get_original_owner(program_id, edition)
     }
 }
 

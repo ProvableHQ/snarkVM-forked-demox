@@ -113,7 +113,7 @@ impl<N: Network> Process<N> {
             DeploymentVersion::V3 => {
                 // Ensure that the program is not `credits.aleo`.
                 ensure!(
-                    deployment.program().id() != &ProgramID::credits(),
+                    deployment.program_id() != &ProgramID::credits(),
                     "The 'credits.aleo' program cannot be deployed with DeploymentVersion::V3"
                 );
 
