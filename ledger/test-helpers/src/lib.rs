@@ -292,6 +292,16 @@ function compute:
     .unwrap()
 }
 
+/// Samples a V3 deployment (amendment) for the same program as V2 without translation keys.
+/// The edition must match an existing deployment's edition.
+/// V3 = checksum + no owner.
+pub fn sample_deployment_v3(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
+    // Sample a V2 deployment without translation keys, then remove the owner to make it V3.
+    let mut deployment = sample_deployment_v2_without_translation_keys(edition, rng);
+    deployment.set_program_owner_raw(None);
+    deployment
+}
+
 /// Samples a rejected deployment.
 pub fn sample_rejected_deployment(
     version: u8,
@@ -517,6 +527,10 @@ pub fn sample_deployment_transaction(
             // Set the program owner to the address of the private key.
             deployment.set_program_owner_raw(Some(Address::try_from(&private_key).unwrap()));
             deployment
+        }
+        (3, _) => {
+            // V3 is an amendment - uses the same program as V2 but with additional translation VKs and no program_owner.
+            sample_deployment_v3(edition, rng)
         }
         _ => panic!("Invalid deployment version ({version}) or translation keys combination."),
     };

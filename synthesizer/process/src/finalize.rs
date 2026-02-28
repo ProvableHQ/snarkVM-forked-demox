@@ -34,77 +34,123 @@ impl<N: Network> Process<N> {
     ) -> Result<(Stack<N>, Vec<FinalizeOperation<N>>)> {
         let timer = timer!("Process::finalize_deployment");
 
-        // Compute the program stack.
-        let mut stack = Stack::new(self, deployment.program())?;
-        lap!(timer, "Compute the stack");
+        // Get the deployment version.
+        let version = deployment.version()?;
 
-        // Set the program owner.
-        // Note: The program owner is only enforced to be `Some` after `ConsensusVersion::V9`
-        // and is `None` for all programs deployed before the `V9` migration.
-        stack.set_program_owner(deployment.program_owner());
+        // Finalize the deployment based on its version.
+        match version {
+            DeploymentVersion::V1 | DeploymentVersion::V2 => {
+                // Compute the program stack.
+                let mut stack = Stack::new(self, deployment.program())?;
+                lap!(timer, "Compute the stack");
 
-        // Insert all verifying keys.
-        for (name, (verifying_key, _)) in deployment.verifying_keys() {
-            stack.insert_verifying_key(name, verifying_key.clone())?;
-        }
-        lap!(timer, "Insert the verifying keys");
+                // Set the program owner.
+                stack.set_program_owner(deployment.program_owner());
 
-        // Determine which mappings must be initialized.
-        let mappings = match deployment.edition().is_zero() {
-            true => deployment.program().mappings().values().collect::<Vec<_>>(),
-            false => {
+                // Insert all verifying keys (unified: functions + records).
+                for (name, (verifying_key, _)) in deployment.verifying_keys() {
+                    stack.insert_verifying_key(name, verifying_key.clone())?;
+                }
+                lap!(timer, "Insert the verifying keys");
+
+                // Determine which mappings must be initialized.
+                let mappings = match deployment.edition().is_zero() {
+                    true => deployment.program().mappings().values().collect::<Vec<_>>(),
+                    false => {
+                        // Get the existing stack.
+                        let existing_stack = self.get_stack(deployment.program_id())?;
+                        // Get the existing mappings.
+                        let existing_mappings = existing_stack.program().mappings();
+                        // Determine and return the new mappings
+                        let mut new_mappings = Vec::new();
+                        for mapping in deployment.program().mappings().values() {
+                            if !existing_mappings.contains_key(mapping.name()) {
+                                new_mappings.push(mapping);
+                            }
+                        }
+                        new_mappings
+                    }
+                };
+                lap!(timer, "Retrieve the mappings to initialize");
+
+                // Initialize the mappings, and store their finalize operations.
+                atomic_batch_scope!(store, {
+                    // Initialize a list for the finalize operations.
+                    let mut finalize_operations = Vec::with_capacity(deployment.program().mappings().len());
+
+                    /* Finalize the fee. */
+
+                    // Retrieve the fee stack.
+                    let fee_stack = self.get_stack(fee.program_id())?;
+                    // Finalize the fee transition.
+                    finalize_operations.extend(finalize_fee_transition(state, store, &fee_stack, fee)?);
+                    lap!(timer, "Finalize transition for '{}/{}'", fee.program_id(), fee.function_name());
+
+                    /* Finalize the deployment. */
+
+                    // Retrieve the program ID.
+                    let program_id = deployment.program_id();
+                    // Iterate over the mappings that must be initialized.
+                    for mapping in mappings {
+                        // Initialize the mapping.
+                        finalize_operations.push(store.initialize_mapping(*program_id, *mapping.name())?);
+                    }
+                    lap!(timer, "Initialize the program mappings");
+
+                    // If the program has a constructor, execute it and extend the finalize operations.
+                    // This must happen after the mappings are initialized as the constructor may depend on them.
+                    if deployment.program().contains_constructor() {
+                        let operations = finalize_constructor(state, store, &stack, N::TransitionID::default())?;
+                        finalize_operations.extend(operations);
+                        lap!(timer, "Execute the constructor");
+                    }
+
+                    finish!(timer, "Finished finalizing the deployment");
+                    // Return the stack and finalize operations.
+                    Ok((stack, finalize_operations))
+                })
+            }
+            DeploymentVersion::V3 => {
+                // Ensure that the program is not `credits.aleo`.
+                ensure!(
+                    deployment.program_id() != &ProgramID::credits(),
+                    "The 'credits.aleo' program cannot be deployed with DeploymentVersion::V3"
+                );
+
                 // Get the existing stack.
                 let existing_stack = self.get_stack(deployment.program_id())?;
-                // Get the existing mappings.
-                let existing_mappings = existing_stack.program().mappings();
-                // Determine and return the new mappings
-                let mut new_mappings = Vec::new();
-                for mapping in deployment.program().mappings().values() {
-                    if !existing_mappings.contains_key(mapping.name()) {
-                        new_mappings.push(mapping);
-                    }
+
+                // Compute a new stack with the same program and edition.
+                // Note: `Stack::new` cannot be used here because it would increment the edition.
+                // Amendments must preserve the existing edition. Validity is verified by `initialize_and_check`.
+                let mut stack = Stack::new_raw(self, deployment.program(), *existing_stack.program_edition())?;
+                stack.initialize_and_check(self)?;
+                lap!(timer, "Compute the stack");
+
+                // Set the program owner to the existing owner.
+                stack.set_program_owner(*existing_stack.program_owner());
+
+                // Insert all verifying keys (unified: functions + records).
+                for (name, (verifying_key, _)) in deployment.verifying_keys() {
+                    stack.insert_verifying_key(name, verifying_key.clone())?;
                 }
-                new_mappings
+                lap!(timer, "Insert the verifying keys");
+
+                // Finalize the fee (amendments don't initialize mappings or run constructors).
+                atomic_batch_scope!(store, {
+                    let mut finalize_operations = Vec::new();
+
+                    // Retrieve the fee stack.
+                    let fee_stack = self.get_stack(fee.program_id())?;
+                    // Finalize the fee transition.
+                    finalize_operations.extend(finalize_fee_transition(state, store, &fee_stack, fee)?);
+                    lap!(timer, "Finalize transition for '{}/{}'", fee.program_id(), fee.function_name());
+
+                    finish!(timer, "Finished finalizing the V3 deployment");
+                    Ok((stack, finalize_operations))
+                })
             }
-        };
-        lap!(timer, "Retrieve the mappings to initialize");
-
-        // Initialize the mappings, and store their finalize operations.
-        atomic_batch_scope!(store, {
-            // Initialize a list for the finalize operations.
-            let mut finalize_operations = Vec::with_capacity(deployment.program().mappings().len());
-
-            /* Finalize the fee. */
-
-            // Retrieve the fee stack.
-            let fee_stack = self.get_stack(fee.program_id())?;
-            // Finalize the fee transition.
-            finalize_operations.extend(finalize_fee_transition(state, store, &fee_stack, fee)?);
-            lap!(timer, "Finalize transition for '{}/{}'", fee.program_id(), fee.function_name());
-
-            /* Finalize the deployment. */
-
-            // Retrieve the program ID.
-            let program_id = deployment.program_id();
-            // Iterate over the mappings that must be initialized.
-            for mapping in mappings {
-                // Initialize the mapping.
-                finalize_operations.push(store.initialize_mapping(*program_id, *mapping.name())?);
-            }
-            lap!(timer, "Initialize the program mappings");
-
-            // If the program has a constructor, execute it and extend the finalize operations.
-            // This must happen after the mappings are initialized as the constructor may depend on them.
-            if deployment.program().contains_constructor() {
-                let operations = finalize_constructor(state, store, &stack, N::TransitionID::default())?;
-                finalize_operations.extend(operations);
-                lap!(timer, "Execute the constructor");
-            }
-
-            finish!(timer, "Finished finalizing the deployment");
-            // Return the stack and finalize operations.
-            Ok((stack, finalize_operations))
-        })
+        }
     }
 
     /// Finalizes the execution and fee.

@@ -44,7 +44,7 @@ pub struct Deployment<N: Network> {
     /// An optional owner for the program.
     /// This field creates a backwards-compatible implicit versioning mechanism for deployments.
     /// Before the migration height where this feature is enabled, the owner will **not** be allowed.
-    /// After the migration height where this feature is enabled, the owner will be required.
+    /// After the migration height where this feature is enabled, the owner will be required, except for V3 (amendment) deployments.
     program_owner: Option<Address<N>>,
 }
 
@@ -86,6 +86,7 @@ impl<N: Network> Deployment<N> {
         // Ensure that the appropriate optional fields are present.
         // The call to `Deployment::version` implicitly performs this check.
         self.version()?;
+
         // Validate the deployment based on the program checksum.
         if let Some(program_checksum) = self.program_checksum {
             ensure!(
@@ -299,16 +300,17 @@ impl<N: Network> Deployment<N> {
 }
 
 impl<N: Network> Deployment<N> {
+    /// Sets the edition.
+    pub fn set_edition_raw(&mut self, edition: u16) {
+        self.edition = edition;
+    }
+
     /// Sets the program checksum.
-    /// Note: This method is intended to be used by the synthesizer **only**, and should not be called by the user.
-    #[doc(hidden)]
     pub fn set_program_checksum_raw(&mut self, program_checksum: Option<[U8<N>; 32]>) {
         self.program_checksum = program_checksum;
     }
 
     /// Sets the program owner.
-    /// Note: This method is intended to be used by the synthesizer **only**, and should not be called by the user.
-    #[doc(hidden)]
     pub fn set_program_owner_raw(&mut self, program_owner: Option<Address<N>>) {
         self.program_owner = program_owner;
     }
@@ -327,16 +329,17 @@ impl<N: Network> Deployment<N> {
         self.verifying_keys.retain(|(n, _)| !names.contains(n));
     }
 
-    /// An internal function to return the implicit deployment version.
+    /// Returns the implicit deployment version.
     /// This function implicitly checks that the deployment checksum and owner is well-formed.
-    #[doc(hidden)]
-    pub(super) fn version(&self) -> Result<DeploymentVersion> {
+    pub fn version(&self) -> Result<DeploymentVersion> {
         match (self.program_checksum.is_some(), self.program_owner.is_some()) {
+            // V1: No checksum, no owner.
             (false, false) => Ok(DeploymentVersion::V1),
+            // V2: Checksum + owner.
             (true, true) => Ok(DeploymentVersion::V2),
-            (true, false) => {
-                bail!("The program checksum is present, but the program owner is absent.")
-            }
+            // V3: Checksum, no owner (amendment).
+            (true, false) => Ok(DeploymentVersion::V3),
+            // Invalid: Owner without checksum.
             (false, true) => {
                 bail!("The program owner is present, but the program checksum is absent.")
             }
@@ -344,13 +347,18 @@ impl<N: Network> Deployment<N> {
     }
 }
 
-// An internal enum to represent the deployment version.
+/// The deployment version.
 #[derive(Copy, Clone, Eq, PartialEq)]
-pub(super) enum DeploymentVersion {
-    // Inactive after consensus version >= V9.
+pub enum DeploymentVersion {
+    /// A deployment without a program checksum or program owner (V1).
+    /// Inactive after consensus version >= V9.
     V1 = 1,
-    // Active after consensus version >= V9.
+    /// A deployment with both a program checksum and program owner (V2).
+    /// Active after consensus version >= V9.
     V2 = 2,
+    /// A deployment with a program checksum but without a program owner (V3).
+    /// Active after consensus version >= V14. This is used for amendments.
+    V3 = 3,
 }
 
 #[cfg(test)]
@@ -455,7 +463,7 @@ function compute:
         static INSTANCE: OnceLock<Deployment<CurrentNetwork>> = OnceLock::new();
         let deployment = INSTANCE
             .get_or_init(|| {
-                // Initialize a new program.
+                // Initialize a new program with records (required for translation VKs).
                 let (string, program) = Program::<CurrentNetwork>::parse(
                     r"
 program testing_five.aleo;
@@ -494,5 +502,14 @@ function compute:
             Some(Address::rand(rng)),
         )
         .unwrap()
+    }
+
+    /// Samples a V3 deployment (amendment) for the same program as V2.
+    /// V3 = checksum + no owner.
+    pub(crate) fn sample_deployment_v3(edition: u16, rng: &mut TestRng) -> Deployment<CurrentNetwork> {
+        // Sample a V2 deployment with translation keys, then remove the owner.
+        let mut deployment = sample_deployment_v2_with_translation_keys(edition, rng);
+        deployment.set_program_owner_raw(None);
+        deployment
     }
 }

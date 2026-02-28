@@ -484,12 +484,16 @@ pub mod test_helpers {
                 deployment.set_program_owner_raw(Some(Address::try_from(&private_key).unwrap()));
                 deployment
             }
+            (3, _) => {
+                // V3 is an amendment - uses the same program as V2 but with new VKs and no program_owner.
+                crate::transaction::deployment::test_helpers::sample_deployment_v3(edition, rng)
+            }
             _ => panic!("Invalid deployment version ({version}) or translation keys combination."),
         };
 
         // Compute the deployment ID.
         let deployment_id = deployment.to_deployment_id().unwrap();
-        // Construct a program owner.
+        // Construct a program owner (the transaction signer).
         let owner = ProgramOwner::new(&private_key, deployment_id, rng).unwrap();
 
         // Sample the fee.

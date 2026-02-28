@@ -49,6 +49,7 @@ use snarkvm_ledger_block::{
     Block,
     ConfirmedTransaction,
     Deployment,
+    DeploymentVersion,
     Execution,
     Fee,
     Header,
