@@ -16,12 +16,10 @@
 **/proptest-regressions/
 artifacts
 
-# Claude Code - shared config committed, personal settings ignored
-.claude/*
-!.claude/AGENTS.md
-!.claude/CLAUDE.md
-!.claude/skills/
-
-# Ignore auto-generated CLAUDE.md files outside .claude/
+# Claude Code
 **/CLAUDE.md
 !.claude/CLAUDE.md
+.claude/*
+!.claude/CLAUDE.md
+!.claude/.gitignore
+!.claude/skills/

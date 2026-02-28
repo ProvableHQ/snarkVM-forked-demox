@@ -141,8 +141,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         lap!(timer, "Check for duplicate elements");
 
         // Get the consensus version.
-        let current_block_height = self.block_store().current_block_height();
-        let consensus_version = N::CONSENSUS_VERSION(self.block_store().current_block_height())?;
+        let consensus_version = N::CONSENSUS_VERSION(current_block_height)?;
 
         // Construct the transaction checksum.
         let checksum = Data::<Transaction<N>>::Buffer(transaction.to_bytes_le()?.into()).to_checksum::<N>()?;
@@ -847,10 +846,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let result = match verification {
             Ok(()) => match self.block_store().contains_state_root(&fee.global_state_root()) {
                 Ok(true) => Ok(()),
-                Ok(false) => bail!("Fee verification failed: global state root not found"),
-                Err(error) => bail!("Fee verification failed: {error}"),
+                Ok(false) => bail!("Fee verification failed - State root {} not found", fee.global_state_root()),
+                Err(error) => bail!("Fee verification failed - Storage error - {error}"),
             },
-            Err(error) => bail!("Fee verification failed: {error}"),
+            Err(error) => bail!("Fee verification failed - {error}"),
         };
         finish!(timer, "Check the global state root");
         result
