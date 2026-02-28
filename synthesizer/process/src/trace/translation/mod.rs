@@ -85,10 +85,15 @@ impl<N: Network> Translation<N> {
 
             let callee_input_types = callee_function_core.input_types();
             let num_inputs = transition.inputs().len();
+            ensure!(
+                num_inputs == callee_input_types.len(),
+                "The number of transition inputs ({num_inputs}) and callee input types ({}) do not match",
+                callee_input_types.len()
+            );
 
             // Prepare the input translation tasks.
             for (record_register_index, (input, callee_input_type)) in
-                transition.inputs().iter().zip(callee_input_types.iter()).enumerate()
+                transition.inputs().iter().zip_eq(callee_input_types.iter()).enumerate()
             {
                 // Only process inputs that have a dynamic ID.
                 let Some(dynamic_id) = input.dynamic_id() else { continue };
@@ -149,10 +154,16 @@ impl<N: Network> Translation<N> {
             }
 
             let callee_output_types = callee_function_core.output_types();
+            ensure!(
+                transition.outputs().len() == callee_output_types.len(),
+                "The number of transition outputs ({}) and callee output types ({}) do not match",
+                transition.outputs().len(),
+                callee_output_types.len()
+            );
 
             // Prepare the output translation tasks.
             for (record_register_index, (output, callee_output_type)) in
-                transition.outputs().iter().zip(callee_output_types.iter()).enumerate()
+                transition.outputs().iter().zip_eq(callee_output_types.iter()).enumerate()
             {
                 // Only process outputs that have a dynamic ID.
                 let Some(dynamic_id) = output.dynamic_id() else { continue };

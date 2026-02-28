@@ -80,12 +80,26 @@ impl<N: Network> Process<N> {
         // Initialize a map of transition IDs to references of the transition.
         let mut transition_map = HashMap::with_capacity(execution.transitions().len());
 
+        // Retrieve the network ID.
+        let network_id = U16::new(N::ID);
+
+        // Precompute function IDs for all transitions to avoid redundant BHP hashing.
+        let mut function_id_cache: HashMap<N::TransitionID, Field<N>> =
+            HashMap::with_capacity(execution.transitions().len());
+        for transition in execution.transitions() {
+            let function_id = compute_function_id(&network_id, transition.program_id(), transition.function_name())?;
+            function_id_cache.insert(*transition.id(), function_id);
+        }
+
         // Verify each transition.
         for transition in execution.transitions() {
             dev_println!("Verifying transition for {}/{}...", transition.program_id(), transition.function_name());
             // Debug-mode only, as the `Transition` constructor recomputes the transition ID at initialization.
-            let expected_id = N::hash_bhp512(&(transition.to_root()?, *transition.tcm()).to_bits_le())?;
-            debug_assert_eq!(**transition.id(), expected_id, "The transition ID is incorrect");
+            #[cfg(debug_assertions)]
+            {
+                let expected_id = N::hash_bhp512(&(transition.to_root()?, *transition.tcm()).to_bits_le())?;
+                assert_eq!(**transition.id(), expected_id, "The transition ID is incorrect");
+            }
 
             // Ensure the transition is not a fee transition.
             let is_fee_transition = transition.is_fee_private() || transition.is_fee_public();
@@ -95,10 +109,10 @@ impl<N: Network> Process<N> {
             // Ensure the number of outputs is within the allowed range.
             ensure!(transition.outputs().len() <= N::MAX_OUTPUTS, "Transition exceeded maximum number of outputs");
 
-            // Retrieve the network ID.
-            let network_id = U16::new(N::ID);
-            // Compute the function ID.
-            let function_id = compute_function_id(&network_id, transition.program_id(), transition.function_name())?;
+            // Retrieve the precomputed function ID.
+            let function_id = *function_id_cache
+                .get(transition.id())
+                .ok_or_else(|| anyhow!("Function ID not found for transition {}", transition.id()))?;
 
             // Ensure each input is valid.
             if transition
@@ -192,7 +206,8 @@ impl<N: Network> Process<N> {
                 parent,
                 &call_graph,
                 program_checksum.map(|checksum| *checksum),
-                &mut transition_map,
+                &transition_map,
+                &function_id_cache,
             )?;
             lap!(timer, "Constructed the verifier inputs for a transition of {}", function.name());
 
@@ -232,11 +247,11 @@ impl<N: Network> Process<N> {
                 self.get_stack(program_id).and_then(|stack| stack.get_verifying_key(record_name))
             },
         )?;
-        // Ensure `Authorization::translation_batches` matches the number of translations.
-        // We only compare the totals because `Authorization::translation_batches` does not preserve order.
+        // Ensure `Authorization::translation_batch_sizes` matches the number of translations.
+        // We only compare the totals because `Authorization::translation_batch_sizes` does not preserve order.
         // Note that in general the prover and verifier agree on order through the use of `translation_index`.
         let expected_n_translations =
-            Authorization::translation_batches(self, execution.transitions())?.into_iter().sum::<usize>();
+            Authorization::translation_batch_sizes(self, execution.transitions())?.into_iter().sum::<usize>();
         let actual_n_translations = batch_translation_inputs.iter().map(|(_, inputs)| inputs.len()).sum::<usize>();
         ensure!(
             actual_n_translations == expected_n_translations,
@@ -244,13 +259,27 @@ impl<N: Network> Process<N> {
         );
 
         for (verifying_key, batch_translation_inputs_for_record) in batch_translation_inputs.into_iter() {
-            // Retrieve the number of public and private variables.
-            // Note: This number does *NOT* include the number of constants. This is safe because
-            // this program is never deployed, as it is a first-class citizen of the protocol.
-            // TODO (@vicsn) should this be used?
-            let _num_variables = verifying_key.circuit_info.num_public_and_private_variables as u64;
-            // Insert the inclusion verifier inputs.
+            // Insert the translation verifier inputs.
             verifier_inputs.push((verifying_key.clone(), batch_translation_inputs_for_record));
+        }
+
+        // Enforce the batch proof instance limit starting from ConsensusVersion::V14,
+        // which introduces translation proofs that increase the total instance count.
+        // Note: This check is performed here (rather than in `VerifyingKey::verify_batch`)
+        // because the consensus version is only available at this level. The total instance
+        // count includes transition, translation, and inclusion proof instances; the inclusion
+        // instances are added inside `verify_execution_proof`, but their count is bounded by
+        // the number of record inputs which is already constrained by `MAX_INPUTS * MAX_TRANSITIONS`.
+        if consensus_version >= ConsensusVersion::V14 {
+            let num_instances = verifier_inputs.iter().map(|(_, inputs)| inputs.len()).sum::<usize>();
+            // Account for inclusion proof instances (one per record input across all transitions).
+            let num_inclusion_instances = Authorization::number_of_input_records(execution.transitions());
+            let total_instances = num_instances + num_inclusion_instances;
+            ensure!(
+                total_instances <= N::MAX_BATCH_PROOF_INSTANCES,
+                "Observed {total_instances} instances to verify, the limit is {}",
+                N::MAX_BATCH_PROOF_INSTANCES
+            );
         }
 
         // Verify the execution proof.
@@ -271,11 +300,9 @@ impl<N: Network> Process<N> {
         parent: Option<&ProgramID<N>>,
         call_graph: &HashMap<N::TransitionID, Vec<N::TransitionID>>,
         program_checksum: Option<N::Field>,
-        transition_map: &mut HashMap<N::TransitionID, (&Transition<N>, Function<N>)>,
+        transition_map: &HashMap<N::TransitionID, (&Transition<N>, Function<N>)>,
+        function_id_cache: &HashMap<N::TransitionID, Field<N>>,
     ) -> Result<Vec<N::Field>> {
-        // Retrieve the network ID.
-        let network_id = U16::new(N::ID);
-
         // Compute the x- and y-coordinate of `tpk`.
         let (tpk_x, tpk_y) = transition.tpk().to_xy_coordinates();
 
@@ -358,15 +385,16 @@ impl<N: Network> Process<N> {
         );
 
         for (child_transition_id, (is_dynamic_call, call_instruction)) in
-            child_transition_ids.iter().zip(parent_function_calls)
+            child_transition_ids.iter().zip_eq(parent_function_calls)
         {
             // Note: This unwrap is safe, as we are processing transitions in post-order,
             // which implies that all child transition IDs have been added to `transition_map`.
             let (child_transition, _) = transition_map.get(child_transition_id).unwrap();
 
-            // Compute the function ID for the child transition.
-            let child_function_id =
-                compute_function_id(&network_id, child_transition.program_id(), child_transition.function_name())?;
+            // Retrieve the precomputed function ID for the child transition.
+            let child_function_id = *function_id_cache
+                .get(child_transition_id)
+                .ok_or_else(|| anyhow!("Function ID not found for child transition {child_transition_id}"))?;
 
             // Extract the `CallDynamic` instruction data, if this is a dynamic call.
             let call_dynamic = match call_instruction {

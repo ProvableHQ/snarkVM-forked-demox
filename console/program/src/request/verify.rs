@@ -58,6 +58,7 @@ impl<N: Network> Request<N> {
         let is_root = if is_root { Field::<N>::one() } else { Field::<N>::zero() };
 
         // Construct the signature message as `[tvk, tcm, function ID, is_root, program checksum?, input IDs]`.
+        // Capacity: 5 fixed fields + up to 4 elements per input (record inputs contribute H_x, (rH)_x, gamma_x, tag).
         let mut message = Vec::with_capacity(5 + 4 * self.input_ids.len());
         message.push(self.tvk);
         message.push(self.tcm);

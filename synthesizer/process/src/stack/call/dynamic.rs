@@ -151,7 +151,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             )
             .into());
         }
-        for (output, register) in outputs.into_iter().zip(&self.destinations()) {
+        for (output, register) in outputs.into_iter().zip_eq(&self.destinations()) {
             // Assign the output to the register.
             registers.store(stack, register, output)?;
         }
@@ -710,7 +710,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             )
             .into());
         }
-        for (output, register) in outputs.into_iter().zip(&self.destinations()) {
+        for (output, register) in outputs.into_iter().zip_eq(&self.destinations()) {
             // Assign the output to the register.
             registers.store_circuit(stack, register, output)?;
         }
@@ -794,7 +794,7 @@ fn convert_caller_inputs_to_callee_inputs<N: Network>(
 ) -> Result<Vec<Value<N>>> {
     inputs
         .iter()
-        .zip(input_types.iter())
+        .zip_eq(input_types.iter())
         .map(|(input, input_type)| {
             match (input, input_type) {
                 // Convert DynamicRecord to Record when callee expects a Record.

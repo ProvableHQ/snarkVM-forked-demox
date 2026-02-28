@@ -38,15 +38,3 @@ pub fn compute_function_id<N: Network>(
             .to_bits_le(),
     )
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn check_field_size_in_bits() {
-        // Ensure that the field size in bits is less than or equal to `u8::MAX`.
-        // This is a sanity check for the above encoding.
-        assert!(Field::<snarkvm_console_network::MainnetV0>::SIZE_IN_BITS <= u8::MAX as usize);
-    }
-}

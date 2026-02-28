@@ -161,7 +161,7 @@ impl<E: Environment, LH: LeafHash<E, Hash = PH::Hash>, PH: PathHash<E, Hash = Fi
                 .collect::<Vec<_>>();
             // Compute and store the hashes for each node in the current level.
             let num_full_nodes = tuples.len();
-            for (tree_node, (left, right)) in tree[start..][..num_full_nodes].iter_mut().zip(tuples.iter()) {
+            for (tree_node, (left, right)) in tree[start..][..num_full_nodes].iter_mut().zip_eq(tuples.iter()) {
                 *tree_node = path_hasher.hash_children(left, right);
             }
             // Use the precomputed empty node hash for every empty node, if there are any.
