@@ -152,3 +152,244 @@ fn test_input_dynamic_then_materialize() {
         }
     }
 }
+
+// Program a: defines record a_record and closure read_value that reads a u8 from it.
+// Program b: has a function that receives an external a/a_record and calls a's read_value closure.
+#[test]
+fn test_external_record_and_closure_call() -> Result<()> {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key)?;
+    let caller_view_key = ViewKey::<CurrentNetwork>::try_from(&caller_private_key)?;
+
+    // Use program names with 10+ characters so deployment namespace cost stays within MAX_FEE.
+    let program_a = Program::<CurrentNetwork>::from_str(
+        r"
+        program program_a.aleo;
+
+        record a_record:
+            owner as address.private;
+            val as u8.private;
+
+        closure read_val:
+            input r0 as a_record.record;
+            add r0.val 0u8 into r1;
+            output r1 as u8;
+
+        function mint_record:
+            input r0 as address.private;
+            input r1 as u8.private;
+            cast r0 r1 into r2 as a_record.record;
+            output r2 as a_record.record;
+
+        function consume_record:
+            input r0 as a_record.record;
+
+        constructor:
+            assert.eq true true;
+        ",
+    )?;
+
+    let program_b = Program::<CurrentNetwork>::from_str(
+        r"
+        import program_a.aleo;
+
+        program program_b.aleo;
+
+        record record_b:
+            owner as address.private;
+            truth as boolean.private;
+
+        function mint_record_b:
+            input r0 as address.private;
+            input r1 as boolean.private;
+            cast r0 r1 into r2 as record_b.record;
+            output r2 as record_b.record;
+
+        function read_external_val:
+            input r0 as program_a.aleo/a_record.record;
+            call program_a.aleo/read_val r0 into r1;
+            output r1 as u8.public;
+
+        constructor:
+            assert.eq true true;
+        ",
+    )?;
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14)?, rng);
+
+    println!("Deploying programs...");
+
+    let deploy_a = vm.deploy(&caller_private_key, &program_a, None, 0, None, rng)?;
+    add_and_test(&vm, &caller_private_key, &[deploy_a], rng);
+
+    let deploy_b = vm.deploy(&caller_private_key, &program_b, None, 0, None, rng)?;
+    add_and_test(&vm, &caller_private_key, &[deploy_b], rng);
+
+    println!("Minting record...");
+
+    let tx_mint = vm.execute(
+        &caller_private_key,
+        ("program_a.aleo", "mint_record"),
+        [Value::from_str(&caller_address.to_string())?, Value::from_str("42u8")?].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    )?;
+
+    let record_ciphertext = match tx_mint.transitions().next().unwrap().outputs().first().unwrap() {
+        Output::Record(_, _, ct, _) => ct.as_ref().unwrap().clone(),
+        _ => panic!("expected record output"),
+    };
+
+    add_and_test(&vm, &caller_private_key, &[tx_mint], rng);
+
+    let a_record_plaintext = record_ciphertext.decrypt(&caller_view_key)?;
+
+    println!("Reading record through external closure call...");
+
+    let tx_read = vm.execute(
+        &caller_private_key,
+        ("program_b.aleo", "read_external_val"),
+        [Value::<CurrentNetwork>::Record(a_record_plaintext.clone())].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    )?;
+
+    let expected = Plaintext::<CurrentNetwork>::from_str("42u8")?;
+    match tx_read.transitions().next().unwrap().outputs().first().unwrap() {
+        Output::Public(_, Some(plaintext)) => assert_eq!(*plaintext, expected),
+        other => panic!("expected public output 42u8, got {other:?}"),
+    }
+
+    add_and_test(&vm, &caller_private_key, &[tx_read], rng);
+
+    // Check that the record has not been consumed
+    println!("Consuming record...");
+
+    let tx_consume = vm.execute(
+        &caller_private_key,
+        ("program_a.aleo", "consume_record"),
+        [Value::<CurrentNetwork>::Record(a_record_plaintext)].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    )?;
+
+    add_and_test(&vm, &caller_private_key, &[tx_consume], rng);
+
+    // Upgrade program_a with a closure that reads the "truth" field from program_b's record_b.
+    let program_a_upgraded = Program::<CurrentNetwork>::from_str(
+        r"
+        import program_b.aleo;
+
+        program program_a.aleo;
+
+            record a_record:
+                owner as address.private;
+                val as u8.private;
+
+            closure read_val:
+                input r0 as a_record.record;
+                add r0.val 0u8 into r1;
+                output r1 as u8;
+
+            closure read_truth:
+                input r0 as program_b.aleo/record_b.record;
+                or r0.truth false into r1;
+                output r1 as boolean;
+
+            function mint_record:
+                input r0 as address.private;
+                input r1 as u8.private;
+                cast r0 r1 into r2 as a_record.record;
+                output r2 as a_record.record;
+
+            function consume_record:
+                input r0 as a_record.record;
+
+            constructor:
+                assert.eq true true;
+            ",
+    )?;
+
+    println!("Upgrading program_a...");
+
+    let deploy_upgrade = vm.deploy(&caller_private_key, &program_a_upgraded, None, 0, None, rng)?;
+    add_and_test(&vm, &caller_private_key, &[deploy_upgrade], rng);
+
+    let program_b_upgraded = Program::<CurrentNetwork>::from_str(
+        r"
+        import program_a.aleo;
+
+        program program_b.aleo;
+
+        record record_b:
+            owner as address.private;
+            truth as boolean.private;
+
+        function mint_record_b:
+            input r0 as address.private;
+            input r1 as boolean.private;
+            cast r0 r1 into r2 as record_b.record;
+            output r2 as record_b.record;
+
+        function read_external_val:
+            input r0 as program_a.aleo/a_record.record;
+            call program_a.aleo/read_val r0 into r1;
+            output r1 as u8.public;
+
+        function read_in_a_closure:
+            input r0 as record_b.record;
+            call program_a.aleo/read_truth r0 into r1;
+            output r1 as boolean.public;
+
+        constructor:
+            assert.eq true true;
+        ",
+    )?;
+
+    println!("Upgrading program_b...");
+
+    let deploy_upgrade_b = vm.deploy(&caller_private_key, &program_b_upgraded, None, 0, None, rng)?;
+    add_and_test(&vm, &caller_private_key, &[deploy_upgrade_b], rng);
+
+    // First transaction: mint a record_b.
+    let tx_mint_b = vm.execute(
+        &caller_private_key,
+        ("program_b.aleo", "mint_record_b"),
+        [Value::from_str(&caller_address.to_string())?, Value::from_str("true")?].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    )?;
+
+    let record_b_ciphertext = match tx_mint_b.transitions().next().unwrap().outputs().first().unwrap() {
+        Output::Record(_, _, ct, _) => ct.as_ref().unwrap().clone(),
+        _ => panic!("expected record output from mint_record_b"),
+    };
+
+    add_and_test(&vm, &caller_private_key, &[tx_mint_b], rng);
+
+    let record_b_plaintext = record_b_ciphertext.decrypt(&caller_view_key)?;
+
+    // Second transaction: call read_in_a_closure with the minted record.
+    let tx_read_in_a = vm.execute(
+        &caller_private_key,
+        ("program_b.aleo", "read_in_a_closure"),
+        [Value::<CurrentNetwork>::Record(record_b_plaintext)].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    )?;
+    add_and_test(&vm, &caller_private_key, &[tx_read_in_a], rng);
+
+    Ok(())
+}

@@ -832,7 +832,8 @@ impl<N: Network> Process<N> {
         let transition = tid_to_transition
             .get(transition_id)
             .ok_or_else(|| anyhow!("Missing transition with ID {transition_id}"))?;
-        let function = self.get_stack(transition.program_id())?.get_function(transition.function_name())?;
+        let stack = self.get_stack(transition.program_id())?;
+        let function = stack.get_function(transition.function_name())?;
         let locator = Locator::new(*transition.program_id(), *transition.function_name());
 
         let inputs = transition.inputs();
@@ -930,36 +931,11 @@ impl<N: Network> Process<N> {
                     }
                 }
                 Instruction::Call(..) | Instruction::CallDynamic(..) => {
-                    let remaining_children = call_graph.get_mut(transition_id).unwrap();
-
-                    ensure!(
-                        !remaining_children.is_empty(),
-                        "Entry with Transition ID {transition_id} ({locator}) in the call graph has fewer elements than the number of calls in the corresponding function",
-                    );
-
-                    let tid_callee = remaining_children.remove(0);
-
                     let caller_input_operands = if matches!(instruction, Instruction::Call(..)) {
                         instruction.operands()
                     } else {
                         &instruction.operands()[3..]
                     };
-
-                    for input_register in caller_input_operands.iter() {
-                        if let Operand::Register(register) = input_register {
-                            let register_index = register.locator();
-                            // Any dynamic records which are passed to a call and come from locally minted
-                            // static records must be output. This is part of the local check.
-                            if let Some(static_record) = locally_minted_dynamic.get(&register_index) {
-                                must_be_output.insert(*static_record);
-                            }
-                            // Furthermore, any static records which are passed to calls (necessarily as
-                            // external records) must be output.
-                            if locally_minted_static.contains(&register_index) {
-                                must_be_output.insert(register_index);
-                            }
-                        }
-                    }
 
                     let caller_input_registers: Vec<Option<u64>> =
                         caller_input_operands
@@ -972,13 +948,69 @@ impl<N: Network> Process<N> {
                     let caller_output_registers =
                         instruction.destinations().iter().map(|destination| destination.locator()).collect();
 
-                    self.process_transition(
-                        register_families,
-                        &tid_callee,
-                        Some((*transition_id, caller_input_registers, caller_output_registers)),
-                        tid_to_transition,
-                        call_graph,
-                    )?;
+                    if let Instruction::Call(call) = instruction
+                        && !call.is_function_call(stack.as_ref())?
+                    {
+                        // Closure case
+                        let closure = {
+                            let operator = call.operator();
+                            match operator {
+                                CallOperator::Resource(closure_identifier) => {
+                                    // Local closure call
+                                    self.get_stack(transition.program_id())?.get_function(closure_identifier)?
+                                }
+                                CallOperator::Locator(external_locator) => {
+                                    // External closure call
+                                    self.get_stack(external_locator.program_id())?
+                                        .get_function(external_locator.resource())?
+                                }
+                            }
+                        };
+
+                        self.process_closure(
+                            transition_id,
+                            &closure,
+                            register_families,
+                            &locally_minted_static,
+                            &mut locally_minted_dynamic,
+                            &caller_input_registers,
+                            &caller_output_registers,
+                        )?;
+                    } else {
+                        // Function case
+                        let remaining_children = call_graph.get_mut(transition_id).unwrap();
+
+                        ensure!(
+                            !remaining_children.is_empty(),
+                            "Entry with Transition ID {transition_id} ({locator}) in the call graph has fewer elements than the number of calls in the corresponding function",
+                        );
+
+                        let tid_callee = remaining_children.remove(0);
+
+                        for input_register in caller_input_operands.iter() {
+                            if let Operand::Register(register) = input_register {
+                                let register_index = register.locator();
+                                // Any dynamic records which are passed to a (non-closure) call and come from locally minted
+                                // static records must be output. This is part of the local check.
+                                if let Some(static_record) = locally_minted_dynamic.get(&register_index) {
+                                    must_be_output.insert(*static_record);
+                                }
+                                // Furthermore, any static records which are passed to (non-closure) calls (necessarily as
+                                // external records) must be output.
+                                if locally_minted_static.contains(&register_index) {
+                                    must_be_output.insert(register_index);
+                                }
+                            }
+                        }
+
+                        self.process_transition(
+                            register_families,
+                            &tid_callee,
+                            Some((*transition_id, caller_input_registers, caller_output_registers)),
+                            tid_to_transition,
+                            call_graph,
+                        )?;
+                    }
                 }
                 _ => {}
             }
@@ -1029,6 +1061,157 @@ impl<N: Network> Process<N> {
                     let old_register = (*transition_id, callee_output_register.locator());
                     let new_register = (*caller_tid, *caller_output_register);
                     Self::add_to_family(register_families, old_register, new_register);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    // Auxiliary function for `ensure_records_exist` which processes a closure.
+    // The caller function's `record_families` (global-check tracking) and
+    // `locally_minted_dynamic` (local-check tracking) are updated taking into
+    // account the cast instructions in the closure as well as its input-output
+    // relations. Furthermore, this function ensures the closure does not output
+    // any DynamicRecords cast from locally minted static Records.
+    fn process_closure(
+        &self,
+        // TransitionID of the caller function
+        caller_tid: &N::TransitionID,
+        // Closure being processed
+        closure: &FunctionCore<N>,
+        // Families of registers being tracked of as part of the caller's global existence check
+        caller_register_families: &mut [IndexSet<(N::TransitionID, u64)>],
+        // (Caller) registers of static Records minted in the caller function
+        caller_locally_minted_static: &HashSet<u64>,
+        // Map from DynamicRecord registers to the locally minted static Record registers they were cast from (in the caller's view)
+        caller_locally_minted_dynamic: &mut HashMap<u64, u64>,
+        // Caller registers of inputs to the closure call (`None` for inputs that are not registers)
+        caller_input_registers: &Vec<Option<u64>>,
+        // Caller registers of outputs of the closure call
+        caller_output_registers: &Vec<u64>,
+    ) -> Result<()> {
+        // Sets of registers of static Records minted locally in the closure
+        let mut callee_locally_minted_static = HashSet::new();
+
+        ensure!(
+            caller_input_registers.len() == closure.inputs().len()
+                && caller_input_registers.len() == closure.input_types().len(),
+            "Mismatch in the number of caller/callee inputs types and registers in call to closure {}",
+            closure.name()
+        );
+        ensure!(
+            caller_output_registers.len() == closure.outputs().len()
+                && caller_output_registers.len() == closure.output_types().len(),
+            "Mismatch in the number of caller/callee output types  and registers in call to closure {}",
+            closure.name()
+        );
+
+        // Construct a map { callee register -> caller register } for the closure's inputs (Record, DynamicRecord or ExternalRecord)
+        let input_map = izip!(caller_input_registers, closure.inputs(), closure.input_types())
+            .filter_map(|(caller_input_register_opt, closure_input, closure_input_type)| {
+                if matches!(
+                    closure_input_type,
+                    ValueType::Record(..) | ValueType::DynamicRecord | ValueType::ExternalRecord(..)
+                ) {
+                    if let Some(caller_input_register) = caller_input_register_opt {
+                        Some(Ok((closure_input.register().locator(), *caller_input_register)))
+                    } else {
+                        Some(Err(anyhow!(
+                            "Missing register information for the caller input to closure {}",
+                            closure.name()
+                        )))
+                    }
+                } else {
+                    None
+                }
+            })
+            .collect::<Result<HashMap<u64, u64>>>()?;
+
+        // Construct a map { callee register -> caller register } for the closure's outputs (DynamicRecord or ExternalRecord - closures cannot output Records)
+        let output_map = izip!(caller_output_registers, closure.outputs(), closure.output_types())
+            .filter_map(|(caller_output_register, closure_output, closure_output_type)| {
+                if matches!(closure_output_type, ValueType::DynamicRecord | ValueType::ExternalRecord(..)) {
+                    if let Operand::Register(register) = closure_output.operand() {
+                        Some(Ok((register.locator(), *caller_output_register)))
+                    } else {
+                        Some(Err(anyhow!("Missing output register information in closure {}", closure.name())))
+                    }
+                } else {
+                    None
+                }
+            })
+            .collect::<Result<HashMap<u64, u64>>>()?;
+
+        for instruction in closure.instructions() {
+            // Only cast instructions need to be processed at this stage.
+            if let Instruction::Cast(cast) = instruction {
+                match cast.cast_type() {
+                    CastType::Record(..) => {
+                        // Case 1: minting a static Record locally. We keep track to ensure DynamicRecords cast from it are not output.
+                        let destination_register = instruction.destinations()[0].locator();
+                        callee_locally_minted_static.insert(destination_register);
+                    }
+                    CastType::DynamicRecord => {
+                        let operand_register = match cast.operands().first() {
+                            Some(Operand::Register(register)) => register.locator(),
+                            _ => bail!(
+                                "Failed to retrieve operand register for cast to DynamicRecord instruction in closure {}",
+                                closure.name()
+                            ),
+                        };
+
+                        let destination_register = match cast.destinations().first() {
+                            Some(destination) => destination.locator(),
+                            _ => bail!(
+                                "Failed to retrieve destination register for cast to DynamicRecord instruction in closure {}",
+                                closure.name()
+                            ),
+                        };
+
+                        if callee_locally_minted_static.contains(&operand_register) {
+                            // Case 2: Casting a locally minted static Record to a DynamicRecord. We ensure the latter is not output.
+                            if output_map.contains_key(&destination_register) {
+                                bail!(
+                                    "Closure {} attempts to output dynamic record at {destination_register} cast from locally minted Record at {operand_register}",
+                                    closure.name()
+                                );
+                            }
+                        } else {
+                            // In this case, the input to the Cast instruction is necessarily an input to the closure itself. We retrieve its caller register.
+                            let caller_input_register = input_map.get(&operand_register).ok_or_else(|| anyhow!("Missing caller input register for Cast instruction from register {operand_register} in closure {}", closure.name()))?;
+
+                            // We only need to process this cast instruction if the destination register is output by the closure.
+                            if let Some(caller_output_register) = output_map.get(&destination_register) {
+                                if caller_locally_minted_static.contains(caller_input_register) {
+                                    // Case 3: Effectively casting performing a static-to-dynamic cast on the caller. We update the caller's local-check tracking accordingly. Note the input operand in the closure could still be an ExternalRecord (if the call to the closure is external)
+                                    caller_locally_minted_dynamic
+                                        .insert(*caller_output_register, *caller_input_register);
+                                } else {
+                                    // Case 4: Casting a value already received as a Record or ExternalRecord input by the caller itself. In the Record case, nothing was being kept track of. In the ExternalRecord case, we inform the caller's global check of the relation between the two registers.
+                                    let old_register = (*caller_tid, *caller_input_register);
+                                    let new_register = (*caller_tid, destination_register);
+                                    Self::add_to_family(caller_register_families, old_register, new_register);
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Detecting effective remappings of caller registers resulting from closure input-output relations not involving casts
+        for (callee_input_register, caller_input_register) in input_map {
+            if let Some(caller_output_register) = output_map.get(&callee_input_register) {
+                // Caller global-check update (only adds the new register if the old one is in some family)
+                let old_register = (*caller_tid, caller_input_register);
+                let new_register = (*caller_tid, *caller_output_register);
+                Self::add_to_family(caller_register_families, old_register, new_register);
+
+                // Caller local-check update
+                if let Some(original_static) = caller_locally_minted_dynamic.get(&caller_input_register) {
+                    caller_locally_minted_dynamic.insert(*caller_output_register, *original_static);
                 }
             }
         }

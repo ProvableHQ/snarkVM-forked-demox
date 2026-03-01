@@ -68,11 +68,13 @@ use snarkvm_ledger_block::{Deployment, Execution, Fee, Input, Output, Transactio
 use snarkvm_ledger_store::{FinalizeStorage, FinalizeStore, atomic_batch_scope};
 use snarkvm_synthesizer_program::{
     Branch,
+    CallOperator,
     CastType,
     Command,
     FinalizeGlobalState,
     FinalizeOperation,
     Function,
+    FunctionCore,
     Instruction,
     Operand,
     Program,

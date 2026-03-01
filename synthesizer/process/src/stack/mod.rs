@@ -73,7 +73,6 @@ use snarkvm_ledger_block::{Deployment, Transaction, Transition};
 use snarkvm_synthesizer_error::*;
 use snarkvm_synthesizer_program::{
     CallOperator,
-    CastType,
     Closure,
     Function,
     Instruction,
@@ -95,7 +94,6 @@ use parking_lot::RwLock;
 use rand::{CryptoRng, Rng, SeedableRng, rngs::StdRng};
 use std::{
     cell::OnceCell,
-    collections::{HashMap, HashSet},
     sync::{Arc, Weak},
 };
 
