@@ -37,7 +37,6 @@ commands:
       - restore_cache:
           keys:
             - cargo-cache-{{ arch }}-{{ checksum "Cargo.lock" }}
-            - cargo-cache-{{ arch }}-
       - run:
           name: "Install Rust"
           no_output_timeout: 15m
@@ -90,6 +89,7 @@ commands:
       cache_key:
         type: string
         default: v4.5.0-rust-1.88.0-snarkvm-cache
+        default: v4.5.0-rust-1.88.0-snarkvm-cache
     steps:
       - run:
           name: Prepare environment variables and install dependencies
@@ -99,7 +99,7 @@ commands:
 
             # sccache settings
             echo 'export SCCACHE_DIR="$HOME/.cache/sccache"' >> "$BASH_ENV"
-            echo 'export SCCACHE_CACHE_SIZE="20000M"' >> "$BASH_ENV"
+            echo 'export SCCACHE_CACHE_SIZE="2000M"' >> "$BASH_ENV"
             echo 'export SCCACHE_IDLE_TIMEOUT=0' >> "$BASH_ENV"
             echo 'export SCCACHE_LOG=info' >> "$BASH_ENV"
 
@@ -135,6 +135,8 @@ commands:
           keys:
             - v4.5.0-rust-1.88.0-deps-{{ checksum "Cargo.lock" }}-
             - v4.5.0-rust-1.88.0-deps-
+            - v4.5.0-rust-1.88.0-deps-{{ checksum "Cargo.lock" }}-
+            - v4.5.0-rust-1.88.0-deps-
       - restore_cache:
           keys:
             - << parameters.cache_key >>
@@ -152,7 +154,6 @@ commands:
           paths:
             - /home/circleci/.cache/sccache
             - /home/circleci/.cargo/registry
-            - /home/circleci/.cargo/git
             - /home/circleci/.rustup
             - /home/circleci/.cargo/bin
             - /home/circleci/project/.bin
@@ -970,7 +971,7 @@ jobs:
 
   synthesizer-program-integration-keccak:
     executor: rust-docker
-    resource_class: << pipeline.parameters.xlarge >>
+    resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - run_test:
           workspace_member: snarkvm-synthesizer-program
@@ -990,7 +991,7 @@ jobs:
 
   synthesizer-program-integration-sha:
     executor: rust-docker
-    resource_class: << pipeline.parameters.xlarge >>
+    resource_class: << pipeline.parameters.twoxlarge >>
     steps:
       - run_test:
           workspace_member: snarkvm-synthesizer-program
@@ -1278,6 +1279,7 @@ workflows:
       or pipeline.git.branch == "testnet"
       or pipeline.git.branch == "mainnet"
       or pipeline.git.branch == "feat/dynamic-dispatch"
+      or pipeline.git.branch == "reduce_ci_cost"
     jobs:
       - check-unused-dependencies # This can be cleaned up before releases
       - check-cargo-semver-checks # This can be cleaned up before releases
