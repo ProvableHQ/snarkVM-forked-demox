@@ -748,13 +748,15 @@ impl<N: Network> Process<N> {
         reverse_call_graph
     }
 
-    /// Checks that, for each function in the execution (whether transition or
-    /// closure), each `ExternalRecord` and `DynamicRecord` received as an input
-    /// or from a callee corresponds to a static `Record` that exists on the
-    /// ledger at the end of the execution (whether spent or not).
+    /// Checks that, for each non-closure function in the execution, each
+    /// `ExternalRecord` and `DynamicRecord` received as an input or from a
+    /// callee corresponds to a static `Record` that exists on the ledger at the
+    /// end of the execution (whether spent or not). A function given this
+    /// guarantee should itself ensure that all records it outputs or passes to
+    /// non-closure callees exist on the ledger at the end of the execution.
     ///
-    /// Input `transitions`: Iterator over the transitions in the execution. The
-    /// root transition must be last.
+    /// Input `transitions`: Iterator over the `Transition`s in the execution.
+    /// The root transition must be last.
     ///
     /// Input `call_graph`: A copy of the call graph (which will be modified in
     /// place). It is assumed to contain all transitions in `transitions`. All
@@ -765,16 +767,21 @@ impl<N: Network> Process<N> {
         transitions: impl ExactSizeIterator<Item = &'a Transition<N>> + DoubleEndedIterator + Clone,
         mut call_graph: HashMap<N::TransitionID, Vec<N::TransitionID>>,
     ) -> Result<()> {
+        // Keeps track of DynamicRecords and ExternalRecords received as inputs
+        // to the root transition. Whenever a dynamic- or external-record
+        // register is connected to one of them (for instance, because of
+        // caller-callee input/output relations in a call or because of a cast
+        // instruction), the latter is added to the family of the former.
+        // Whenever any record in a family is found out to correspond to a
+        // record on the ledger, the entire family is removed from the vector.
         let mut register_families: Vec<IndexSet<(N::TransitionID, u64)>> = Vec::new();
 
         let root_transition = transitions.clone().last().ok_or_else(|| anyhow!("Empty transition list"))?;
 
-        let tid_to_transition = transitions
-            .clone()
-            .map(|transition| (*transition.id(), transition))
-            .collect::<HashMap<N::TransitionID, &Transition<N>>>();
+        let tid_to_transition: HashMap<N::TransitionID, &Transition<N>> =
+            transitions.clone().map(|transition| (*transition.id(), transition)).collect();
 
-        // Recursively explore the execution, keeping track of record relations across the relevant casts and calls.
+        // Recursively explore the execution, keeping track of record connections across the relevant casts and calls.
         self.process_transition(
             &mut register_families,
             root_transition.id(),
@@ -783,50 +790,54 @@ impl<N: Network> Process<N> {
             &mut call_graph,
         )?;
 
-        // Sanity check: exploration should have consumed all calls in all functions.
+        // Sanity check: exploration should have consumed all calls in the graph.
         for (parent, children) in call_graph {
             if !children.is_empty() {
                 let caller_transition = tid_to_transition
                     .get(&parent)
                     .ok_or_else(|| anyhow!("Missing caller transition with ID {parent}"))?;
                 bail!(
-                    "Entry for Transition ID {parent} ({}/{}) in the call graph has unprocessed children",
+                    "In the record-existence check, entry for Transition ID {parent} ({}/{}) in the call graph has unprocessed children",
                     caller_transition.program_id(),
                     caller_transition.function_name(),
                 );
             }
         }
 
+        // If some family has not been removed from the vector (i. e. has not
+        // been connected to a record on the ledger), we return an error.
         if register_families.is_empty() {
             Ok(())
         } else {
-            let non_existing_register = register_families[0][0];
-            let root_program = root_transition.program_id();
-            let root_function = root_transition.function_name();
-
             Err(anyhow!(
-                "Non-static record input at register r{} of function {}/{} is not known to correspond to a record on the ledger",
-                non_existing_register.1,
-                root_program,
-                root_function
+                "Non-static record input at r{} of function {}/{} is not known to correspond to a record on the ledger",
+                register_families[0][0].1,
+                root_transition.program_id(),
+                root_transition.function_name(),
             ))
         }
     }
 
-    // Auxiliary function for `ensure_records_exist` that connects the relevant
-    // record families of the given transition, tracking linked and connected
-    // records. Furthermore, it also checks that locally minted records which
-    // should materialise are output.
+    // Auxiliary function for `ensure_records_exist` that connects registers in
+    // the transition to the relevant record families, tracking connections and
+    // marking families as existing if they are found to correspond to a record
+    // on the ledger (global check). Furthermore, it also checks that, if a
+    // DynamicRecord cast from a locally minted static Record is output or
+    // passed to a callee, the static one is output (local check).
     fn process_transition(
         &self,
+        // Vector of families of registers connected to `DynamicRecord`s or `ExternalRecord`s input to the root transition.
         register_families: &mut Vec<IndexSet<(N::TransitionID, u64)>>,
+        // TransitionID of the transition being processed
         transition_id: &N::TransitionID,
-        // For non-root transitions, Some containing:
-        //  - transition ID of the caller
-        //  - indices of the caller input registers, with None for inputs that are not registers
-        //  - indices of the caller output registers
+        // `None` for the root transition. For non-root transitions, `Some` containing:
+        //  - TransitionID of the caller
+        //  - indices of the caller registers where it passes inputs to this transition's call (with `None` for inputs that are not registers)
+        //  - indices of the caller registers where it receives outputs from this transition's call
         caller_info: Option<(N::TransitionID, Vec<Option<u64>>, Vec<u64>)>,
+        // Map from TransitionID to the corresponding Transition
         tid_to_transition: &HashMap<N::TransitionID, &Transition<N>>,
+        // Call graph of the execution
         call_graph: &mut HashMap<N::TransitionID, Vec<N::TransitionID>>,
     ) -> Result<()> {
         let transition = tid_to_transition
@@ -839,15 +850,12 @@ impl<N: Network> Process<N> {
         let inputs = transition.inputs();
         let input_registers = function.inputs().iter().map(|input| input.register().locator()).collect::<Vec<u64>>();
 
-        // Contains the registers of static Records minted locally. Used for the local check.
+        // Contains the registers of static Records minted in this transition. Used for the local check.
         let mut locally_minted_static = HashSet::new();
-
-        // For each instruction which casts a static Record at register r_i into a DynamicRecord at register r_j,
-        // if r_i was minted locally, this map contains an entry r_j -> r_i. Used for the local check.
+        // For each DynamicRecord at r_j cast from a locally minted static Record at r_i, this map contains the entry r_j -> r_i.
         let mut locally_minted_dynamic = HashMap::new();
-
-        // Contains the locally minted static records which must be output because they are cast to dynamic
-        // and passed to a call or output. Used for the local check.
+        // Contains the registers of locally minted static Records which must be output because they are cast to
+        // dynamic and passed to a non-closure call or output (as a DynamicRecord). Used for the local check.
         let mut must_be_output = HashSet::new();
 
         // Processing the inputs
@@ -856,9 +864,7 @@ impl<N: Network> Process<N> {
 
             ensure!(
                 inputs.len() == input_registers.len() && inputs.len() == caller_input_registers.len(),
-                "Mismatch in the number of callee/caller inputs and registers in call to {} (transition ID {})",
-                transition.function_name(),
-                transition_id,
+                "Mismatch in the number of callee/caller inputs and registers in call to {locator} (TransitionID {transition_id})",
             );
 
             for (caller_input_register_opt, callee_input_register, callee_input) in
@@ -867,13 +873,16 @@ impl<N: Network> Process<N> {
                 if let Some(caller_input_register) = caller_input_register_opt {
                     match callee_input {
                         Input::RecordWithDynamicID(..) => {
+                            // Case 1: Translation has occured, so we remove the family
                             Self::mark_existing(register_families, (*caller_tid, *caller_input_register));
                         }
                         Input::ExternalRecord(..)
                         | Input::ExternalRecordWithDynamicID(..)
                         | Input::DynamicRecord(..) => {
+                            // Case 2: connection at the input boundary
                             let old_register = (*caller_tid, *caller_input_register);
                             let new_register = (*transition_id, callee_input_register);
+                            // This call only adds the new register if the old register is being tracked, i. e. if it belongs to a family
                             Self::add_to_family(register_families, old_register, new_register);
                         }
                         _ => {}
@@ -888,26 +897,30 @@ impl<N: Network> Process<N> {
                 "Mismatch in the number of inputs and registers in the root call"
             );
 
+            // Initialise record_families with one (singleton) family per DynamicRecord and ExternalRecord input
             for (input, register) in transition.inputs().iter().zip(input_registers.iter()) {
                 if matches!(input, Input::DynamicRecord(..) | Input::ExternalRecord(..)) {
                     register_families.push(IndexSet::from_iter([(*transition_id, *register)]));
                 }
             }
 
-            // Early return if the root transition does not receive non-static records
-            if register_families.is_empty() {
-                return Ok(());
-            }
+            // Even if record_families is empty, we need to process the transitions to enforce the local check holds
         }
 
         for instruction in function.instructions() {
             match instruction {
                 Instruction::Cast(cast) => {
                     match cast.cast_type() {
+                        CastType::Record(_) => {
+                            // Case 3: minting a static Record locally.
+                            locally_minted_static.insert(cast.destinations()[0].locator());
+                        }
                         CastType::DynamicRecord => {
                             let operand_register = match cast.operands().first() {
                                 Some(Operand::Register(register)) => register.locator(),
-                                _ => bail!("Failed to retrieve operand register for cast to DynamicRecord instruction"),
+                                _ => bail!(
+                                    "Failed to retrieve operand register for cast to DynamicRecord instruction in {locator}"
+                                ),
                             };
 
                             let destination_register = cast.destinations()[0].locator();
@@ -915,17 +928,14 @@ impl<N: Network> Process<N> {
                             let old_register = (*transition_id, operand_register);
                             let new_register = (*transition_id, destination_register);
 
-                            // Since static records never exist in any family and add_to_family only adds the new record if the
-                            // old record exists in some family, this call only handles the external-to-dynamic case, as desired.
+                            // Case 4: Global-check update. Since static Records never exist in any family and add_to_family only adds the new
+                            // register if the old register exists in some family, this call only handles external-to-dynamic casts, as desired.
                             Self::add_to_family(register_families, old_register, new_register);
 
-                            // If the operand is a locally minted static record, keep track of this cast for the local check.
+                            // Case 5: Local-check update. If the operand is a locally minted static Record, keep track of this cast.
                             if locally_minted_static.contains(&operand_register) {
                                 locally_minted_dynamic.insert(destination_register, operand_register);
                             }
-                        }
-                        CastType::Record(_) => {
-                            locally_minted_static.insert(cast.destinations()[0].locator());
                         }
                         _ => {}
                     }
@@ -990,19 +1000,20 @@ impl<N: Network> Process<N> {
                         for input_register in caller_input_operands.iter() {
                             if let Operand::Register(register) = input_register {
                                 let register_index = register.locator();
-                                // Any dynamic records which are passed to a (non-closure) call and come from locally minted
-                                // static records must be output. This is part of the local check.
+                                // Case 5: Any DynamicRecord which are passed to a non-closure call and were cast
+                                // from locally minted static Records must be output. This is part of the local check.
                                 if let Some(static_record) = locally_minted_dynamic.get(&register_index) {
                                     must_be_output.insert(*static_record);
                                 }
-                                // Furthermore, any static records which are passed to (non-closure) calls (necessarily as
-                                // external records) must be output.
+                                // Case 6: Any locally minted static Records which are passed to a non-closure call
+                                // (necessarily as ExternalRecords) must be output.
                                 if locally_minted_static.contains(&register_index) {
                                     must_be_output.insert(register_index);
                                 }
                             }
                         }
 
+                        // Recursively updating the global check and performing the local check in the callee.
                         self.process_transition(
                             register_families,
                             &tid_callee,
@@ -1016,9 +1027,9 @@ impl<N: Network> Process<N> {
             }
         }
 
-        // Processing the outputs
+        // Output processing
 
-        // Track which dynamic records coming from locally minted static records are output.
+        // In a first pass over the outputs, track which DynamicRecords coming from locally minted static records are directly output.
         function.outputs().iter().for_each(|output| {
             if let Operand::Register(output_register) = output.operand() {
                 if let Some(static_record) = locally_minted_dynamic.get(&output_register.locator()) {
@@ -1027,7 +1038,7 @@ impl<N: Network> Process<N> {
             }
         });
 
-        // In a second pass, ensure all static records which must be output (according to the local check) are so
+        // In a second pass, ensure all static records which should be output according to the local check actually are
         function.outputs().iter().for_each(|output| {
             if let Operand::Register(output_register) = output.operand() {
                 let _ = must_be_output.remove(&output_register.locator());
@@ -1036,28 +1047,24 @@ impl<N: Network> Process<N> {
 
         ensure!(
             must_be_output.is_empty(),
-            "In function {}, Some dynamic records which are passed to a call or are output refer to locally minted static records which are not output. Static-record registers: {:?}",
-            function.name(),
-            must_be_output
+            "{locator} does not pass the local record-existence check: a minted static Record passed to a callee as an ExternalRecord, or cast to a DynamicRecord and passed to a callee or output, must be itself output. The following registers violate this condition: {must_be_output:?}",
         );
 
-        // For non-root calls, keep track of record families
+        // For non-root calls, update the global check's record families with the connections at the output boundary
         if let Some((caller_tid, _, caller_output_registers)) = &caller_info {
-            let outputs = transition.outputs();
+            let outputs = function.outputs();
 
             ensure!(
-                outputs.len() == caller_output_registers.len() && outputs.len() == function.outputs().len(),
-                "Mismatch in the number of callee/caller outputs and registers in call to {} (transition ID {})",
-                transition.function_name(),
-                transition_id,
+                outputs.len() == caller_output_registers.len(),
+                "Mismatch in the number of callee/caller outputs in call to {locator} (transition ID {transition_id})",
             );
 
-            for (caller_output_register, callee_output_operand, callee_output) in
-                izip!(caller_output_registers, function.outputs(), outputs)
-            {
-                if let Operand::Register(callee_output_register) = callee_output_operand.operand()
-                    && matches!(callee_output, Output::ExternalRecord(..) | Output::DynamicRecord(..))
+            for (caller_output_register, callee_output) in caller_output_registers.iter().zip_eq(outputs.iter()) {
+                if let Operand::Register(callee_output_register) = callee_output.operand()
+                    && matches!(callee_output.value_type(), ValueType::DynamicRecord | ValueType::ExternalRecord(..))
                 {
+                    // Case 7: add the caller's output register to the family containing the callee's. Note that
+                    // output registers with type ValueType::Record are never tracked as part of the global check.
                     let old_register = (*transition_id, callee_output_register.locator());
                     let new_register = (*caller_tid, *caller_output_register);
                     Self::add_to_family(register_families, old_register, new_register);
@@ -1068,7 +1075,7 @@ impl<N: Network> Process<N> {
         Ok(())
     }
 
-    // Auxiliary function for `ensure_records_exist` which processes a closure.
+    // Auxiliary function for ensure_records_exist which processes a closure.
     // The caller function's `record_families` (global-check tracking) and
     // `locally_minted_dynamic` (local-check tracking) are updated taking into
     // account the cast instructions in the closure as well as its input-output
@@ -1080,9 +1087,9 @@ impl<N: Network> Process<N> {
         caller_tid: &N::TransitionID,
         // Closure being processed
         closure: &FunctionCore<N>,
-        // Families of registers being tracked of as part of the caller's global existence check
+        // Families of registers being tracked of as part of the caller's global record-existence check
         caller_register_families: &mut [IndexSet<(N::TransitionID, u64)>],
-        // (Caller) registers of static Records minted in the caller function
+        // Caller registers of static Records minted in the caller function
         caller_locally_minted_static: &HashSet<u64>,
         // Map from DynamicRecord registers to the locally minted static Record registers they were cast from (in the caller's view)
         caller_locally_minted_dynamic: &mut HashMap<u64, u64>,
@@ -1091,23 +1098,23 @@ impl<N: Network> Process<N> {
         // Caller registers of outputs of the closure call
         caller_output_registers: &Vec<u64>,
     ) -> Result<()> {
-        // Sets of registers of static Records minted locally in the closure
+        // Contains the registers of static Records minted in the closure
         let mut callee_locally_minted_static = HashSet::new();
+
+        let closure_name = closure.name();
 
         ensure!(
             caller_input_registers.len() == closure.inputs().len()
                 && caller_input_registers.len() == closure.input_types().len(),
-            "Mismatch in the number of caller/callee inputs types and registers in call to closure {}",
-            closure.name()
+            "Mismatch in the number of caller/callee inputs types and registers in call to closure {closure_name}"
         );
         ensure!(
             caller_output_registers.len() == closure.outputs().len()
                 && caller_output_registers.len() == closure.output_types().len(),
-            "Mismatch in the number of caller/callee output types  and registers in call to closure {}",
-            closure.name()
+            "Mismatch in the number of caller/callee output types and registers in call to closure {closure_name}"
         );
 
-        // Construct a map { callee register -> caller register } for the closure's inputs (Record, DynamicRecord or ExternalRecord)
+        // Construct a map { callee register -> caller register } for the closure's inputs of type Record, DynamicRecord or ExternalRecord
         let input_map = izip!(caller_input_registers, closure.inputs(), closure.input_types())
             .filter_map(|(caller_input_register_opt, closure_input, closure_input_type)| {
                 if matches!(
@@ -1118,8 +1125,7 @@ impl<N: Network> Process<N> {
                         Some(Ok((closure_input.register().locator(), *caller_input_register)))
                     } else {
                         Some(Err(anyhow!(
-                            "Missing register information for the caller input to closure {}",
-                            closure.name()
+                            "Missing register information for the caller input to closure {closure_name}"
                         )))
                     }
                 } else {
@@ -1128,14 +1134,15 @@ impl<N: Network> Process<N> {
             })
             .collect::<Result<HashMap<u64, u64>>>()?;
 
-        // Construct a map { callee register -> caller register } for the closure's outputs (DynamicRecord or ExternalRecord - closures cannot output Records)
+        // Construct a map { callee register -> caller register } for the closure's outputs of type
+        // DynamicRecord or ExternalRecord (closures cannot output static Records)
         let output_map = izip!(caller_output_registers, closure.outputs(), closure.output_types())
             .filter_map(|(caller_output_register, closure_output, closure_output_type)| {
                 if matches!(closure_output_type, ValueType::DynamicRecord | ValueType::ExternalRecord(..)) {
                     if let Operand::Register(register) = closure_output.operand() {
                         Some(Ok((register.locator(), *caller_output_register)))
                     } else {
-                        Some(Err(anyhow!("Missing output register information in closure {}", closure.name())))
+                        Some(Err(anyhow!("Missing output register information in closure {closure_name}")))
                     }
                 } else {
                     None
@@ -1156,16 +1163,14 @@ impl<N: Network> Process<N> {
                         let operand_register = match cast.operands().first() {
                             Some(Operand::Register(register)) => register.locator(),
                             _ => bail!(
-                                "Failed to retrieve operand register for cast to DynamicRecord instruction in closure {}",
-                                closure.name()
+                                "Failed to retrieve operand register for cast to DynamicRecord instruction in closure {closure_name}"
                             ),
                         };
 
                         let destination_register = match cast.destinations().first() {
                             Some(destination) => destination.locator(),
                             _ => bail!(
-                                "Failed to retrieve destination register for cast to DynamicRecord instruction in closure {}",
-                                closure.name()
+                                "Failed to retrieve destination register for cast to DynamicRecord instruction in closure {closure_name}"
                             ),
                         };
 
@@ -1173,23 +1178,26 @@ impl<N: Network> Process<N> {
                             // Case 2: Casting a locally minted static Record to a DynamicRecord. We ensure the latter is not output.
                             if output_map.contains_key(&destination_register) {
                                 bail!(
-                                    "Closure {} attempts to output dynamic record at {destination_register} cast from locally minted Record at {operand_register}",
-                                    closure.name()
+                                    "Closure {closure_name} attempts to output DynamicRecord at {destination_register} cast from locally minted static Record at {operand_register}",
                                 );
                             }
                         } else {
-                            // In this case, the input to the Cast instruction is necessarily an input to the closure itself. We retrieve its caller register.
-                            let caller_input_register = input_map.get(&operand_register).ok_or_else(|| anyhow!("Missing caller input register for Cast instruction from register {operand_register} in closure {}", closure.name()))?;
+                            // In this case, the input to the cast instruction is necessarily an input to the closure itself. We retrieve its caller register.
+                            let caller_operand_register = input_map.get(&operand_register).ok_or_else(
+                                || anyhow!("Missing caller input register for Cast instruction from register {operand_register} in closure {}", closure.name())
+                            )?;
 
                             // We only need to process this cast instruction if the destination register is output by the closure.
-                            if let Some(caller_output_register) = output_map.get(&destination_register) {
-                                if caller_locally_minted_static.contains(caller_input_register) {
-                                    // Case 3: Effectively casting performing a static-to-dynamic cast on the caller. We update the caller's local-check tracking accordingly. Note the input operand in the closure could still be an ExternalRecord (if the call to the closure is external)
+                            if let Some(caller_destination_register) = output_map.get(&destination_register) {
+                                if caller_locally_minted_static.contains(caller_operand_register) {
+                                    // Case 3: Effectively casting performing a static-to-dynamic cast on the caller side. We update the caller's local-check tracking
+                                    // accordingly. Note the input operand in the closure could still be an ExternalRecord if the call to the closure is external
                                     caller_locally_minted_dynamic
-                                        .insert(*caller_output_register, *caller_input_register);
+                                        .insert(*caller_destination_register, *caller_operand_register);
                                 } else {
-                                    // Case 4: Casting a value already received as a Record or ExternalRecord input by the caller itself. In the Record case, nothing was being kept track of. In the ExternalRecord case, we inform the caller's global check of the relation between the two registers.
-                                    let old_register = (*caller_tid, *caller_input_register);
+                                    // Case 4: Casting a value already received as a Record or ExternalRecord input by the caller itself. In the Record case, nothing
+                                    // was being kept track of. In the ExternalRecord case, we inform the caller's global check of the connection between the two registers.
+                                    let old_register = (*caller_tid, *caller_operand_register);
                                     let new_register = (*caller_tid, destination_register);
                                     Self::add_to_family(caller_register_families, old_register, new_register);
                                 }
@@ -1201,15 +1209,15 @@ impl<N: Network> Process<N> {
             }
         }
 
-        // Detecting effective remappings of caller registers resulting from closure input-output relations not involving casts
+        // Detecting connections of caller registers resulting from closure input-output relations not involving casts
         for (callee_input_register, caller_input_register) in input_map {
             if let Some(caller_output_register) = output_map.get(&callee_input_register) {
-                // Caller global-check update (only adds the new register if the old one is in some family)
+                // Case 5. Caller global-check update (only adds the new register if the old one belongs to some family)
                 let old_register = (*caller_tid, caller_input_register);
                 let new_register = (*caller_tid, *caller_output_register);
                 Self::add_to_family(caller_register_families, old_register, new_register);
 
-                // Caller local-check update
+                // Case 6. Caller local-check update
                 if let Some(original_static) = caller_locally_minted_dynamic.get(&caller_input_register) {
                     caller_locally_minted_dynamic.insert(*caller_output_register, *original_static);
                 }
@@ -1219,8 +1227,8 @@ impl<N: Network> Process<N> {
         Ok(())
     }
 
-    // Auxiliary function for ensure_records_exist that adds a record to the set
-    // containing another record, of any, thus connecting their linking status.
+    // Auxiliary function for ensure_records_exist which adds a record to the set
+    // containing another record, if any, thus connecting their existence status.
     // A debug_assert ensures that at most one family contains each of the given
     // records.
     fn add_to_family(
@@ -1244,10 +1252,10 @@ impl<N: Network> Process<N> {
         }
     }
 
-    // Auxiliary function for ensure_records_exist that removes the set
-    // containing a given record, if any, from register_families, thus
-    // implicitly marking it as existing. A debug_assert ensures that at most
-    // one family contains the given record.
+    // Auxiliary function for ensure_records_exist which marks the family
+    // containing a given record register as existing on the ledger by removing
+    // it from the vector of families. A debug_assert ensures that at most one
+    // family contains the given register.
     fn mark_existing(register_families: &mut Vec<IndexSet<(N::TransitionID, u64)>>, record: (N::TransitionID, u64)) {
         debug_assert!(
             register_families.iter().filter(|family| family.contains(&record)).count() <= 1,
