@@ -50,7 +50,7 @@ use rayon::prelude::*;
 /// Padding levels are then added as needed to reach the full `DEPTH`, each of
 /// which is constructed by hashing the root of the previous level together with
 /// `e`.
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(bound = "E: Serialize + DeserializeOwned, LH: Serialize + DeserializeOwned, PH: Serialize + DeserializeOwned")]
 pub struct MerkleTree<E: Environment, LH: LeafHash<Hash = PH::Hash>, PH: PathHash<Hash = Field<E>>, const DEPTH: u8> {
     /// The leaf hasher for the Merkle tree.

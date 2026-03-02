@@ -1468,7 +1468,7 @@ fn test_get_transaction() {
     let ledger = crate::test_helpers::sample_test_env(rng).ledger;
 
     // Generate a random transaction ID.
-    let transaction = crate::test_helpers::sample_deployment_transaction(1, 0, true, rng);
+    let transaction = crate::test_helpers::sample_deployment_transaction(1, 0, true, true, rng);
     let transaction_id = transaction.id();
 
     assert_eq!(ledger.try_get_transaction(&transaction_id).unwrap(), None);
