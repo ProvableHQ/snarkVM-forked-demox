@@ -95,7 +95,8 @@ optional = true
 
 [target.'cfg(all(not(target_family = "wasm"), not(target_env = "sgx")))'.dependencies.reqwest]
 version = ">=0.13"
-features = [ "blocking" ]
+default-features = false
+features = [ "blocking", "native-tls" ]
 
 [dev-dependencies.snarkvm-algorithms]
 path = "../algorithms"
