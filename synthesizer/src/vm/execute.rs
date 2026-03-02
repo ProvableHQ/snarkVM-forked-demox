@@ -211,7 +211,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 cast_mut_ref!(trace as Trace<N>).prepare(query)?;
                 lap!(timer, "Prepare the assignments");
 
-                // From consensus version V14 onwards, check record existence
+                // From consensus version V14 onwards, ensure record existence
                 if consensus_version >= ConsensusVersion::V14 {
                     $process.ensure_records_exist(trace.transitions().iter(), trace.call_graph().clone())?;
                     lap!(timer, "Check record existence");
@@ -266,7 +266,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 cast_mut_ref!(trace as Trace<N>).prepare(query)?;
                 lap!(timer, "Prepare the assignments");
 
-                // From consensus version V14 onwards, check record existence
+                // From consensus version V14 onwards, ensure record existence
                 if consensus_version >= ConsensusVersion::V14 {
                     $process.ensure_records_exist(trace.transitions().iter(), trace.call_graph().clone())?;
                     lap!(timer, "Check record existence");

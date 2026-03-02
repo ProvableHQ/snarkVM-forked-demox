@@ -70,7 +70,10 @@ impl<N: Network> Process<N> {
         // Construct the call graph of the execution.
         let call_graph = self.construct_call_graph(execution.transitions())?;
 
-        // From ConsensusVersion::V14 onwards, ensure non-static records exist on the ledger.
+        // From ConsensusVersion::V14 onwards, ensure that, for each non-closure
+        // function in the execution, all DynamicRecords and ExternalRecords
+        // received as inputs or from callees exist on the ledger at the end of
+        // the execution (whether spent or not).
         if consensus_version >= ConsensusVersion::V14 {
             self.ensure_records_exist(execution.transitions(), call_graph.clone())?;
         }
@@ -967,12 +970,14 @@ impl<N: Network> Process<N> {
                             match operator {
                                 CallOperator::Resource(closure_identifier) => {
                                     // Local closure call
-                                    self.get_stack(transition.program_id())?.get_function(closure_identifier)?
+                                    stack.as_ref().program().get_closure(closure_identifier)?
                                 }
                                 CallOperator::Locator(external_locator) => {
                                     // External closure call
-                                    self.get_stack(external_locator.program_id())?
-                                        .get_function(external_locator.resource())?
+                                    stack
+                                        .get_external_stack(external_locator.program_id())?
+                                        .program()
+                                        .get_closure(external_locator.resource())?
                                 }
                             }
                         };
@@ -1047,7 +1052,8 @@ impl<N: Network> Process<N> {
 
         ensure!(
             must_be_output.is_empty(),
-            "{locator} does not pass the local record-existence check: a minted static Record passed to a callee as an ExternalRecord, or cast to a DynamicRecord and passed to a callee or output, must be itself output. The following registers violate this condition: {must_be_output:?}",
+            "{locator} does not pass the local record-existence check: a minted static Record passed to a callee as an ExternalRecord, or cast to a DynamicRecord and passed to a callee or output, must be itself output. The following registers violate this condition: {:?}",
+            must_be_output.iter().map(|register| format!("r{register}")).collect::<Vec<String>>().join(", ")
         );
 
         // For non-root calls, update the global check's record families with the connections at the output boundary
@@ -1086,7 +1092,7 @@ impl<N: Network> Process<N> {
         // TransitionID of the caller function
         caller_tid: &N::TransitionID,
         // Closure being processed
-        closure: &FunctionCore<N>,
+        closure: &ClosureCore<N>,
         // Families of registers being tracked of as part of the caller's global record-existence check
         caller_register_families: &mut [IndexSet<(N::TransitionID, u64)>],
         // Caller registers of static Records minted in the caller function
@@ -1104,8 +1110,7 @@ impl<N: Network> Process<N> {
         let closure_name = closure.name();
 
         ensure!(
-            caller_input_registers.len() == closure.inputs().len()
-                && caller_input_registers.len() == closure.input_types().len(),
+            caller_input_registers.len() == closure.inputs().len(),
             "Mismatch in the number of caller/callee inputs types and registers in call to closure {closure_name}"
         );
         ensure!(
@@ -1115,11 +1120,11 @@ impl<N: Network> Process<N> {
         );
 
         // Construct a map { callee register -> caller register } for the closure's inputs of type Record, DynamicRecord or ExternalRecord
-        let input_map = izip!(caller_input_registers, closure.inputs(), closure.input_types())
-            .filter_map(|(caller_input_register_opt, closure_input, closure_input_type)| {
+        let input_map = izip!(caller_input_registers, closure.inputs())
+            .filter_map(|(caller_input_register_opt, closure_input)| {
                 if matches!(
-                    closure_input_type,
-                    ValueType::Record(..) | ValueType::DynamicRecord | ValueType::ExternalRecord(..)
+                    closure_input.register_type(),
+                    RegisterType::Record(..) | RegisterType::DynamicRecord | RegisterType::ExternalRecord(..)
                 ) {
                     if let Some(caller_input_register) = caller_input_register_opt {
                         Some(Ok((closure_input.register().locator(), *caller_input_register)))
@@ -1138,7 +1143,7 @@ impl<N: Network> Process<N> {
         // DynamicRecord or ExternalRecord (closures cannot output static Records)
         let output_map = izip!(caller_output_registers, closure.outputs(), closure.output_types())
             .filter_map(|(caller_output_register, closure_output, closure_output_type)| {
-                if matches!(closure_output_type, ValueType::DynamicRecord | ValueType::ExternalRecord(..)) {
+                if matches!(closure_output_type, RegisterType::DynamicRecord | RegisterType::ExternalRecord(..)) {
                     if let Operand::Register(register) = closure_output.operand() {
                         Some(Ok((register.locator(), *caller_output_register)))
                     } else {

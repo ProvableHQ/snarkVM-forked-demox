@@ -124,8 +124,10 @@ impl<N: Network> Package<N> {
         // Prepare the trace.
         trace.prepare(&query)?;
 
-        // Check record existence
-        process.ensure_records_exist(trace.transitions().iter(), trace.call_graph().clone())?;
+        // From consensus version V14 onwards, ensure existence of DynamicRecords and ExternalRecords.
+        if consensus_version >= ConsensusVersion::V14 {
+            process.ensure_records_exist(trace.transitions().iter(), trace.call_graph().clone())?;
+        }
 
         // Prove the execution.
         let execution = trace.prove_execution::<A, R>(&locator.to_string(), varuna_version, rng)?;

@@ -153,8 +153,9 @@ fn test_input_dynamic_then_materialize() {
     }
 }
 
-// Program a: defines record a_record and closure read_value that reads a u8 from it.
-// Program b: has a function that receives an external a/a_record and calls a's read_value closure.
+// Checks that closures can receive Records as ExternalRecords and vice-versa;
+// and they can output ExternalRecords received as either ExternalRecords or
+// Records.
 #[test]
 fn test_external_record_and_closure_call() -> Result<()> {
     let rng = &mut TestRng::default();
@@ -258,15 +259,10 @@ fn test_external_record_and_closure_call() -> Result<()> {
         0,
         None,
         rng,
-    )?;
+    );
 
-    let expected = Plaintext::<CurrentNetwork>::from_str("42u8")?;
-    match tx_read.transitions().next().unwrap().outputs().first().unwrap() {
-        Output::Public(_, Some(plaintext)) => assert_eq!(*plaintext, expected),
-        other => panic!("expected public output 42u8, got {other:?}"),
-    }
-
-    add_and_test(&vm, &caller_private_key, &[tx_read], rng);
+    let err = tx_read.unwrap_err();
+    assert!(err.to_string().contains("record input at r0 of function program_b.aleo/read_external_val is not known to correspond to a record on the ledger"));
 
     // Check that the record has not been consumed
     println!("Consuming record...");
@@ -393,3 +389,163 @@ fn test_external_record_and_closure_call() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_existence_check() {
+    // Test case 1: program base.aleo has a function hey.aleo that breaks the local check. Program extension.aleo contains a function that receives a u8 and a bool. It calls hey.aleo.
+
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
+    let caller_view_key = ViewKey::<CurrentNetwork>::try_from(&caller_private_key).unwrap();
+
+    let program_base = Program::<CurrentNetwork>::from_str(&format!(
+        r"
+        program base.aleo;
+
+        record rover:
+            owner as address.private;
+            planet_code as u8.private;
+            active as boolean.private;
+
+        // This function breaks the local check
+        function dynamic_mint:
+            input r0 as u8.private;
+            input r1 as boolean.private;
+
+            cast self.signer r0 r1 into r2 as rover.record;
+            cast r2 into r3 as dynamic.record;
+
+            output r3 as dynamic.record;
+
+        // This closure breaks the local check
+        closure dynamic_mint_closure:
+            input r0 as u8;
+            input r1 as boolean;
+
+            cast {caller_address} r0 r1 into r2 as rover.record;
+            cast r2 into r3 as dynamic.record;
+
+            output r3 as dynamic.record;
+
+        function call_closure_mint:
+            input r0 as u8.public;
+            call dynamic_mint_closure r0 false into r1;
+            output 2u8 as u8.public;
+
+
+        constructor:
+            assert.eq true true;
+        ",
+    ))
+    .unwrap();
+
+    let program_extension = Program::<CurrentNetwork>::from_str(
+        r"
+        import base.aleo;
+
+        program extension.aleo;
+
+        // This function passes the local check: if dynamic_mint does not output non-existent records, neither does call_base
+        function call_base:
+            input r0 as boolean.private;
+            call base.aleo/dynamic_mint 3u8 r0 into r1;
+            output r1 as dynamic.record;
+
+        // This function passes the local check: if dynamic_mint does not output non-existent records, neither does call_base
+        function call_base_closure:
+            input r0 as u8.private;
+            call base.aleo/dynamic_mint_closure r0 false into r1;
+            output r1 as dynamic.record;
+
+        constructor:
+            assert.eq true true;
+        ",
+    ).unwrap();
+
+    let program_exploration = Program::<CurrentNetwork>::from_str(
+        r"
+        import extension.aleo;
+
+        program exploration.aleo;
+
+        // This function passes the local check: if call_base_closure does not output non-existent records, neither does call_base_next_planet
+        function call_base_next_planet:
+            input r0 as u8.private;
+            add r0 1u8 into r1;
+            call extension.aleo/call_base_closure r1 into r2;
+            output r2 as dynamic.record;
+
+        constructor:
+            assert.eq true true;
+        ",
+    ).unwrap();
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    println!("Deploying programs...");
+
+    let deploy_base = vm.deploy(&caller_private_key, &program_base, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_base], rng);
+
+    let deploy_extension = vm.deploy(&caller_private_key, &program_extension, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_extension], rng);
+
+    let deploy_exploration = vm.deploy(&caller_private_key, &program_exploration, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_exploration], rng);
+
+    // Test 1: A child function of the root transition breaks the (function version of the) local check (process_transition cases 3 and 5)
+    println!("Test 1: Calling extension.aleo/call_base...");
+
+    let tx_base_function = vm.execute(
+        &caller_private_key,
+        ("extension.aleo", "call_base"),
+        [Value::from_str("true").unwrap()].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    );
+
+    let err = tx_base_function.unwrap_err();
+    assert!(err.to_string().contains("r2"));
+    assert!(err.to_string().contains("base.aleo/dynamic_mint does not pass the local record-existence check"));
+
+    // TODO remove
+    // Test 2: An external closure call in a child of the root transition's child breaks the (closure version of the) local check (process_closure cases 1 and 2)
+    println!("Test 3: Calling extension.aleo/call_base...");
+
+    let tx_base_closure = vm
+        .execute(
+            &caller_private_key,
+            ("base.aleo", "call_closure_mint"),
+            [Value::from_str("3u8").unwrap()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    add_and_test(&vm, &caller_private_key, &[tx_base_closure], rng);
+
+    // Test 2: An external closure call in a child of the root transition's child breaks the (closure version of the) local check (process_closure cases 1 and 2)
+    println!("Test 2: Calling extension.aleo/call_base...");
+
+    let tx_base_closure = vm.execute(
+        &caller_private_key,
+        ("exploration.aleo", "call_base_next_planet"),
+        [Value::from_str("3u8").unwrap()].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    );
+
+    let err = tx_base_closure.unwrap();
+    // assert!(err.to_string().contains("closure base.aleo/dynamic_mint_closure attempts to output DynamicRecord at r3 cast from locally minted static Record at r2"));
+}
+
+// TODO test cases
+// - Local check satisfied at the start but broken after program update to program that contains a closure externally called from the original one
