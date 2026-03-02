@@ -56,7 +56,8 @@ impl<A: Aleo> Identifier<A> {
 
     /// Returns a public identifier.
     /// Note: This method should be used cautiously since identifiers typically should be constant.
-    /// Public mode is used when the identifier is a runtime value (e.g., the callee in a dynamic call).
+    /// Public mode is used when the target of a dynamic call is witnessed as a public variable,
+    /// allowing both the prover and verifier to agree on the callee at verification time.
     pub fn public(identifier: console::Identifier<A::Network>) -> Self {
         // Get the identifier string length.
         let identifier_string = identifier.to_string();

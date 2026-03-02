@@ -48,18 +48,17 @@ impl<N: Network> Process<N> {
             // If the root transition contains a dynamic call,
             // - ensure that the number of calls is less than or equal to the number of transitions.
             // - otherwise, ensure that the number of calls matches the number of transitions.
-            if stack.contains_dynamic_call(transition.function_name())? {
-                ensure!(
+            match stack.contains_dynamic_call(transition.function_name())? {
+                true => ensure!(
                     minimum_number_of_calls <= execution.len(),
                     "The number of transitions in the execution is incorrect. Expected at least {minimum_number_of_calls}, but found {}",
                     execution.len()
-                );
-            } else {
-                ensure!(
+                ),
+                false => ensure!(
                     minimum_number_of_calls == execution.len(),
                     "The number of transitions in the execution is incorrect. Expected {minimum_number_of_calls}, but found {}",
                     execution.len()
-                );
+                ),
             }
 
             // Output the locator of the main function.
@@ -83,13 +82,10 @@ impl<N: Network> Process<N> {
         // Retrieve the network ID.
         let network_id = U16::new(N::ID);
 
-        // Precompute function IDs for all transitions to avoid redundant BHP hashing.
-        let mut function_id_cache: HashMap<N::TransitionID, Field<N>> =
+        // Cache function IDs keyed by (program ID, function name) to avoid redundant BHP hashing.
+        // Computed on demand and cached for reuse across transitions that call the same function.
+        let mut function_id_cache: HashMap<(ProgramID<N>, Identifier<N>), Field<N>> =
             HashMap::with_capacity(execution.transitions().len());
-        for transition in execution.transitions() {
-            let function_id = compute_function_id(&network_id, transition.program_id(), transition.function_name())?;
-            function_id_cache.insert(*transition.id(), function_id);
-        }
 
         // Verify each transition.
         for transition in execution.transitions() {
@@ -109,10 +105,13 @@ impl<N: Network> Process<N> {
             // Ensure the number of outputs is within the allowed range.
             ensure!(transition.outputs().len() <= N::MAX_OUTPUTS, "Transition exceeded maximum number of outputs");
 
-            // Retrieve the precomputed function ID.
-            let function_id = *function_id_cache
-                .get(transition.id())
-                .ok_or_else(|| anyhow!("Function ID not found for transition {}", transition.id()))?;
+            // Retrieve (or compute and cache) the function ID for this transition.
+            let function_id = get_or_compute_function_id(
+                &mut function_id_cache,
+                &network_id,
+                transition.program_id(),
+                transition.function_name(),
+            )?;
 
             // Ensure each input is valid.
             if transition
@@ -168,20 +167,14 @@ impl<N: Network> Process<N> {
             // Ensure the input and output types are equivalent to the ones defined in the function.
             // We only need to check that the variant type matches because we already check the hashes in
             // the `Input::verify` and `Output::verify` functions.
-            ensure!(
-                function.input_types().len() == transition.inputs().len(),
-                "The number of transition inputs is incorrect"
-            );
+            // Note: The length checks above already verify that the counts match,
+            // so `zip_eq` here is safe and acts as a defense-in-depth assertion.
             for (function_input, transition_input) in function.input_types().iter().zip_eq(transition.inputs().iter()) {
                 ensure!(
                     transition_input.is_type(function_input),
                     "Input variant mismatch: expected '{function_input}', found '{transition_input}'",
                 );
             }
-            ensure!(
-                function.output_types().len() == transition.outputs().len(),
-                "The number of transition outputs is incorrect"
-            );
             for (output_index, (function_output, transition_output)) in
                 function.output_types().iter().zip_eq(transition.outputs().iter()).enumerate()
             {
@@ -207,7 +200,8 @@ impl<N: Network> Process<N> {
                 &call_graph,
                 program_checksum.map(|checksum| *checksum),
                 &transition_map,
-                &function_id_cache,
+                &mut function_id_cache,
+                &network_id,
             )?;
             lap!(timer, "Constructed the verifier inputs for a transition of {}", function.name());
 
@@ -221,9 +215,8 @@ impl<N: Network> Process<N> {
             lap!(timer, "Stored the verifier inputs for a transition of {}", function.name());
         }
 
-        // Count the number of verifier instances.
+        // Sanity check: each transition must produce exactly one verifier instance.
         let num_instances = verifier_inputs.values().map(|(_, inputs)| inputs.len()).sum::<usize>();
-        // Ensure the number of instances matches the number of transitions.
         ensure!(num_instances == execution.transitions().len(), "The number of verifier instances is incorrect");
         // Ensure the same signer is used for all transitions.
         execution.transitions().try_fold(None, |signer, transition| {
@@ -282,6 +275,18 @@ impl<N: Network> Process<N> {
             );
         }
 
+        // Sanity check: each public input vector must match the verifying key's expected input count.
+        for (verifying_key, inputs_list) in &verifier_inputs {
+            let expected = verifying_key.circuit_info.num_public_inputs;
+            for inputs in inputs_list {
+                ensure!(
+                    inputs.len() == expected,
+                    "Verifier input count mismatch: expected {expected} public inputs, found {}",
+                    inputs.len()
+                );
+            }
+        }
+
         // Verify the execution proof.
         Trace::verify_execution_proof(&locator, varuna_version, inclusion_version, verifier_inputs, execution)?;
 
@@ -301,7 +306,8 @@ impl<N: Network> Process<N> {
         call_graph: &HashMap<N::TransitionID, Vec<N::TransitionID>>,
         program_checksum: Option<N::Field>,
         transition_map: &HashMap<N::TransitionID, (&Transition<N>, Function<N>)>,
-        function_id_cache: &HashMap<N::TransitionID, Field<N>>,
+        function_id_cache: &mut HashMap<(ProgramID<N>, Identifier<N>), Field<N>>,
+        network_id: &U16<N>,
     ) -> Result<Vec<N::Field>> {
         // Compute the x- and y-coordinate of `tpk`.
         let (tpk_x, tpk_y) = transition.tpk().to_xy_coordinates();
@@ -354,7 +360,7 @@ impl<N: Network> Process<N> {
                 for instruction in function.instructions() {
                     match instruction {
                         // Dynamic calls (`call.dynamic`) are always function calls and contribute to the call graph.
-                        Instruction::CallDynamic(..) => calls.push((true, instruction.clone())),
+                        Instruction::CallDynamic(..) => calls.push(instruction.clone()),
                         // Static calls (`call`) are included only if they invoke a function (not a closure).
                         // Closures are inlined and do not produce separate transitions.
                         Instruction::Call(call) => {
@@ -362,7 +368,7 @@ impl<N: Network> Process<N> {
                             let stack = self.get_stack(transition.program_id())?;
                             // Check if this call invokes a function (as opposed to a closure).
                             match call.is_function_call(stack.as_ref()) {
-                                Ok(true) => calls.push((false, instruction.clone())),
+                                Ok(true) => calls.push(instruction.clone()),
                                 Ok(false) => { /* Closure call - skip */ }
                                 Err(e) => bail!("Failed to determine if call is a function call: {e}"),
                             }
@@ -384,20 +390,21 @@ impl<N: Network> Process<N> {
             child_transition_ids.len()
         );
 
-        for (child_transition_id, (is_dynamic_call, call_instruction)) in
-            child_transition_ids.iter().zip_eq(parent_function_calls)
-        {
+        for (child_transition_id, call_instruction) in child_transition_ids.iter().zip_eq(parent_function_calls) {
             // Note: This unwrap is safe, as we are processing transitions in post-order,
             // which implies that all child transition IDs have been added to `transition_map`.
             let (child_transition, _) = transition_map.get(child_transition_id).unwrap();
 
-            // Retrieve the precomputed function ID for the child transition.
-            let child_function_id = *function_id_cache
-                .get(child_transition_id)
-                .ok_or_else(|| anyhow!("Function ID not found for child transition {child_transition_id}"))?;
+            // Retrieve (or compute and cache) the function ID for the child transition.
+            let child_function_id = get_or_compute_function_id(
+                function_id_cache,
+                network_id,
+                child_transition.program_id(),
+                child_transition.function_name(),
+            )?;
 
             // Extract the `CallDynamic` instruction data, if this is a dynamic call.
-            let call_dynamic = match call_instruction {
+            let call_dynamic = match &call_instruction {
                 Instruction::CallDynamic(cd) => Some(cd),
                 Instruction::Call(..) => None,
                 // This should never occur, since `parent_function_calls` only contains `Call` and `CallDynamic`.
@@ -405,7 +412,7 @@ impl<N: Network> Process<N> {
             };
 
             // [Inputs] Extend the verifier inputs with the program ID and function name if the child transition is dynamic.
-            if is_dynamic_call {
+            if call_dynamic.is_some() {
                 verifier_inputs.extend(child_transition.program_id().to_fields()?.into_iter().map(|field| *field));
                 verifier_inputs.extend([*child_transition.function_name().to_field()?]);
                 verifier_inputs.extend([*child_function_id]);
@@ -415,10 +422,8 @@ impl<N: Network> Process<N> {
 
             // [Inputs] Extend the verifier inputs with the input IDs of the external call.
             let num_inputs = child_transition.inputs().len();
-            if is_dynamic_call {
+            if let Some(call_dynamic_ref) = call_dynamic.as_ref() {
                 // For dynamic calls, use the dynamic ID when present, otherwise use normal verifier inputs.
-                // Note: This unwrap is safe because `is_dynamic_call` is true only for `CallDynamic` instructions.
-                let call_dynamic_ref = call_dynamic.as_ref().unwrap();
                 let operand_types = call_dynamic_ref.operand_types();
                 ensure!(
                     child_transition.inputs().len() == operand_types.len(),
@@ -469,9 +474,7 @@ impl<N: Network> Process<N> {
             }
 
             // [Outputs] Extend the verifier inputs with the output IDs of the external call.
-            if is_dynamic_call {
-                // Note: This unwrap is safe because `is_dynamic_call` is true only for `CallDynamic` instructions.
-                let call_dynamic_ref = call_dynamic.as_ref().unwrap();
+            if let Some(call_dynamic_ref) = call_dynamic.as_ref() {
                 let destination_types = call_dynamic_ref.destination_types();
                 ensure!(
                     child_transition.outputs().len() == destination_types.len(),
@@ -489,20 +492,15 @@ impl<N: Network> Process<N> {
                                 bail!("Future is not present for child transition {}", child_transition.id());
                             };
                             let dynamic_future = DynamicFuture::from_future(future)?;
-                            let dynamic_future_id = {
-                                let index = Field::from_u16(
-                                    u16::try_from(num_inputs + index).or_halt_with::<N>("Output index exceeds u16"),
-                                );
-                                // Construct the preimage as `(function ID || output || tcm || index)`.
-                                let mut preimage = Vec::new();
-                                preimage.push(child_function_id);
-                                preimage.extend(dynamic_future.to_fields()?);
-                                preimage.push(*child_transition.tcm());
-                                preimage.push(index);
-                                // Hash the output to a field element.
-                                N::hash_psd8(&preimage)?
-                            };
-                            verifier_inputs.push(*dynamic_future_id);
+                            let output_index =
+                                u16::try_from(num_inputs + index).or_halt_with::<N>("Output index exceeds u16");
+                            let output_id = OutputID::dynamic_future(
+                                child_function_id,
+                                &Value::DynamicFuture(dynamic_future),
+                                *child_transition.tcm(),
+                                output_index,
+                            )?;
+                            verifier_inputs.push(**output_id.id());
                         }
                         // Outputs with a dynamic ID contribute only the dynamic ID.
                         (Output::DynamicRecord(dynamic_id), _)
@@ -545,6 +543,24 @@ impl<N: Network> Process<N> {
 
         dev_println!("Transition public inputs ({} elements): {:#?}", verifier_inputs.len(), verifier_inputs);
         Ok(verifier_inputs)
+    }
+}
+
+/// Returns the function ID for the given program ID and function name, computing and caching it on demand.
+fn get_or_compute_function_id<N: Network>(
+    function_id_cache: &mut HashMap<(ProgramID<N>, Identifier<N>), Field<N>>,
+    network_id: &U16<N>,
+    program_id: &ProgramID<N>,
+    function_name: &Identifier<N>,
+) -> Result<Field<N>> {
+    let key = (*program_id, *function_name);
+    match function_id_cache.get(&key) {
+        Some(id) => Ok(*id),
+        None => {
+            let id = compute_function_id(network_id, program_id, function_name)?;
+            function_id_cache.insert(key, id);
+            Ok(id)
+        }
     }
 }
 

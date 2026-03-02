@@ -51,6 +51,7 @@ use console::{
         Identifier,
         Literal,
         Locator,
+        OutputID,
         Plaintext,
         PlaintextType,
         ProgramID,
