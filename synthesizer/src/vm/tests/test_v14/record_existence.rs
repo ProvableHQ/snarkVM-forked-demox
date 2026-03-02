@@ -392,13 +392,10 @@ fn test_external_record_and_closure_call() -> Result<()> {
 
 #[test]
 fn test_existence_check() {
-    // Test case 1: program base.aleo has a function hey.aleo that breaks the local check. Program extension.aleo contains a function that receives a u8 and a bool. It calls hey.aleo.
-
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
     let caller_address = Address::try_from(&caller_private_key).unwrap();
-    let caller_view_key = ViewKey::<CurrentNetwork>::try_from(&caller_private_key).unwrap();
 
     let program_base = Program::<CurrentNetwork>::from_str(&format!(
         r"
@@ -512,26 +509,8 @@ fn test_existence_check() {
     assert!(err.to_string().contains("r2"));
     assert!(err.to_string().contains("base.aleo/dynamic_mint does not pass the local record-existence check"));
 
-    // TODO remove
     // Test 2: An external closure call in a child of the root transition's child breaks the (closure version of the) local check (process_closure cases 1 and 2)
-    println!("Test 3: Calling extension.aleo/call_base...");
-
-    let tx_base_closure = vm
-        .execute(
-            &caller_private_key,
-            ("base.aleo", "call_closure_mint"),
-            [Value::from_str("3u8").unwrap()].into_iter(),
-            None,
-            0,
-            None,
-            rng,
-        )
-        .unwrap();
-
-    add_and_test(&vm, &caller_private_key, &[tx_base_closure], rng);
-
-    // Test 2: An external closure call in a child of the root transition's child breaks the (closure version of the) local check (process_closure cases 1 and 2)
-    println!("Test 2: Calling extension.aleo/call_base...");
+    println!("Test 2: Calling exploration.aleo/call_base_next_planet...");
 
     let tx_base_closure = vm.execute(
         &caller_private_key,
@@ -543,8 +522,8 @@ fn test_existence_check() {
         rng,
     );
 
-    let err = tx_base_closure.unwrap();
-    // assert!(err.to_string().contains("closure base.aleo/dynamic_mint_closure attempts to output DynamicRecord at r3 cast from locally minted static Record at r2"));
+    let err = tx_base_closure.unwrap_err();
+    assert!(err.to_string().contains("Closure dynamic_mint_closure attempts to output DynamicRecord at r3 cast from locally minted static Record at r2"));
 }
 
 // TODO test cases

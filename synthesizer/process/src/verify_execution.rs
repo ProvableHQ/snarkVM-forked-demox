@@ -1183,7 +1183,7 @@ impl<N: Network> Process<N> {
                             // Case 2: Casting a locally minted static Record to a DynamicRecord. We ensure the latter is not output.
                             if output_map.contains_key(&destination_register) {
                                 bail!(
-                                    "Closure {closure_name} attempts to output DynamicRecord at {destination_register} cast from locally minted static Record at {operand_register}",
+                                    "Closure {closure_name} attempts to output DynamicRecord at r{destination_register} cast from locally minted static Record at r{operand_register}",
                                 );
                             }
                         } else {
