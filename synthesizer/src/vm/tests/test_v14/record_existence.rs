@@ -400,7 +400,7 @@ fn test_existence_check() {
 
     let network_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
     let program_base_field = Identifier::<CurrentNetwork>::from_str("base").unwrap().to_field().unwrap();
-    let decomission_function_field = Identifier::<CurrentNetwork>::from_str("decomission_same").unwrap().to_field().unwrap();
+    let decomission_function_field = Identifier::<CurrentNetwork>::from_str("decomission").unwrap().to_field().unwrap();
 
     let program_base = Program::<CurrentNetwork>::from_str(&format!(
         r"
@@ -448,7 +448,7 @@ fn test_existence_check() {
             input r0 as rover.record;
             input r1 as dynamic.record;
 
-            get.record.dynamic r1.planet_code into r2 as u8.public;
+            get.record.dynamic r1.planet_code into r2 as u8.private;
 
             is.eq r2 r0.planet_code into r3;
 
@@ -459,6 +459,12 @@ fn test_existence_check() {
         ",
     ))
     .unwrap();
+
+    // TODO (Antonio): If one writes
+    //    call program_base.aleo/mint_rover r0 r1 into r2;
+    // instead of
+    //    call base.aleo/mint_rover r0 r1 into r2;
+    // the error is misleading (it says the import error is in base.aleo)
 
     let program_extension = Program::<CurrentNetwork>::from_str(&format!(
         r"
@@ -484,12 +490,41 @@ fn test_existence_check() {
             assert.eq r0.active true;
             cast r0 into r1 as dynamic.record;
             cast r0 into r2 as dynamic.record;
+
+            call dummy 10u16 false into r3 r4 r5;
+            call dynamic_pass_through 10u64 r2 into r6 r7;
+
             call.dynamic {program_base_field} {network_field} {decomission_function_field}
-                with r1 r2 (as dynamic.record dynamic.record)
-                into r3 (as boolean.public);
+                with r1 r6 (as dynamic.record dynamic.record)
+                into r8 (as boolean.public);
 
-            output r3 as boolean.public;
+            output r8 as boolean.public;
 
+        function mint_and_decomission_same:
+            input r0 as u8.private;
+            input r1 as boolean.private;
+
+            call base.aleo/mint_rover r0 r1 into r2;
+
+        closure dummy:
+            input r0 as u16;
+            input r1 as boolean;
+
+            add r0 r0 into r2;
+
+            output r0 as u16;
+            output r2 as u16;
+            output r1 as boolean;
+        
+        closure dynamic_pass_through:
+            input r0 as u64;
+            input r1 as dynamic.record;
+
+            assert.eq r0 r0;
+
+            output r1 as dynamic.record;
+            output r0 as u64;
+            
         constructor:
             assert.eq true true;
         ",
@@ -515,14 +550,15 @@ fn test_existence_check() {
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
-    println!("Deploying programs...");
-
+    println!("Deploying program base...");
     let deploy_base = vm.deploy(&caller_private_key, &program_base, None, 0, None, rng).unwrap();
     add_and_test(&vm, &caller_private_key, &[deploy_base], rng);
 
+    println!("Deploying program extension...");
     let deploy_extension = vm.deploy(&caller_private_key, &program_extension, None, 0, None, rng).unwrap();
     add_and_test(&vm, &caller_private_key, &[deploy_extension], rng);
 
+    println!("Deploying program exploration...");
     let deploy_exploration = vm.deploy(&caller_private_key, &program_exploration, None, 0, None, rng).unwrap();
     add_and_test(&vm, &caller_private_key, &[deploy_exploration], rng);
 
@@ -559,16 +595,18 @@ fn test_existence_check() {
     let err = tx_base_closure.unwrap_err();
     assert!(err.to_string().contains("Closure dynamic_mint_closure attempts to output DynamicRecord at r3 cast from locally minted static Record at r2"));
 
-    // TODO document test 3
-    let mint_planet_4_tx = vm.execute(
-        &caller_private_key,
-        ("base.aleo", "mint_rover"),
-        [Value::from_str("4u8").unwrap(), Value::from_str("false").unwrap()].into_iter(),
-        None,
-        0,
-        None,
-        rng,
-    ).unwrap();
+    // Test 3: A static record cast to dynamic twice and passed to a callee once translated and once as dynamic does not break the global or local checks. It involves dynamic-record-register remapping through a closure call.
+    let mint_planet_4_tx = vm
+        .execute(
+            &caller_private_key,
+            ("base.aleo", "mint_rover"),
+            [Value::from_str("4u8").unwrap(), Value::from_str("true").unwrap()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
 
     add_and_test(&vm, &caller_private_key, &[mint_planet_4_tx.clone()], rng);
 
@@ -578,18 +616,19 @@ fn test_existence_check() {
         _ => panic!("expected record output from mint_rover"),
     };
 
-    let check_decomission_same_tx = vm.execute(
-        &caller_private_key,
-        ("extension.aleo", "check_decomission_same"),
-        [Value::<CurrentNetwork>::Record(mint_planet_4_record)].into_iter(),
-        None,
-        0,
-        None,
-        rng,
-    ).unwrap();
+    let check_decomission_same_tx = vm
+        .execute(
+            &caller_private_key,
+            ("extension.aleo", "check_decomission_same"),
+            [Value::<CurrentNetwork>::Record(mint_planet_4_record)].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
 
     add_and_test(&vm, &caller_private_key, &[check_decomission_same_tx], rng);
-
 }
 
 // TODO test cases

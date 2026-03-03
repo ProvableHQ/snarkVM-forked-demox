@@ -971,7 +971,7 @@ fn resolve_dynamic_target<'a, N: Network>(
     } else {
         // TODO (Antonio) remove
         println!("Here! 2");
-        
+
         Err(anyhow!("Dynamic call to '{program_id}/{function_name}' is invalid or unsupported."))
     }
 }
