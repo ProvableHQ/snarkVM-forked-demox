@@ -1693,3 +1693,116 @@ fn test_contains_dynamic_with_array_keys() {
         .unwrap();
     add_and_test(&vm, &caller_private_key, &[contains_tx4], rng);
 }
+
+// This test verifies that `get.dynamic` properly rejects invalid program IDs at finalize time:
+// - Uppercase program names are rejected by `ProgramID::try_from`, which enforces lowercase-alphanumeric.
+// - Garbage field values (e.g., the field element 1) are rejected by `Identifier::from_field`
+//   because the first decoded byte (0x01) is not an ASCII letter.
+#[test]
+fn test_dynamic_get_rejects_invalid_program_ids() {
+    // Initialize an RNG.
+    let rng = &mut TestRng::default();
+
+    // Initialize a new caller.
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+
+    // Initialize the VM at the V14 height.
+    let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
+    let vm = crate::vm::test_helpers::sample_vm_at_height(v14_height, rng);
+
+    // Initialize a basic program (u32 mapping) and a main program with `test_dynamic_get_u32`.
+    let program_0 = basic_program("basic_program0", "data0");
+    let main_program = Program::from_str(
+        r"program main_program.aleo;
+
+mapping data_main:
+    key as u32.public;
+    value as u32.public;
+
+function test_dynamic_get_u32:
+    input r0 as field.public;
+    input r1 as field.public;
+    input r2 as field.public;
+    input r3 as u32.public;
+    input r4 as u32.public;
+    async test_dynamic_get_u32 r0 r1 r2 r3 r4 into r5;
+    output r5 as main_program.aleo/test_dynamic_get_u32.future;
+finalize test_dynamic_get_u32:
+    input r0 as field.public;
+    input r1 as field.public;
+    input r2 as field.public;
+    input r3 as u32.public;
+    input r4 as u32.public;
+    get.dynamic r0 r1 r2[r3] into r5 as u32;
+    assert.eq r5 r4;
+
+constructor:
+    assert.eq true true;",
+    )
+    .unwrap();
+
+    // Deploy the programs.
+    for program in [&program_0, &main_program] {
+        println!("Deploying program: {}", program.id());
+        let deployment = vm.deploy(&caller_private_key, program, None, 0, None, rng).unwrap();
+        add_and_test(&vm, &caller_private_key, &[deployment], rng);
+    }
+
+    // Pre-compute field elements for valid network ("aleo") and mapping ("data0") identifiers.
+    let valid_network_field =
+        Value::from_str(&Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap().to_string())
+            .unwrap();
+    let valid_mapping_field =
+        Value::from_str(&Identifier::<CurrentNetwork>::from_str("data0").unwrap().to_field().unwrap().to_string())
+            .unwrap();
+
+    // A helper that attempts `get.dynamic` with the given program-name field and returns `true`
+    // if the transaction was accepted (i.e., finalize succeeded).
+    let try_get = |program_name_field: Value<CurrentNetwork>, rng: &mut TestRng| -> bool {
+        let result = vm.execute(
+            &caller_private_key,
+            ("main_program.aleo", "test_dynamic_get_u32"),
+            vec![
+                program_name_field,
+                valid_network_field.clone(),
+                valid_mapping_field.clone(),
+                Value::from_str("42u32").unwrap(),
+                Value::from_str("0u32").unwrap(),
+            ]
+            .into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        );
+        match result {
+            Err(e) => {
+                // An error at execute time means finalize failed speculatively — expected.
+                println!("Expected rejection (execute error): {e}");
+                false
+            }
+            Ok(tx) => {
+                vm.check_transaction(&tx, None, rng).unwrap();
+                let block = sample_next_block(&vm, &caller_private_key, &[tx], rng).unwrap();
+                let accepted = block.transactions().num_accepted() == 1;
+                vm.add_next_block(&block).unwrap();
+                accepted
+            }
+        }
+    };
+
+    // Test 1: An uppercase program name is rejected by `ProgramID::try_from`, which enforces
+    // lowercase-alphanumeric names. "BasicProgram0" is a valid `Identifier` (uppercase is
+    // allowed at that level) but is rejected by `ProgramID::try_from` in `get.dynamic`.
+    let uppercase_name_field = Value::from_str(
+        &Identifier::<CurrentNetwork>::from_str("BasicProgram0").unwrap().to_field().unwrap().to_string(),
+    )
+    .unwrap();
+    assert!(!try_get(uppercase_name_field, rng), "Uppercase program name should be rejected by get.dynamic");
+
+    // Test 2: A garbage field value (field element 1) decodes to bytes [0x01, 0x00, ...].
+    // `Identifier::from_field` finds the null terminator at index 1, producing the string "\x01",
+    // which fails the `is_ascii_alphabetic()` check in `Identifier::from_str`.
+    let garbage_field = Value::from_str("1field").unwrap();
+    assert!(!try_get(garbage_field, rng), "Garbage field value should be rejected by get.dynamic");
+}

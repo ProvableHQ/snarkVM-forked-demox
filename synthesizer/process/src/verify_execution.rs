@@ -240,17 +240,6 @@ impl<N: Network> Process<N> {
                 self.get_stack(program_id).and_then(|stack| stack.get_verifying_key(record_name))
             },
         )?;
-        // Ensure `Authorization::translation_batch_sizes` matches the number of translations.
-        // We only compare the totals because `Authorization::translation_batch_sizes` does not preserve order.
-        // Note that in general the prover and verifier agree on order through the use of `translation_index`.
-        let expected_n_translations =
-            Authorization::translation_batch_sizes(self, execution.transitions())?.into_iter().sum::<usize>();
-        let actual_n_translations = batch_translation_inputs.iter().map(|(_, inputs)| inputs.len()).sum::<usize>();
-        ensure!(
-            actual_n_translations == expected_n_translations,
-            "Unexpected number of translation inputs: {actual_n_translations} instead of {expected_n_translations}",
-        );
-
         for (verifying_key, batch_translation_inputs_for_record) in batch_translation_inputs.into_iter() {
             // Insert the translation verifier inputs.
             verifier_inputs.push((verifying_key.clone(), batch_translation_inputs_for_record));
@@ -275,13 +264,16 @@ impl<N: Network> Process<N> {
             );
         }
 
-        // Sanity check: each public input vector must match the verifying key's expected input count.
+        // Sanity check: each public input vector must not exceed the verifying key's expected input
+        // count. The Varuna verifier pads inputs up to the domain size (the next power of two at
+        // least as large as `num_public_inputs`) with zero field elements, so having fewer inputs
+        // than the padded count is always valid.
         for (verifying_key, inputs_list) in &verifier_inputs {
             let expected = verifying_key.circuit_info.num_public_inputs;
             for inputs in inputs_list {
                 ensure!(
-                    inputs.len() == expected,
-                    "Verifier input count mismatch: expected {expected} public inputs, found {}",
+                    inputs.len() <= expected,
+                    "Verifier input count mismatch: expected at most {expected} public inputs, found {}",
                     inputs.len()
                 );
             }

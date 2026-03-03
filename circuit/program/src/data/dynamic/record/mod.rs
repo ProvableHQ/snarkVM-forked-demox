@@ -167,9 +167,9 @@ impl<A: Aleo> DynamicRecord<A> {
         Ok(Self { owner, root, nonce, version, data: Some(console_data) })
     }
 
-    /// Injects the given (ordered) entries into the circuit and computes the
-    /// Merkle tree containing those entires as leaves. More details on the
-    /// structure of the tree can be found in [`DynamicRecord`].
+    /// Serializes the given (ordered) entries to field elements, prepends an identifier tag
+    /// per entry, and computes the Merkle tree over the resulting leaves. More details on
+    /// the structure of the tree can be found in [`DynamicRecord`].
     pub fn merkleize_data(data: &IndexMap<Identifier<A>, Entry<A, Plaintext<A>>>) -> Result<RecordDataTree<A>> {
         // Initalize the circuit hashers.
         let (console_leaf_hasher, console_path_hasher) = console::DynamicRecord::initialize_hashers();
