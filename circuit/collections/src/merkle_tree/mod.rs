@@ -141,7 +141,7 @@ impl<E: Environment, LH: LeafHash<E, Hash = PH::Hash>, PH: PathHash<E, Hash = Fi
         let mut tree = vec![empty_hash.clone(); minimum_tree_size];
 
         // Compute and store each leaf hash.
-        for (tree_leaf, provided_leaf) in tree[num_nodes..num_nodes + leaves.len()].iter_mut().zip(leaves.iter()) {
+        for (tree_leaf, provided_leaf) in tree[num_nodes..num_nodes + leaves.len()].iter_mut().zip_eq(leaves.iter()) {
             *tree_leaf = leaf_hasher.hash_leaf(provided_leaf);
         }
 
