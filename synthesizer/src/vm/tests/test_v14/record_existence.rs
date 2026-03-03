@@ -401,6 +401,7 @@ fn test_existence_check() {
     let network_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
     let program_base_field = Identifier::<CurrentNetwork>::from_str("base").unwrap().to_field().unwrap();
     let decomission_function_field = Identifier::<CurrentNetwork>::from_str("decomission").unwrap().to_field().unwrap();
+    let mint_rover_function_field = Identifier::<CurrentNetwork>::from_str("mint_rover").unwrap().to_field().unwrap();
 
     let program_base = Program::<CurrentNetwork>::from_str(&format!(
         r"
@@ -460,12 +461,6 @@ fn test_existence_check() {
     ))
     .unwrap();
 
-    // TODO (Antonio): If one writes
-    //    call program_base.aleo/mint_rover r0 r1 into r2;
-    // instead of
-    //    call base.aleo/mint_rover r0 r1 into r2;
-    // the error is misleading (it says the import error is in base.aleo)
-
     let program_extension = Program::<CurrentNetwork>::from_str(&format!(
         r"
         import base.aleo;
@@ -524,6 +519,21 @@ fn test_existence_check() {
 
             output r1 as dynamic.record;
             output r0 as u64;
+
+        function mint_own_and_decomission:
+            input r0 as rover.record;
+            input r1 as u8.private;
+            input r2 as boolean.private;
+
+            call.dynamic {program_base_field} {network_field} {mint_rover_function_field}
+                with r1 r2 (as u8.private boolean.private)
+                into r3 (as dynamic.record);
+
+            call.dynamic {program_base_field} {network_field} {decomission_function_field}
+                with r0 r3 (as rover.record dynamic.record)
+                into r4 (as boolean.public);
+
+            output r4 as boolean.public;
             
         constructor:
             assert.eq true true;
@@ -629,6 +639,38 @@ fn test_existence_check() {
         .unwrap();
 
     add_and_test(&vm, &caller_private_key, &[check_decomission_same_tx], rng);
+
+    // Test 4: 
+    let mint_planet_5_tx = vm
+        .execute(
+            &caller_private_key,
+            ("base.aleo", "mint_rover"),
+            [Value::from_str("5u8").unwrap(), Value::from_str("true").unwrap()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        ).unwrap();
+
+    let planet_5_record = mint_planet_5_tx.transitions().next().unwrap().outputs().first().unwrap();
+    let planet_5_record = match planet_5_record {
+        Output::Record(_, _, ct, _) => ct.as_ref().unwrap().decrypt(&caller_view_key).unwrap(),
+        _ => panic!("expected record output from mint_rover"),
+    };
+
+    let mint_own_and_decomission_tx = vm
+        .execute(
+            &caller_private_key,
+            ("extension.aleo", "mint_own_and_decomission"),
+            [Value::<CurrentNetwork>::Record(planet_5_record), Value::from_str("6u8").unwrap(), Value::from_str("true").unwrap()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        ).unwrap();
+
+    add_and_test(&vm, &caller_private_key, &[mint_own_and_decomission_tx], rng);
+
 }
 
 // TODO test cases
