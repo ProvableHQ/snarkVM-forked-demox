@@ -62,8 +62,8 @@ pub struct TranslationAssignment<N: Network> {
     pub(crate) function_id: Field<N>,
     /// The name of the static record.
     pub(crate) record_name: Identifier<N>,
-    /// True if translation is happening for an input to `dynamic.call` (static record is being produced)
-    /// or an output of `dynamic.call` (static record is being consumed).
+    /// True if translation is happening for an input to `call.dynamic` (static record is being produced)
+    /// or an output of `call.dynamic` (static record is being consumed).
     pub(crate) is_to_static: bool,
     /// Whether the value type corresponding to the static record is `Record` or `ExternalRecord`.
     pub(crate) is_external_record: bool,
@@ -75,7 +75,7 @@ pub struct TranslationAssignment<N: Network> {
     /// Irrelevant if `is_to_static` is false or `is_external_record` is true.
     pub(crate) gamma: Option<Group<N>>,
     /// Index of the input operand or output destination that contains the (dynamic and static) record.
-    /// Note: The first three dynamic.call operands are reserved for call-related data,
+    /// Note: The first three call.dynamic operands are reserved for call-related data,
     /// however this operand index still starts at 0 and is the same for caller and callee.
     pub(crate) record_register_index: u16,
     /// The ID of the dynamic record.

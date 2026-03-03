@@ -396,6 +396,11 @@ fn test_existence_check() {
 
     let caller_private_key = sample_genesis_private_key(rng);
     let caller_address = Address::try_from(&caller_private_key).unwrap();
+    let caller_view_key = ViewKey::<CurrentNetwork>::try_from(&caller_private_key).unwrap();
+
+    let network_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+    let program_base_field = Identifier::<CurrentNetwork>::from_str("base").unwrap().to_field().unwrap();
+    let decomission_function_field = Identifier::<CurrentNetwork>::from_str("decomission_same").unwrap().to_field().unwrap();
 
     let program_base = Program::<CurrentNetwork>::from_str(&format!(
         r"
@@ -405,6 +410,13 @@ fn test_existence_check() {
             owner as address.private;
             planet_code as u8.private;
             active as boolean.private;
+
+        function mint_rover:
+            input r0 as u8.private;
+            input r1 as boolean.private;
+
+            cast self.signer r0 r1 into r2 as rover.record;
+            output r2 as rover.record;
 
         // This function breaks the local check
         function dynamic_mint:
@@ -431,6 +443,16 @@ fn test_existence_check() {
             call dynamic_mint_closure r0 false into r1;
             output 2u8 as u8.public;
 
+        // Consumes a rover record and outputs whether its planet was the same as that of a dynamic record received separately
+        function decomission:
+            input r0 as rover.record;
+            input r1 as dynamic.record;
+
+            get.record.dynamic r1.planet_code into r2 as u8.public;
+
+            is.eq r2 r0.planet_code into r3;
+
+            output r3 as boolean.public;
 
         constructor:
             assert.eq true true;
@@ -438,7 +460,7 @@ fn test_existence_check() {
     ))
     .unwrap();
 
-    let program_extension = Program::<CurrentNetwork>::from_str(
+    let program_extension = Program::<CurrentNetwork>::from_str(&format!(
         r"
         import base.aleo;
 
@@ -456,10 +478,22 @@ fn test_existence_check() {
             call base.aleo/dynamic_mint_closure r0 false into r1;
             output r1 as dynamic.record;
 
+        function check_decomission_same:
+            input r0 as base.aleo/rover.record;
+
+            assert.eq r0.active true;
+            cast r0 into r1 as dynamic.record;
+            cast r0 into r2 as dynamic.record;
+            call.dynamic {program_base_field} {network_field} {decomission_function_field}
+                with r1 r2 (as dynamic.record dynamic.record)
+                into r3 (as boolean.public);
+
+            output r3 as boolean.public;
+
         constructor:
             assert.eq true true;
         ",
-    ).unwrap();
+    )).unwrap();
 
     let program_exploration = Program::<CurrentNetwork>::from_str(
         r"
@@ -524,6 +558,38 @@ fn test_existence_check() {
 
     let err = tx_base_closure.unwrap_err();
     assert!(err.to_string().contains("Closure dynamic_mint_closure attempts to output DynamicRecord at r3 cast from locally minted static Record at r2"));
+
+    // TODO document test 3
+    let mint_planet_4_tx = vm.execute(
+        &caller_private_key,
+        ("base.aleo", "mint_rover"),
+        [Value::from_str("4u8").unwrap(), Value::from_str("false").unwrap()].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    ).unwrap();
+
+    add_and_test(&vm, &caller_private_key, &[mint_planet_4_tx.clone()], rng);
+
+    let mint_planet_4_output = mint_planet_4_tx.transitions().next().unwrap().outputs().first().unwrap();
+    let mint_planet_4_record = match mint_planet_4_output {
+        Output::Record(_, _, ct, _) => ct.as_ref().unwrap().decrypt(&caller_view_key).unwrap(),
+        _ => panic!("expected record output from mint_rover"),
+    };
+
+    let check_decomission_same_tx = vm.execute(
+        &caller_private_key,
+        ("extension.aleo", "check_decomission_same"),
+        [Value::<CurrentNetwork>::Record(mint_planet_4_record)].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    ).unwrap();
+
+    add_and_test(&vm, &caller_private_key, &[check_decomission_same_tx], rng);
+
 }
 
 // TODO test cases
