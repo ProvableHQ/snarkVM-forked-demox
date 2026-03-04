@@ -303,6 +303,265 @@ fn test_translation(
     }
 }
 
+// Verifies that the static→dynamic output translation preserves record content.
+// When a callee outputs a non-external static record and the caller receives it as
+// `dynamic.record`, the Merkle tree encoding must faithfully represent the original
+// field values so that `get.record.dynamic` can recover them.
+#[test]
+fn test_translation_output_non_external_dynamic_content() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    let provider_name_str = "gas_pump_provider";
+    let caller_name_str = "gas_pump_caller";
+
+    let provider_field = Identifier::<CurrentNetwork>::from_str(provider_name_str).unwrap().to_field().unwrap();
+    let network_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+    let pump_field = Identifier::<CurrentNetwork>::from_str("pump").unwrap().to_field().unwrap();
+
+    let expected_liters = 42u64;
+    let expected_flammable = true;
+
+    // provider.aleo mints a gas_container record with known liters and flammable values,
+    // covering both public and private fields in the Merkle tree encoding.
+    let provider_program_str = format!(
+        r"
+    program {provider_name_str}.aleo;
+
+    record gas_container:
+        owner as address.private;
+        liters as u64.public;
+        flammable as boolean.private;
+
+    function pump:
+        cast self.signer {expected_liters}u64 {expected_flammable} into r0 as gas_container.record;
+        output r0 as gas_container.record;
+
+    constructor:
+        assert.eq true true;
+    "
+    );
+
+    // caller.aleo calls pump dynamically, receives the output as dynamic.record, then reads
+    // both fields to verify the static→dynamic translation preserves mixed-visibility content.
+    let caller_program_str = format!(
+        r"
+    program {caller_name_str}.aleo;
+
+    function pump_and_read:
+        call.dynamic {provider_field} {network_field} {pump_field}
+            into r0 (as dynamic.record);
+        get.record.dynamic r0.liters into r1 as u64;
+        get.record.dynamic r0.flammable into r2 as boolean;
+        output r1 as u64.public;
+        output r2 as boolean.public;
+
+    constructor:
+        assert.eq true true;
+    "
+    );
+
+    let provider_program = Program::<CurrentNetwork>::from_str(&provider_program_str).unwrap();
+    let caller_program = Program::<CurrentNetwork>::from_str(&caller_program_str).unwrap();
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    println!("Deploying {provider_name_str}.aleo...");
+    let deploy_provider = vm.deploy(&caller_private_key, &provider_program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_provider], rng);
+
+    println!("Deploying {caller_name_str}.aleo...");
+    let deploy_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_caller], rng);
+
+    // Execute pump_and_read; it creates a record internally so no pre-minted record is needed.
+    println!("Executing {caller_name_str}.aleo/pump_and_read...");
+    let transaction = vm
+        .execute(
+            &caller_private_key,
+            (format!("{caller_name_str}.aleo"), "pump_and_read"),
+            Vec::<Value<CurrentNetwork>>::new().into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    // The root transition is second-to-last; the last is the fee transition.
+    let num_transitions = transaction.transitions().count();
+    let root_transition = transaction.transitions().nth(num_transitions - 2).unwrap();
+
+    // Verify both the public liters field and the private flammable field are preserved.
+    let expected_liters_output = Plaintext::<CurrentNetwork>::from_str(&format!("{expected_liters}u64")).unwrap();
+    let expected_flammable_output = Plaintext::<CurrentNetwork>::from_str(&format!("{expected_flammable}")).unwrap();
+    assert!(
+        matches!(root_transition.outputs(), [Output::Public(_, Some(p1)), Output::Public(_, Some(p2))]
+            if *p1 == expected_liters_output && *p2 == expected_flammable_output),
+        "Expected liters = {expected_liters}u64 and flammable = {expected_flammable}, got: {:?}",
+        root_transition.outputs()
+    );
+
+    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+}
+
+// Verifies that the dynamic→external-static input translation preserves record content.
+// When caller.aleo passes a `dynamic.record` to provider.aleo, and provider.aleo expects a
+// `caller_ext_dyn.aleo/container.record` (external record), the translation correctly
+// reconstructs the original static record so field access returns the original values.
+#[test]
+fn test_translation_input_external_dynamic_content() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
+    let caller_address = Address::<CurrentNetwork>::try_from(caller_private_key).unwrap();
+
+    let caller_name_str = "ext_dyn_caller";
+    let provider_name_str = "ext_dyn_provider";
+
+    let provider_field = Identifier::<CurrentNetwork>::from_str(provider_name_str).unwrap().to_field().unwrap();
+    let network_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+    let get_liters_field = Identifier::<CurrentNetwork>::from_str("get_liters").unwrap().to_field().unwrap();
+
+    let expected_liters = 77u64;
+    let expected_active = true;
+
+    // caller.aleo defines the container record (with mixed-visibility fields) and
+    // pipe_and_read, which forwards a dynamic record to provider.aleo/get_liters.
+    let caller_program_str = format!(
+        r"
+    program {caller_name_str}.aleo;
+
+    record container:
+        owner as address.private;
+        liters as u64.public;
+        active as boolean.private;
+
+    function mint_container:
+        input r0 as address.private;
+        input r1 as u64.public;
+        input r2 as boolean.private;
+        cast r0 r1 r2 into r3 as container.record;
+        output r3 as container.record;
+
+    function pipe_and_read:
+        input r0 as dynamic.record;
+        call.dynamic {provider_field} {network_field} {get_liters_field}
+            with r0 (as dynamic.record)
+            into r1 r2 (as u64.public boolean.public);
+        output r1 as u64.public;
+        output r2 as boolean.public;
+
+    constructor:
+        assert.eq true true;
+    "
+    );
+
+    // provider.aleo imports caller.aleo to reference its external record type.
+    // get_liters expects a caller.aleo/container.record; the dynamic→external-static
+    // translation reconstructs this from the dynamic record passed by pipe_and_read.
+    // Both liters (public) and active (private) are returned to verify mixed-visibility
+    // field preservation across the translation.
+    let provider_program_str = format!(
+        r"
+    import {caller_name_str}.aleo;
+
+    program {provider_name_str}.aleo;
+
+    function get_liters:
+        input r0 as {caller_name_str}.aleo/container.record;
+        output r0.liters as u64.public;
+        output r0.active as boolean.public;
+
+    constructor:
+        assert.eq true true;
+    "
+    );
+
+    let caller_program = Program::<CurrentNetwork>::from_str(&caller_program_str).unwrap();
+    let provider_program = Program::<CurrentNetwork>::from_str(&provider_program_str).unwrap();
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    // Deploy caller first because provider imports it.
+    println!("Deploying {caller_name_str}.aleo...");
+    let deploy_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_caller], rng);
+
+    println!("Deploying {provider_name_str}.aleo...");
+    let deploy_provider = vm.deploy(&caller_private_key, &provider_program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_provider], rng);
+
+    // Mint a container record with known liters and active values and add it to the ledger.
+    println!("Minting container record with {expected_liters} liters and active = {expected_active}...");
+    let mint_tx = vm
+        .execute(
+            &caller_private_key,
+            (format!("{caller_name_str}.aleo"), "mint_container"),
+            vec![
+                Value::from_str(&caller_address.to_string()).unwrap(),
+                Value::from_str(&format!("{expected_liters}u64")).unwrap(),
+                Value::from_str(&format!("{expected_active}")).unwrap(),
+            ]
+            .into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    let minted_record = mint_tx
+        .transitions()
+        .next()
+        .unwrap()
+        .outputs()
+        .iter()
+        .find_map(|o| match o {
+            Output::Record(_, _, Some(ct), _) => Some(ct.decrypt(&caller_view_key).unwrap()),
+            _ => None,
+        })
+        .unwrap();
+
+    add_and_test(&vm, &caller_private_key, &[mint_tx], rng);
+
+    // Convert the minted record to a dynamic record for the call.
+    let dynamic_record = DynamicRecord::from_record(&minted_record).unwrap();
+
+    // Execute pipe_and_read; the dynamic record is translated to an external static record
+    // inside provider.aleo/get_liters, and both liters and active fields are returned.
+    println!("Executing {caller_name_str}.aleo/pipe_and_read...");
+    let transaction = vm
+        .execute(
+            &caller_private_key,
+            (format!("{caller_name_str}.aleo"), "pipe_and_read"),
+            vec![Value::DynamicRecord(dynamic_record)].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    // The root transition is second-to-last; the last is the fee transition.
+    let num_transitions = transaction.transitions().count();
+    let root_transition = transaction.transitions().nth(num_transitions - 2).unwrap();
+
+    // Verify both the public liters field and the private active field are preserved.
+    let expected_liters_output = Plaintext::<CurrentNetwork>::from_str(&format!("{expected_liters}u64")).unwrap();
+    let expected_active_output = Plaintext::<CurrentNetwork>::from_str(&format!("{expected_active}")).unwrap();
+    assert!(
+        matches!(root_transition.outputs(), [Output::Public(_, Some(p1)), Output::Public(_, Some(p2))]
+            if *p1 == expected_liters_output && *p2 == expected_active_output),
+        "Expected liters = {expected_liters}u64 and active = {expected_active}, got: {:?}",
+        root_transition.outputs()
+    );
+
+    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+}
+
 // Tests translation of a dynamic record input to a non-external static record.
 #[test]
 fn test_translation_input_dynamic_non_external() {

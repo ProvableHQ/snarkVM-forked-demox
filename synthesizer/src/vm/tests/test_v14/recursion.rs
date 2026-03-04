@@ -142,11 +142,15 @@ fn test_fibonacci() {
 // - `four`: Takes a dynamic record and returns nothing.
 // - `five`: Takes a dynamic record and calls `two` twice. This should fail due to double-spend.
 // - `six`: Takes a dynamic record and calls `four` twice. This should pass because the record is dynamic.
-// - `seven`: Takes a dynamic record and index. If index is zero it calls `two`, else it calls itself recursively with index - 1. This should pass until the index exceeds the maximum call depth.
+// - `seven`: Takes a dynamic record and index. If index is zero it calls `two_indexed` (which accepts `dynamic.record`), else it calls itself recursively with index - 1. No translation occurs at any level, so this should pass until the index exceeds the maximum call depth.
 // - `eight`: Takes a dynamic record and index. First calls `two`, then either calls `four` if index is zero, or calls itself recursively with index - 1. This should pass if index is zero and fail otherwise due to double-spend.
 // - `nine`: Takes a dynamic record and index. First calls `one`, then either calls `three` if index is zero, or calls itself recursively with index - 1 and the new record. This should pass as long as transitions do not exceed the maximum allowed.
 //
-// TODO (@reviewers): Verify that consumption of local records is expected behavior in recursive calls.
+// `six` passes because `four` accepts `dynamic.record`, so no translation occurs: no serial
+// number is created, and the same underlying record can be forwarded to multiple
+// `dynamic.record`-accepting callees without double-spend. `five` fails because `two` accepts a
+// static `Data.record`, which triggers translation — creating a serial number — so calling it
+// twice with the same dynamic record constitutes a double-spend.
 #[test]
 fn test_recursive_dynamic_record_calls() {
     // Initialize an RNG.
@@ -348,10 +352,14 @@ constructor:
     };
 
     // A helper function to execute a function and check if it succeeds or fails as expected.
+    // When `expected_error_substring` is `Some(s)` and execution returns an error, the error
+    // message must contain `s`; this guards against silent regressions where the wrong error
+    // is raised at execution time.
     let execute_and_check = |function_name: Identifier<CurrentNetwork>,
                              inputs: Vec<Value<CurrentNetwork>>,
                              should_succeed: bool,
                              test_description: &str,
+                             expected_error_substring: Option<&str>,
                              rng: &mut TestRng| {
         println!("{test_description}");
         let result = vm.execute(
@@ -367,13 +375,28 @@ constructor:
         if should_succeed {
             let transaction = result.unwrap_or_else(|_| panic!("Expected {function_name} to succeed"));
             add_and_test(&vm, &caller_private_key, &[transaction], rng);
-        } else if let Ok(transaction) = result {
-            // Check that the transaction fails during addition to the ledger.
-            let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
-            assert_eq!(block.transactions().num_accepted(), 0);
-            assert_eq!(block.transactions().num_rejected(), 0);
-            assert_eq!(block.aborted_transaction_ids().len(), 1);
-            vm.add_next_block(&block).unwrap();
+        } else {
+            match result {
+                Ok(transaction) => {
+                    // Check that the transaction fails during addition to the ledger.
+                    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
+                    assert_eq!(block.transactions().num_accepted(), 0);
+                    assert_eq!(block.transactions().num_rejected(), 0);
+                    assert_eq!(block.aborted_transaction_ids().len(), 1);
+                    vm.add_next_block(&block).unwrap();
+                }
+                Err(e) => {
+                    // Execution-time rejection is valid — verify the error matches expectations.
+                    let msg = e.to_string();
+                    if let Some(expected) = expected_error_substring {
+                        assert!(
+                            msg.contains(expected),
+                            "{test_description}: expected error containing '{expected}', got: {msg}"
+                        );
+                    }
+                    println!("{test_description}: rejected at execution time: {msg}");
+                }
+            }
         }
     };
 
@@ -383,6 +406,7 @@ constructor:
         vec![Value::DynamicRecord(DynamicRecord::from_record(&mint_record(rng)).unwrap())],
         false,
         &format!("Testing function {five_name} which should fail due to double-spend"),
+        Some("serial number"),
         rng,
     );
 
@@ -392,6 +416,7 @@ constructor:
         vec![Value::DynamicRecord(DynamicRecord::from_record(&mint_record(rng)).unwrap())],
         true,
         &format!("Testing function {six_name} which should pass because the record is dynamic"),
+        None,
         rng,
     );
 
@@ -406,6 +431,7 @@ constructor:
             ],
             true,
             &format!("Testing function {seven_name} at index {test_index} which should pass"),
+            None,
             rng,
         );
     }
@@ -421,6 +447,7 @@ constructor:
             ],
             true,
             &format!("Testing function {seven_name} at index {test_index} which should pass"),
+            None,
             rng,
         );
     }
@@ -438,6 +465,7 @@ constructor:
             &format!(
                 "Testing function {seven_name} at index {test_index} which should fail due to exceeding max call depth"
             ),
+            Some("less than"),
             rng,
         );
     }
@@ -451,6 +479,7 @@ constructor:
         ],
         true,
         &format!("Testing function {eight_name} at index 0 which should pass"),
+        None,
         rng,
     );
 
@@ -463,6 +492,7 @@ constructor:
         ],
         false,
         &format!("Testing function {eight_name} at index 1 which should fail due to double-spend"),
+        Some("serial number"),
         rng,
     );
 
@@ -475,6 +505,7 @@ constructor:
         ],
         true,
         &format!("Testing function {nine_name} at index 0 which should pass"),
+        None,
         rng,
     );
 
@@ -487,6 +518,7 @@ constructor:
         ],
         true,
         &format!("Testing function {nine_name} at index 1 which should pass"),
+        None,
         rng,
     );
 
@@ -499,6 +531,7 @@ constructor:
         ],
         true,
         &format!("Testing function {nine_name} at index 2 which should pass"),
+        None,
         rng,
     );
 
@@ -513,6 +546,7 @@ constructor:
         &format!(
             "Testing function {nine_name} at index 15 which should fail due to exceeding the maximum number of transitions"
         ),
+        Some("less than"),
         rng,
     );
 }
@@ -655,10 +689,14 @@ constructor:
 
     // Helper: execute a function and verify it succeeds or fails as expected.
     // A transaction that is aborted when added to the ledger is treated as a failure.
+    // When `expected_error_substring` is `Some(s)` and execution returns an error, the error
+    // message must contain `s`; this guards against silent regressions where the wrong error
+    // is raised at execution time.
     let execute_and_check = |function_name: &str,
                              inputs: Vec<Value<CurrentNetwork>>,
                              should_succeed: bool,
                              description: &str,
+                             expected_error_substring: Option<&str>,
                              rng: &mut TestRng| {
         println!("{description}");
         let result = vm.execute(
@@ -674,13 +712,27 @@ constructor:
         if should_succeed {
             let tx = result.unwrap_or_else(|e| panic!("Expected {description} to succeed: {e}"));
             add_and_test(&vm, &caller_private_key, &[tx], rng);
-        } else if let Ok(tx) = result {
-            let block = sample_next_block(&vm, &caller_private_key, &[tx], rng).unwrap();
-            assert_eq!(block.transactions().num_accepted(), 0, "{description}: expected 0 accepted");
-            assert_eq!(block.aborted_transaction_ids().len(), 1, "{description}: expected 1 aborted");
-            vm.add_next_block(&block).unwrap();
+        } else {
+            match result {
+                Ok(tx) => {
+                    let block = sample_next_block(&vm, &caller_private_key, &[tx], rng).unwrap();
+                    assert_eq!(block.transactions().num_accepted(), 0, "{description}: expected 0 accepted");
+                    assert_eq!(block.aborted_transaction_ids().len(), 1, "{description}: expected 1 aborted");
+                    vm.add_next_block(&block).unwrap();
+                }
+                Err(e) => {
+                    // Execution-time rejection is valid — verify the error matches expectations.
+                    let msg = e.to_string();
+                    if let Some(expected) = expected_error_substring {
+                        assert!(
+                            msg.contains(expected),
+                            "{description}: expected error containing '{expected}', got: {msg}"
+                        );
+                    }
+                    println!("{description}: rejected at execution time: {msg}");
+                }
+            }
         }
-        // If result is Err, execution failed — which satisfies should_succeed == false.
     };
 
     execute_and_check(
@@ -688,6 +740,7 @@ constructor:
         vec![Value::DynamicRecord(DynamicRecord::from_record(&mint_record(rng)).unwrap())],
         true,
         "Scenario 1: valid single same-program translation should succeed",
+        None,
         rng,
     );
 
@@ -696,6 +749,7 @@ constructor:
         vec![Value::Record(mint_record(rng))],
         false,
         "Scenario 2: self-cast double spend must fail",
+        Some("serial number"),
         rng,
     );
 
@@ -704,6 +758,7 @@ constructor:
         vec![Value::DynamicRecord(DynamicRecord::from_record(&mint_record(rng)).unwrap())],
         false,
         "Scenario 3: same-position double translation must fail",
+        Some("serial number"),
         rng,
     );
 
@@ -712,6 +767,7 @@ constructor:
         vec![Value::DynamicRecord(DynamicRecord::from_record(&mint_record(rng)).unwrap())],
         false,
         "Scenario 4: different-position double translation must fail",
+        Some("serial number"),
         rng,
     );
 }
