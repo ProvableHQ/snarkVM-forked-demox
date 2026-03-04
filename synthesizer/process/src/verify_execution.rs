@@ -751,6 +751,8 @@ impl<N: Network> Process<N> {
         reverse_call_graph
     }
 
+    // TODO (@reviewers) Decide whether this function and/or its auxiliary functions below are large enough that they should be moved to a submodule
+
     /// Checks that, for each non-closure function in the execution, each
     /// `ExternalRecord` and `DynamicRecord` received as an input or from a
     /// callee corresponds to a static `Record` that exists on the ledger at the
@@ -813,7 +815,7 @@ impl<N: Network> Process<N> {
             Ok(())
         } else {
             Err(anyhow!(
-                "Non-static record input at r{} of function {}/{} is not known to correspond to a record on the ledger",
+                "Non-static record input at r{} of the root function {}/{} is not known to correspond to a record on the ledger",
                 register_families[0][0].1,
                 root_transition.program_id(),
                 root_transition.function_name(),
@@ -1203,7 +1205,7 @@ impl<N: Network> Process<N> {
                                     // Case 4: Casting a value already received as a Record or ExternalRecord input by the caller itself. In the Record case, nothing
                                     // was being kept track of. In the ExternalRecord case, we inform the caller's global check of the connection between the two registers.
                                     let old_register = (*caller_tid, *caller_operand_register);
-                                    let new_register = (*caller_tid, destination_register);
+                                    let new_register = (*caller_tid, *caller_destination_register);
                                     Self::add_to_family(caller_register_families, old_register, new_register);
                                 }
                             }
@@ -1241,6 +1243,7 @@ impl<N: Network> Process<N> {
         old_register: (N::TransitionID, u64),
         new_register: (N::TransitionID, u64),
     ) {
+        // Sanity check: at most one family contains each of the given records
         for record in [old_register, new_register] {
             debug_assert!(
                 register_families.iter().filter(|family| family.contains(&record)).count() <= 1,

@@ -262,7 +262,7 @@ fn test_external_record_and_closure_call() -> Result<()> {
     );
 
     let err = tx_read.unwrap_err();
-    assert!(err.to_string().contains("record input at r0 of function program_b.aleo/read_external_val is not known to correspond to a record on the ledger"));
+    assert!(err.to_string().contains("record input at r0 of the rootfunction program_b.aleo/read_external_val is not known to correspond to a record on the ledger"));
 
     // Check that the record has not been consumed
     println!("Consuming record...");
@@ -401,7 +401,20 @@ fn test_existence_check() {
     let network_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
     let program_base_field = Identifier::<CurrentNetwork>::from_str("base").unwrap().to_field().unwrap();
     let decomission_function_field = Identifier::<CurrentNetwork>::from_str("decomission").unwrap().to_field().unwrap();
+    let decomission_reversed_function_field =
+        Identifier::<CurrentNetwork>::from_str("decomission_reversed").unwrap().to_field().unwrap();
+    let decomission_two_function_field =
+        Identifier::<CurrentNetwork>::from_str("decomission_two").unwrap().to_field().unwrap();
     let mint_rover_function_field = Identifier::<CurrentNetwork>::from_str("mint_rover").unwrap().to_field().unwrap();
+    let program_frontier_field = Identifier::<CurrentNetwork>::from_str("frontier").unwrap().to_field().unwrap();
+    let program_remapper_field = Identifier::<CurrentNetwork>::from_str("remapper").unwrap().to_field().unwrap();
+    let consume_map_function_field = Identifier::<CurrentNetwork>::from_str("consume_map").unwrap().to_field().unwrap();
+    let consume_dynamic_map_function_field =
+        Identifier::<CurrentNetwork>::from_str("consume_dynamic_map").unwrap().to_field().unwrap();
+    let remap_dynamic_function_field =
+        Identifier::<CurrentNetwork>::from_str("remap_dynamic_function").unwrap().to_field().unwrap();
+    let do_not_consume_function_field =
+        Identifier::<CurrentNetwork>::from_str("do_not_consume").unwrap().to_field().unwrap();
 
     let program_base = Program::<CurrentNetwork>::from_str(&format!(
         r"
@@ -444,7 +457,7 @@ fn test_existence_check() {
             call dynamic_mint_closure r0 false into r1;
             output 2u8 as u8.public;
 
-        // Consumes a rover record and outputs whether its planet was the same as that of a dynamic record received separately
+        // Consumes a rover Record and outputs whether its planet was the same as that of a DynamicRecord received separately
         function decomission:
             input r0 as rover.record;
             input r1 as dynamic.record;
@@ -454,6 +467,26 @@ fn test_existence_check() {
             is.eq r2 r0.planet_code into r3;
 
             output r3 as boolean.public;
+
+        // Does the same as decomission but receives the DynamicRecord and Record in the opposite order
+        function decomission_reversed:
+            input r0 as dynamic.record;
+            input r1 as rover.record;
+
+            get.record.dynamic r0.planet_code into r2 as u8.private;
+
+            is.eq r2 r1.planet_code into r3;
+
+            output r3 as boolean.public;
+
+        // Consumes two rover Records and outputs whether their planets coincide
+        function decomission_two:
+            input r0 as rover.record;
+            input r1 as rover.record;
+
+            is.eq r0.planet_code r1.planet_code into r2;
+
+            output r2 as boolean.public;
 
         constructor:
             assert.eq true true;
@@ -487,7 +520,7 @@ fn test_existence_check() {
             cast r0 into r2 as dynamic.record;
 
             call dummy 10u16 false into r3 r4 r5;
-            call dynamic_pass_through 10u64 r2 into r6 r7;
+            call dynamic_pass_through_closure 10u64 r2 into r6 r7;
 
             call.dynamic {program_base_field} {network_field} {decomission_function_field}
                 with r1 r6 (as dynamic.record dynamic.record)
@@ -511,7 +544,7 @@ fn test_existence_check() {
             output r2 as u16;
             output r1 as boolean;
         
-        closure dynamic_pass_through:
+        closure dynamic_pass_through_closure:
             input r0 as u64;
             input r1 as dynamic.record;
 
@@ -520,21 +553,46 @@ fn test_existence_check() {
             output r1 as dynamic.record;
             output r0 as u64;
 
-        function mint_own_and_decomission:
-            input r0 as rover.record;
+        function dynamic_pass_through_function:
+            input r0 as u64.private;
+            input r1 as dynamic.record;
+
+            assert.eq r0 r0;
+
+            output r1 as dynamic.record;
+            output r0 as u64.private;
+
+        // Calls a function to mint a Record (received as a DynamicRecord), casts the input ExternalRecord
+        // to a DynamicRecord and passes both DynamicRecords to a callee controlled by the input flags
+        function mint_own_and_decom_int:
+            input r0 as base.aleo/rover.record;
             input r1 as u8.private;
             input r2 as boolean.private;
+            // Flag controlling whether the base.aleo function called takes two static Records (true) or one static Record and one DynamicRecord (false)
+            input r3 as boolean.private;
+            // Flag controlling whether the function called at the end takes in a (Record, DynamicRecord) (true) or (DynamicRecord, Record) (false) assuming r3 = false.
+            input r4 as boolean.private;
 
             call.dynamic {program_base_field} {network_field} {mint_rover_function_field}
                 with r1 r2 (as u8.private boolean.private)
-                into r3 (as dynamic.record);
+                into r5 (as dynamic.record);
 
-            call.dynamic {program_base_field} {network_field} {decomission_function_field}
-                with r0 r3 (as rover.record dynamic.record)
-                into r4 (as boolean.public);
+            cast r0 into r6 as dynamic.record;
 
-            output r4 as boolean.public;
-            
+            // Shuffling DynamicRecords for good measure
+
+            call dynamic_pass_through_closure 11u64 r5 into r7 r8;
+            call dynamic_pass_through_closure 1u64 r6 into r9 r10;
+
+            ternary r4 {decomission_function_field} {decomission_reversed_function_field} into r11;
+            ternary r3 {decomission_two_function_field} r11 into r12;
+
+            call.dynamic {program_base_field} {network_field} r12
+                with r7 r9 (as dynamic.record dynamic.record)
+                into r13 (as boolean.public);
+
+            output r13 as boolean.public;
+
         constructor:
             assert.eq true true;
         ",
@@ -542,6 +600,7 @@ fn test_existence_check() {
 
     let program_exploration = Program::<CurrentNetwork>::from_str(
         r"
+        import base.aleo;
         import extension.aleo;
 
         program exploration.aleo;
@@ -553,9 +612,244 @@ fn test_existence_check() {
             call extension.aleo/call_base_closure r1 into r2;
             output r2 as dynamic.record;
 
+        // Remapping to complicate register tracking
+        closure remap_external:
+            input r0 as base.aleo/rover.record;
+
+            assert.eq true true;
+
+            output r0 as base.aleo/rover.record;
+
+        // Wrapper around mint_own_and_decom_int to complicate register tracking
+        function mint_own_and_decom_wrapper:
+            input r0 as u8.private;
+            input r1 as boolean.private;
+            input r2 as base.aleo/rover.record;
+            input r3 as boolean.private;
+            input r4 as boolean.private;
+
+            call remap_external r2 into r5;
+
+            call extension.aleo/mint_own_and_decom_int r5 r0 r1 r3 r4 into r6;
+
+            output r6 as boolean.public;
+
         constructor:
             assert.eq true true;
         ",
+    ).unwrap();
+
+    let program_frontier = Program::<CurrentNetwork>::from_str(
+        r"
+        program frontier.aleo;
+
+        record map:
+            owner as address.private;
+            capital_coordinate_x as u16.private;
+            capital_coordinate_y as u16.private;
+            orography as boolean.private;
+
+        function mint_map:
+            cast self.signer 111u16 222u16 true into r0 as map.record;
+            output r0 as map.record;
+
+        function consume_map:
+            input r0 as map.record;
+        
+        constructor:
+            assert.eq true true;
+        ",
+    )
+    .unwrap();
+
+    let program_mini_remapper = Program::<CurrentNetwork>::from_str(
+        r"
+        import frontier.aleo;
+        program mini_remapper.aleo;
+
+        function remap_external_function:
+            input r0 as frontier.aleo/map.record;
+
+            assert.eq true true;
+
+            output r0 as frontier.aleo/map.record;
+        
+        constructor:
+            assert.eq true true;
+        ",
+    )
+    .unwrap();
+
+    let program_remapper = Program::<CurrentNetwork>::from_str(&format!(
+        r"
+        import base.aleo;
+        import mini_remapper.aleo;
+        import frontier.aleo;
+
+        program remapper.aleo;
+        
+        closure remap:
+            input r0 as frontier.aleo/map.record;
+
+            cast r0 into r1 as dynamic.record;
+
+            output r1 as dynamic.record;
+
+        closure remap_external:
+            input r0 as frontier.aleo/map.record;
+
+            assert.eq true true;
+            
+            output r0 as frontier.aleo/map.record;
+
+        closure remap_dynamic:
+            input r0 as dynamic.record;
+
+            assert.eq true true;
+
+            output r0 as dynamic.record;
+
+        function remap_dynamic_function:
+            input r0 as dynamic.record;
+
+            assert.eq true true;
+
+            output r0 as dynamic.record;
+
+        function do_not_consume:
+            input r0 as dynamic.record;
+
+            get.record.dynamic r0.orography into r1 as boolean.private;
+        
+        function growing_family:
+            input r0 as frontier.aleo/map.record;
+            // Flag which determines whether the last function called will mark the family as existing or not
+            input r1 as boolean.private;
+
+            call mini_remapper.aleo/remap_external_function r0 into r2;
+            
+            cast r2 into r3 as dynamic.record;
+            call remap_external r2 into r4;
+            call remap r4 into r5;
+            
+            call.dynamic {program_remapper_field} {network_field} {consume_dynamic_map_function_field}
+                with r5 r1 (as dynamic.record boolean.private);
+                
+        function consume_dynamic_map:
+            input r0 as dynamic.record;
+            input r1 as boolean.private;
+
+            ternary r1 {program_frontier_field} {program_remapper_field} into r2;
+            ternary r1 {consume_map_function_field} {do_not_consume_function_field} into r3;
+
+            call remap_dynamic r0 into r4;
+
+            call.dynamic {program_remapper_field} {network_field} {remap_dynamic_function_field}
+                with r4 (as dynamic.record)
+                into r5 (as dynamic.record);
+
+            // This call materialises r5 only if r1 is true. By the time the global check gets here, the family contains nine members
+            call.dynamic r2 {network_field} r3
+                with r5 (as dynamic.record);
+
+        constructor:
+            assert.eq true true;
+        "),
+    ).unwrap();
+
+    let program_frontier_upgraded = Program::<CurrentNetwork>::from_str(
+        r"
+        import extension.aleo;
+        import remapper.aleo;
+
+        program frontier.aleo;
+
+        record map:
+            owner as address.private;
+            capital_coordinate_x as u16.private;
+            capital_coordinate_y as u16.private;
+            orography as boolean.private;
+
+        function mint_map:
+            cast self.signer 111u16 222u16 true into r0 as map.record;
+            output r0 as map.record;
+
+        function consume_map:
+            input r0 as map.record;
+
+        function simple_cast_closure:
+            input r0 as boolean.private;
+            
+            cast self.signer 1u16 2u16 r0 into r1 as map.record;
+
+            cast r1 into r2 as dynamic.record;
+
+            // This is okay: even though the locally minted DynamicRecord is not known to materialize, it is only passed to a closure (not to a function)
+            call extension.aleo/dynamic_pass_through_closure 3u64 r2 into r3 r4;
+
+        function simple_cast_function:
+            input r0 as boolean.private;
+            
+            cast self.signer 1u16 2u16 r0 into r1 as map.record;
+
+            cast r1 into r2 as dynamic.record;
+
+            // This is not okay: the locally minted DynamicRecord is not known to materialize and it is passed to an actual function
+            call extension.aleo/dynamic_pass_through_function 3u64 r2 into r3 r4;
+
+        function tricky_cast_closure:
+            input r0 as boolean.private;
+            
+            cast self.signer 1u16 2u16 r0 into r1 as map.record;
+
+            // Here we are effectively performing a static-to-dynamic cast, but through a closure (where it is in fact external-to-dynamic)
+            call remapper.aleo/remap r1 into r2;
+
+            // This is okay: even though the locally minted DynamicRecord is not known to materialize, it is only passed to a closure (not to a function)
+            call extension.aleo/dynamic_pass_through_closure 3u64 r2 into r3 r4;
+
+        function tricky_cast_function:
+            input r0 as boolean.private;
+            
+            cast self.signer 1u16 2u16 r0 into r1 as map.record;
+
+            // Here we are effectively performing a static-to-dynamic cast, but through a closure (where it is in fact external-to-dynamic)
+            call remapper.aleo/remap r1 into r2;
+
+            // This is not okay: the locally minted DynamicRecord is not known to materialize and it is passed to an actual function
+            call extension.aleo/dynamic_pass_through_function 3u64 r2 into r3 r4;
+
+        function tricky_cast_function_saved:
+            input r0 as boolean.private;
+            
+            cast self.signer 1u16 2u16 r0 into r1 as map.record;
+
+            // Here we are effectively performing a static-to-dynamic cast, but through a closure (where it is in fact external-to-dynamic)
+            call remapper.aleo/remap r1 into r2;
+
+            call extension.aleo/dynamic_pass_through_function 3u64 r2 into r3 r4;
+
+            // This saves the call above from breaking the locak check
+            output r1 as map.record;
+        
+
+        function tricky_cast_closure_ruined:
+            input r0 as boolean.private;
+            
+            cast self.signer 1u16 2u16 r0 into r1 as map.record;
+
+            // Here we are effectively performing a static-to-dynamic cast, but through a closure (where it is in fact external-to-dynamic)
+            call remapper.aleo/remap r1 into r2;
+
+            // This is okay: even though the locally minted DynamicRecord is not known to materialize, it is only passed to a closure (not to a function)
+            call extension.aleo/dynamic_pass_through_closure 3u64 r2 into r3 r4;
+
+            // This is not okay: we are outputting the locally minted DynamicRecord. The local check should remember this comes from the locally minted static Record at r1
+            output r3 as dynamic.record;
+
+        constructor:
+            assert.eq true true;
+        "
     ).unwrap();
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
@@ -571,6 +865,23 @@ fn test_existence_check() {
     println!("Deploying program exploration...");
     let deploy_exploration = vm.deploy(&caller_private_key, &program_exploration, None, 0, None, rng).unwrap();
     add_and_test(&vm, &caller_private_key, &[deploy_exploration], rng);
+
+    println!("Deploying program frontier...");
+    let deploy_frontier = vm.deploy(&caller_private_key, &program_frontier, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_frontier], rng);
+
+    println!("Deploying program mini_remapper...");
+    let deploy_mini_remapper = vm.deploy(&caller_private_key, &program_mini_remapper, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_mini_remapper], rng);
+
+    println!("Deploying program remapper...");
+    let deploy_remapper = vm.deploy(&caller_private_key, &program_remapper, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_remapper], rng);
+
+    println!("Upgrading program frontier...");
+    let deploy_frontier_upgraded =
+        vm.deploy(&caller_private_key, &program_frontier_upgraded, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_frontier_upgraded], rng);
 
     // Test 1: A child function of the root transition breaks the (function version of the) local check (process_transition cases 3 and 5)
     println!("Test 1: Calling extension.aleo/call_base...");
@@ -605,7 +916,8 @@ fn test_existence_check() {
     let err = tx_base_closure.unwrap_err();
     assert!(err.to_string().contains("Closure dynamic_mint_closure attempts to output DynamicRecord at r3 cast from locally minted static Record at r2"));
 
-    // Test 3: A static record cast to dynamic twice and passed to a callee once translated and once as dynamic does not break the global or local checks. It involves dynamic-record-register remapping through a closure call.
+    // Test 3: A static record cast to dynamic twice and passed to a callee once translated and once as dynamic does not break the global or local checks.
+    // It involves dynamic-record-register remapping through a closure call.
     let mint_planet_4_tx = vm
         .execute(
             &caller_private_key,
@@ -626,6 +938,8 @@ fn test_existence_check() {
         _ => panic!("expected record output from mint_rover"),
     };
 
+    println!("Test 3: Calling extension.aleo/check_decomission_same...");
+
     let check_decomission_same_tx = vm
         .execute(
             &caller_private_key,
@@ -640,38 +954,298 @@ fn test_existence_check() {
 
     add_and_test(&vm, &caller_private_key, &[check_decomission_same_tx], rng);
 
-    // Test 4: 
-    let mint_planet_5_tx = vm
+    // Test 4: a root function receives a DynamicRecord R_d1 and calls a
+    // function that mints a static Record, receiving it as a DynamicRecord
+    // R_d2. The two records are eventually passed
+    //  - 4.1) to a function receiving a DynamicRecord and a static Record. This
+    //    fails since R_d1 is not known to materialize.
+    //  - 4.2) to a function receiving a static Record and a DynamicRecord. This
+    //         passes since R_d1 is known to materialize by the call and R_d2 is
+    //         known to materialize by the local-check guarantee.
+    //  - 4.3) to a function receiving two static Records. This passes for the
+    // same reason as above Although both 4.2 and 4.3 pass, 4.2 nets 0 unspent
+    // Records and 4.3 nets -1 unspent Records on the ledger.
+
+    let three_mint_txs = (0..3)
+        .map(|_| {
+            vm.execute(
+                &caller_private_key,
+                ("base.aleo", "mint_rover"),
+                [Value::from_str("5u8").unwrap(), Value::from_str("true").unwrap()].into_iter(),
+                None,
+                0,
+                None,
+                rng,
+            )
+            .unwrap()
+        })
+        .collect::<Vec<_>>();
+
+    let three_records = three_mint_txs
+        .iter()
+        .map(|tx| match tx.transitions().next().unwrap().outputs().first().unwrap() {
+            Output::Record(_, _, ct, _) => ct.as_ref().unwrap().decrypt(&caller_view_key).unwrap(),
+            _ => panic!("expected record output from mint_rover"),
+        })
+        .collect::<Vec<_>>();
+
+    add_and_test(&vm, &caller_private_key, &three_mint_txs, rng);
+
+    println!("Test 4: mint_own_and_decom_wrapper...");
+
+    println!("    4.1) Final function receives (DynamicRecord, Record)...");
+
+    let mint_own_and_decom_4_1_tx = vm.execute(
+        &caller_private_key,
+        ("exploration.aleo", "mint_own_and_decom_wrapper"),
+        [
+            Value::from_str("6u8").unwrap(),
+            Value::from_str("true").unwrap(),
+            Value::<CurrentNetwork>::Record(three_records[0].clone()),
+            Value::from_str("false").unwrap(),
+            Value::from_str("true").unwrap(), // Together with the previous flag: select the function that receives (Record, DynamicRecord)
+        ]
+        .into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    );
+
+    assert!(mint_own_and_decom_4_1_tx.unwrap_err().to_string().contains(
+        "record input at r2 of the root function exploration.aleo/mint_own_and_decom_wrapper is not known to correspond"
+    ));
+
+    let num_unspent_records_1 =
+        vm.transition_store().records().count() - vm.transition_store().serial_numbers().count();
+
+    println!("    4.2) Final function receives (Record, DynamicRecord)...");
+
+    let mint_own_and_decom_4_2_tx = vm
         .execute(
             &caller_private_key,
-            ("base.aleo", "mint_rover"),
-            [Value::from_str("5u8").unwrap(), Value::from_str("true").unwrap()].into_iter(),
+            ("exploration.aleo", "mint_own_and_decom_wrapper"),
+            [
+                Value::from_str("6u8").unwrap(),
+                Value::from_str("true").unwrap(),
+                Value::<CurrentNetwork>::Record(three_records[1].clone()),
+                Value::from_str("false").unwrap(),
+                Value::from_str("false").unwrap(), // Together with the previous flag: select the function that receives (DynamicRecord, Record)
+            ]
+            .into_iter(),
             None,
             0,
             None,
             rng,
-        ).unwrap();
+        )
+        .unwrap();
 
-    let planet_5_record = mint_planet_5_tx.transitions().next().unwrap().outputs().first().unwrap();
-    let planet_5_record = match planet_5_record {
+    add_and_test(&vm, &caller_private_key, &[mint_own_and_decom_4_2_tx], rng);
+
+    let num_unspent_records_2 =
+        vm.transition_store().records().count() - vm.transition_store().serial_numbers().count();
+
+    assert_eq!(num_unspent_records_2, num_unspent_records_1);
+
+    println!("    4.3) Final function receives (Record, Record)...");
+
+    let mint_own_and_decom_4_3_tx = vm
+        .execute(
+            &caller_private_key,
+            ("exploration.aleo", "mint_own_and_decom_wrapper"),
+            [
+                Value::from_str("6u8").unwrap(),
+                Value::from_str("true").unwrap(),
+                Value::<CurrentNetwork>::Record(three_records[2].clone()),
+                Value::from_str("true").unwrap(), // Select the function that receives (Record, Record)
+                Value::from_str("false").unwrap(),
+            ]
+            .into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    add_and_test(&vm, &caller_private_key, &[mint_own_and_decom_4_3_tx], rng);
+
+    let num_unspent_records_3 =
+        vm.transition_store().records().count() - vm.transition_store().serial_numbers().count();
+
+    assert_eq!(num_unspent_records_3, num_unspent_records_2 - 1);
+
+    // Test 5: four tests on the local check involving cast-to-dynamic (both from static Records and, in external closures, from ExternalRecords)
+
+    println!("Test 5: Calling frontier.aleo performing various types of casts to DynamicRecords...");
+
+    println!("    5.1) Passing a locally minted DynamicRecord to a closure...");
+
+    let test_case_5_1_tx = vm
+        .execute(
+            &caller_private_key,
+            ("frontier.aleo", "simple_cast_closure"),
+            [Value::from_str("true").unwrap()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    add_and_test(&vm, &caller_private_key, &[test_case_5_1_tx], rng);
+
+    println!("    5.2) Attempting to pass a locally minted DynamicRecord to a function...");
+
+    let test_case_5_2_tx = vm.execute(
+        &caller_private_key,
+        ("frontier.aleo", "simple_cast_function"),
+        [Value::from_str("true").unwrap()].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    );
+
+    let err = test_case_5_2_tx.unwrap_err().to_string();
+    assert!(err.contains("frontier.aleo/simple_cast_function does not pass the local record-existence check"));
+    assert!(err.contains("The following registers violate this condition: \"r1\""));
+
+    println!("    5.3) Passing a locally minted DynamicRecord via external-closure cast to a closure...");
+
+    let test_case_5_3_tx = vm
+        .execute(
+            &caller_private_key,
+            ("frontier.aleo", "tricky_cast_closure"),
+            [Value::from_str("true").unwrap()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    add_and_test(&vm, &caller_private_key, &[test_case_5_3_tx], rng);
+
+    println!("    5.4) Attempting to pass a locally minted DynamicRecord via external-closure cast to a function...");
+
+    let test_case_5_4_tx = vm.execute(
+        &caller_private_key,
+        ("frontier.aleo", "tricky_cast_function"),
+        [Value::from_str("true").unwrap()].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    );
+
+    let err = test_case_5_4_tx.unwrap_err().to_string();
+    assert!(err.contains("frontier.aleo/tricky_cast_function does not pass the local record-existence check"));
+    assert!(err.contains("The following registers violate this condition: \"r1\""));
+
+    println!("    5.5) Saving case 5.4 by outputting the original static Record...");
+
+    let test_case_5_5_tx = vm
+        .execute(
+            &caller_private_key,
+            ("frontier.aleo", "tricky_cast_function_saved"),
+            [Value::from_str("true").unwrap()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    add_and_test(&vm, &caller_private_key, &[test_case_5_5_tx], rng);
+
+    println!("    5.6) Ruining case 5.3 by outputting the locally minted DynamicRecord (after two remappings)...");
+
+    let test_case_5_6_tx = vm.execute(
+        &caller_private_key,
+        ("frontier.aleo", "tricky_cast_closure_ruined"),
+        [Value::from_str("true").unwrap()].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    );
+
+    let err = test_case_5_6_tx.unwrap_err().to_string();
+    assert!(err.contains("frontier.aleo/tricky_cast_closure_ruined does not pass the local record-existence check"));
+    assert!(err.contains("The following registers violate this condition: \"r1\""));
+
+    // Test 6: global check where a large family is constructed. It checks families are updated correctly throughout function and closure calls.
+
+    println!("Test 6: growing_family...");
+
+    let map_record_tx = vm
+        .execute(
+            &caller_private_key,
+            ("frontier.aleo", "mint_map"),
+            Vec::<Value<CurrentNetwork>>::new().into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    let map_record = match map_record_tx.transitions().next().unwrap().outputs().first().unwrap() {
         Output::Record(_, _, ct, _) => ct.as_ref().unwrap().decrypt(&caller_view_key).unwrap(),
-        _ => panic!("expected record output from mint_rover"),
+        _ => panic!("expected record output from mint_map"),
     };
 
-    let mint_own_and_decomission_tx = vm
+    add_and_test(&vm, &caller_private_key, &[map_record_tx], rng);
+
+    println!("    6.1) Calling remapper.aleo/growing_family and making the family materialize at the end...");
+
+    let growing_family_tx = vm
         .execute(
             &caller_private_key,
-            ("extension.aleo", "mint_own_and_decomission"),
-            [Value::<CurrentNetwork>::Record(planet_5_record), Value::from_str("6u8").unwrap(), Value::from_str("true").unwrap()].into_iter(),
+            ("remapper.aleo", "growing_family"),
+            [Value::<CurrentNetwork>::Record(map_record.clone()), Value::from_str("true").unwrap()].into_iter(),
             None,
             0,
             None,
             rng,
-        ).unwrap();
+        )
+        .unwrap();
 
-    add_and_test(&vm, &caller_private_key, &[mint_own_and_decomission_tx], rng);
+    add_and_test(&vm, &caller_private_key, &[growing_family_tx], rng);
 
+    let other_map_record_tx = vm
+        .execute(
+            &caller_private_key,
+            ("frontier.aleo", "mint_map"),
+            Vec::<Value<CurrentNetwork>>::new().into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    let other_map_record = match other_map_record_tx.transitions().next().unwrap().outputs().first().unwrap() {
+        Output::Record(_, _, ct, _) => ct.as_ref().unwrap().decrypt(&caller_view_key).unwrap(),
+        _ => panic!("expected record output from mint_map"),
+    };
+
+    add_and_test(&vm, &caller_private_key, &[other_map_record_tx], rng);
+
+    println!("    6.2) Calling remapper.aleo/growing_family and not making the family materialize at the end...");
+
+    let growing_family_tx = vm.execute(
+        &caller_private_key,
+        ("remapper.aleo", "growing_family"),
+        [Value::<CurrentNetwork>::Record(other_map_record.clone()), Value::from_str("false").unwrap()].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    );
+
+    let err = growing_family_tx.unwrap_err().to_string();
+    assert!(err.contains("Non-static record input at r0"));
+    assert!(err.contains("not known to correspond to a record on the ledger"));
 }
-
-// TODO test cases
-// - Local check satisfied at the start but broken after program update to program that contains a closure externally called from the original one
