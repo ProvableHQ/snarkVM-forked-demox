@@ -262,7 +262,7 @@ fn test_external_record_and_closure_call() -> Result<()> {
     );
 
     let err = tx_read.unwrap_err();
-    assert!(err.to_string().contains("record input at r0 of the rootfunction program_b.aleo/read_external_val is not known to correspond to a record on the ledger"));
+    assert!(err.to_string().contains("record input at r0 of the root function program_b.aleo/read_external_val is not known to correspond to a record on the ledger"));
 
     // Check that the record has not been consumed
     println!("Consuming record...");
