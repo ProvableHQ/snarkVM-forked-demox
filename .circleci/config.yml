@@ -89,7 +89,6 @@ commands:
       cache_key:
         type: string
         default: v4.5.0-rust-1.88.0-snarkvm-cache
-        default: v4.5.0-rust-1.88.0-snarkvm-cache
     steps:
       - run:
           name: Prepare environment variables and install dependencies
