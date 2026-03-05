@@ -891,12 +891,12 @@ impl<N: Network> Process<N> {
         let inputs = transition.inputs();
         let input_registers = function.inputs().iter().map(|input| input.register().locator()).collect::<Vec<u64>>();
 
-        // Contains families of static Records connected to Records minted in this transition. Used for the local check.
-        let mut locally_minted_static = Vec::new();
+        // Contains the registers of static Records minted in this transition. Used for the local check.
+        let mut locally_minted_static = HashSet::new();
         // For each DynamicRecord at r_j cast from a locally minted static Record at r_i, this map contains the entry r_j -> r_i.
         let mut locally_minted_dynamic = HashMap::new();
-        // Contains the registers of locally minted static Records which must be output (either themselves or connected ones) because
-        // they are cast to dynamic and passed to a non-closure call or output (as a DynamicRecord). Used for the local check.
+        // Contains the registers of locally minted static Records which must be output because they are cast to
+        // dynamic and passed to a non-closure call or output (as a DynamicRecord). Used for the local check.
         let mut must_be_output = HashSet::new();
 
         // Processing the inputs
@@ -954,7 +954,7 @@ impl<N: Network> Process<N> {
                     match cast.cast_type() {
                         CastType::Record(_) => {
                             // Case 3: minting a static Record locally.
-                            locally_minted_static.push(HashSet::from([cast.destinations()[0].locator()]));
+                            locally_minted_static.insert(cast.destinations()[0].locator());
                         }
                         CastType::DynamicRecord => {
                             let operand_register = match cast.operands().first() {
@@ -974,7 +974,7 @@ impl<N: Network> Process<N> {
                             Self::add_to_family(register_families, old_register, new_register);
 
                             // Case 5: Local-check update. If the operand is a locally minted static Record, keep track of this cast.
-                            if locally_minted_static.iter().any(|set| set.contains(&operand_register)) {
+                            if locally_minted_static.contains(&operand_register) {
                                 locally_minted_dynamic.insert(destination_register, operand_register);
                             }
                         }
@@ -1024,7 +1024,7 @@ impl<N: Network> Process<N> {
                             transition_id,
                             &closure,
                             register_families,
-                            &mut locally_minted_static,
+                            &locally_minted_static,
                             &mut locally_minted_dynamic,
                             &caller_input_registers,
                             &caller_output_registers,
@@ -1071,7 +1071,7 @@ impl<N: Network> Process<N> {
 
         // Output processing
 
-        // In a first pass over the outputs, track which DynamicRecords coming from locally minted static records are output directly.
+        // In a first pass over the outputs, track which DynamicRecords coming from locally minted static records are directly output.
         function.outputs().iter().for_each(|output| {
             if let Operand::Register(output_register) = output.operand() {
                 if let Some(static_record) = locally_minted_dynamic.get(&output_register.locator()) {
@@ -1080,30 +1080,18 @@ impl<N: Network> Process<N> {
             }
         });
 
-        if !must_be_output.is_empty() {
-            // For each output static Record, consider all connected static Records as output
-            let mut equivalent_output_records: HashSet<u64> = HashSet::new();
-
-            for (output, output_type) in function.outputs().iter().zip(function.output_types().iter()) {
-                if matches!(output_type, ValueType::Record(..)) {
-                    if let Operand::Register(output_register) = output.operand() {
-                        for set in locally_minted_static.iter() {
-                            if set.contains(&output_register.locator()) {
-                                equivalent_output_records.extend(set.iter());
-                            }
-                        }
-                    } else {
-                        bail!("Missing register information for output of type Record in function {locator}");
-                    }
-                } 
+        // In a second pass, ensure all static records which should be output according to the local check actually are
+        function.outputs().iter().for_each(|output| {
+            if let Operand::Register(output_register) = output.operand() {
+                let _ = must_be_output.remove(&output_register.locator());
             }
+        });
 
-            for r in must_be_output {
-                if !equivalent_output_records.contains(&r) {
-                    bail!("{locator} does not pass the local record-existence check: locally minted static Record r{r} is passed to a callee as an ExternalRecord or cast to a DynamicRecord and passed to a callee or output, yet is not itself output.");
-                }
-            }
-        }
+        ensure!(
+            must_be_output.is_empty(),
+            "{locator} does not pass the local record-existence check: a minted static Record passed to a callee as an ExternalRecord, or cast to a DynamicRecord and passed to a callee or output, must be itself output. The following registers violate this condition: {:?}",
+            must_be_output.iter().map(|register| format!("r{register}")).collect::<Vec<String>>().join(", ")
+        );
 
         // For non-root calls, update the global check's record families with the connections at the output boundary
         if let Some((caller_tid, _, caller_output_registers)) = &caller_info {
@@ -1144,8 +1132,8 @@ impl<N: Network> Process<N> {
         closure: &ClosureCore<N>,
         // Families of registers being tracked of as part of the caller's global record-existence check
         caller_register_families: &mut [IndexSet<(N::TransitionID, u64)>],
-        // Sets of connected static-Record registers minted in the caller function
-        caller_locally_minted_static: &mut Vec<HashSet<u64>>,
+        // Caller registers of static Records minted in the caller function
+        caller_locally_minted_static: &HashSet<u64>,
         // Map from DynamicRecord registers to the locally minted static Record registers they were cast from (in the caller's view)
         caller_locally_minted_dynamic: &mut HashMap<u64, u64>,
         // Caller registers of inputs to the closure call (`None` for inputs that are not registers)
@@ -1243,7 +1231,7 @@ impl<N: Network> Process<N> {
 
                             // We only need to process this cast instruction if the destination register is output by the closure.
                             if let Some(caller_destination_register) = output_map.get(&destination_register) {
-                                if caller_locally_minted_static.iter().any(|set| set.contains(caller_operand_register)) {
+                                if caller_locally_minted_static.contains(caller_operand_register) {
                                     // Case 3: Effectively casting performing a static-to-dynamic cast on the caller side. We update the caller's local-check tracking
                                     // accordingly. Note the input operand in the closure could still be an ExternalRecord if the call to the closure is external
                                     caller_locally_minted_dynamic
@@ -1271,17 +1259,9 @@ impl<N: Network> Process<N> {
                 let new_register = (*caller_tid, *caller_output_register);
                 Self::add_to_family(caller_register_families, old_register, new_register);
 
-                // Case 6. Caller local-check update on the DynamicRecord side
+                // Case 6. Caller local-check update
                 if let Some(original_static) = caller_locally_minted_dynamic.get(&caller_input_register) {
                     caller_locally_minted_dynamic.insert(*caller_output_register, *original_static);
-                }
-
-                // Case 7. Caller local-check update on the static-Record side
-                for set in caller_locally_minted_static.iter_mut() {
-                    if set.contains(&caller_input_register) {
-                        set.insert(*caller_output_register);
-                        break;
-                    }
                 }
             }
         }
