@@ -1106,7 +1106,7 @@ impl<N: Network> Process<N> {
                 if let Operand::Register(callee_output_register) = callee_output.operand()
                     && matches!(callee_output.value_type(), ValueType::DynamicRecord | ValueType::ExternalRecord(..))
                 {
-                    // Case 8: add the caller's output register to the family containing the callee's. Note that
+                    // Case 7: add the caller's output register to the family containing the callee's. Note that
                     // output registers with type ValueType::Record are never tracked as part of the global check.
                     let old_register = (*transition_id, callee_output_register.locator());
                     let new_register = (*caller_tid, *caller_output_register);
