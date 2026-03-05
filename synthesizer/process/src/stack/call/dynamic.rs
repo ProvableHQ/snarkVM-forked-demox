@@ -138,9 +138,6 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         }
         // Else, throw an error.
         else {
-            // TODO (Antonio) remove
-            println!("Here!");
-
             return Err(anyhow!("Dynamic call to '{program_id}/{function_name}' is invalid or unsupported.").into());
         };
         lap!(timer, "Computed outputs");
@@ -969,9 +966,6 @@ fn resolve_dynamic_target<'a, N: Network>(
     } else if in_dummy_mode {
         Ok(None)
     } else {
-        // TODO (Antonio) remove
-        println!("Here! 2");
-
         Err(anyhow!("Dynamic call to '{program_id}/{function_name}' is invalid or unsupported."))
     }
 }
