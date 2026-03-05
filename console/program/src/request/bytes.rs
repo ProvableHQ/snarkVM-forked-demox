@@ -60,7 +60,7 @@ impl<N: Network> FromBytes for Request<N> {
         let scm = FromBytes::read_le(&mut reader)?;
 
         // Read the dynamic flag. V1 requests are implicitly static.
-        let dynamic = match version {
+        let is_dynamic = match version {
             1 => false,
             2 => bool::read_le(&mut reader)?,
             // Note that the version is validated above to be 1 or 2.
@@ -79,7 +79,7 @@ impl<N: Network> FromBytes for Request<N> {
             tvk,
             tcm,
             scm,
-            dynamic,
+            is_dynamic,
         )))
     }
 }

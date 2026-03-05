@@ -71,6 +71,11 @@ lazy_static! {
     /// The Poseidon hash function, using a rate of 8.
     pub static ref CANARY_POSEIDON_8: Poseidon8<CanaryV0> = Poseidon8::<CanaryV0>::setup("AleoPoseidon8").expect("Failed to setup Poseidon8");
 
+    /// The Poseidon leaf hasher for dynamic records, using a rate of 8.
+    pub static ref CANARY_DYNAMIC_RECORD_LEAF_HASHER: Poseidon8<CanaryV0> = Poseidon8::<CanaryV0>::setup("DynamicRecordLeafHasher").expect("Failed to setup DynamicRecordLeafHasher");
+    /// The Poseidon path hasher for dynamic records, using a rate of 2.
+    pub static ref CANARY_DYNAMIC_RECORD_PATH_HASHER: Poseidon2<CanaryV0> = Poseidon2::<CanaryV0>::setup("DynamicRecordPathHasher").expect("Failed to setup DynamicRecordPathHasher");
+
     pub static ref CANARY_CREDITS_V0_PROVING_KEYS: IndexMap<String, Arc<VarunaProvingKey<Console>>> = {
         let mut map = IndexMap::new();
         snarkvm_parameters::insert_canary_credit_v0_keys!(map, VarunaProvingKey<Console>, Prover);
@@ -667,6 +672,16 @@ impl Network for CanaryV0 {
         leaf: &Vec<Field<Self>>,
     ) -> bool {
         path.verify(&*CANARY_POSEIDON_4, &*CANARY_POSEIDON_2, root, leaf)
+    }
+
+    /// Returns the Poseidon leaf hasher for dynamic records (rate 8).
+    fn dynamic_record_leaf_hasher() -> &'static Poseidon8<Self> {
+        &CANARY_DYNAMIC_RECORD_LEAF_HASHER
+    }
+
+    /// Returns the Poseidon path hasher for dynamic records (rate 2).
+    fn dynamic_record_path_hasher() -> &'static Poseidon2<Self> {
+        &CANARY_DYNAMIC_RECORD_PATH_HASHER
     }
 }
 

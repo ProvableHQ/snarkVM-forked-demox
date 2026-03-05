@@ -39,10 +39,13 @@ pub type FutureArgumentTree<E> = MerkleTree<E, Poseidon8<E>, Poseidon2<E>, FUTUR
 /// that all dynamic futures have a constant size, regardless of the amount of
 /// data they contain.
 ///
-/// The checksum is computed as `BHP256(Keccak256(bits))`, where `bits` is constructed by:
+/// The checksum is computed as `truncate_252(Sha3_256(bits))`, where `bits` is constructed by:
 ///   1. Prefixing with the number of arguments as a `u8` in little-endian bits.
 ///   2. Appending the type-prefixed `to_bits_le()` of each argument.
 ///   3. Padding the result to the next multiple of 8 bits.
+///
+/// The 256-bit SHA-3 output is truncated to the field's data capacity (252 bits) and
+/// packed into a field element.
 #[derive(Clone)]
 pub struct DynamicFuture<N: Network> {
     /// The program name.
@@ -113,16 +116,19 @@ impl<N: Network> DynamicFuture<N> {
         let mut bits = vec![];
         // Prefix the bits with the number of arguments to ensure that different numbers of arguments produce different hashes.
         // Note that the number of arguments is at most 16, so it fits in a single byte.
-        bits.extend(u8::try_from(arguments.len())?.to_bits_le());
+        u8::try_from(arguments.len())?.write_bits_le(&mut bits);
         // Then, append the bits of each argument.
         // Note that the argument bits themselves are type-prefixed.
-        bits.extend(arguments.iter().flat_map(|a| a.to_bits_le()));
+        for argument in arguments.iter() {
+            argument.write_bits_le(&mut bits);
+        }
         // Then pad the bits to the next multiple of 8 to ensure that the hash is consistent regardless of the number of arguments.
         bits.resize(bits.len().div_ceil(8) * 8, false);
 
-        // Hash the bits of the arguments.
-        // TODO (@reviewers): Do we need domain separation or the outer hash?
-        let checksum = N::hash_bhp256(&N::hash_keccak256(&bits)?)?;
+        // Hash the bits of the arguments using SHA-3 256, then truncate to fit in a field element.
+        let hash_bits = N::hash_sha3_256(&bits)?;
+        // Truncate the 256-bit hash to the field's data capacity (252 bits) and pack into a field element.
+        let checksum = Field::<N>::from_bits_le(&hash_bits[..Field::<N>::size_in_data_bits()])?;
 
         Ok(Self::new_unchecked(program_name, program_network, function_name, checksum, Some(arguments)))
     }

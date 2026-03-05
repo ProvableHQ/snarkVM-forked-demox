@@ -15,8 +15,6 @@
 
 use super::*;
 
-// TODO: Confirm that each variant's encoding is unambiguous.
-
 impl<N: Network> ToBits for Value<N> {
     /// Returns the stack value as a list of **little-endian** bits.
     #[inline]

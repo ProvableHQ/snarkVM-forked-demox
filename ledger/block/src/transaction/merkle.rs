@@ -146,6 +146,9 @@ impl<N: Network> Transaction<N> {
         match deployment.version() {
             Ok(DeploymentVersion::V1) => Self::deployment_tree_v1(deployment),
             Ok(DeploymentVersion::V2) => Self::deployment_tree_v2(deployment),
+            // Note: We use the same method for computing the deployment tree for V2 and V3.
+            // This is safe because the tree root contains a hash of all bytes in the deployment and V3 is guaranteed to have no owner.
+            Ok(DeploymentVersion::V3) => Self::deployment_tree_v2(deployment),
             Err(e) => bail!("Malformed deployment - {e}"),
         }
     }

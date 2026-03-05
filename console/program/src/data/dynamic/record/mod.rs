@@ -184,29 +184,29 @@ impl<N: Network> DynamicRecord<N> {
         let leaves = data
             .iter()
             .map(|(name, entry)| {
-                // Initialize the leaf.
-                let mut leaf = vec![];
+                // Compute the entry fields.
+                let fields = entry.to_fields()?;
+                // Initialize the leaf with sufficient capacity.
+                let mut leaf = Vec::with_capacity(1 + fields.len());
                 // Add the entry name.
                 leaf.push(name.to_field()?);
                 // Add the entry data.
-                leaf.extend(entry.to_fields()?);
+                leaf.extend(fields);
 
                 Ok(leaf)
             })
             .collect::<Result<Vec<_>>>()?;
 
         // Initalize the hashers.
-        let (leaf_hasher, path_hasher) = Self::initialize_hashers()?;
+        let (leaf_hasher, path_hasher) = Self::initialize_hashers();
 
-        // Construct the merkle tree
-        RecordDataTree::new(&leaf_hasher, &path_hasher, &leaves)
+        // Construct the merkle tree.
+        RecordDataTree::new(leaf_hasher, path_hasher, &leaves)
     }
 
     /// Returns the leaf and path hashers used to merkleize record entries.
-    pub fn initialize_hashers() -> Result<(Poseidon8<N>, Poseidon2<N>)> {
-        let leaf_hasher = Poseidon8::setup("DynamicRecordLeafHasher")?;
-        let path_hasher = Poseidon2::setup("DynamicRecordPathHasher")?;
-        Ok((leaf_hasher, path_hasher))
+    pub fn initialize_hashers() -> (&'static Poseidon8<N>, &'static Poseidon2<N>) {
+        (N::dynamic_record_leaf_hasher(), N::dynamic_record_path_hasher())
     }
 }
 

@@ -142,11 +142,15 @@ fn test_fibonacci() {
 // - `four`: Takes a dynamic record and returns nothing.
 // - `five`: Takes a dynamic record and calls `two` twice. This should fail due to double-spend.
 // - `six`: Takes a dynamic record and calls `four` twice. This should pass because the record is dynamic.
-// - `seven`: Takes a dynamic record and index. If index is zero it calls `two`, else it calls itself recursively with index - 1. This should pass until the index exceeds the maximum call depth.
+// - `seven`: Takes a dynamic record and index. If index is zero it calls `two_indexed` (which accepts `dynamic.record`), else it calls itself recursively with index - 1. No translation occurs at any level, so this should pass until the index exceeds the maximum call depth.
 // - `eight`: Takes a dynamic record and index. First calls `two`, then either calls `four` if index is zero, or calls itself recursively with index - 1. This should pass if index is zero and fail otherwise due to double-spend.
 // - `nine`: Takes a dynamic record and index. First calls `one`, then either calls `three` if index is zero, or calls itself recursively with index - 1 and the new record. This should pass as long as transitions do not exceed the maximum allowed.
 //
-// TODO (@reviewers): Verify that consumption of local records is expected behavior in recursive calls.
+// `six` passes because `four` accepts `dynamic.record`, so no translation occurs: no serial
+// number is created, and the same underlying record can be forwarded to multiple
+// `dynamic.record`-accepting callees without double-spend. `five` fails because `two` accepts a
+// static `Data.record`, which triggers translation — creating a serial number — so calling it
+// twice with the same dynamic record constitutes a double-spend.
 #[test]
 fn test_recursive_dynamic_record_calls() {
     // Initialize an RNG.
@@ -348,10 +352,14 @@ constructor:
     };
 
     // A helper function to execute a function and check if it succeeds or fails as expected.
+    // When `expected_error_substring` is `Some(s)` and execution returns an error, the error
+    // message must contain `s`; this guards against silent regressions where the wrong error
+    // is raised at execution time.
     let execute_and_check = |function_name: Identifier<CurrentNetwork>,
                              inputs: Vec<Value<CurrentNetwork>>,
                              should_succeed: bool,
                              test_description: &str,
+                             expected_error_substring: Option<&str>,
                              rng: &mut TestRng| {
         println!("{test_description}");
         let result = vm.execute(
@@ -367,13 +375,28 @@ constructor:
         if should_succeed {
             let transaction = result.unwrap_or_else(|_| panic!("Expected {function_name} to succeed"));
             add_and_test(&vm, &caller_private_key, &[transaction], rng);
-        } else if let Ok(transaction) = result {
-            // Check that the transaction fails during addition to the ledger.
-            let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
-            assert_eq!(block.transactions().num_accepted(), 0);
-            assert_eq!(block.transactions().num_rejected(), 0);
-            assert_eq!(block.aborted_transaction_ids().len(), 1);
-            vm.add_next_block(&block).unwrap();
+        } else {
+            match result {
+                Ok(transaction) => {
+                    // Check that the transaction fails during addition to the ledger.
+                    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng).unwrap();
+                    assert_eq!(block.transactions().num_accepted(), 0);
+                    assert_eq!(block.transactions().num_rejected(), 0);
+                    assert_eq!(block.aborted_transaction_ids().len(), 1);
+                    vm.add_next_block(&block).unwrap();
+                }
+                Err(e) => {
+                    // Execution-time rejection is valid — verify the error matches expectations.
+                    let msg = e.to_string();
+                    if let Some(expected) = expected_error_substring {
+                        assert!(
+                            msg.contains(expected),
+                            "{test_description}: expected error containing '{expected}', got: {msg}"
+                        );
+                    }
+                    println!("{test_description}: rejected at execution time: {msg}");
+                }
+            }
         }
     };
 
@@ -383,6 +406,7 @@ constructor:
         vec![Value::DynamicRecord(DynamicRecord::from_record(&mint_record(rng)).unwrap())],
         false,
         &format!("Testing function {five_name} which should fail due to double-spend"),
+        Some("serial number"),
         rng,
     );
 
@@ -392,6 +416,7 @@ constructor:
         vec![Value::DynamicRecord(DynamicRecord::from_record(&mint_record(rng)).unwrap())],
         true,
         &format!("Testing function {six_name} which should pass because the record is dynamic"),
+        None,
         rng,
     );
 
@@ -406,6 +431,7 @@ constructor:
             ],
             true,
             &format!("Testing function {seven_name} at index {test_index} which should pass"),
+            None,
             rng,
         );
     }
@@ -421,6 +447,7 @@ constructor:
             ],
             true,
             &format!("Testing function {seven_name} at index {test_index} which should pass"),
+            None,
             rng,
         );
     }
@@ -438,6 +465,7 @@ constructor:
             &format!(
                 "Testing function {seven_name} at index {test_index} which should fail due to exceeding max call depth"
             ),
+            Some("less than"),
             rng,
         );
     }
@@ -451,6 +479,7 @@ constructor:
         ],
         true,
         &format!("Testing function {eight_name} at index 0 which should pass"),
+        None,
         rng,
     );
 
@@ -463,6 +492,7 @@ constructor:
         ],
         false,
         &format!("Testing function {eight_name} at index 1 which should fail due to double-spend"),
+        Some("serial number"),
         rng,
     );
 
@@ -475,6 +505,7 @@ constructor:
         ],
         true,
         &format!("Testing function {nine_name} at index 0 which should pass"),
+        None,
         rng,
     );
 
@@ -487,6 +518,7 @@ constructor:
         ],
         true,
         &format!("Testing function {nine_name} at index 1 which should pass"),
+        None,
         rng,
     );
 
@@ -499,6 +531,7 @@ constructor:
         ],
         true,
         &format!("Testing function {nine_name} at index 2 which should pass"),
+        None,
         rng,
     );
 
@@ -513,6 +546,228 @@ constructor:
         &format!(
             "Testing function {nine_name} at index 15 which should fail due to exceeding the maximum number of transitions"
         ),
+        Some("less than"),
+        rng,
+    );
+}
+
+// Tests record-translation security for same-program dynamic calls.
+//
+// Scenario 1 (PASS): A ledger-committed dynamic record forwarded once to a same-program static consumer.
+// Scenario 2 (FAIL): Caller holds a static record, casts it to dynamic, then calls the same-program static consumer — double-spend.
+// Scenario 3 (FAIL): Same dynamic record forwarded to the same same-program static consumer twice at position 0.
+// Scenario 4 (FAIL): Same dynamic record forwarded at position 0 and position 1 to two different same-program static consumers.
+#[test]
+fn test_same_program_dynamic_record_security() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
+
+    // Identifiers used in call.dynamic operands.
+    let prog_name = Identifier::<CurrentNetwork>::from_str("record_security").unwrap();
+    let prog_field = prog_name.to_field().unwrap();
+    let net_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+    let consume_field = Identifier::<CurrentNetwork>::from_str("consume").unwrap().to_field().unwrap();
+    let consume_with_prefix_field =
+        Identifier::<CurrentNetwork>::from_str("consume_with_prefix").unwrap().to_field().unwrap();
+
+    // Define the program under test. All functions are in the same program so
+    // that each call.dynamic targets the same-program case.
+    let program_str = format!(
+        r"
+program record_security.aleo;
+
+record Data:
+    owner as address.private;
+    amount as u64.private;
+
+// Mints a Data record.
+function mint:
+    input r0 as address.private;
+    input r1 as u64.private;
+    cast r0 r1 into r2 as Data.record;
+    output r2 as Data.record;
+
+// Takes a static record as input and consumes it (no output).
+// When called via call.dynamic, requires translation of the dynamic record.
+function consume:
+    input r0 as Data.record;
+
+// Takes a u64 prefix and a static record, consuming the record.
+// The record is at operand index 1 (not 0), so id_dynamic differs from
+// `consume` when both are called with the same underlying dynamic record.
+function consume_with_prefix:
+    input r0 as u64.public;
+    input r1 as Data.record;
+
+// Scenario 1: valid — dynamic record forwarded to same-program static consumer
+// once. The commitment is already in the ledger so translation succeeds and
+// the serial number is spent exactly once.
+function consume_once:
+    input r0 as dynamic.record;
+    call.dynamic {prog_field} {net_field} {consume_field}
+        with r0 (as dynamic.record);
+
+// Scenario 2: double spend — caller takes the static record as an input (spending
+// its serial number), casts it to dynamic, then forwards it to the same-program
+// static consumer, which translates and tries to spend the same serial number.
+function self_cast_and_call:
+    input r0 as Data.record;
+    cast r0 into r1 as dynamic.record;
+    call.dynamic {prog_field} {net_field} {consume_field}
+        with r1 (as dynamic.record);
+
+// Scenario 3: same-position double translation — the same dynamic record is
+// forwarded to `consume` at operand position 0 in two successive call.dynamic
+// instructions. Both produce an identical id_dynamic and therefore the same
+// translated serial number.
+function double_consume_same_pos:
+    input r0 as dynamic.record;
+    call.dynamic {prog_field} {net_field} {consume_field}
+        with r0 (as dynamic.record);
+    call.dynamic {prog_field} {net_field} {consume_field}
+        with r0 (as dynamic.record);
+
+// Scenario 4: different-position double translation — the same dynamic record
+// is forwarded at operand position 0 in the first call (to `consume`) and at
+// operand position 1 in the second call (to `consume_with_prefix`, which takes
+// a u64 prefix before the record). The id_dynamic values differ between the two
+// calls; this scenario tests whether the protection extends to position-mismatched
+// reuse of the same underlying record.
+function double_consume_diff_pos:
+    input r0 as dynamic.record;
+    call.dynamic {prog_field} {net_field} {consume_field}
+        with r0 (as dynamic.record);
+    call.dynamic {prog_field} {net_field} {consume_with_prefix_field}
+        with 42u64 r0 (as u64.public dynamic.record);
+
+constructor:
+    assert.eq true true;
+"
+    );
+
+    let program = Program::<CurrentNetwork>::from_str(&program_str).unwrap();
+
+    let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
+    let vm = crate::vm::test_helpers::sample_vm_at_height(v14_height, rng);
+
+    // Deploy the program.
+    println!("Deploying record_security.aleo...");
+    let deploy_tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_tx], rng);
+
+    // Helper: mint a Data record and add it to the ledger.
+    let mint_record = |rng: &mut TestRng| {
+        let tx = vm
+            .execute(
+                &caller_private_key,
+                ("record_security.aleo", "mint"),
+                vec![Value::from_str(&caller_address.to_string()).unwrap(), Value::from_str("100u64").unwrap()]
+                    .into_iter(),
+                None,
+                0,
+                None,
+                rng,
+            )
+            .unwrap();
+        let record = tx
+            .transitions()
+            .next()
+            .unwrap()
+            .outputs()
+            .iter()
+            .find_map(|o| match o {
+                Output::Record(_, _, Some(ct), _) => Some(ct.decrypt(&caller_view_key).unwrap()),
+                _ => None,
+            })
+            .unwrap();
+        add_and_test(&vm, &caller_private_key, &[tx], rng);
+        record
+    };
+
+    // Helper: execute a function and verify it succeeds or fails as expected.
+    // A transaction that is aborted when added to the ledger is treated as a failure.
+    // When `expected_error_substring` is `Some(s)` and execution returns an error, the error
+    // message must contain `s`; this guards against silent regressions where the wrong error
+    // is raised at execution time.
+    let execute_and_check = |function_name: &str,
+                             inputs: Vec<Value<CurrentNetwork>>,
+                             should_succeed: bool,
+                             description: &str,
+                             expected_error_substring: Option<&str>,
+                             rng: &mut TestRng| {
+        println!("{description}");
+        let result = vm.execute(
+            &caller_private_key,
+            ("record_security.aleo", function_name),
+            inputs.into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        );
+
+        if should_succeed {
+            let tx = result.unwrap_or_else(|e| panic!("Expected {description} to succeed: {e}"));
+            add_and_test(&vm, &caller_private_key, &[tx], rng);
+        } else {
+            match result {
+                Ok(tx) => {
+                    let block = sample_next_block(&vm, &caller_private_key, &[tx], rng).unwrap();
+                    assert_eq!(block.transactions().num_accepted(), 0, "{description}: expected 0 accepted");
+                    assert_eq!(block.aborted_transaction_ids().len(), 1, "{description}: expected 1 aborted");
+                    vm.add_next_block(&block).unwrap();
+                }
+                Err(e) => {
+                    // Execution-time rejection is valid — verify the error matches expectations.
+                    let msg = e.to_string();
+                    if let Some(expected) = expected_error_substring {
+                        assert!(
+                            msg.contains(expected),
+                            "{description}: expected error containing '{expected}', got: {msg}"
+                        );
+                    }
+                    println!("{description}: rejected at execution time: {msg}");
+                }
+            }
+        }
+    };
+
+    execute_and_check(
+        "consume_once",
+        vec![Value::DynamicRecord(DynamicRecord::from_record(&mint_record(rng)).unwrap())],
+        true,
+        "Scenario 1: valid single same-program translation should succeed",
+        None,
+        rng,
+    );
+
+    execute_and_check(
+        "self_cast_and_call",
+        vec![Value::Record(mint_record(rng))],
+        false,
+        "Scenario 2: self-cast double spend must fail",
+        Some("serial number"),
+        rng,
+    );
+
+    execute_and_check(
+        "double_consume_same_pos",
+        vec![Value::DynamicRecord(DynamicRecord::from_record(&mint_record(rng)).unwrap())],
+        false,
+        "Scenario 3: same-position double translation must fail",
+        Some("serial number"),
+        rng,
+    );
+
+    execute_and_check(
+        "double_consume_diff_pos",
+        vec![Value::DynamicRecord(DynamicRecord::from_record(&mint_record(rng)).unwrap())],
+        false,
+        "Scenario 4: different-position double translation must fail",
+        Some("serial number"),
         rng,
     );
 }

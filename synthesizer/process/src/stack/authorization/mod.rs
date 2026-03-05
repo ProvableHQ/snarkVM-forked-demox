@@ -306,7 +306,7 @@ impl<N: Network> Authorization<N> {
     /// Computes the number of different translation circuits resulting from the
     /// given `Transition`s as well as the number of translations for each such
     /// circuit.
-    pub fn translation_batches<'a>(
+    pub fn translation_batch_sizes<'a>(
         process: &Process<N>,
         transitions: impl ExactSizeIterator<Item = &'a Transition<N>>,
     ) -> Result<Vec<usize>> {

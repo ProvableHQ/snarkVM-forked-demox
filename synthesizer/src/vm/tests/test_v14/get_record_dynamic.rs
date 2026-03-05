@@ -915,6 +915,183 @@ fn test_dynamic_record_near_maximum_fields() {
     add_and_test(&vm, &caller_private_key, &[tx_read_last], rng);
 }
 
+// Tests `get.record.dynamic` with exactly 32 data fields — the MAX_DATA_ENTRIES boundary.
+// Verifies that the depth-5 Merkle tree (2^5 = 32 leaves) correctly handles the maximum
+// number of data entries by reading the first, middle, and last fields.
+#[test]
+fn test_dynamic_record_maximum_fields() {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
+
+    // Generate field declarations for f1..=f32: f1..=f16 public, f17..=f32 private.
+    let field_declarations: String = (1..=32)
+        .map(|i| {
+            let vis = if i <= 16 { "public" } else { "private" };
+            format!("            f{i} as u64.{vis};\n")
+        })
+        .collect();
+
+    // Generate cast arguments: address followed by 1u64..=32u64.
+    let cast_args: String = (1u64..=32).map(|i| format!("{i}u64 ")).collect::<String>().trim_end().to_string();
+
+    let program_str = format!(
+        r"
+        program max32_record.aleo;
+
+        record data32:
+            owner as address.private;
+{field_declarations}
+        function mint_data32:
+            cast {caller_address} {cast_args} into r0 as data32.record;
+            output r0 as data32.record;
+
+        function read_first:
+            input r0 as dynamic.record;
+            get.record.dynamic r0.f1 into r1 as u64;
+            output r1 as u64.public;
+
+        function read_middle:
+            input r0 as dynamic.record;
+            get.record.dynamic r0.f16 into r1 as u64;
+            output r1 as u64.public;
+
+        function read_boundary:
+            input r0 as dynamic.record;
+            get.record.dynamic r0.f17 into r1 as u64;
+            output r1 as u64.public;
+
+        function read_last:
+            input r0 as dynamic.record;
+            get.record.dynamic r0.f32 into r1 as u64;
+            output r1 as u64.public;
+
+        constructor:
+            assert.eq true true;
+        "
+    );
+
+    let program = Program::<CurrentNetwork>::from_str(&program_str).unwrap();
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    // Deploy the program.
+    println!("Deploying program max32_record.aleo...");
+    let transaction_deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[transaction_deploy], rng);
+
+    // Mint a record with all 32 fields set to their 1-based index value.
+    println!("Minting data32 record with 32 fields...");
+    let transaction_mint = vm
+        .execute(
+            &caller_private_key,
+            ("max32_record.aleo", "mint_data32"),
+            Vec::<Value<CurrentNetwork>>::new().into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    let mint_output = transaction_mint.transitions().next().unwrap().outputs().iter().next().unwrap();
+    let view_key = ViewKey::try_from(&caller_private_key).unwrap();
+
+    let output_record = match mint_output {
+        Output::Record(_, _, record_ciphertext, _) => record_ciphertext.as_ref().unwrap().decrypt(&view_key).unwrap(),
+        _ => panic!("Expected record output"),
+    };
+
+    add_and_test(&vm, &caller_private_key, &[transaction_mint], rng);
+
+    let dynamic_record = DynamicRecord::<CurrentNetwork>::from_record(&output_record).unwrap();
+
+    // Read f1 (first public field, value == 1).
+    println!("Reading f1 from 32-field record (MAX_DATA_ENTRIES boundary)...");
+    let tx_first = vm
+        .execute(
+            &caller_private_key,
+            ("max32_record.aleo", "read_first"),
+            vec![Value::<CurrentNetwork>::DynamicRecord(dynamic_record.clone())].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    let expected_f1 = Plaintext::<CurrentNetwork>::from_str("1u64").unwrap();
+    assert!(
+        matches!(tx_first.transitions().next().unwrap().outputs(), [Output::Public(_, Some(plaintext))] if *plaintext == expected_f1),
+        "Expected f1 = 1u64"
+    );
+    add_and_test(&vm, &caller_private_key, &[tx_first], rng);
+
+    // Read f16 (last public field, value == 16).
+    println!("Reading f16 from 32-field record...");
+    let tx_middle = vm
+        .execute(
+            &caller_private_key,
+            ("max32_record.aleo", "read_middle"),
+            vec![Value::<CurrentNetwork>::DynamicRecord(dynamic_record.clone())].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    let expected_f16 = Plaintext::<CurrentNetwork>::from_str("16u64").unwrap();
+    assert!(
+        matches!(tx_middle.transitions().next().unwrap().outputs(), [Output::Public(_, Some(plaintext))] if *plaintext == expected_f16),
+        "Expected f16 = 16u64"
+    );
+    add_and_test(&vm, &caller_private_key, &[tx_middle], rng);
+
+    // Read f17 (first private field, value == 17, at the public/private visibility boundary).
+    println!("Reading f17 from 32-field record (first private field, visibility boundary)...");
+    let tx_boundary = vm
+        .execute(
+            &caller_private_key,
+            ("max32_record.aleo", "read_boundary"),
+            vec![Value::<CurrentNetwork>::DynamicRecord(dynamic_record.clone())].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    let expected_f17 = Plaintext::<CurrentNetwork>::from_str("17u64").unwrap();
+    assert!(
+        matches!(tx_boundary.transitions().next().unwrap().outputs(), [Output::Public(_, Some(plaintext))] if *plaintext == expected_f17),
+        "Expected f17 = 17u64"
+    );
+    add_and_test(&vm, &caller_private_key, &[tx_boundary], rng);
+
+    // Read f32 (last field, value == 32, exercising all 32 Merkle leaves).
+    println!("Reading f32 from 32-field record...");
+    let tx_last = vm
+        .execute(
+            &caller_private_key,
+            ("max32_record.aleo", "read_last"),
+            vec![Value::<CurrentNetwork>::DynamicRecord(dynamic_record)].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    let expected_f32 = Plaintext::<CurrentNetwork>::from_str("32u64").unwrap();
+    assert!(
+        matches!(tx_last.transitions().next().unwrap().outputs(), [Output::Public(_, Some(plaintext))] if *plaintext == expected_f32),
+        "Expected f32 = 32u64"
+    );
+    add_and_test(&vm, &caller_private_key, &[tx_last], rng);
+}
+
 // Tests `get.record.dynamic` with explicit visibility suffixes (`.private`, `.public`, `.constant`).
 // Verifies that matching visibility succeeds and mismatching visibility fails.
 #[test]

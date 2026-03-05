@@ -22,31 +22,31 @@ impl<A: Aleo> ToBits for DynamicFuture<A> {
     #[inline]
     fn write_bits_le(&self, vec: &mut Vec<Self::Boolean>) {
         // Write the bits for the program name.
-        vec.extend_from_slice(&self.program_name.to_bits_le());
+        self.program_name.write_bits_le(vec);
 
         // Write the bits for the program network.
-        vec.extend_from_slice(&self.program_network.to_bits_le());
+        self.program_network.write_bits_le(vec);
 
         // Write the bits for the function name.
-        vec.extend_from_slice(&self.function_name.to_bits_le());
+        self.function_name.write_bits_le(vec);
 
         // Write the bits for the checksum.
-        vec.extend_from_slice(&self.checksum.to_bits_le());
+        self.checksum.write_bits_le(vec);
     }
 
     /// Returns the circuit dynamic future as a list of **big-endian** bits.
     #[inline]
     fn write_bits_be(&self, vec: &mut Vec<Self::Boolean>) {
         // Write the bits for the program name.
-        vec.extend_from_slice(&self.program_name.to_bits_be());
+        self.program_name.write_bits_be(vec);
 
-        // Write the bits for the function network.
-        vec.extend_from_slice(&self.program_network.to_bits_be());
+        // Write the bits for the program network.
+        self.program_network.write_bits_be(vec);
 
         // Write the bits for the function name.
-        vec.extend_from_slice(&self.function_name.to_bits_be());
+        self.function_name.write_bits_be(vec);
 
         // Write the bits for the checksum.
-        vec.extend_from_slice(&self.checksum.to_bits_be());
+        self.checksum.write_bits_be(vec);
     }
 }

@@ -43,7 +43,10 @@ pub struct Identifier<A: Aleo>(Field<A>, u8); // Number of bytes in the identifi
 impl<A: Aleo> Identifier<A> {
     /// Returns a constant identifier.
     pub fn constant(identifier: console::Identifier<A::Network>) -> Self {
-        // Convert the identifier to a string to check its validity.
+        // Convert the identifier to a string to obtain the byte-level string length.
+        // The `Identifier` struct stores this length as its second field (used during
+        // serialization/deserialization), but `console::Identifier::to_field()` does not
+        // expose it directly, so a String round-trip is the canonical way to recover it.
         let identifier_string = identifier.to_string();
 
         // Note: The string bytes themselves are **not** little-endian. Rather, they are order-preserving
@@ -56,6 +59,8 @@ impl<A: Aleo> Identifier<A> {
 
     /// Returns a public identifier.
     /// Note: This method should be used cautiously since identifiers typically should be constant.
+    /// Public mode is used when the target of a dynamic call is witnessed as a public variable,
+    /// allowing both the prover and verifier to agree on the callee at verification time.
     pub fn public(identifier: console::Identifier<A::Network>) -> Self {
         // Get the identifier string length.
         let identifier_string = identifier.to_string();

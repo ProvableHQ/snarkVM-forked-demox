@@ -63,9 +63,7 @@ impl<A: Aleo> Inject for Record<A, Plaintext<A>> {
                 .data()
                 .clone()
                 .into_iter()
-                .map(|(identifier, entry)| {
-                    (Identifier::constant(identifier), Inject::new(Mode::Private, entry.clone()))
-                })
+                .map(|(identifier, entry)| (Identifier::constant(identifier), Inject::new(Mode::Private, entry)))
                 .collect(),
             nonce: Group::new(Mode::Private, *record.nonce()),
             version: U8::new(Mode::Private, *record.version()),
@@ -84,9 +82,7 @@ impl<A: Aleo> Inject for Record<A, Ciphertext<A>> {
                 .data()
                 .clone()
                 .into_iter()
-                .map(|(identifier, entry)| {
-                    (Identifier::constant(identifier), Inject::new(Mode::Private, entry.clone()))
-                })
+                .map(|(identifier, entry)| (Identifier::constant(identifier), Inject::new(Mode::Private, entry)))
                 .collect(),
             nonce: Group::new(Mode::Private, *record.nonce()),
             version: U8::new(Mode::Private, *record.version()),

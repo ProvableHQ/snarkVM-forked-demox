@@ -141,7 +141,7 @@ impl<E: Environment, LH: LeafHash<E, Hash = PH::Hash>, PH: PathHash<E, Hash = Fi
         let mut tree = vec![empty_hash.clone(); minimum_tree_size];
 
         // Compute and store each leaf hash.
-        for (tree_leaf, provided_leaf) in tree[num_nodes..num_nodes + leaves.len()].iter_mut().zip(leaves.iter()) {
+        for (tree_leaf, provided_leaf) in tree[num_nodes..num_nodes + leaves.len()].iter_mut().zip_eq(leaves.iter()) {
             *tree_leaf = leaf_hasher.hash_leaf(provided_leaf);
         }
 
@@ -161,7 +161,7 @@ impl<E: Environment, LH: LeafHash<E, Hash = PH::Hash>, PH: PathHash<E, Hash = Fi
                 .collect::<Vec<_>>();
             // Compute and store the hashes for each node in the current level.
             let num_full_nodes = tuples.len();
-            for (tree_node, (left, right)) in tree[start..][..num_full_nodes].iter_mut().zip(tuples.iter()) {
+            for (tree_node, (left, right)) in tree[start..][..num_full_nodes].iter_mut().zip_eq(tuples.iter()) {
                 *tree_node = path_hasher.hash_children(left, right);
             }
             // Use the precomputed empty node hash for every empty node, if there are any.

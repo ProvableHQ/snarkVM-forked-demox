@@ -287,7 +287,7 @@ impl<N: Network> GetRecordDynamic<N> {
         circuit_leaf.extend(circuit_entry.to_fields_with_visibility_as_mode(mode));
 
         // Initialize the in-circuit hashers.
-        let (console_leaf_hasher, console_path_hasher) = DynamicRecord::initialize_hashers()?;
+        let (console_leaf_hasher, console_path_hasher) = DynamicRecord::initialize_hashers();
         let circuit_leaf_hasher = CircuitLH::<A>::constant(console_leaf_hasher.clone());
         let circuit_path_hasher = CircuitPH::<A>::constant(console_path_hasher.clone());
 

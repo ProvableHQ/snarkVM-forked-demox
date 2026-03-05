@@ -689,3 +689,89 @@ impl<N: Network> Stack<N> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use console::network::MainnetV0;
+    use snarkvm_synthesizer_program::Program;
+
+    type CurrentNetwork = MainnetV0;
+
+    // This test verifies that `contains_dynamic_call` returns `false` for a function
+    // that contains only static `call` instructions (no `call.dynamic`).
+    #[test]
+    fn test_contains_dynamic_call_with_static_calls() {
+        // `Process::load` always includes `credits.aleo`, which has no dynamic calls.
+        let process = Process::<CurrentNetwork>::load().unwrap();
+        let stack = process.get_stack("credits.aleo").unwrap();
+        // `transfer_public` uses only static operations — no `call.dynamic`.
+        let function_name = Identifier::from_str("transfer_public").unwrap();
+        assert!(!stack.contains_dynamic_call(&function_name).unwrap());
+    }
+
+    // This test verifies that `contains_dynamic_call` returns `true` for a function
+    // that directly contains a `call.dynamic` instruction.
+    #[test]
+    fn test_contains_dynamic_call_with_dynamic_calls() {
+        // Define a program with a function that issues a bare `call.dynamic` (no inputs or outputs).
+        let program = Program::<CurrentNetwork>::from_str(
+            r"
+program dynamic_test.aleo;
+
+function dynamic_func:
+    input r0 as field.public;
+    input r1 as field.public;
+    input r2 as field.public;
+    call.dynamic r0 r1 r2;",
+        )
+        .unwrap();
+        // Add the program to a fresh process (no deployment needed for stack inspection).
+        let mut process = Process::<CurrentNetwork>::load().unwrap();
+        process.add_program(&program).unwrap();
+        let stack = process.get_stack("dynamic_test.aleo").unwrap();
+        // `dynamic_func` contains a `call.dynamic` instruction and must be detected.
+        let function_name = Identifier::from_str("dynamic_func").unwrap();
+        assert!(stack.contains_dynamic_call(&function_name).unwrap());
+    }
+
+    // This test verifies that `contains_dynamic_call` returns `true` for a function that
+    // transitively reaches a `call.dynamic` via a static external call.
+    #[test]
+    fn test_contains_dynamic_call_transitive() {
+        // Define a helper program whose function issues `call.dynamic`.
+        let helper_program = Program::<CurrentNetwork>::from_str(
+            r"
+program helper.aleo;
+
+function dynamic_helper:
+    input r0 as field.public;
+    input r1 as field.public;
+    input r2 as field.public;
+    call.dynamic r0 r1 r2;",
+        )
+        .unwrap();
+        // Define a caller program that statically calls `helper.aleo/dynamic_helper`.
+        let caller_program = Program::<CurrentNetwork>::from_str(
+            r"
+import helper.aleo;
+
+program caller.aleo;
+
+function caller_func:
+    input r0 as field.public;
+    input r1 as field.public;
+    input r2 as field.public;
+    call helper.aleo/dynamic_helper r0 r1 r2;",
+        )
+        .unwrap();
+        // Add programs in dependency order: helper first, then caller.
+        let mut process = Process::<CurrentNetwork>::load().unwrap();
+        process.add_program(&helper_program).unwrap();
+        process.add_program(&caller_program).unwrap();
+        let stack = process.get_stack("caller.aleo").unwrap();
+        // `caller_func` transitively reaches `call.dynamic` via `helper.aleo/dynamic_helper`.
+        let function_name = Identifier::from_str("caller_func").unwrap();
+        assert!(stack.contains_dynamic_call(&function_name).unwrap());
+    }
+}

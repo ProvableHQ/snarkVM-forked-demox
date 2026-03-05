@@ -21,8 +21,5 @@ artifacts
 !.claude/CLAUDE.md
 .claude/*
 !.claude/CLAUDE.md
+!.claude/.gitignore
 !.claude/skills/
-
-# Ignore auto-generated CLAUDE.md files outside .claude/
-**/CLAUDE.md
-!.claude/CLAUDE.md

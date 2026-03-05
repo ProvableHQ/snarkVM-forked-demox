@@ -150,7 +150,7 @@ commands:
     steps:
       - run: set +e
       - save_cache:
-          key: v4.5.0-rust-1.88.0-deps-{{ checksum "Cargo.lock" }}-{{ epoch }}
+          key: v4.5.0-rust-1.88.0-deps-{{ checksum "Cargo.lock" }}
           paths:
             - /home/circleci/.cache/sccache
             - /home/circleci/.cargo/registry

@@ -71,6 +71,11 @@ lazy_static! {
     /// The Poseidon hash function, using a rate of 8.
     pub static ref TESTNET_POSEIDON_8: Poseidon8<TestnetV0> = Poseidon8::<TestnetV0>::setup("AleoPoseidon8").expect("Failed to setup Poseidon8");
 
+    /// The Poseidon leaf hasher for dynamic records, using a rate of 8.
+    pub static ref TESTNET_DYNAMIC_RECORD_LEAF_HASHER: Poseidon8<TestnetV0> = Poseidon8::<TestnetV0>::setup("DynamicRecordLeafHasher").expect("Failed to setup DynamicRecordLeafHasher");
+    /// The Poseidon path hasher for dynamic records, using a rate of 2.
+    pub static ref TESTNET_DYNAMIC_RECORD_PATH_HASHER: Poseidon2<TestnetV0> = Poseidon2::<TestnetV0>::setup("DynamicRecordPathHasher").expect("Failed to setup DynamicRecordPathHasher");
+
     pub static ref TESTNET_CREDITS_V0_PROVING_KEYS: IndexMap<String, Arc<VarunaProvingKey<Console>>> = {
         let mut map = IndexMap::new();
         snarkvm_parameters::insert_testnet_credit_v0_keys!(map, VarunaProvingKey<Console>, Prover);
@@ -669,6 +674,16 @@ impl Network for TestnetV0 {
         leaf: &Vec<Field<Self>>,
     ) -> bool {
         path.verify(&*TESTNET_POSEIDON_4, &*TESTNET_POSEIDON_2, root, leaf)
+    }
+
+    /// Returns the Poseidon leaf hasher for dynamic records (rate 8).
+    fn dynamic_record_leaf_hasher() -> &'static Poseidon8<Self> {
+        &TESTNET_DYNAMIC_RECORD_LEAF_HASHER
+    }
+
+    /// Returns the Poseidon path hasher for dynamic records (rate 2).
+    fn dynamic_record_path_hasher() -> &'static Poseidon2<Self> {
+        &TESTNET_DYNAMIC_RECORD_PATH_HASHER
     }
 }
 

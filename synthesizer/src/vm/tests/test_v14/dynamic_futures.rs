@@ -1274,39 +1274,27 @@ fn test_interface_mismatch_wrong_input_type() {
     let deploy_u64 = vm.deploy(&caller_private_key, &u64_program, None, 0, None, rng).unwrap();
     add_and_test(&vm, &caller_private_key, &[deploy_u64], rng);
 
-    // The caller program should fail at some point in the pipeline
-    let caller_program_result = Program::<CurrentNetwork>::from_str(&caller_program_str);
+    // The caller program is syntactically valid, so parsing and deployment must succeed.
+    let caller_program = Program::<CurrentNetwork>::from_str(&caller_program_str).unwrap();
+    let deploy_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_caller], rng);
 
-    if let Ok(caller_program) = caller_program_result {
-        let deploy_result = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng);
-        if let Ok(deploy_tx) = deploy_result {
-            let block = sample_next_block(&vm, &caller_private_key, &[deploy_tx], rng).unwrap();
-            if block.transactions().num_accepted() == 1 {
-                vm.add_next_block(&block).unwrap();
-                // Execution should fail because input type doesn't match
-                let exec_result = vm.execute(
-                    &caller_private_key,
-                    ("type_mismatch_caller.aleo", "call_with_wrong_type"),
-                    vec![Value::from_str("5u32").unwrap()].into_iter(),
-                    None,
-                    0,
-                    None,
-                    rng,
-                );
-                // Either execution fails, or the transaction is rejected
-                if let Ok(tx) = exec_result {
-                    let block = sample_next_block(&vm, &caller_private_key, &[tx], rng).unwrap();
-                    assert!(
-                        !block.transactions().num_rejected() > 0 || !block.aborted_transaction_ids().is_empty(),
-                        "Transaction with type mismatch should be rejected"
-                    );
-                }
-                // If execution fails, the test passes
-            }
-        }
-        // If deployment fails, the test passes (mismatch detected early)
-    }
-    // If parsing fails, the test passes (mismatch detected at parse time)
+    // A type-mismatched dynamic call must be rejected — either at execute time or at
+    // check_transaction time.
+    let exec_result = vm.execute(
+        &caller_private_key,
+        ("type_mismatch_caller.aleo", "call_with_wrong_type"),
+        vec![Value::from_str("5u32").unwrap()].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    );
+    let mismatch_was_rejected = match exec_result {
+        Err(_) => true,
+        Ok(tx) => vm.check_transaction(&tx, None, rng).is_err(),
+    };
+    assert!(mismatch_was_rejected, "Type mismatch (caller declares u32, callee expects u64) must be rejected");
 }
 
 // Tests that attempting to await the same `DynamicFuture` twice fails.
@@ -1370,39 +1358,35 @@ fn test_double_await_fails() {
     let deploy_simple = vm.deploy(&caller_private_key, &simple_program, None, 0, None, rng).unwrap();
     add_and_test(&vm, &caller_private_key, &[deploy_simple], rng);
 
-    // Try to parse the caller program - it may fail at parse time
-    let caller_program_result = Program::<CurrentNetwork>::from_str(&caller_program_str);
-
-    if let Ok(caller_program) = caller_program_result {
-        let deploy_result = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng);
-        if let Ok(deploy_tx) = deploy_result {
-            let block = sample_next_block(&vm, &caller_private_key, &[deploy_tx], rng).unwrap();
-            if block.transactions().num_accepted() == 1 {
-                vm.add_next_block(&block).unwrap();
-                // Try to execute - should fail because we're passing the same future twice
-                let exec_result = vm.execute(
-                    &caller_private_key,
-                    ("double_await_caller.aleo", "double_await"),
-                    vec![Value::from_str("42u64").unwrap()].into_iter(),
-                    None,
-                    0,
-                    None,
-                    rng,
-                );
-
-                if let Ok(tx) = exec_result {
-                    // Transaction may be created but should be rejected at finalize
-                    let block = sample_next_block(&vm, &caller_private_key, &[tx], rng).unwrap();
-                    // Double await should cause rejection
-                    assert!(
-                        block.transactions().num_rejected() > 0 || !block.aborted_transaction_ids().is_empty(),
-                        "Transaction with double await should be rejected"
-                    );
-                }
-            }
+    // The caller program is syntactically valid. Rejection may occur at deployment, execution,
+    // or check_transaction time — but it must be rejected at some stage.
+    let caller_program = Program::<CurrentNetwork>::from_str(&caller_program_str).unwrap();
+    let was_rejected = 'pipeline: {
+        let deploy_tx = match vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng) {
+            Err(_) => break 'pipeline true,
+            Ok(tx) => tx,
+        };
+        // Deployment succeeded; add to chain and attempt execution.
+        let block = sample_next_block(&vm, &caller_private_key, &[deploy_tx], rng).unwrap();
+        if block.transactions().num_rejected() > 0 || !block.aborted_transaction_ids().is_empty() {
+            break 'pipeline true;
         }
-    }
-    // Test passes if any stage rejects the double await
+        vm.add_next_block(&block).unwrap();
+        let exec_result = vm.execute(
+            &caller_private_key,
+            ("double_await_caller.aleo", "double_await"),
+            vec![Value::from_str("42u64").unwrap()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        );
+        match exec_result {
+            Err(_) => true,
+            Ok(tx) => vm.check_transaction(&tx, None, rng).is_err(),
+        }
+    };
+    assert!(was_rejected, "Awaiting the same DynamicFuture twice must be rejected");
 }
 
 // Tests a deeply nested chain of `call.dynamic` (4 levels), each with finalize.
@@ -1671,39 +1655,27 @@ fn test_interface_mismatch_public_to_private() {
     let deploy_private = vm.deploy(&caller_private_key, &private_program, None, 0, None, rng).unwrap();
     add_and_test(&vm, &caller_private_key, &[deploy_private], rng);
 
-    // The caller program should fail at some point in the pipeline
-    let caller_program_result = Program::<CurrentNetwork>::from_str(&caller_program_str);
+    // The caller program is syntactically valid, so parsing and deployment must succeed.
+    let caller_program = Program::<CurrentNetwork>::from_str(&caller_program_str).unwrap();
+    let deploy_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_caller], rng);
 
-    if let Ok(caller_program) = caller_program_result {
-        let deploy_result = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng);
-        if let Ok(deploy_tx) = deploy_result {
-            let block = sample_next_block(&vm, &caller_private_key, &[deploy_tx], rng).unwrap();
-            if block.transactions().num_accepted() == 1 {
-                vm.add_next_block(&block).unwrap();
-                // Execution should fail because mode doesn't match
-                let exec_result = vm.execute(
-                    &caller_private_key,
-                    ("public_to_private_caller.aleo", "call_with_wrong_mode"),
-                    vec![Value::from_str("42u64").unwrap()].into_iter(),
-                    None,
-                    0,
-                    None,
-                    rng,
-                );
-                // Either execution fails, or the transaction is rejected/aborted
-                if let Ok(tx) = exec_result {
-                    let block = sample_next_block(&vm, &caller_private_key, &[tx], rng).unwrap();
-                    assert!(
-                        block.transactions().num_rejected() > 0 || !block.aborted_transaction_ids().is_empty(),
-                        "Transaction with mode mismatch (public->private) should be rejected or aborted"
-                    );
-                }
-                // If execution fails, the test passes
-            }
-        }
-        // If deployment fails, the test passes (mismatch detected early)
-    }
-    // If parsing fails, the test passes (mismatch detected at parse time)
+    // A mode-mismatched dynamic call must be rejected — either at execute time or at
+    // check_transaction time.
+    let exec_result = vm.execute(
+        &caller_private_key,
+        ("public_to_private_caller.aleo", "call_with_wrong_mode"),
+        vec![Value::from_str("42u64").unwrap()].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    );
+    let mismatch_was_rejected = match exec_result {
+        Err(_) => true,
+        Ok(tx) => vm.check_transaction(&tx, None, rng).is_err(),
+    };
+    assert!(mismatch_was_rejected, "Mode mismatch (caller declares public, callee expects private) must be rejected");
 }
 
 // Tests that `call.dynamic` passing a private value when callee expects public fails at execution time.
@@ -1766,39 +1738,27 @@ fn test_interface_mismatch_private_to_public() {
     let deploy_public = vm.deploy(&caller_private_key, &public_program, None, 0, None, rng).unwrap();
     add_and_test(&vm, &caller_private_key, &[deploy_public], rng);
 
-    // The caller program should fail at some point in the pipeline
-    let caller_program_result = Program::<CurrentNetwork>::from_str(&caller_program_str);
+    // The caller program is syntactically valid, so parsing and deployment must succeed.
+    let caller_program = Program::<CurrentNetwork>::from_str(&caller_program_str).unwrap();
+    let deploy_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[deploy_caller], rng);
 
-    if let Ok(caller_program) = caller_program_result {
-        let deploy_result = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng);
-        if let Ok(deploy_tx) = deploy_result {
-            let block = sample_next_block(&vm, &caller_private_key, &[deploy_tx], rng).unwrap();
-            if block.transactions().num_accepted() == 1 {
-                vm.add_next_block(&block).unwrap();
-                // Execution should fail because mode doesn't match
-                let exec_result = vm.execute(
-                    &caller_private_key,
-                    ("private_to_public_caller.aleo", "call_with_wrong_mode"),
-                    vec![Value::from_str("42u64").unwrap()].into_iter(),
-                    None,
-                    0,
-                    None,
-                    rng,
-                );
-                // Either execution fails, or the transaction is rejected/aborted
-                if let Ok(tx) = exec_result {
-                    let block = sample_next_block(&vm, &caller_private_key, &[tx], rng).unwrap();
-                    assert!(
-                        block.transactions().num_rejected() > 0 || !block.aborted_transaction_ids().is_empty(),
-                        "Transaction with mode mismatch (private->public) should be rejected or aborted"
-                    );
-                }
-                // If execution fails, the test passes
-            }
-        }
-        // If deployment fails, the test passes (mismatch detected early)
-    }
-    // If parsing fails, the test passes (mismatch detected at parse time)
+    // A mode-mismatched dynamic call must be rejected — either at execute time or at
+    // check_transaction time.
+    let exec_result = vm.execute(
+        &caller_private_key,
+        ("private_to_public_caller.aleo", "call_with_wrong_mode"),
+        vec![Value::from_str("42u64").unwrap()].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    );
+    let mismatch_was_rejected = match exec_result {
+        Err(_) => true,
+        Ok(tx) => vm.check_transaction(&tx, None, rng).is_err(),
+    };
+    assert!(mismatch_was_rejected, "Mode mismatch (caller declares private, callee expects public) must be rejected");
 }
 
 // Tests conditional `DynamicFuture` execution with `branch.eq`/`branch.neq` and verifies skipped awaits are caught.
@@ -2060,39 +2020,44 @@ fn test_skipped_future_await_is_caught() {
     let deploy_worker = vm.deploy(&caller_private_key, &worker, None, 0, None, rng).unwrap();
     add_and_test(&vm, &caller_private_key, &[deploy_worker], rng);
 
-    // The caller program should fail at some point in the pipeline
-    let caller_program_result = Program::<CurrentNetwork>::from_str(&caller_program_str);
-
-    if let Ok(caller_program) = caller_program_result {
-        let deploy_result = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng);
-        if let Ok(deploy_tx) = deploy_result {
-            let block = sample_next_block(&vm, &caller_private_key, &[deploy_tx], rng).unwrap();
-            if block.transactions().num_accepted() == 1 {
-                vm.add_next_block(&block).unwrap();
-                // Execution should fail because a future is skipped
-                let exec_result = vm.execute(
-                    &caller_private_key,
-                    ("skip_caller.aleo", "call_and_skip"),
-                    vec![Value::from_str("100u64").unwrap(), Value::from_str("200u64").unwrap()].into_iter(),
-                    None,
-                    0,
-                    None,
-                    rng,
-                );
-                // Either execution fails, or the transaction is rejected/aborted
-                if let Ok(tx) = exec_result {
+    // The caller program is syntactically valid. Rejection may occur at deployment, execution,
+    // or check_transaction time — but it must be rejected at some stage.
+    let caller_program = Program::<CurrentNetwork>::from_str(&caller_program_str).unwrap();
+    let was_rejected = 'pipeline: {
+        let deploy_tx = match vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng) {
+            Err(_) => break 'pipeline true,
+            Ok(tx) => tx,
+        };
+        // Deployment succeeded; add to chain and attempt execution.
+        let block = sample_next_block(&vm, &caller_private_key, &[deploy_tx], rng).unwrap();
+        if block.transactions().num_rejected() > 0 || !block.aborted_transaction_ids().is_empty() {
+            break 'pipeline true;
+        }
+        vm.add_next_block(&block).unwrap();
+        let exec_result = vm.execute(
+            &caller_private_key,
+            ("skip_caller.aleo", "call_and_skip"),
+            vec![Value::from_str("100u64").unwrap(), Value::from_str("200u64").unwrap()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        );
+        // Unawaited-future errors are only caught during finalize execution, which runs at
+        // block-building time — not at vm.execute() or check_transaction() time.
+        match exec_result {
+            Err(_) => true,
+            Ok(tx) => {
+                if vm.check_transaction(&tx, None, rng).is_err() {
+                    true
+                } else {
                     let block = sample_next_block(&vm, &caller_private_key, &[tx], rng).unwrap();
-                    assert!(
-                        block.transactions().num_rejected() > 0 || !block.aborted_transaction_ids().is_empty(),
-                        "Transaction with skipped future await should be rejected or aborted"
-                    );
+                    block.transactions().num_rejected() > 0 || !block.aborted_transaction_ids().is_empty()
                 }
-                // If execution fails, the test passes (skipped await detected)
             }
         }
-        // If deployment fails, the test passes (skipped await detected early)
-    }
-    // If parsing fails, the test passes (skipped await detected at parse time)
+    };
+    assert!(was_rejected, "A DynamicFuture that is always skipped via branch must be rejected");
 }
 
 // Tests that when one `DynamicFuture` fails during finalize, the entire transaction is rejected and no state changes are committed.

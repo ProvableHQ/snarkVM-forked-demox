@@ -21,9 +21,13 @@ impl<N: Network> Serialize for Deployment<N> {
         match serializer.is_human_readable() {
             true => {
                 // Note: `Deployment::version` checks optional fields to determine the version.
+                // V1: edition, program, verifying_keys (3 fields)
+                // V2: + program_checksum, program_owner (5 fields)
+                // V3: + program_checksum (4 fields, no owner)
                 let len = match self.version().map_err(ser::Error::custom)? {
                     DeploymentVersion::V1 => 3,
                     DeploymentVersion::V2 => 5,
+                    DeploymentVersion::V3 => 4,
                 };
                 let mut deployment = serializer.serialize_struct("Deployment", len)?;
                 deployment.serialize_field("edition", &self.edition)?;
@@ -91,6 +95,7 @@ mod tests {
             test_helpers::sample_deployment_v1(Uniform::rand(rng), rng),
             test_helpers::sample_deployment_v2_without_translation_keys(Uniform::rand(rng), rng),
             test_helpers::sample_deployment_v2_with_translation_keys(Uniform::rand(rng), rng),
+            test_helpers::sample_deployment_v3(Uniform::rand(rng), rng),
         ] {
             // Serialize
             let expected_string = &expected.to_string();
@@ -114,6 +119,7 @@ mod tests {
             test_helpers::sample_deployment_v1(Uniform::rand(rng), rng),
             test_helpers::sample_deployment_v2_without_translation_keys(Uniform::rand(rng), rng),
             test_helpers::sample_deployment_v2_with_translation_keys(Uniform::rand(rng), rng),
+            test_helpers::sample_deployment_v3(Uniform::rand(rng), rng),
         ] {
             // Serialize
             let expected_bytes = expected.to_bytes_le()?;
