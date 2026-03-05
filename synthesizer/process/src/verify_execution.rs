@@ -1048,11 +1048,10 @@ impl<N: Network> Process<N> {
                                 if let Some(static_record) = locally_minted_dynamic.get(&register_index) {
                                     must_be_output.insert(*static_record);
                                 }
-                                // Case 7: Any locally minted static Records which are passed to a non-closure call
-                                // (necessarily as ExternalRecords) must be output.
-                                if locally_minted_static.contains(&register_index) {
-                                    must_be_output.insert(register_index);
-                                }
+
+                                // Note: the input register cannot correspond to a locally minted static Record in a successful execution:
+                                // - if it were received as a static Record by the callee this would amount to spending a still unminted Record
+                                // - if it were received as an external ExternalRecord, this would constitute a dependency cycle involving records - which is disallowed during deployment.
                             }
                         }
 
