@@ -85,9 +85,9 @@ fn translation_assignment_from_record_str(
     )
 }
 
-fn print_rc1s_data(name: &str) {
+fn print_r1cs_data(name: &str) {
     println!("Translation R1CS for {name}:");
-    println!("   nun_public: {}", <CurrentAleo as circuit::Environment>::num_public());
+    println!("   num_public: {}", <CurrentAleo as circuit::Environment>::num_public());
     println!("   num_private: {}", <CurrentAleo as circuit::Environment>::num_private());
     println!("   num_constraints: {}", <CurrentAleo as circuit::Environment>::num_constraints());
     println!("   num_nonzeros: {:?}", <CurrentAleo as circuit::Environment>::num_nonzeros());
@@ -116,7 +116,7 @@ fn test_translation_simple() {
     let (translation_assignment, translation_index) =
         translation_assignment_from_record_str(record_static_str, false, false, None, &mut rng);
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>(translation_index).unwrap();
-    print_rc1s_data("simple");
+    print_r1cs_data("simple");
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
     let counts = count_is!(<=36085, 8, 24131, 24156);
     counts.assert_matches(
@@ -188,7 +188,7 @@ fn test_translation_recursive() {
     let (translation_assignment, translation_index) =
         translation_assignment_from_record_str(record_static_str, false, false, None, &mut rng);
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>(translation_index).unwrap();
-    print_rc1s_data("recursive");
+    print_r1cs_data("recursive");
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
     let counts = count_is!(<=38785, 8, 32721, 32750);
     counts.assert_matches(
@@ -277,7 +277,7 @@ fn test_translation_complex() {
     let (translation_assignment, translation_index) =
         translation_assignment_from_record_str(record_static_str, false, false, None, &mut rng);
     translation_assignment.to_circuit_assignment_internal::<CurrentAleo>(translation_index).unwrap();
-    print_rc1s_data("complex");
+    print_r1cs_data("complex");
     assert!(<CurrentAleo as circuit::Environment>::is_satisfied());
     let counts = count_is!(<=41330, 8, 68798, 68844);
     counts.assert_matches(
@@ -304,7 +304,7 @@ fn test_translation_complex() {
 
 // Checks the translation circuit is characterised only by the structure of the
 // record definition (and other auxiliary data, such as the program ID) and not
-// by e. g. the data in the record's entries.
+// by e.g. the data in the record's entries.
 #[test]
 fn test_definition_invariance() {
     let mut rng = TestRng::default();
@@ -368,7 +368,7 @@ fn test_definition_invariance() {
             _nonce: 0group.public,
             _version: 1u8.public
         }"#,
-        // Modifiying all fields
+        // Modifying all fields
         r#"{
             owner: aleo14tlamssdmg3d0p5zmljma573jghe2q9n6wz29qf36re2glcedcpqfg4add.private,
             location_x: 7field.public,
@@ -436,7 +436,7 @@ fn test_definition_invariance() {
     }
 }
 
-// Checks the translation circuit does change in various scenarios (e. g. when
+// Checks the translation circuit changes in various scenarios (e.g. when
 // the program ID or the identifier of a record's entry change
 #[test]
 fn test_definition_variance() {

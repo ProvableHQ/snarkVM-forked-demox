@@ -290,6 +290,7 @@ pub(crate) mod test_helpers {
                 Input::RecordWithDynamicID(Uniform::rand(rng), Uniform::rand(rng), Uniform::rand(rng)),
             ),
             (Uniform::rand(rng), Input::ExternalRecordWithDynamicID(Uniform::rand(rng), Uniform::rand(rng))),
+            (Uniform::rand(rng), Input::DynamicRecord(Uniform::rand(rng))),
         ]
     }
 }

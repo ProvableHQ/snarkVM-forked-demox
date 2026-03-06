@@ -41,7 +41,7 @@ pub enum Output<N: Network> {
     ExternalRecord(Field<N>),
     /// The future hash and (optional) future.
     Future(Field<N>, Option<Future<N>>),
-    /// The hash of the dynamic record's (function id, record, tvk, output index).
+    /// The hash of the dynamic record's (function_id, record, tvk, output index).
     DynamicRecord(Field<N>),
     /// The commitment, checksum, (optional) record ciphertext, (optional) sender ciphertext, and dynamic ID.
     RecordWithDynamicID(Field<N>, Field<N>, Option<Record<N, Ciphertext<N>>>, Option<Field<N>>, Field<N>),
@@ -343,6 +343,7 @@ impl<N: Network> Output<N> {
                 } else if **record_ciphertext.version() == 1 {
                     ensure!(sender_ciphertext.is_some(), "The sender ciphertext must be non-empty");
                     // Note: The sender ciphertext feature can become optional or deactivated by removing this check.
+                    // Safe: sender_ciphertext.is_some() was verified on the line above.
                     ensure!(sender_ciphertext.unwrap() != Field::zero(), "The sender ciphertext must be non-zero");
                 } else {
                     bail!(
@@ -433,7 +434,7 @@ pub(crate) mod test_helpers {
         let transaction = crate::transaction::test_helpers::sample_execution_transaction_with_fee(true, rng, 0);
         let transition = transaction.transitions().next().unwrap();
 
-        // Retrieve the transition ID and input.
+        // Retrieve the transition ID and output.
         let transition_id = *transition.id();
         let input = transition.outputs().iter().next().unwrap().clone();
 
@@ -493,6 +494,7 @@ pub(crate) mod test_helpers {
                 ),
             ),
             (Uniform::rand(rng), Output::ExternalRecordWithDynamicID(Uniform::rand(rng), Uniform::rand(rng))),
+            (Uniform::rand(rng), Output::DynamicRecord(Uniform::rand(rng))),
         ]
     }
 }

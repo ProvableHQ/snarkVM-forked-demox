@@ -20,7 +20,7 @@ impl<A: Aleo> ToBits for DynamicRecord<A> {
 
     /// Returns the circuit dynamic record as a list of **little-endian** bits.
     fn write_bits_le(&self, vec: &mut Vec<Self::Boolean>) {
-        // Constuct the owner bits.
+        // Construct the owner bits.
         self.owner.write_bits_le(vec);
 
         // Construct the root bits.
@@ -35,7 +35,7 @@ impl<A: Aleo> ToBits for DynamicRecord<A> {
 
     /// Returns the circuit dynamic record as a list of **big-endian** bits.
     fn write_bits_be(&self, vec: &mut Vec<Self::Boolean>) {
-        // Constuct the owner bits.
+        // Construct the owner bits.
         self.owner.write_bits_be(vec);
 
         // Construct the root bits.

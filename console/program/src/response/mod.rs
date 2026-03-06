@@ -31,9 +31,9 @@ pub enum OutputID<N: Network> {
     ExternalRecord(Field<N>),
     /// The hash of the future output.
     Future(Field<N>),
-    /// The hash of the dynamic record output.
+    /// The hash of the dynamic record's (function_id, dynamic record, tvk, output index).
     DynamicRecord(Field<N>),
-    /// The hash of the dynamic future output.
+    /// The hash of the dynamic future's (function_id, dynamic future, tcm, output index).
     DynamicFuture(Field<N>),
 }
 
@@ -297,12 +297,16 @@ impl<N: Network> Response<N> {
                     }
                     // For a dynamic record, compute the hash (using `tvk`) of the output.
                     ValueType::DynamicRecord => {
+                        // Safe: num_inputs ≤ N::MAX_INPUTS and index < N::MAX_OUTPUTS,
+                        // so num_inputs + index fits well within u16::MAX.
                         let output_index =
                             u16::try_from(num_inputs + index).or_halt_with::<N>("Output index exceeds u16");
                         OutputID::dynamic_record(function_id, output, *tvk, output_index)
                     }
                     // For a dynamic future output, compute the hash (using `tcm`) of the output.
                     ValueType::DynamicFuture => {
+                        // Safe: num_inputs ≤ N::MAX_INPUTS and index < N::MAX_OUTPUTS,
+                        // so num_inputs + index fits well within u16::MAX.
                         let output_index =
                             u16::try_from(num_inputs + index).or_halt_with::<N>("Output index exceeds u16");
                         OutputID::dynamic_future(function_id, output, *tcm, output_index)
@@ -361,6 +365,13 @@ impl<N: Network> Response<N> {
         let function_id = compute_function_id(network_id, program_id, function_name)?;
         // Get the caller outputs.
         let caller_outputs = self.to_dynamic_outputs()?;
+        // Ensure the number of caller outputs matches the number of output IDs.
+        ensure!(
+            caller_outputs.len() == self.output_ids.len(),
+            "The number of caller outputs ({}) does not match the number of output IDs ({})",
+            caller_outputs.len(),
+            self.output_ids.len()
+        );
         // Compute the caller output IDs for the caller outputs.
         caller_outputs
             .iter()

@@ -36,7 +36,7 @@ impl<A: Aleo> Request<A> {
         // Compute 'is_root' as a field element.
         let is_root = Ternary::ternary(&is_root, &Field::<A>::one(), &Field::<A>::zero());
 
-        // Construct the signature message as `[tvk, tcm, function ID, input IDs]`.
+        // Construct the signature message as `[tvk, tcm, function ID, is_root, program checksum?, input IDs]`.
         let mut message = Vec::with_capacity(3 + 4 * self.input_ids.len());
         message.push(self.tvk.clone());
         message.push(self.tcm.clone());
@@ -177,7 +177,7 @@ impl<A: Aleo> Request<A> {
                         // Ensure the expected hash matches the computed hash.
                         match &input {
                             Value::Plaintext(..) => input_hash.is_equal(&A::hash_psd8(&preimage)),
-                            // Ensure the input is not a record or future.
+                            // Ensure the input is not a record, future, or dynamic value.
                             Value::Record(..) => A::halt("Expected a constant plaintext input, found a record input"),
                             Value::Future(..) => A::halt("Expected a constant plaintext input, found a future input"),
                             Value::DynamicRecord(..) => {
@@ -207,7 +207,7 @@ impl<A: Aleo> Request<A> {
                         // Ensure the expected hash matches the computed hash.
                         match &input {
                             Value::Plaintext(..) => input_hash.is_equal(&A::hash_psd8(&preimage)),
-                            // Ensure the input is not a record or future.
+                            // Ensure the input is not a record, future, or dynamic value.
                             Value::Record(..) => A::halt("Expected a public plaintext input, found a record input"),
                             Value::Future(..) => A::halt("Expected a public plaintext input, found a future input"),
                             Value::DynamicRecord(..) => {

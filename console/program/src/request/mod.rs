@@ -234,7 +234,7 @@ impl<N: Network> Request<N> {
                 | (InputID::DynamicRecord(..), Value::DynamicRecord(..)) => Ok(*input_id),
                 (InputID::Record(..), Value::Record(record)) | (InputID::ExternalRecord(..), Value::Record(record)) => {
                     // Convert index to u16.
-                    let index = u16::try_from(index).or_halt_with::<N>("Input index exceeds u16");
+                    let index = u16::try_from(index).map_err(|_| anyhow!("Input index exceeds u16"))?;
                     // Convert the record to a dynamic record.
                     let caller_input = Value::DynamicRecord(DynamicRecord::from_record(record)?);
                     // Compute the input ID for the dynamic record.

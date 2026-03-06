@@ -45,7 +45,7 @@ impl<N: Network> Stack<N> {
         // Sample a random program name.
         let program_name = Field::rand(rng);
         // Use the `.aleo` program network.
-        let program_network = Identifier::from_str("aleo").unwrap().to_field()?;
+        let program_network = Identifier::from_str("aleo").unwrap().to_field()?; // Safe: "aleo" is always a valid identifier.
         // Sample a random function name.
         let function_name = Field::rand(rng);
         // Sample a random argument root.
@@ -54,7 +54,7 @@ impl<N: Network> Stack<N> {
         Ok(DynamicFuture::new_unchecked(program_name, program_network, function_name, argument_root, None))
     }
 
-    // Samples a dynamic record value.
+    /// Samples a dynamic record value.
     pub fn sample_dynamic_record<R: Rng + CryptoRng>(&self, rng: &mut R) -> Result<DynamicRecord<N>> {
         // Sample a random address.
         let owner = Address::rand(rng);

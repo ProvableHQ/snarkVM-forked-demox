@@ -32,7 +32,7 @@ pub const FUTURE_ARGUMENT_TREE_DEPTH: u8 = 4;
 pub type FutureArgumentTree<E> = MerkleTree<E, Poseidon8<E>, Poseidon2<E>, FUTURE_ARGUMENT_TREE_DEPTH>;
 
 /// A dynamic future is a fixed-size representation of a future. Like static
-/// `Future`s, a dynamic future contains a program ID and function name. These
+/// `Future`s, a dynamic future contains a program name, program network, and function name. These
 /// are however represented as `Field` elements as opposed to `Identifier`s to
 /// ensure a fixed size. Dynamic futures also store a checksum of the
 /// arguments to the future instead of the arguments themselves. This ensures
@@ -177,6 +177,7 @@ mod tests {
         let recovered = dynamic.to_future().unwrap();
         assert_eq!(future.program_id(), recovered.program_id());
         assert_eq!(future.function_name(), recovered.function_name());
+        assert_eq!(future.arguments().len(), recovered.arguments().len(), "Argument count must be preserved");
         for (a, b) in future.arguments().iter().zip(recovered.arguments().iter()) {
             assert!(*a.is_equal(b));
         }
@@ -224,5 +225,28 @@ mod tests {
 
         assert_eq!(d1.checksum(), d2.checksum(), "Same arguments should produce same checksum");
         assert_ne!(d1.checksum(), d3.checksum(), "Different arguments should produce different checksums");
+    }
+
+    #[test]
+    fn test_to_fields_is_deterministic() {
+        let args = vec![Argument::Plaintext(Plaintext::from_str("100u64").unwrap())];
+        let dynamic = DynamicFuture::from_future(&create_test_future(args)).unwrap();
+
+        // Two calls must return identical field elements.
+        let fields1 = dynamic.to_fields().unwrap();
+        let fields2 = dynamic.to_fields().unwrap();
+        assert!(!fields1.is_empty(), "to_fields must return at least one field element");
+        assert_eq!(fields1, fields2, "to_fields must be deterministic");
+    }
+
+    #[test]
+    fn test_to_fields_differs_for_different_futures() {
+        let args_a = vec![Argument::Plaintext(Plaintext::from_str("1u64").unwrap())];
+        let args_b = vec![Argument::Plaintext(Plaintext::from_str("2u64").unwrap())];
+        let da = DynamicFuture::from_future(&create_test_future(args_a)).unwrap();
+        let db = DynamicFuture::from_future(&create_test_future(args_b)).unwrap();
+
+        // Different futures must produce different field encodings.
+        assert_ne!(da.to_fields().unwrap(), db.to_fields().unwrap());
     }
 }

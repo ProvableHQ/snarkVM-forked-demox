@@ -30,10 +30,10 @@ impl<N: Network> Equal<Self> for DynamicRecord<N> {
     /// Returns `true` if `self` and `other` are equal.
     fn is_equal(&self, other: &Self) -> Self::Output {
         // Check the `owner`, `root`, `nonce`, and `version`.
-        (self.owner.is_equal(&other.owner))
-            .bitand(self.root.is_equal(&other.root))
-            .bitand(self.nonce.is_equal(&other.nonce))
-            .bitand(self.version.is_equal(&other.version))
+        self.owner.is_equal(&other.owner)
+            & self.root.is_equal(&other.root)
+            & self.nonce.is_equal(&other.nonce)
+            & self.version.is_equal(&other.version)
     }
 
     /// Returns `true` if `self` and `other` are *not* equal.

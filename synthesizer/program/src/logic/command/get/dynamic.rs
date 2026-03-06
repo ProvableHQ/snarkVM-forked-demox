@@ -141,7 +141,7 @@ impl<N: Network> GetDynamic<N> {
         let value = match store.get_value_speculative(program_id, mapping_name, &key)? {
             Some(Value::Plaintext(plaintext)) => Value::Plaintext(plaintext),
             Some(Value::Record(..)) => bail!("Cannot 'get.dynamic' a 'record'"),
-            Some(Value::Future(..)) => bail!("Cannot 'get.dynamic' a 'future'",),
+            Some(Value::Future(..)) => bail!("Cannot 'get.dynamic' a 'future'"),
             Some(Value::DynamicRecord(..)) => bail!("Cannot 'get.dynamic' a 'dynamic.record'"),
             Some(Value::DynamicFuture(..)) => bail!("Cannot 'get.dynamic' a 'dynamic.future'"),
             // If a key does not exist, then bail.
@@ -251,7 +251,7 @@ impl<N: Network> Display for GetDynamic<N> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         // Print the command.
         write!(f, "{} ", Self::opcode())?;
-        // Print the program name, program network, mapping and key operand.
+        // Print the program name, program network, mapping name, and key operand.
         write!(
             f,
             "{} {} {}[{}] into ",
@@ -346,5 +346,16 @@ mod tests {
         let bytes_le = get.to_bytes_le().unwrap();
         let result = GetDynamic::<CurrentNetwork>::from_bytes_le(&bytes_le[..]);
         assert!(result.is_ok())
+    }
+
+    #[test]
+    fn test_display_parse_roundtrip() {
+        let input = "get.dynamic r0 r1 r2[r3] into r4 as u8;";
+        let (string, original) = GetDynamic::<CurrentNetwork>::parse(input).unwrap();
+        assert!(string.is_empty());
+        let displayed = format!("{original}");
+        let (remainder, reparsed) = GetDynamic::<CurrentNetwork>::parse(&displayed).unwrap();
+        assert!(remainder.is_empty());
+        assert_eq!(original, reparsed);
     }
 }

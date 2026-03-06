@@ -21,7 +21,7 @@ use snarkvm_circuit_network::Aleo;
 use snarkvm_circuit_types::{Boolean, Field, environment::prelude::*};
 
 /// A dynamic future is a fixed-size representation of a future. Like static
-/// `Future`s, a dynamic future contains a program ID and function name. These
+/// `Future`s, a dynamic future contains a program name, program network, and function name. These
 /// are however represented as `Field` elements as opposed to `Identifier`s to
 /// ensure a fixed size. Dynamic futures also store a checksum of the
 /// arguments to the future instead of the arguments themselves. This ensures
@@ -109,5 +109,116 @@ impl<A: Aleo> Eject for DynamicFuture<A> {
             Eject::eject_value(self.checksum()),
             self.arguments.clone(),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Circuit, console::ToFields as ConsoleToFields};
+    use snarkvm_circuit_types::environment::Inject;
+
+    use core::str::FromStr;
+
+    type CurrentNetwork = <Circuit as Environment>::Network;
+    type ConsoleFuture = console::Future<CurrentNetwork>;
+    type ConsoleDynamicFuture = console::DynamicFuture<CurrentNetwork>;
+
+    fn create_test_future(args: Vec<console::Argument<CurrentNetwork>>) -> ConsoleFuture {
+        ConsoleFuture::new(
+            console::ProgramID::from_str("test.aleo").unwrap(),
+            console::Identifier::from_str("foo").unwrap(),
+            args,
+        )
+    }
+
+    /// Verifies that injecting a console DynamicFuture into a circuit and ejecting it
+    /// reproduces the original value.
+    fn check_inject_eject(console_dynamic: &ConsoleDynamicFuture) {
+        let circuit_dynamic = DynamicFuture::<Circuit>::new(Mode::Private, console_dynamic.clone());
+
+        assert_eq!(circuit_dynamic.program_name().eject_value(), *console_dynamic.program_name());
+        assert_eq!(circuit_dynamic.program_network().eject_value(), *console_dynamic.program_network());
+        assert_eq!(circuit_dynamic.function_name().eject_value(), *console_dynamic.function_name());
+        assert_eq!(circuit_dynamic.checksum().eject_value(), *console_dynamic.checksum());
+
+        let ejected = circuit_dynamic.eject_value();
+        assert_eq!(ejected.program_name(), console_dynamic.program_name());
+        assert_eq!(ejected.program_network(), console_dynamic.program_network());
+        assert_eq!(ejected.function_name(), console_dynamic.function_name());
+        assert_eq!(ejected.checksum(), console_dynamic.checksum());
+
+        Circuit::reset();
+    }
+
+    /// Verifies that circuit to_bits_le produces the same bits as the console equivalent.
+    fn check_to_bits_le(console_dynamic: &ConsoleDynamicFuture) {
+        let circuit_dynamic = DynamicFuture::<Circuit>::new(Mode::Private, console_dynamic.clone());
+
+        Circuit::scope("to_bits_le", || {
+            let circuit_bits = circuit_dynamic.to_bits_le();
+            let console_bits = console_dynamic.to_bits_le();
+            for (circuit_bit, console_bit) in circuit_bits.iter().zip_eq(console_bits.iter()) {
+                assert_eq!(circuit_bit.eject_value(), *console_bit, "Circuit and console bits must match");
+            }
+        });
+
+        Circuit::reset();
+    }
+
+    /// Verifies that circuit to_fields produces the same field elements as the console equivalent.
+    fn check_to_fields(console_dynamic: &ConsoleDynamicFuture) {
+        let circuit_dynamic = DynamicFuture::<Circuit>::new(Mode::Private, console_dynamic.clone());
+
+        Circuit::scope("to_fields", || {
+            let circuit_fields = circuit_dynamic.to_fields();
+            let console_fields = console_dynamic.to_fields().unwrap();
+            for (circuit_field, console_field) in circuit_fields.iter().zip_eq(console_fields.iter()) {
+                assert_eq!(circuit_field.eject_value(), *console_field, "Circuit and console fields must match");
+            }
+        });
+
+        Circuit::reset();
+    }
+
+    #[test]
+    fn test_inject_eject_no_arguments() {
+        let future = create_test_future(vec![]);
+        let dynamic = ConsoleDynamicFuture::from_future(&future).unwrap();
+        check_inject_eject(&dynamic);
+    }
+
+    #[test]
+    fn test_inject_eject_with_arguments() {
+        let args = vec![
+            console::Argument::Plaintext(console::Plaintext::from_str("100u64").unwrap()),
+            console::Argument::Plaintext(console::Plaintext::from_str("true").unwrap()),
+        ];
+        let future = create_test_future(args);
+        let dynamic = ConsoleDynamicFuture::from_future(&future).unwrap();
+        check_inject_eject(&dynamic);
+    }
+
+    #[test]
+    fn test_to_bits_le_console_circuit_equivalence() {
+        let args = vec![console::Argument::Plaintext(console::Plaintext::from_str("42u64").unwrap())];
+        let future = create_test_future(args);
+        let dynamic = ConsoleDynamicFuture::from_future(&future).unwrap();
+        check_to_bits_le(&dynamic);
+    }
+
+    #[test]
+    fn test_to_fields_console_circuit_equivalence() {
+        let args = vec![console::Argument::Plaintext(console::Plaintext::from_str("42u64").unwrap())];
+        let future = create_test_future(args);
+        let dynamic = ConsoleDynamicFuture::from_future(&future).unwrap();
+        check_to_fields(&dynamic);
+    }
+
+    #[test]
+    fn test_to_fields_no_arguments() {
+        let future = create_test_future(vec![]);
+        let dynamic = ConsoleDynamicFuture::from_future(&future).unwrap();
+        check_to_fields(&dynamic);
     }
 }

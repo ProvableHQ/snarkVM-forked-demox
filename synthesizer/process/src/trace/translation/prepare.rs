@@ -46,7 +46,7 @@ impl<N: Network> Translation<N> {
         // In order to reconcile the two views, we make the prover iterate through the transitions as received (just like the
         // verifier does) and, upon detecting a translation, fetch the corresponding translation task using the ID of the transition's
         // caller. Since accumulation of prover translation tasks happens in order of dynamic calls within the transition; and in
-        // input/output order or arguments for each such call, this results in consistency with the verifier's (i. e. post-order)
+        // input/output order or arguments for each such call, this results in consistency with the verifier's (i.e. post-order)
         // traversal order.
         //
         // At the end of the process, we verify that all translation tasks have been consumed. In order to avoid consuming or
@@ -129,7 +129,7 @@ impl<N: Network> Translation<N> {
             ensure!(
                 // The unwrap is safe as caller_id_to_next_task is constructed using the keys of self.translation_tasks.
                 *next_task == self.translation_tasks.get(transition_id).unwrap().len(),
-                "Not all (callee) translation tasks have been consumed for transition ID {}: there are {}, but only {} have been consumed",
+                "Not all (caller) translation tasks have been consumed for transition ID {}: there are {}, but only {} have been consumed",
                 transition_id,
                 self.translation_tasks.get(transition_id).unwrap().len(),
                 *next_task
@@ -140,7 +140,7 @@ impl<N: Network> Translation<N> {
         Ok(batched_assignments.into_values().collect())
     }
 
-    /// Returns the inclusion assignments for the given transitions.
+    /// Returns the translation assignments for the given transitions.
     // Note that the `Translation::prepare` is already async-compatible because it does not do any blocking operations.
     #[cfg(feature = "async")]
     pub async fn prepare_async(

@@ -32,7 +32,7 @@ pub enum Value<A: Aleo> {
     Record(Record<A, Plaintext<A>>),
     /// A future.
     Future(Future<A>),
-    /// A dynnamic record.
+    /// A dynamic record.
     DynamicRecord(DynamicRecord<A>),
     /// A dynamic future.
     DynamicFuture(DynamicFuture<A>),
@@ -101,5 +101,19 @@ impl<A: Aleo> From<Future<A>> for Value<A> {
     /// Initializes the value from a future.
     fn from(future: Future<A>) -> Self {
         Self::Future(future)
+    }
+}
+
+impl<A: Aleo> From<DynamicRecord<A>> for Value<A> {
+    /// Initializes the value from a dynamic record.
+    fn from(dynamic_record: DynamicRecord<A>) -> Self {
+        Self::DynamicRecord(dynamic_record)
+    }
+}
+
+impl<A: Aleo> From<DynamicFuture<A>> for Value<A> {
+    /// Initializes the value from a dynamic future.
+    fn from(dynamic_future: DynamicFuture<A>) -> Self {
+        Self::DynamicFuture(dynamic_future)
     }
 }

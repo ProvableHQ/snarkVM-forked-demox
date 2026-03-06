@@ -848,7 +848,7 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                             "Array element type mismatch: expected '{}', found future",
                             array_type.next_element_type()
                         ),
-                        // Ensure the input type cannot be a dyanmic record (this is unsupported behavior).
+                        // Ensure the input type cannot be a dynamic record (this is unsupported behavior).
                         RegisterType::DynamicRecord => bail!(
                             "Array element type mismatch: expected '{}', found dynamic record",
                             array_type.next_element_type()

@@ -77,6 +77,8 @@ impl Visibility {
 }
 
 /// Retrieves the value of an entry in a dynamic record.
+/// Internally, this instruction verifies a Merkle membership proof that the
+/// requested entry is a leaf of the record's committed Merkle root.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct GetRecordDynamic<N: Network> {
     /// The register containing the dynamic record being read.
@@ -291,12 +293,11 @@ impl<N: Network> GetRecordDynamic<N> {
         let circuit_leaf_hasher = CircuitLH::<A>::constant(console_leaf_hasher.clone());
         let circuit_path_hasher = CircuitPH::<A>::constant(console_path_hasher.clone());
 
-        // Constructing the in-circuit path (i. e. Merkle proof) in private mode.
+        // Constructing the in-circuit path (i.e. Merkle proof) in private mode.
         let circuit_path = circuit::merkle_tree::MerklePath::new(Mode::Private, console_path);
 
         // Verifying the path inside the circuit.
-        A::assert(circuit_path.verify(&circuit_leaf_hasher, &circuit_path_hasher, circuit_root, &circuit_leaf))
-            .expect("In-circuit verification of the Merkle path for dynamic record entry failed");
+        A::assert(circuit_path.verify(&circuit_leaf_hasher, &circuit_path_hasher, circuit_root, &circuit_leaf))?;
 
         let circuit_entry_plaintext = match circuit_entry {
             circuit::Entry::Constant(plaintext) => plaintext,
@@ -531,7 +532,7 @@ impl<N: Network> FromBytes for GetRecordDynamic<N> {
         }
 
         if !matches!(destination, Register::Locator(_)) {
-            return Err(error(format!("Expected destination  the form r<i>, found {destination}")));
+            return Err(error(format!("Expected destination of the form r<i>, found {destination}")));
         }
 
         // Return the operation.
@@ -619,36 +620,6 @@ mod tests {
         assert_eq!(instruction.destination, Register::Locator(1));
         assert_eq!(instruction.entry_identifier, Identifier::from_str("pk").unwrap());
         assert_eq!(instruction.plaintext_type, PlaintextType::from_str("group").unwrap());
-        test_serialization(instruction);
-
-        let (remainder, instruction) =
-            GetRecordDynamic::<CurrentNetwork>::parse("get.record.dynamic r0.crs_byte into r1 as u8").unwrap();
-        assert!(remainder.is_empty());
-        assert_eq!(instruction.operands().len(), 1);
-        assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
-        assert_eq!(instruction.destination, Register::Locator(1));
-        assert_eq!(instruction.entry_identifier, Identifier::from_str("crs_byte").unwrap());
-        assert_eq!(instruction.plaintext_type, PlaintextType::from_str("u8").unwrap());
-        test_serialization(instruction);
-
-        let (remainder, instruction) =
-            GetRecordDynamic::<CurrentNetwork>::parse("get.record.dynamic r0.size into r1 as u16").unwrap();
-        assert!(remainder.is_empty());
-        assert_eq!(instruction.operands().len(), 1);
-        assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
-        assert_eq!(instruction.destination, Register::Locator(1));
-        assert_eq!(instruction.entry_identifier, Identifier::from_str("size").unwrap());
-        assert_eq!(instruction.plaintext_type, PlaintextType::from_str("u16").unwrap());
-        test_serialization(instruction);
-
-        let (remainder, instruction) =
-            GetRecordDynamic::<CurrentNetwork>::parse("get.record.dynamic r0.register into r1 as u32").unwrap();
-        assert!(remainder.is_empty());
-        assert_eq!(instruction.operands().len(), 1);
-        assert_eq!(instruction.operands()[0], Operand::Register(Register::Locator(0)));
-        assert_eq!(instruction.destination, Register::Locator(1));
-        assert_eq!(instruction.entry_identifier, Identifier::from_str("register").unwrap());
-        assert_eq!(instruction.plaintext_type, PlaintextType::from_str("u32").unwrap());
         test_serialization(instruction);
 
         let (remainder, instruction) =

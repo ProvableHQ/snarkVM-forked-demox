@@ -49,11 +49,12 @@ pub type RecordDataTree<A> = MerkleTree<A, CircuitLH<A>, CircuitPH<A>, RECORD_DA
 /// The leaves of its Merkle tree are computed as follows:
 ///
 /// ```text
-/// L_0 := HashPSD8(microcredits || ToFields(entry_0))
-/// L_1 := HashPSD8(memo || ToFields(entry_1))
+/// L_0 := HashPSD8(ToField(name_0) || ToFields(entry_0))
+/// L_1 := HashPSD8(ToField(name_1) || ToFields(entry_1))
 /// ```
 ///
-/// Note that `ToFields` encodes the entry's mode and plaintext variant.
+/// where `name_i` is the field encoding of the entry identifier (e.g. `"microcredits"` → `Field`),
+/// and `ToFields` encodes the entry's mode and plaintext variant.
 ///
 /// The tree has depth `RECORD_DATA_TREE_DEPTH = 5` and is constructed with
 /// path hasher `HashPSD2` and the padding scheme outlined in
@@ -68,7 +69,7 @@ pub struct DynamicRecord<A: Aleo> {
     nonce: Group<A>,
     /// The version of the record.
     version: U8<A>,
-    /// The optional console program data.
+    /// The optional console record data.
     /// Note: This is NOT part of the circuit representation.
     data: Option<console::RecordData<A::Network>>,
 }
@@ -109,7 +110,7 @@ impl<A: Aleo> DynamicRecord<A> {
         &self.version
     }
 
-    /// Returns console the record data.
+    /// Returns the console record data.
     pub const fn data(&self) -> Option<&console::RecordData<A::Network>> {
         self.data.as_ref()
     }
@@ -145,7 +146,7 @@ impl<A: Aleo> DynamicRecord<A> {
     pub fn from_record(record: &Record<A, Plaintext<A>>) -> Result<Self> {
         // This mimics the console::DynamicRecord::from_record function.
 
-        // Note that, in most lines below, cloning (e. g. of record.owner())
+        // Note that, in most lines below, cloning (e.g. of record.owner())
         // does not introduce a new variable into the witness but rather creates
         // a new reference to the preexisting witness variable.
 
@@ -171,7 +172,7 @@ impl<A: Aleo> DynamicRecord<A> {
     /// per entry, and computes the Merkle tree over the resulting leaves. More details on
     /// the structure of the tree can be found in [`DynamicRecord`].
     pub fn merkleize_data(data: &IndexMap<Identifier<A>, Entry<A, Plaintext<A>>>) -> Result<RecordDataTree<A>> {
-        // Initalize the circuit hashers.
+        // Initialize the circuit hashers.
         let (console_leaf_hasher, console_path_hasher) = console::DynamicRecord::initialize_hashers();
         let circuit_leaf_hasher = CircuitLH::<A>::constant(console_leaf_hasher.clone());
         let circuit_path_hasher = CircuitPH::<A>::constant(console_path_hasher.clone());
@@ -408,5 +409,25 @@ mod tests {
           _version: 0u8.public
         }"#;
         check_circuit_console_equivalence(record_str, 1100, 0, 3685, 3687);
+    }
+
+    #[test]
+    fn test_find_owner() {
+        let record_str = r#"{
+          owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.public,
+          _nonce: 0group.public,
+          _version: 0u8.public
+        }"#;
+        let console_record = ConsoleRecord::from_str(record_str).unwrap();
+        let circuit_record = Record::<Circuit, Plaintext<Circuit>>::new(Mode::Private, console_record);
+        let circuit_dynamic = DynamicRecord::<Circuit>::from_record(&circuit_record).unwrap();
+
+        // Finding "owner" must succeed.
+        let path = [Access::Member(Identifier::from_str("owner").unwrap())];
+        assert!(circuit_dynamic.find(&path).is_ok());
+
+        // Any path other than "owner" must fail.
+        let path_bad = [Access::Member(Identifier::from_str("data").unwrap())];
+        assert!(circuit_dynamic.find(&path_bad).is_err());
     }
 }

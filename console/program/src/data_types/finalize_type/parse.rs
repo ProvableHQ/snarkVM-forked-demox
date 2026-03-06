@@ -144,6 +144,7 @@ mod tests {
             FinalizeType::<CurrentNetwork>::from_str("credits.aleo/mint_public.future")?.to_string(),
             "credits.aleo/mint_public.future"
         );
+        assert_eq!(FinalizeType::<CurrentNetwork>::from_str("dynamic.future")?.to_string(), "dynamic.future");
 
         Ok(())
     }

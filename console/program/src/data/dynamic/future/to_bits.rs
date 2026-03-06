@@ -53,6 +53,7 @@ impl<N: Network> DynamicFuture<N> {
     /// Returns the number of bits in a dynamic future.
     #[inline]
     pub fn size_in_bits() -> Result<usize> {
+        // A dynamic future contains 4 field elements: program_name, program_network, function_name, and checksum.
         Field::<N>::size_in_bits().checked_mul(4).ok_or_else(|| anyhow!("`size_in_bits` overflowed"))
     }
 

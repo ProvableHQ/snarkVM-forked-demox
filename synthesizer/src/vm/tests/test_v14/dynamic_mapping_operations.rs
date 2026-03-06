@@ -63,9 +63,9 @@ fn test_dynamic_contains() {
     // Initialize a new caller.
     let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
 
-    // Initialize the VM at the V12 height.
-    let v12_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
-    let vm = crate::vm::test_helpers::sample_vm_at_height(v12_height, rng);
+    // Initialize the VM at the V14 height.
+    let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
+    let vm = crate::vm::test_helpers::sample_vm_at_height(v14_height, rng);
 
     // Initialize two instances of the basic program.
     let program_0 = basic_program("basic_program0", "data0");
@@ -210,7 +210,7 @@ constructor:
     // Check that if the network is wrong, an error is returned.
     test_dynamic_contains("main_program", "aleoo", "data_main", Value::from_str("42u32").unwrap(), None, rng);
     // Check that if the mapping does not exist, an error is returned.
-    test_dynamic_contains("main_program", "aleoo", "data_maine", Value::from_str("42u32").unwrap(), None, rng);
+    test_dynamic_contains("main_program", "aleo", "data_maine", Value::from_str("42u32").unwrap(), None, rng);
     // Check that if the key is of the wrong type, an error is returned.
     test_dynamic_contains("main_program", "aleo", "data_main", Value::from_str("true").unwrap(), None, rng);
 
@@ -356,9 +356,9 @@ fn test_dynamic_get() {
     // Initialize a new caller.
     let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
 
-    // Initialize the VM at the V12 height.
-    let v12_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
-    let vm = crate::vm::test_helpers::sample_vm_at_height(v12_height, rng);
+    // Initialize the VM at the V14 height.
+    let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
+    let vm = crate::vm::test_helpers::sample_vm_at_height(v14_height, rng);
 
     // Initialize two instances of the basic program (u32 values).
     let program_0 = basic_program("basic_program0", "data0");
@@ -876,9 +876,9 @@ fn test_dynamic_get_or_use() {
     // Initialize a new caller.
     let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
 
-    // Initialize the VM at the V12 height.
-    let v12_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
-    let vm = crate::vm::test_helpers::sample_vm_at_height(v12_height, rng);
+    // Initialize the VM at the V14 height.
+    let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
+    let vm = crate::vm::test_helpers::sample_vm_at_height(v14_height, rng);
 
     // Initialize two instances of the basic program (u32 values).
     let program_0 = basic_program("basic_program0", "data0");

@@ -131,11 +131,11 @@ impl<A: Aleo> Response<A> {
                             // Ensure the output is a plaintext.
                             Value::Record(..) => A::halt("Expected a plaintext output, found a record output"),
                             Value::Future(..) => A::halt("Expected a plaintext output, found a future output"),
-                            Value::DynamicFuture(..) => {
-                                A::halt("Expected a plaintext output, found a dynamic future output")
-                            }
                             Value::DynamicRecord(..) => {
                                 A::halt("Expected a plaintext output, found a dynamic record output")
+                            }
+                            Value::DynamicFuture(..) => {
+                                A::halt("Expected a plaintext output, found a dynamic future output")
                             }
                         };
                         // Return the output ID.
