@@ -29,20 +29,28 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         // Load the operands values.
         let inputs: Vec<_> = self.operands().iter().map(|operand| registers.load(stack, operand)).try_collect()?;
 
-        // Get the program name.
-        let Value::Plaintext(Plaintext::Literal(Literal::Field(program_name_as_field), _)) = &inputs[0] else {
-            return Err(anyhow!("Expected the first operand of `call.dynamic` to be a 'Field' literal.").into());
+        // Helper: extract a field from a field or identifier literal value.
+        let value_to_field = |value: &Value<N>, position: &str| -> Result<Field<N>, CallEvalError> {
+            match value {
+                Value::Plaintext(Plaintext::Literal(Literal::Field(field), _)) => Ok(*field),
+                Value::Plaintext(Plaintext::Literal(Literal::Identifier(id_lit), _)) => id_lit
+                    .to_field()
+                    .map_err(|e| anyhow!("Failed to convert identifier literal to field ({position}): {e}").into()),
+                _ => Err(anyhow!(
+                    "Expected the {position} operand of `call.dynamic` to be a field or identifier literal."
+                )
+                .into()),
+            }
         };
+
+        // Get the program name.
+        let program_name_as_field = value_to_field(&inputs[0], "first")?;
 
         // Get the program network.
-        let Value::Plaintext(Plaintext::Literal(Literal::Field(program_network_id), _)) = &inputs[1] else {
-            return Err(anyhow!("Expected the second operand of `call.dynamic` to be a 'Field' literal.").into());
-        };
+        let program_network_id = value_to_field(&inputs[1], "second")?;
 
         // Get the function name.
-        let Value::Plaintext(Plaintext::Literal(Literal::Field(function_name_as_field), _)) = &inputs[2] else {
-            return Err(anyhow!("Expected the third operand of `call.dynamic` to be a 'Field' literal.").into());
-        };
+        let function_name_as_field = value_to_field(&inputs[2], "third")?;
 
         // Separate the remaining inputs as the function inputs.
         let inputs = &inputs[3..];
@@ -51,9 +59,9 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         let target = resolve_dynamic_target(
             registers.call_stack_ref(),
             stack,
-            program_name_as_field,
-            program_network_id,
-            function_name_as_field,
+            &program_name_as_field,
+            &program_network_id,
+            &function_name_as_field,
         )?;
 
         // Get the target (in evaluate mode, we must have a valid target).
@@ -166,7 +174,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         registers: &mut Registers<N, A>,
         rng: &mut R,
     ) -> Result<(), CallExecError> {
-        use circuit::Eject;
+        use circuit::{Eject, environment::ToField as _};
 
         let timer = timer!("CallDynamic::execute");
 
@@ -174,28 +182,31 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         let inputs: Vec<_> =
             self.operands().iter().map(|operand| registers.load_circuit(stack, operand)).try_collect()?;
 
-        // Get the program name.
-        let circuit::Value::Plaintext(circuit::Plaintext::Literal(circuit::Literal::Field(program_name_as_field), _)) =
-            &inputs[0]
-        else {
-            return Err(anyhow!("Expected the first operand of `call.dynamic` to be a 'Field' literal.").into());
-        };
+        // Helper: extract a circuit field from a circuit Field or Identifier literal value.
+        // Identifier literals are converted to their field representation via `to_field()`,
+        // which adds zero circuit constraints.
+        let circuit_value_to_circuit_field =
+            |value: &circuit::Value<A>, position: &str| -> Result<circuit::Field<A>, CallExecError> {
+                match value {
+                    circuit::Value::Plaintext(circuit::Plaintext::Literal(circuit::Literal::Field(field), _)) => {
+                        Ok(field.clone())
+                    }
+                    circuit::Value::Plaintext(circuit::Plaintext::Literal(circuit::Literal::Identifier(id_lit), _)) => {
+                        Ok(id_lit.to_field())
+                    }
+                    _ => Err(anyhow!(
+                        "Expected the {position} operand of `call.dynamic` to be a field or identifier literal."
+                    )
+                    .into()),
+                }
+            };
 
-        // Get the program network.
-        let circuit::Value::Plaintext(circuit::Plaintext::Literal(
-            circuit::Literal::Field(program_network_as_field),
-            _,
-        )) = &inputs[1]
-        else {
-            return Err(anyhow!("Expected the second operand of `call.dynamic` to be a 'Field' literal.").into());
-        };
-
-        // Get the function name.
-        let circuit::Value::Plaintext(circuit::Plaintext::Literal(circuit::Literal::Field(function_name_as_field), _)) =
-            &inputs[2]
-        else {
-            return Err(anyhow!("Expected the third operand of `call.dynamic` to be a 'Field' literal.").into());
-        };
+        // Get the program name as a circuit field.
+        let program_name_as_field = circuit_value_to_circuit_field(&inputs[0], "first")?;
+        // Get the program network as a circuit field.
+        let program_network_as_field = circuit_value_to_circuit_field(&inputs[1], "second")?;
+        // Get the function name as a circuit field.
+        let function_name_as_field = circuit_value_to_circuit_field(&inputs[2], "third")?;
 
         // Separate the remaining inputs as the function inputs.
         let inputs = &inputs[3..];

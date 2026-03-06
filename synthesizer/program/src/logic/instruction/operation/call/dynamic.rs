@@ -210,10 +210,15 @@ impl<N: Network> CallDynamic<N> {
                 input_types.len().checked_sub(3).expect("input_types.len() >= 3 is checked above")
             )
         }
-        // Ensure the first three input types are field elements.
+        // Ensure the first three input types are field or identifier elements.
         for (i, input_type) in input_types.iter().enumerate().take(3) {
-            if *input_type != RegisterType::Plaintext(PlaintextType::Literal(LiteralType::Field)) {
-                bail!("Instruction '{}' expects input {i} to be a field element, found '{input_type}'", Self::opcode())
+            match input_type {
+                RegisterType::Plaintext(PlaintextType::Literal(LiteralType::Field))
+                | RegisterType::Plaintext(PlaintextType::Literal(LiteralType::Identifier)) => {}
+                _ => bail!(
+                    "Instruction '{}' expects input {i} to be a field or identifier element, found '{input_type}'",
+                    Self::opcode()
+                ),
             }
         }
         // Ensure the remaining input types match the operand types.

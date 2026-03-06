@@ -90,6 +90,20 @@ impl<N: Network> ValueType<N> {
         )
     }
 
+    /// Returns `true` if the value type contains an identifier type.
+    /// Record, external record, future, and dynamic types cannot contain identifier types.
+    pub fn contains_identifier_type(&self) -> Result<bool> {
+        match self {
+            Self::Constant(plaintext) | Self::Public(plaintext) | Self::Private(plaintext) => {
+                plaintext.contains_identifier_type()
+            }
+            // Record, external record, future, and dynamic types cannot contain identifier types.
+            Self::Record(_) | Self::ExternalRecord(_) | Self::Future(_) | Self::DynamicRecord | Self::DynamicFuture => {
+                Ok(false)
+            }
+        }
+    }
+
     /// Returns `true` if the value type is an array and the size exceeds the given maximum.
     pub fn exceeds_max_array_size(&self, max_array_size: u32) -> bool {
         use ValueType::*;

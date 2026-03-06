@@ -216,7 +216,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // If the `CONSENSUS_VERSION` is greater than or equal to `V13`, then verify that:
                 //   - the program's mappings do not use non-existent structs.
                 // If the `CONSENSUS_VERSION` is less than `V14`, ensure that
-                //   - the program does not include V14 syntax
+                //   - the program does not include V14 syntax (snark.verify, aleo::GENERATOR, identifier literals/types)
                 //   - the argument bit size of futures does not exceed the maximum allowed size of u16::MAX.
                 //   - V3 deployments (amendments) are not allowed.
                 if consensus_version < ConsensusVersion::V8 {
@@ -290,7 +290,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         "Invalid deployment transaction '{id}' - V3 deployments are not allowed before `ConsensusVersion::V14`"
                     );
                     ensure!(
-                        !deployment.program().contains_v14_syntax(),
+                        !deployment.program().contains_v14_syntax()?,
                         "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V14`"
                     );
                     // Check that all future argument bit sizes do not exceed the maximum allowed size of u16::MAX.

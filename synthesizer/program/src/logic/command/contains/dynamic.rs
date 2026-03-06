@@ -85,13 +85,19 @@ impl<N: Network> ContainsDynamic<N> {
         // Get the program name.
         let program_name = match registers.load(stack, self.program_name_operand())? {
             Value::Plaintext(Plaintext::Literal(Literal::Field(field), _)) => Identifier::from_field(&field)?,
-            _ => bail!("Expected the first operand of `contains.dynamic` to be a field literal."),
+            Value::Plaintext(Plaintext::Literal(Literal::Identifier(id_lit), _)) => {
+                Identifier::from_field(&id_lit.to_field()?)?
+            }
+            _ => bail!("Expected the first operand of `contains.dynamic` to be a field or identifier literal."),
         };
 
         // Get the program network.
         let program_network = match registers.load(stack, self.program_network_operand())? {
             Value::Plaintext(Plaintext::Literal(Literal::Field(field), _)) => Identifier::from_field(&field)?,
-            _ => bail!("Expected the second operand of `contains.dynamic` to be a field literal."),
+            Value::Plaintext(Plaintext::Literal(Literal::Identifier(id_lit), _)) => {
+                Identifier::from_field(&id_lit.to_field()?)?
+            }
+            _ => bail!("Expected the second operand of `contains.dynamic` to be a field or identifier literal."),
         };
 
         // Construct the program ID.
@@ -100,7 +106,10 @@ impl<N: Network> ContainsDynamic<N> {
         // Get the mapping name.
         let mapping_name = match registers.load(stack, self.mapping_name_operand())? {
             Value::Plaintext(Plaintext::Literal(Literal::Field(field), _)) => Identifier::from_field(&field)?,
-            _ => bail!("Expected the third operand of `contains.dynamic` to be a field literal."),
+            Value::Plaintext(Plaintext::Literal(Literal::Identifier(id_lit), _)) => {
+                Identifier::from_field(&id_lit.to_field()?)?
+            }
+            _ => bail!("Expected the third operand of `contains.dynamic` to be a field or identifier literal."),
         };
 
         // Ensure the mapping exists.
