@@ -43,6 +43,8 @@ fn test_existence_check() {
         Identifier::<CurrentNetwork>::from_str("remap_dynamic_function").unwrap().to_field().unwrap();
     let do_not_consume_function_field =
         Identifier::<CurrentNetwork>::from_str("do_not_consume").unwrap().to_field().unwrap();
+    let consume_external_map_function_field =
+        Identifier::<CurrentNetwork>::from_str("consume_external_map").unwrap().to_field().unwrap();
 
     let program_base = Program::<CurrentNetwork>::from_str(&format!(
         r"
@@ -283,6 +285,11 @@ fn test_existence_check() {
 
         function consume_map:
             input r0 as map.record;
+
+        function consume_map_read_x:
+            input r0 as map.record;
+
+            output r0.capital_coordinate_x as u16.public;
         
         constructor:
             assert.eq true true;
@@ -380,6 +387,41 @@ fn test_existence_check() {
             call.dynamic r2 {network_field} r3
                 with r5 (as dynamic.record);
 
+        function convert_dynamic_and_consume:
+            input r0 as boolean.private;
+            input r1 as u16.public;
+            input r2 as u8.private;
+            input r3 as dynamic.record;
+
+            call remap_dynamic r3 into r4;
+
+            call.dynamic {program_remapper_field} {network_field} {consume_external_map_function_field}
+                with 1u8 r2 2u8 r2 r4 (as u8.public u8.public u8.private u8.private dynamic.record)
+                into r5 (as u16.public);
+
+            output r5 as u16.public;
+
+        function consume_external_map:
+            input r0 as u8.public;
+            input r1 as u8.public;
+            input r2 as u8.private;
+            input r3 as u8.private;
+            input r4 as frontier.aleo/map.record;
+
+            call frontier.aleo/consume_map_read_x r4 into r5;
+
+            output r5 as u16.public;
+
+        function cast_translate_consume:
+            input r0 as boolean.private;
+            input r1 as frontier.aleo/map.record;
+
+            cast r1 into r2 as dynamic.record;
+
+            call.dynamic {program_remapper_field} {network_field} {consume_external_map_function_field}
+                with 3u8 14u8 15u8 92u8 r2 (as u8.public u8.public u8.private u8.private dynamic.record)
+                into r3 (as u16.public);
+    
         constructor:
             assert.eq true true;
         "),
@@ -404,6 +446,11 @@ fn test_existence_check() {
 
         function consume_map:
             input r0 as map.record;
+
+        function consume_map_read_x:
+            input r0 as map.record;
+
+            output r0.capital_coordinate_x as u16.public;
 
         function simple_cast_closure:
             input r0 as boolean.private;
@@ -744,7 +791,7 @@ fn test_existence_check() {
 
     let err = test_case_5_2_tx.unwrap_err().to_string();
     assert!(err.contains("frontier.aleo/simple_cast_function does not pass the local record-existence check"));
-    assert!(err.contains("The following registers violate this condition: \"r1\""));
+    assert!(err.contains("locally minted static Record at r1"));
 
     // Involves process_transition cases 3 and process_closure cases 3, 6
     println!("    5.3) Passing a locally minted DynamicRecord via external-closure cast to a closure...");
@@ -778,7 +825,7 @@ fn test_existence_check() {
 
     let err = test_case_5_4_tx.unwrap_err().to_string();
     assert!(err.contains("frontier.aleo/tricky_cast_function does not pass the local record-existence check"));
-    assert!(err.contains("The following registers violate this condition: \"r1\""));
+    assert!(err.contains("locally minted static Record at r1"));
 
     // Involves process_transition cases 2, 3, 6, 7 and process_closure case 3
     println!("    5.5) Saving case 5.4 by outputting the original static Record...");
@@ -812,7 +859,7 @@ fn test_existence_check() {
 
     let err = test_case_5_6_tx.unwrap_err().to_string();
     assert!(err.contains("frontier.aleo/tricky_cast_closure_ruined does not pass the local record-existence check"));
-    assert!(err.contains("The following registers violate this condition: \"r1\""));
+    assert!(err.contains("locally minted static Record at r1"));
 
     // Test 6: global check where a large family is constructed. It checks families are updated correctly throughout function and closure calls.
 
@@ -889,4 +936,106 @@ fn test_existence_check() {
     let err = growing_family_tx.unwrap_err().to_string();
     assert!(err.contains("Non-static record input at r0"));
     assert!(err.contains("not known to correspond to a record on the ledger"));
+
+    // Test 7: check the global check passes when materialisation occurs in the form of an ExternalRecord (at caller) -> Record (at callee) input
+    println!("Test 7: materialise a family via ExternalRecord -> Record input...");
+
+    let map_records = (0..3)
+        .map(|_| {
+            let mint_map_tx = vm
+                .execute(
+                    &caller_private_key,
+                    ("frontier.aleo", "mint_map"),
+                    Vec::<Value<CurrentNetwork>>::new().into_iter(),
+                    None,
+                    0,
+                    None,
+                    rng,
+                )
+                .unwrap();
+
+            let map_record = match mint_map_tx.transitions().next().unwrap().outputs().first().unwrap() {
+                Output::Record(_, _, ct, _) => ct.as_ref().unwrap().decrypt(&caller_view_key).unwrap(),
+                _ => panic!("expected record output from mint_map"),
+            };
+
+            add_and_test(&vm, &caller_private_key, &[mint_map_tx], rng);
+
+            map_record
+        })
+        .collect_vec();
+
+    // Case 7.1) ExternalRecord is passed directly from the root call to the callee which consumes it
+    println!("    7.1) ExternalRecord consumption without casts or remappings...");
+
+    let consume_external_map_tx = vm
+        .execute(
+            &caller_private_key,
+            ("remapper.aleo", "consume_external_map"),
+            [
+                Value::from_str("4u8").unwrap(),
+                Value::from_str("3u8").unwrap(),
+                Value::from_str("2u8").unwrap(),
+                Value::from_str("1u8").unwrap(),
+                Value::<CurrentNetwork>::Record(map_records[0].clone()),
+            ]
+            .into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    add_and_test(&vm, &caller_private_key, &[consume_external_map_tx], rng);
+
+    // Case 7.1) ExternalRecord is remapped once via a closure and then consumed by a callee
+    println!("    7.2) ExternalRecord consumption after single remapping in closure...");
+
+    let convert_dynamic_and_consume_tx = vm
+        .execute(
+            &caller_private_key,
+            ("remapper.aleo", "convert_dynamic_and_consume"),
+            [
+                Value::from_str("true").unwrap(),
+                Value::from_str("1000u16").unwrap(),
+                Value::from_str("1u8").unwrap(),
+                Value::<CurrentNetwork>::Record(map_records[1].clone()),
+            ]
+            .into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    let expected_output = Plaintext::<CurrentNetwork>::from_str("111u16").unwrap();
+    assert!(
+        matches!(convert_dynamic_and_consume_tx.transitions().next().unwrap().outputs(), [Output::Public(_, Some(plaintext))] if *plaintext == expected_output),
+        "Expected output: {:?}, got: {:?}",
+        expected_output,
+        convert_dynamic_and_consume_tx.transitions().next().unwrap().outputs()
+    );
+
+    add_and_test(&vm, &caller_private_key, &[convert_dynamic_and_consume_tx], rng);
+
+    // Case 7.3) ExternalRecord is cast to DynamicRecord, translated to an ExternalRecord via a function call and then consumed by a callee
+    println!(
+        "    7.3) Consumption after casting External -> Dynamic, translating Dynamic -> External and passing to a callee..."
+    );
+
+    let cast_translate_consume_tx = vm
+        .execute(
+            &caller_private_key,
+            ("remapper.aleo", "cast_translate_consume"),
+            [Value::from_str("true").unwrap(), Value::<CurrentNetwork>::Record(map_records[2].clone())].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+
+    add_and_test(&vm, &caller_private_key, &[cast_translate_consume_tx], rng);
 }
