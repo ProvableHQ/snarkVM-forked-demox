@@ -408,8 +408,13 @@ impl<N: Network> ProgramCore<N> {
 
     /// Returns the closure with the given name.
     pub fn get_closure(&self, name: &Identifier<N>) -> Result<ClosureCore<N>> {
+        self.get_closure_ref(name).cloned()
+    }
+
+    /// Returns a reference to the closure with the given name.
+    pub fn get_closure_ref(&self, name: &Identifier<N>) -> Result<&ClosureCore<N>> {
         // Attempt to retrieve the closure.
-        let closure = self.closures.get(name).cloned().ok_or_else(|| anyhow!("Closure '{name}' is not defined."))?;
+        let closure = self.closures.get(name).ok_or_else(|| anyhow!("Closure '{name}' is not defined."))?;
         // Ensure the closure name matches.
         ensure!(closure.name() == name, "Expected closure '{name}', but found closure '{}'", closure.name());
         // Ensure there are input statements in the closure.

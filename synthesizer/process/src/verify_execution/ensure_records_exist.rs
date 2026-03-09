@@ -377,31 +377,35 @@ fn process_transition<N: Network>(
                     && !call.is_function_call(stack.as_ref())?
                 {
                     // Closure case
-                    let closure = {
-                        let operator = call.operator();
-                        match operator {
-                            CallOperator::Resource(closure_identifier) => {
-                                // Local closure call
-                                stack.as_ref().program().get_closure(closure_identifier)?
-                            }
-                            CallOperator::Locator(external_locator) => {
-                                // External closure call
-                                stack
-                                    .get_external_stack(external_locator.program_id())?
-                                    .program()
-                                    .get_closure(external_locator.resource())?
-                            }
-                        }
-                    };
+                    match call.operator() {
+                        CallOperator::Resource(identifier) => {
+                            // Local closure call
+                            let closure = stack.program().get_closure_ref(identifier)?;
 
-                    process_closure(
-                        transition_id,
-                        &closure,
-                        global_check,
-                        &mut local_check,
-                        &caller_input_registers,
-                        &caller_output_registers,
-                    )?;
+                            process_closure(
+                                transition_id,
+                                closure,
+                                global_check,
+                                &mut local_check,
+                                &caller_input_registers,
+                                &caller_output_registers,
+                            )?;
+                        }
+                        CallOperator::Locator(external_locator) => {
+                            // External closure call
+                            let closure_stack = stack.get_external_stack(external_locator.program_id())?;
+                            let closure = closure_stack.program().get_closure_ref(external_locator.resource())?;
+
+                            process_closure(
+                                transition_id,
+                                closure,
+                                global_check,
+                                &mut local_check,
+                                &caller_input_registers,
+                                &caller_output_registers,
+                            )?;
+                        }
+                    }
                 } else {
                     // Function case
 
