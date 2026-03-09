@@ -2800,3 +2800,47 @@ constructor:
     assert_eq!(block.transactions().num_accepted(), 0, "V2 deployment should be rejected at V14");
     assert_eq!(block.aborted_transaction_ids().len(), 1, "V2 deployment should be aborted at V14");
 }
+
+#[test]
+fn test_constant_dynamic_call_output() {
+    let network_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+    let prog_name_field = Identifier::<CurrentNetwork>::from_str("prog").unwrap().to_field().unwrap();
+    let constant_output_function_field =
+        Identifier::<CurrentNetwork>::from_str("constant_output").unwrap().to_field().unwrap();
+
+    let program = Program::<CurrentNetwork>::from_str(&format!(
+        r"
+    program prog.aleo;
+
+    function constant_output:
+        input r0 as u16.public;
+
+        assert.eq true true;
+
+        output r0 as u16.constant;
+
+    function dynamic_constant_output:
+        input r0 as u16.public;
+
+        call.dynamic {prog_name_field} {network_field} {constant_output_function_field}
+            with r0 (as u16.public)
+            into r1 (as u16.constant);
+
+        output r1 as u16.constant;
+
+    constructor:
+        assert.eq true true;
+    "
+    ))
+    .unwrap();
+
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+
+    let transaction_deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
+
+    add_and_test(&vm, &caller_private_key, &[transaction_deploy], rng);
+}
