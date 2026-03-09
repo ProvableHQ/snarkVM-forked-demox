@@ -820,7 +820,7 @@ impl<N: Network> Process<N> {
         let root_transition = transitions.clone().last().ok_or_else(|| anyhow!("Empty transition list"))?;
 
         let tid_to_transition: HashMap<N::TransitionID, &Transition<N>> =
-            transitions.clone().map(|transition| (*transition.id(), transition)).collect();
+            transitions.map(|transition| (*transition.id(), transition)).collect();
 
         // Recursively explore the execution, keeping track of record connections across the relevant casts and calls.
         self.process_transition(&mut register_families, root_transition.id(), None, &tid_to_transition, call_graph)?;
@@ -865,7 +865,7 @@ impl<N: Network> Process<N> {
             .get(transition_id)
             .ok_or_else(|| anyhow!("Missing transition with ID {transition_id}"))?;
         let stack = self.get_stack(transition.program_id())?;
-        let function = stack.get_function(transition.function_name())?;
+        let function = stack.get_function_ref(transition.function_name())?;
         let locator = Locator::new(*transition.program_id(), *transition.function_name());
 
         let inputs = transition.inputs();
