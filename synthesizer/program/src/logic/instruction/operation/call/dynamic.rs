@@ -353,6 +353,14 @@ impl<N: Network> Parser for CallDynamic<N> {
                 let (string, destinations) = many_m_n(1, N::MAX_OPERANDS, complete(parse_destination))(string)?;
                 // Parse the destination types from the string.
                 let (string, destination_types) = parse_value_types(string)?;
+
+                if destination_types.iter().any(|destination_type| matches!(destination_type, ValueType::Constant(..)))
+                {
+                    return map_res(take(0usize), |_| {
+                        Err(error("`call.dynamic` destination type cannot be constant".to_string()))
+                    })(string);
+                }
+
                 // Return the string, the destinations, and the destination types.
                 (string, destinations, destination_types)
             }
