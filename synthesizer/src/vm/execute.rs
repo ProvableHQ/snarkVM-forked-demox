@@ -213,7 +213,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
                 // From consensus version V14 onwards, ensure record existence
                 if consensus_version >= ConsensusVersion::V14 {
-                    $process.ensure_records_exist(trace.transitions().iter(), trace.call_graph().clone())?;
+                    $process.ensure_records_exist(trace.transitions().iter(), trace.call_graph())?;
                     lap!(timer, "Check record existence");
                 }
 
@@ -268,7 +268,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
                 // From consensus version V14 onwards, ensure record existence
                 if consensus_version >= ConsensusVersion::V14 {
-                    $process.ensure_records_exist(trace.transitions().iter(), trace.call_graph().clone())?;
+                    $process.ensure_records_exist(trace.transitions().iter(), trace.call_graph())?;
                     lap!(timer, "Check record existence");
                 }
 

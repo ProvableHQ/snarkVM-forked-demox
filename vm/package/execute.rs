@@ -126,7 +126,7 @@ impl<N: Network> Package<N> {
 
         // From consensus version V14 onwards, ensure existence of DynamicRecords and ExternalRecords.
         if consensus_version >= ConsensusVersion::V14 {
-            process.ensure_records_exist(trace.transitions().iter(), trace.call_graph().clone())?;
+            process.ensure_records_exist(trace.transitions().iter(), trace.call_graph())?;
         }
 
         // Prove the execution.

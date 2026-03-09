@@ -74,7 +74,7 @@ impl<N: Network> Process<N> {
         // received as inputs or from callees exist on the ledger at the end of
         // the execution (whether spent or not).
         if consensus_version >= ConsensusVersion::V14 {
-            self.ensure_records_exist(execution.transitions(), call_graph.clone())?;
+            self.ensure_records_exist(execution.transitions(), &call_graph)?;
         }
 
         // Construct the reverse call graph of the execution.
@@ -799,14 +799,14 @@ impl<N: Network> Process<N> {
     /// Input `transitions`: Iterator over the `Transition`s in the execution.
     /// The root transition must be last.
     ///
-    /// Input `call_graph`: A copy of the call graph (which will be modified in
-    /// place). It is assumed to contain all transitions in `transitions`. All
-    /// children of a given Transition ID must appear in the same order as the
-    /// corresponding calls happen in the function.
+    /// Input `call_graph`: A copy of the call graph. It is assumed to contain
+    /// all transitions in `transitions`. All children of a given Transition ID
+    /// must appear in the same order as the corresponding calls happen in the
+    /// function.
     pub fn ensure_records_exist<'a>(
         &self,
         transitions: impl ExactSizeIterator<Item = &'a Transition<N>> + DoubleEndedIterator + Clone,
-        mut call_graph: HashMap<N::TransitionID, Vec<N::TransitionID>>,
+        call_graph: &HashMap<N::TransitionID, Vec<N::TransitionID>>,
     ) -> Result<()> {
         // Keeps track of DynamicRecords and ExternalRecords received as inputs
         // to the root transition. Whenever a dynamic- or external-record
@@ -823,27 +823,7 @@ impl<N: Network> Process<N> {
             transitions.clone().map(|transition| (*transition.id(), transition)).collect();
 
         // Recursively explore the execution, keeping track of record connections across the relevant casts and calls.
-        self.process_transition(
-            &mut register_families,
-            root_transition.id(),
-            None,
-            &tid_to_transition,
-            &mut call_graph,
-        )?;
-
-        // Sanity check: exploration should have consumed all calls in the graph.
-        for (parent, children) in call_graph {
-            if !children.is_empty() {
-                let caller_transition = tid_to_transition
-                    .get(&parent)
-                    .ok_or_else(|| anyhow!("Missing caller transition with ID {parent}"))?;
-                bail!(
-                    "In the record-existence check, entry for Transition ID {parent} ({}/{}) in the call graph has unprocessed children",
-                    caller_transition.program_id(),
-                    caller_transition.function_name(),
-                );
-            }
-        }
+        self.process_transition(&mut register_families, root_transition.id(), None, &tid_to_transition, call_graph)?;
 
         // If some family has not been removed from the vector (i. e. has not
         // been connected to a record on the ledger), we return an error.
@@ -879,7 +859,7 @@ impl<N: Network> Process<N> {
         // Map from TransitionID to the corresponding Transition
         tid_to_transition: &HashMap<N::TransitionID, &Transition<N>>,
         // Call graph of the execution
-        call_graph: &mut HashMap<N::TransitionID, Vec<N::TransitionID>>,
+        call_graph: &HashMap<N::TransitionID, Vec<N::TransitionID>>,
     ) -> Result<()> {
         let transition = tid_to_transition
             .get(transition_id)
@@ -898,6 +878,9 @@ impl<N: Network> Process<N> {
         // Contains the registers of locally minted static Records which must be output because they are cast to
         // dynamic and passed to a non-closure call or output (as a DynamicRecord). Used for the local check.
         let mut must_be_output = HashSet::new();
+
+        // Number of function calls encountered in the current transition so far.
+        let mut processed_function_calls = 0;
 
         // Processing the inputs
         if let Some((caller_tid, caller_input_registers, _)) = &caller_info {
@@ -1031,14 +1014,17 @@ impl<N: Network> Process<N> {
                         )?;
                     } else {
                         // Function case
-                        let remaining_children = call_graph.get_mut(transition_id).unwrap();
 
-                        ensure!(
-                            !remaining_children.is_empty(),
-                            "Entry with Transition ID {transition_id} ({locator}) in the call graph has fewer elements than the number of calls in the corresponding function",
-                        );
-
-                        let tid_callee = remaining_children.remove(0);
+                        let tid_callee = if let Some(tid) =
+                            call_graph.get(transition_id).unwrap().get(processed_function_calls)
+                        {
+                            processed_function_calls += 1;
+                            tid
+                        } else {
+                            bail!(
+                                "Entry with Transition ID {transition_id} ({locator}) in the call graph has fewer elements than the number of calls in the corresponding function"
+                            );
+                        };
 
                         for input_register in caller_input_operands.iter() {
                             if let Operand::Register(register) = input_register {
@@ -1058,7 +1044,7 @@ impl<N: Network> Process<N> {
                         // Recursively updating the global check and performing the local check in the callee.
                         self.process_transition(
                             register_families,
-                            &tid_callee,
+                            tid_callee,
                             Some((*transition_id, caller_input_registers, caller_output_registers)),
                             tid_to_transition,
                             call_graph,
@@ -1114,6 +1100,12 @@ impl<N: Network> Process<N> {
                 }
             }
         }
+
+        // Sanity check: exploration should have processed all calls in the graph.
+        ensure!(
+            processed_function_calls == call_graph.get(transition_id).unwrap().len(),
+            "In the record-existence check, entry for Transition ID {transition_id} ({locator}) in the call graph has unprocessed children",
+        );
 
         Ok(())
     }
