@@ -392,9 +392,11 @@ where
 
             for (i, (key, batch_size)) in keys_to_constraints.keys().zip(batch_sizes.iter()).enumerate() {
                 println!("  - Circuit {i}: {} ({batch_size} instance(s))\n", key.circuit_verifying_key.id);
+                // Safe: `prover_state` was initialized from the same circuits as
+                // `keys_to_constraints`, so `key.circuit` is always present.
                 for (j, public_input) in prover_state.public_inputs(&key.circuit).unwrap().iter().enumerate() {
                     println!("    - Instance {j}");
-                    // We prepend the initial constant 1 to facilitate colation with displayed
+                    // We prepend the initial constant 1 to facilitate collation with displayed
                     // verifier inputs
                     println!("      - 0: {}", E::Fr::one());
                     for (k, value) in public_input.iter().enumerate() {

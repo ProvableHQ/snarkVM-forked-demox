@@ -23,7 +23,8 @@ impl<N: Network> ToFields for DynamicRecord<N> {
         // Encode the data as little-endian bits.
         let mut bits_le = self.to_bits_le();
         // Adds one final bit to the data, to serve as a terminus indicator.
-        // During decryption, this final bit ensures we've reached the end.
+        // This prevents ambiguity from zero-padding: without it, a shorter bit sequence and
+        // a longer one (same bits plus trailing zeros) would pack to the same field elements.
         bits_le.push(true);
         // Pack the bits into field elements.
         let fields = bits_le

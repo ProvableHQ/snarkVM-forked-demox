@@ -38,8 +38,8 @@ use std::collections::HashMap;
 
 #[derive(Clone, Debug, Default)]
 pub struct Translation<N: Network> {
-    /// A map of `transition IDs` to a list of translation assignments, each paired with its proving key.
-    /// Only contains entries for transitions that involve translation.
+    /// A map of caller `transition IDs` to a list of translation assignments, each paired with its proving key.
+    /// Only contains entries for transitions that perform dynamic calls involving translation.
     translation_tasks: HashMap<N::TransitionID, Vec<(TranslationAssignment<N>, ProvingKey<N>)>>,
 }
 
@@ -111,6 +111,8 @@ impl<N: Network> Translation<N> {
                 match (input, callee_input_type) {
                     (Input::RecordWithDynamicID(..), ValueType::Record(record_name)) => {
                         let field_is_external_record = N::Field::zero();
+                        // Index 0 is the Varuna constant-1 wire (required by every Varuna constraint system).
+                        // The remaining 7 elements are the explicit public inputs injected by the translation circuit.
                         let verifier_inputs = vec![
                             N::Field::one(),
                             field_is_to_static,

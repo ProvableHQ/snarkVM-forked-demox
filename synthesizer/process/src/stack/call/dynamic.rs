@@ -29,20 +29,28 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         // Load the operands values.
         let inputs: Vec<_> = self.operands().iter().map(|operand| registers.load(stack, operand)).try_collect()?;
 
-        // Get the program name.
-        let Value::Plaintext(Plaintext::Literal(Literal::Field(program_name_as_field), _)) = &inputs[0] else {
-            return Err(anyhow!("Expected the first operand of `call.dynamic` to be a 'Field' literal.").into());
+        // Helper: extract a field from a field or identifier literal value.
+        let value_to_field = |value: &Value<N>, position: &str| -> Result<Field<N>, CallEvalError> {
+            match value {
+                Value::Plaintext(Plaintext::Literal(Literal::Field(field), _)) => Ok(*field),
+                Value::Plaintext(Plaintext::Literal(Literal::Identifier(id_lit), _)) => id_lit
+                    .to_field()
+                    .map_err(|e| anyhow!("Failed to convert identifier literal to field ({position}): {e}").into()),
+                _ => Err(anyhow!(
+                    "Expected the {position} operand of `call.dynamic` to be a field or identifier literal."
+                )
+                .into()),
+            }
         };
+
+        // Get the program name.
+        let program_name_as_field = value_to_field(&inputs[0], "first")?;
 
         // Get the program network.
-        let Value::Plaintext(Plaintext::Literal(Literal::Field(program_network_id), _)) = &inputs[1] else {
-            return Err(anyhow!("Expected the second operand of `call.dynamic` to be a 'Field' literal.").into());
-        };
+        let program_network_id = value_to_field(&inputs[1], "second")?;
 
         // Get the function name.
-        let Value::Plaintext(Plaintext::Literal(Literal::Field(function_name_as_field), _)) = &inputs[2] else {
-            return Err(anyhow!("Expected the third operand of `call.dynamic` to be a 'Field' literal.").into());
-        };
+        let function_name_as_field = value_to_field(&inputs[2], "third")?;
 
         // Separate the remaining inputs as the function inputs.
         let inputs = &inputs[3..];
@@ -51,9 +59,9 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         let target = resolve_dynamic_target(
             registers.call_stack_ref(),
             stack,
-            program_name_as_field,
-            program_network_id,
-            function_name_as_field,
+            &program_name_as_field,
+            &program_network_id,
+            &function_name_as_field,
         )?;
 
         // Get the target (in evaluate mode, we must have a valid target).
@@ -67,9 +75,8 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         let substack = target.substack();
         lap!(timer, "Retrieved the substack");
 
-        // If the operator is a closure, retrieve the closure and compute the output.
+        // If the target is a closure, reject it — closures cannot be dynamically called.
         let outputs = if substack.program().get_closure(function_name).is_ok() {
-            // A closure cannot be dynamically called.
             return Err(anyhow!("Cannot dynamically evaluate a closure: {function_name}").into());
         }
         // If the operator is a function, retrieve the function and compute the output.
@@ -85,7 +92,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             // Get the call stack.
             let mut call_stack = registers.call_stack();
 
-            // In Authorize mode, we need to compute the new request and push it onto the call stack.
+            // In Authorize mode, we need to compute the new request and add it to the authorization.
             if let CallStack::Authorize(requests, private_key, authorization) = &mut call_stack {
                 // Set 'is_root'.
                 let is_root = false;
@@ -101,7 +108,6 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
 
                 // Get the input types of the callee.
                 let input_types = substack.program().get_function_ref(function_name)?.input_types();
-                // Ensure that the number of inputs match.
                 // Ensure the number of inputs matches the number of input types.
                 if input_types.len() != inputs.len() {
                     return Err(anyhow!("Expected {} inputs, found {}", input_types.len(), inputs.len()).into());
@@ -168,7 +174,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         registers: &mut Registers<N, A>,
         rng: &mut R,
     ) -> Result<(), CallExecError> {
-        use circuit::Eject;
+        use circuit::{Eject, environment::ToField as _};
 
         let timer = timer!("CallDynamic::execute");
 
@@ -176,33 +182,36 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
         let inputs: Vec<_> =
             self.operands().iter().map(|operand| registers.load_circuit(stack, operand)).try_collect()?;
 
-        // Get the program name.
-        let circuit::Value::Plaintext(circuit::Plaintext::Literal(circuit::Literal::Field(program_name_as_field), _)) =
-            &inputs[0]
-        else {
-            return Err(anyhow!("Expected the first operand of `call.dynamic` to be a 'Field' literal.").into());
-        };
+        // Helper: extract a circuit field from a circuit Field or Identifier literal value.
+        // Identifier literals are converted to their field representation via `to_field()`,
+        // which adds zero circuit constraints.
+        let circuit_value_to_circuit_field =
+            |value: &circuit::Value<A>, position: &str| -> Result<circuit::Field<A>, CallExecError> {
+                match value {
+                    circuit::Value::Plaintext(circuit::Plaintext::Literal(circuit::Literal::Field(field), _)) => {
+                        Ok(field.clone())
+                    }
+                    circuit::Value::Plaintext(circuit::Plaintext::Literal(circuit::Literal::Identifier(id_lit), _)) => {
+                        Ok(id_lit.to_field())
+                    }
+                    _ => Err(anyhow!(
+                        "Expected the {position} operand of `call.dynamic` to be a field or identifier literal."
+                    )
+                    .into()),
+                }
+            };
 
-        // Get the program network.
-        let circuit::Value::Plaintext(circuit::Plaintext::Literal(
-            circuit::Literal::Field(program_network_as_field),
-            _,
-        )) = &inputs[1]
-        else {
-            return Err(anyhow!("Expected the second operand of `call.dynamic` to be a 'Field' literal.").into());
-        };
-
-        // Get the function name.
-        let circuit::Value::Plaintext(circuit::Plaintext::Literal(circuit::Literal::Field(function_name_as_field), _)) =
-            &inputs[2]
-        else {
-            return Err(anyhow!("Expected the third operand of `call.dynamic` to be a 'Field' literal.").into());
-        };
+        // Get the program name as a circuit field.
+        let program_name_as_field = circuit_value_to_circuit_field(&inputs[0], "first")?;
+        // Get the program network as a circuit field.
+        let program_network_as_field = circuit_value_to_circuit_field(&inputs[1], "second")?;
+        // Get the function name as a circuit field.
+        let function_name_as_field = circuit_value_to_circuit_field(&inputs[2], "third")?;
 
         // Separate the remaining inputs as the function inputs.
         let inputs = &inputs[3..];
 
-        // If we are not handling the root request, retrieve the root request's tvk
+        // Retrieve the root request's tvk, if available (None if this is the root call).
         let root_tvk = registers.root_tvk().ok();
 
         // Execute the function.
@@ -373,7 +382,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         // Get the target.
                         let Some(target) = target else {
                             return Err(anyhow!(
-                                "Failed to resolve the target of the dynamic call in 'Authorize' mode."
+                                "Failed to resolve the target of the dynamic call in 'PackageRun' mode."
                             )
                             .into());
                         };
@@ -441,10 +450,9 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                     CallStack::Execute(authorization, _, translations) => {
                         // Get the target.
                         let Some(target) = target else {
-                            return Err(anyhow!(
-                                "Failed to resolve the target of the dynamic call in 'Authorize' mode."
-                            )
-                            .into());
+                            return Err(
+                                anyhow!("Failed to resolve the target of the dynamic call in 'Execute' mode.").into()
+                            );
                         };
                         // Get the function.
                         let callee_function = target.substack().program().get_function_ref(target.function_name())?;
@@ -599,13 +607,13 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         }
 
                         // Return the caller's request and response.
-                        (callee_request_verification_inputs, callee_response.to_dynamic_outputs()?)
+                        (callee_request_verification_inputs, caller_console_outputs)
                     }
                 }
             };
             lap!(timer, "Computed the request and response");
 
-            // Inject the existing circuit.
+            // Restore the caller's circuit, which was saved before the callee was synthesized.
             A::inject_r1cs(r1cs);
 
             use circuit::Inject;
@@ -627,7 +635,8 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             A::assert_eq(program_id.network(), program_network_as_field)?;
             A::assert_eq(&function_name, function_name_as_field)?;
 
-            // Ensure the number of public variables remains the same.
+            // Ensure exactly 4 public variables were added: program name, program network,
+            // function name, and function ID. This guards against spurious public injections.
             if A::num_public() != num_public + 4 {
                 return Err(anyhow!("Forbidden: 'call.dynamic' injected excess public variables").into());
             }
@@ -645,7 +654,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             // Ensure the transition commitment matches the computed transition commitment.
             A::assert_eq(&tcm, candidate_tcm)?;
 
-            // Inject the caller input IDs  as `Mode::Public`.
+            // Inject the caller input IDs as `Mode::Public`.
             let input_ids = request
                 .caller_input_ids
                 .iter()
@@ -772,7 +781,7 @@ impl<N: Network> CalleeDynamicRequest<N> {
 /// - `Future` / `DynamicFuture`: These are not allowed as inputs to dynamic calls and will
 ///   cause this function to return an error.
 ///
-/// - All other types: Passed through unchanged, assuming direct compatibility.
+/// - All other types (`Plaintext`, `Record`, `DynamicRecord` not matching the above): Passed through unchanged.
 ///
 /// # Arguments
 /// * `inputs` - The caller's input values
@@ -881,7 +890,7 @@ impl<'a, N: Network> ResolvedTarget<'a, N> {
 
 // A helper function that attempts to resolve the target of a dynamic call.
 // This function returns:
-// - Some(ResolvedTarget) if the target is successfully resolved.
+// - Ok(Some(ResolvedTarget)) if the target is successfully resolved.
 // - Ok(None) in `Synthesize` or `CheckDeployment` mode when the target cannot be resolved.
 // - Err(_) in other modes when the target cannot be resolved.
 fn resolve_dynamic_target<'a, N: Network>(
@@ -931,10 +940,10 @@ fn resolve_dynamic_target<'a, N: Network>(
     };
 
     // Verify that the call is not to `credits.aleo/fee_private` or `credits.aleo/fee_public`.
-    let is_credits_program = program_id.to_string() == "credits.aleo";
-    let is_fee_private = function_name.to_string() == "fee_private";
-    let is_fee_public = function_name.to_string() == "fee_public";
-    if is_credits_program && (is_fee_private || is_fee_public) {
+    // Safe: "fee_private" and "fee_public" are hardcoded valid identifiers.
+    let fee_private = Identifier::from_str("fee_private").expect("'fee_private' is a valid identifier");
+    let fee_public = Identifier::from_str("fee_public").expect("'fee_public' is a valid identifier");
+    if program_id == ProgramID::credits() && (function_name == fee_private || function_name == fee_public) {
         return Err(anyhow!(
             "Cannot perform an external call to 'credits.aleo/fee_private' or 'credits.aleo/fee_public'."
         ));
@@ -1063,7 +1072,8 @@ fn collect_input_translations<N: Network>(
                     gamma: Some(*gamma),
                     id_static: *serial_number,
                     id_dynamic: *id_dynamic,
-                    record_register_index: operand_index as u16,
+                    record_register_index: u16::try_from(operand_index)
+                        .map_err(|_| anyhow!("Input operand index {operand_index} exceeds u16"))?,
                 });
             }
             // Case: DynamicRecord translates to an ExternalRecord.
@@ -1089,7 +1099,8 @@ fn collect_input_translations<N: Network>(
                     gamma: None,
                     id_static: *id_static,
                     id_dynamic: *id_dynamic,
-                    record_register_index: operand_index as u16,
+                    record_register_index: u16::try_from(operand_index)
+                        .map_err(|_| anyhow!("Input operand index {operand_index} exceeds u16"))?,
                 });
             }
             // Plaintext values do not require translation.
@@ -1168,7 +1179,8 @@ fn collect_output_translations<N: Network>(
                     gamma: None,
                     id_static: *id_static,
                     id_dynamic: *id_dynamic,
-                    record_register_index: (num_inputs + operand_index) as u16,
+                    record_register_index: u16::try_from(num_inputs + operand_index)
+                        .map_err(|_| anyhow!("Output operand index {} exceeds u16", num_inputs + operand_index))?,
                 });
             }
             // Case: DynamicRecord translates to an ExternalRecord.
@@ -1194,7 +1206,8 @@ fn collect_output_translations<N: Network>(
                     gamma: None,
                     id_static: *id_static,
                     id_dynamic: *id_dynamic,
-                    record_register_index: (num_inputs + operand_index) as u16,
+                    record_register_index: u16::try_from(num_inputs + operand_index)
+                        .map_err(|_| anyhow!("Output operand index {} exceeds u16", num_inputs + operand_index))?,
                 });
             }
             // Plaintext values do not require translation.

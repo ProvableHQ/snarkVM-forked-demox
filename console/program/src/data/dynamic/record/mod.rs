@@ -49,7 +49,7 @@ use indexmap::IndexMap;
 /// The depth of the record data tree.
 pub const RECORD_DATA_TREE_DEPTH: u8 = 5;
 
-/// the record data tree.
+/// The record data tree.
 pub type RecordDataTree<E> = MerkleTree<E, Poseidon8<E>, Poseidon2<E>, RECORD_DATA_TREE_DEPTH>;
 /// The console data.
 pub type RecordData<N> = IndexMap<Identifier<N>, Entry<N, Plaintext<N>>>;
@@ -72,11 +72,14 @@ pub type RecordData<N> = IndexMap<Identifier<N>, Entry<N, Plaintext<N>>>;
 /// The leaves of its Merkle tree are computed as follows:
 ///
 /// ```text
-/// L_0 := HashPSD8(microcredits || ToFields(entry_0))
-/// L_1 := HashPSD8(memo || ToFields(entry_1))
+/// L_0 := HashPSD8(ToField(name_0) || ToFields(entry_0))
+/// L_1 := HashPSD8(ToField(name_1) || ToFields(entry_1))
 /// ```
 ///
-/// Note that `ToFields` encodes the entry's mode and plaintext variant.
+/// where `name_i` is the field encoding of the entry identifier (e.g. `"microcredits"` → `Field`),
+/// and `ToFields` packs the entry's mode tag bits (2 bits), plaintext bits, and a terminus `1`
+/// bit into field elements. The terminus bit ensures collision-resistance across entries of
+/// different lengths.
 ///
 /// The tree has depth `RECORD_DATA_TREE_DEPTH = 5` and is constructed with
 /// path hasher `HashPSD2` and the padding scheme outlined in
@@ -134,7 +137,7 @@ impl<N: Network> DynamicRecord<N> {
         &self.data
     }
 
-    /// Returns `true` if the program record is a hiding variant.
+    /// Returns `true` if the dynamic record is a hiding variant.
     pub fn is_hiding(&self) -> bool {
         !self.version.is_zero()
     }
@@ -145,7 +148,7 @@ impl<N: Network> DynamicRecord<N> {
     pub fn from_record(record: &Record<N, Plaintext<N>>) -> Result<Self> {
         // Get the owner.
         let owner = *record.owner().clone();
-        // Get the program data.
+        // Get the record data.
         let data = record.data().clone();
         // Get the nonce.
         let nonce = *record.nonce();
@@ -176,7 +179,7 @@ impl<N: Network> DynamicRecord<N> {
         Record::<N, Plaintext<N>>::from_plaintext(owner, data.clone(), self.nonce, self.version)
     }
 
-    /// Computes the Merkle tree containing the given (ordered) entires as
+    /// Computes the Merkle tree containing the given (ordered) entries as
     /// leaves. More details on the structure of the tree can be found in
     /// [`DynamicRecord`].
     pub fn merkleize_data(data: &IndexMap<Identifier<N>, Entry<N, Plaintext<N>>>) -> Result<RecordDataTree<N>> {
@@ -197,7 +200,7 @@ impl<N: Network> DynamicRecord<N> {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        // Initalize the hashers.
+        // Initialize the hashers.
         let (leaf_hasher, path_hasher) = Self::initialize_hashers();
 
         // Construct the merkle tree.
@@ -348,5 +351,46 @@ mod tests {
         let path = tree.prove(0, &leaves[0]).unwrap();
         assert!(!tree.verify(&path, tree.root(), &leaves[1])); // Wrong leaf.
         assert!(!tree.verify(&path, &Field::from_u64(12345), &leaves[0])); // Wrong root.
+    }
+
+    #[test]
+    fn test_find_owner() {
+        let rng = &mut TestRng::default();
+        let owner_addr = Address::rand(rng);
+        let record = Record::<CurrentNetwork, Plaintext<CurrentNetwork>>::from_plaintext(
+            Owner::Public(owner_addr),
+            indexmap::IndexMap::new(),
+            Group::rand(rng),
+            U8::new(0),
+        )
+        .unwrap();
+        let dynamic = DynamicRecord::from_record(&record).unwrap();
+
+        // Finding "owner" must return the owner address.
+        let path = [Access::Member(Identifier::from_str("owner").unwrap())];
+        let value = dynamic.find(&path).unwrap();
+        assert_eq!(value, Value::Plaintext(Plaintext::from(Literal::Address(owner_addr))));
+    }
+
+    #[test]
+    fn test_find_rejects_non_owner_paths() {
+        let rng = &mut TestRng::default();
+        let record = create_test_record(rng, indexmap::IndexMap::new(), false);
+        let dynamic = DynamicRecord::from_record(&record).unwrap();
+
+        // Any path other than "owner" must be rejected.
+        let path = [Access::Member(Identifier::from_str("data").unwrap())];
+        assert!(dynamic.find(&path).is_err());
+
+        // An empty path must be rejected.
+        let empty: &[Access<CurrentNetwork>] = &[];
+        assert!(dynamic.find(empty).is_err());
+
+        // A path of length > 1 must be rejected.
+        let long_path = [
+            Access::Member(Identifier::from_str("owner").unwrap()),
+            Access::Member(Identifier::from_str("nested").unwrap()),
+        ];
+        assert!(dynamic.find(&long_path).is_err());
     }
 }

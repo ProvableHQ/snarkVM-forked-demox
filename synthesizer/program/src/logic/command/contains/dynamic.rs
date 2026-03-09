@@ -85,13 +85,19 @@ impl<N: Network> ContainsDynamic<N> {
         // Get the program name.
         let program_name = match registers.load(stack, self.program_name_operand())? {
             Value::Plaintext(Plaintext::Literal(Literal::Field(field), _)) => Identifier::from_field(&field)?,
-            _ => bail!("Expected the first operand of `contains.dynamic` to be a field literal."),
+            Value::Plaintext(Plaintext::Literal(Literal::Identifier(id_lit), _)) => {
+                Identifier::from_field(&id_lit.to_field()?)?
+            }
+            _ => bail!("Expected the first operand of `contains.dynamic` to be a field or identifier literal."),
         };
 
         // Get the program network.
         let program_network = match registers.load(stack, self.program_network_operand())? {
             Value::Plaintext(Plaintext::Literal(Literal::Field(field), _)) => Identifier::from_field(&field)?,
-            _ => bail!("Expected the second operand of `contains.dynamic` to be a field literal."),
+            Value::Plaintext(Plaintext::Literal(Literal::Identifier(id_lit), _)) => {
+                Identifier::from_field(&id_lit.to_field()?)?
+            }
+            _ => bail!("Expected the second operand of `contains.dynamic` to be a field or identifier literal."),
         };
 
         // Construct the program ID.
@@ -100,7 +106,10 @@ impl<N: Network> ContainsDynamic<N> {
         // Get the mapping name.
         let mapping_name = match registers.load(stack, self.mapping_name_operand())? {
             Value::Plaintext(Plaintext::Literal(Literal::Field(field), _)) => Identifier::from_field(&field)?,
-            _ => bail!("Expected the third operand of `contains.dynamic` to be a field literal."),
+            Value::Plaintext(Plaintext::Literal(Literal::Identifier(id_lit), _)) => {
+                Identifier::from_field(&id_lit.to_field()?)?
+            }
+            _ => bail!("Expected the third operand of `contains.dynamic` to be a field or identifier literal."),
         };
 
         // Ensure the mapping exists.
@@ -133,6 +142,7 @@ impl<N: Network> ContainsDynamic<N> {
 
 impl<N: Network> Parser for ContainsDynamic<N> {
     /// Parses a string into an operation.
+    #[inline]
     fn parse(string: &str) -> ParserResult<Self> {
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
@@ -213,7 +223,7 @@ impl<N: Network> Display for ContainsDynamic<N> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         // Print the command.
         write!(f, "{} ", Self::opcode())?;
-        // Print the program name, program network, mapping and key operand.
+        // Print the program name, program network, mapping name, and key operand.
         write!(
             f,
             "{} {} {}[{}] into ",
@@ -290,7 +300,7 @@ mod tests {
             "The third operand is incorrect"
         );
         assert_eq!(contains.key_operand(), &Operand::Register(Register::Locator(3)), "The fourth operand is incorrect");
-        assert_eq!(contains.destination, Register::Locator(4), "The second operand is incorrect");
+        assert_eq!(contains.destination, Register::Locator(4), "The destination register is incorrect");
     }
 
     #[test]
@@ -301,5 +311,16 @@ mod tests {
         let bytes_le = contains.to_bytes_le().unwrap();
         let result = ContainsDynamic::<CurrentNetwork>::from_bytes_le(&bytes_le[..]);
         assert!(result.is_ok())
+    }
+
+    #[test]
+    fn test_display_parse_roundtrip() {
+        let input = "contains.dynamic r0 r1 r2[r3] into r4;";
+        let (string, original) = ContainsDynamic::<CurrentNetwork>::parse(input).unwrap();
+        assert!(string.is_empty());
+        let displayed = format!("{original}");
+        let (remainder, reparsed) = ContainsDynamic::<CurrentNetwork>::parse(&displayed).unwrap();
+        assert!(remainder.is_empty());
+        assert_eq!(original, reparsed);
     }
 }

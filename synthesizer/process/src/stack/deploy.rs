@@ -301,7 +301,10 @@ impl<N: Network> Stack<N> {
                 .collect::<Result<Vec<_>>>()?;
 
             // Verify the translation certificates.
-            cfg_into_iter!(translation_names_assignments).zip(translation_verifying_keys).try_for_each(
+            // Note: `Deployment::check_is_ordered` (called above) ensures that the translation
+            // verifying keys appear in the same order as the program's record definitions, so
+            // `zip_eq` correctly pairs each record assignment with its corresponding key.
+            cfg_into_iter!(translation_names_assignments).zip_eq(translation_verifying_keys).try_for_each(
             |((record_name, translation_index, translation_assignment), (_, (verifying_key, certificate)))| {
                 // Synthesize the circuit.
                 match translation_assignment.to_circuit_assignment::<A>(translation_index) {

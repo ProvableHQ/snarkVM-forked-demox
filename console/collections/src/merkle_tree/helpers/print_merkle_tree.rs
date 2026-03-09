@@ -39,7 +39,7 @@ use snarkvm_console_types::prelude::*;
 /// Arguments:
 /// - `merkle_tree`: The Merkle tree to print.
 /// - `path_hasher`: The path hasher, used to compute the value of the empty
-///   hash and the the hash of two empty hashes.
+///   hash and the hash of two empty hashes.
 /// - `node_width`: The number of characters used to display each node. It must
 ///   be at least 1.
 pub fn print_merkle_tree<
@@ -58,8 +58,8 @@ pub fn print_merkle_tree<
     let empty_hash_hash_str = format!("| {:<node_width$}", "E");
     let padding_leaf_str = format!("| {:<node_width$}", "*".repeat(node_width));
 
-    // For depth > 2, all levels are printed in a two-character space for
-    // alignment purposes. An extra character is allotted for the colon.
+    // For depth > 9, three characters are allotted for the level number to
+    // accommodate two-digit depth labels; otherwise two characters suffice.
     let level_width = if DEPTH > 9 { 3 } else { 2 };
 
     ensure!(node_width >= 1, "node_width must be at least 1");

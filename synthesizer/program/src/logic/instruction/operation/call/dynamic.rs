@@ -26,10 +26,11 @@ use console::{
 
 /// Dynamically calls the operands into the declared type.
 /// The first operand must resolve to a field element representing the program name.
-/// The second operand must resolve to a field element representing the function name.
+/// The second operand must resolve to a field element representing the program network.
+/// The third operand must resolve to a field element representing the function name.
 /// The remaining operands are the arguments to the call.
 /// The destination registers along with their expected types are specified after the `into` keyword.
-/// i.e. `call.dynamic r0 r1 with r2 r3 (as address.private u64.private) into r4 r5 (as u64 dynamic.future);`
+/// i.e. `call.dynamic r0 r1 r2 with r3 r4 (as address.private u64.private) into r5 r6 (as u64 dynamic.future);`
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct CallDynamic<N: Network> {
     /// The operands.
@@ -69,6 +70,7 @@ impl<N: Network> CallDynamic<N> {
             "The number of operands and operand types must match"
         );
         // Ensure that the operand types do not contain a future, dynamic future, record, or external record type.
+        // Note: `dynamic.record` (i.e. `ValueType::DynamicRecord`) IS allowed as an input operand type.
         for type_ in &operand_types {
             match type_ {
                 ValueType::Record(_) => {
@@ -208,10 +210,15 @@ impl<N: Network> CallDynamic<N> {
                 input_types.len().checked_sub(3).expect("input_types.len() >= 3 is checked above")
             )
         }
-        // Ensure the first three input types are field elements.
+        // Ensure the first three input types are field or identifier elements.
         for (i, input_type) in input_types.iter().enumerate().take(3) {
-            if *input_type != RegisterType::Plaintext(PlaintextType::Literal(LiteralType::Field)) {
-                bail!("Instruction '{}' expects input {i} to be a field element, found '{input_type}'", Self::opcode())
+            match input_type {
+                RegisterType::Plaintext(PlaintextType::Literal(LiteralType::Field))
+                | RegisterType::Plaintext(PlaintextType::Literal(LiteralType::Identifier)) => {}
+                _ => bail!(
+                    "Instruction '{}' expects input {i} to be a field or identifier element, found '{input_type}'",
+                    Self::opcode()
+                ),
             }
         }
         // Ensure the remaining input types match the operand types.
@@ -511,7 +518,7 @@ mod tests {
         string: &str,
         expected_operands: Vec<Operand<CurrentNetwork>>,
         expected_destinations: Vec<Register<CurrentNetwork>>,
-        exepcted_destination_types: Vec<ValueType<CurrentNetwork>>,
+        expected_destination_types: Vec<ValueType<CurrentNetwork>>,
     ) {
         println!("Checking parser for string: '{string}'");
         // Check that the parser works.
@@ -542,10 +549,10 @@ mod tests {
         // Check that the destination types are correct.
         assert_eq!(
             call.destination_types.len(),
-            exepcted_destination_types.len(),
+            expected_destination_types.len(),
             "The number of destination types is incorrect"
         );
-        for (i, (given, expected)) in call.destination_types.iter().zip(exepcted_destination_types.iter()).enumerate() {
+        for (i, (given, expected)) in call.destination_types.iter().zip(expected_destination_types.iter()).enumerate() {
             assert_eq!(given, expected, "The {i}-th destination type is incorrect");
         }
     }

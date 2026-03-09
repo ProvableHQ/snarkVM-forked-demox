@@ -319,8 +319,22 @@ impl<N: Network> Authorization<N> {
             let input_types = function.input_types();
             let output_types = function.output_types();
 
+            // Ensure the transition inputs and outputs match the function signature.
+            ensure!(
+                transition.inputs().len() == input_types.len(),
+                "The number of transition inputs ({}) does not match the function input types ({})",
+                transition.inputs().len(),
+                input_types.len()
+            );
+            ensure!(
+                transition.outputs().len() == output_types.len(),
+                "The number of transition outputs ({}) does not match the function output types ({})",
+                transition.outputs().len(),
+                output_types.len()
+            );
+
             // Account for input translations.
-            for (input, input_type) in transition.inputs().iter().zip(input_types.iter()) {
+            for (input, input_type) in transition.inputs().iter().zip_eq(input_types.iter()) {
                 if input.dynamic_id().is_some() {
                     match (input, input_type) {
                         (Input::RecordWithDynamicID(..), ValueType::Record(record_name)) => {
@@ -335,7 +349,7 @@ impl<N: Network> Authorization<N> {
             }
 
             // Account for output translations.
-            for (output, output_type) in transition.outputs().iter().zip(output_types.iter()) {
+            for (output, output_type) in transition.outputs().iter().zip_eq(output_types.iter()) {
                 if output.dynamic_id().is_some() {
                     match (output, output_type) {
                         (Output::RecordWithDynamicID(..), ValueType::Record(record_name)) => {

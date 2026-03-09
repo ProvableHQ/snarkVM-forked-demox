@@ -132,7 +132,7 @@ impl<N: Network> Process<N> {
             lap!(timer, "Synthesize circuit keys for {function_name}");
         }
         let rng = &mut rand::thread_rng();
-        let credits_record_name = Identifier::<N>::from_str("credits").unwrap();
+        let credits_record_name = Identifier::<N>::from_str("credits").unwrap(); // Safe: "credits" is always a valid identifier.
         stack.synthesize_translation_key::<A, _>(&credits_record_name, rng)?;
         lap!(timer, "Synthesize credits program keys");
 

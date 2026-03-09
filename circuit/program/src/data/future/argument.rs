@@ -107,7 +107,7 @@ impl<A: Aleo> ToBits for Argument<A> {
                 //  - a static future expects the program ID bits after the initial tag bit
                 //  - a program ID contains two `Identifier`s
                 //  - an `Identifier` cannot lead with a zero byte, since a leading zero byte implies an empty string.
-                // The extra 4 bits are reserved for future variants.
+                // The 12 bits consist of: 8 bits for disambiguation (zero byte) + 4 bits reserved for future variants.
                 vec.extend(std::iter::repeat_n(Boolean::constant(false), 12));
                 dynamic_future.write_bits_le(vec);
             }
@@ -133,7 +133,7 @@ impl<A: Aleo> ToBits for Argument<A> {
                 //  - a static future expects the program ID bits after the initial tag bit
                 //  - a program ID contains two `Identifier`s
                 //  - an `Identifier` cannot lead with a zero byte, since a leading zero byte implies an empty string.
-                // The extra 4 bits are reserved for future variants.
+                // The 12 bits consist of: 8 bits for disambiguation (zero byte) + 4 bits reserved for future variants.
                 vec.extend(std::iter::repeat_n(Boolean::constant(false), 12));
                 dynamic_future.write_bits_be(vec);
             }

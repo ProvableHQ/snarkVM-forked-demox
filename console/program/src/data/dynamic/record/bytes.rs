@@ -18,7 +18,7 @@ use super::*;
 impl<N: Network> FromBytes for DynamicRecord<N> {
     /// Reads the dynamic record from a buffer.
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
-        // Read the version.
+        // Read the serialization format version.
         let version = u8::read_le(&mut reader)?;
         // Ensure the version is valid.
         if version != 1 {
@@ -34,7 +34,7 @@ impl<N: Network> FromBytes for DynamicRecord<N> {
         // Read the nonce.
         let nonce = Group::read_le(&mut reader)?;
 
-        // Read the version.
+        // Read the record version field.
         let version = U8::read_le(&mut reader)?;
 
         Ok(Self::new_unchecked(owner, root, nonce, version, None))
@@ -44,7 +44,7 @@ impl<N: Network> FromBytes for DynamicRecord<N> {
 impl<N: Network> ToBytes for DynamicRecord<N> {
     /// Writes the record to a buffer.
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
-        // Write the version.
+        // Write the serialization format version.
         1u8.write_le(&mut writer)?;
 
         // Write the owner.
@@ -56,7 +56,7 @@ impl<N: Network> ToBytes for DynamicRecord<N> {
         // Write the nonce.
         self.nonce.write_le(&mut writer)?;
 
-        // Write the version.
+        // Write the record version field.
         self.version.write_le(&mut writer)
     }
 }

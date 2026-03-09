@@ -62,8 +62,9 @@ pub struct TranslationAssignment<N: Network> {
     pub(crate) function_id: Field<N>,
     /// The name of the static record.
     pub(crate) record_name: Identifier<N>,
-    /// True if translation is happening for an input to `call.dynamic` (static record is being produced)
-    /// or an output of `call.dynamic` (static record is being consumed).
+    /// True if the translation is for an input to `call.dynamic` (the callee consumes the static record;
+    /// its serial number is used as the input ID). False if the translation is for an output of
+    /// `call.dynamic` (the callee produces the static record; its commitment is used as the output ID).
     pub(crate) is_to_static: bool,
     /// Whether the value type corresponding to the static record is `Record` or `ExternalRecord`.
     pub(crate) is_external_record: bool,
@@ -166,9 +167,9 @@ impl<N: Network> TranslationAssignment<N> {
             console::types::Field::<N>::from_u16(self.record_register_index),
         );
 
-        // Inject the commitment or serial number of the non-external record (if
+        // Inject the commitment or serial number of the non-external record (if not
         // `is_external_record`) or the input/output ID of the external record
-        // (if not `is_external_record`) as `Mode::Public`.
+        // (if `is_external_record`) as `Mode::Public`.
         let circuit_id_static = circuit::Field::<A>::new(circuit::Mode::Public, self.id_static);
 
         // Inject the ID of the dynamic record as `Mode::Public`.
@@ -180,7 +181,7 @@ impl<N: Network> TranslationAssignment<N> {
         let circuit_record_static =
             circuit::Record::<A, circuit::Plaintext<A>>::new(circuit::Mode::Private, self.record_static.clone());
 
-        // Inject the dynamic as `Mode::Private`.
+        // Inject the dynamic record as `Mode::Private`.
         let circuit_record_dynamic =
             circuit::DynamicRecord::<A>::new(circuit::Mode::Private, self.record_dynamic.clone());
 
@@ -236,7 +237,7 @@ impl<N: Network> TranslationAssignment<N> {
             &actual_id_static_non_external,
         );
 
-        // ******** Merkelizing the static-record data
+        // ******** Merkleizing the static-record data
 
         let circuit_tree = circuit::DynamicRecord::<A>::merkleize_data(circuit_record_static.data())?;
         let circuit_data_root = circuit_tree.root();

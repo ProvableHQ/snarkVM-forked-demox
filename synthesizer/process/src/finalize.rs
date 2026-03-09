@@ -195,8 +195,9 @@ impl<N: Network> Process<N> {
         lap!(timer, "Verify the number of transitions");
 
         // Collect all of the futures in the execution's transitions and compute their corresponding dynamic future keys.
-        // The key is (program_name, program_network, function_name, checksum) to uniquely identify each future,
-        // since different futures may have the same checksum if their arguments happen to be identical.
+        // The key is (program_name, program_network, function_name, checksum). Futures with identical program,
+        // function, and arguments produce the same key and the same checksum by design — they represent the same
+        // logical future, so the map correctly de-duplicates them.
         let dynamic_future_to_future: HashMap<(Field<N>, Field<N>, Field<N>, Field<N>), &Future<N>> = execution
             .transitions()
             .filter_map(|transition| {
@@ -555,7 +556,8 @@ fn initialize_finalize_state<N: Network>(
         nonce,
     );
 
-    // Store the inputs.
+    // Store the inputs. The argument count is guaranteed to match the finalize's declared inputs
+    // because the Future was validated against the finalize type signature at execution time.
     finalize.inputs().iter().map(|i| i.register()).zip_eq(future.arguments().iter()).try_for_each(
         |(register, input)| {
             // Assign the input value to the register.
@@ -639,7 +641,7 @@ fn setup_await<N: Network>(
     let (future, is_dynamic) = match registers.load(stack.deref(), &Operand::Register(await_.register().clone()))? {
         Value::Future(future) => (future, false),
         Value::DynamicFuture(dynamic_future) => {
-            // Construct the key from the dynamic future's program name, network, function name, and root.
+            // Construct the key from the dynamic future's program name, network, function name, and checksum.
             let key = (
                 *dynamic_future.program_name(),
                 *dynamic_future.program_network(),

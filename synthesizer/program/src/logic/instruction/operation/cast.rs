@@ -57,6 +57,14 @@ impl<N: Network> CastType<N> {
         matches!(self,
             Self::Plaintext(plaintext_type) if plaintext_type.exceeds_max_array_size(max_array_size))
     }
+
+    /// Returns `true` if the cast type contains an identifier type.
+    pub fn contains_identifier_type(&self) -> Result<bool> {
+        match self {
+            Self::Plaintext(plaintext_type) => plaintext_type.contains_identifier_type(),
+            _ => Ok(false),
+        }
+    }
 }
 
 impl<N: Network> Parser for CastType<N> {
@@ -848,7 +856,7 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
                             "Array element type mismatch: expected '{}', found future",
                             array_type.next_element_type()
                         ),
-                        // Ensure the input type cannot be a dyanmic record (this is unsupported behavior).
+                        // Ensure the input type cannot be a dynamic record (this is unsupported behavior).
                         RegisterType::DynamicRecord => bail!(
                             "Array element type mismatch: expected '{}', found dynamic record",
                             array_type.next_element_type()
@@ -1438,5 +1446,41 @@ mod tests {
         for case in incorrect_cases {
             assert!(Cast::<CurrentNetwork>::parse(case).is_err(), "Parser did not fail for: {case}");
         }
+    }
+
+    #[test]
+    fn test_cast_type_contains_identifier_type() {
+        // Identifier literal type should be detected.
+        let cast_type = CastType::<CurrentNetwork>::Plaintext(PlaintextType::Literal(LiteralType::Identifier));
+        assert!(cast_type.contains_identifier_type().unwrap());
+
+        // Non-identifier literal types should not be detected.
+        let cast_type = CastType::<CurrentNetwork>::Plaintext(PlaintextType::Literal(LiteralType::Field));
+        assert!(!cast_type.contains_identifier_type().unwrap());
+        let cast_type = CastType::<CurrentNetwork>::Plaintext(PlaintextType::Literal(LiteralType::U64));
+        assert!(!cast_type.contains_identifier_type().unwrap());
+
+        // Non-plaintext cast types should not be detected.
+        let cast_type = CastType::<CurrentNetwork>::GroupXCoordinate;
+        assert!(!cast_type.contains_identifier_type().unwrap());
+        let cast_type = CastType::<CurrentNetwork>::GroupYCoordinate;
+        assert!(!cast_type.contains_identifier_type().unwrap());
+        let cast_type = CastType::<CurrentNetwork>::Record(Identifier::from_str("token").unwrap());
+        assert!(!cast_type.contains_identifier_type().unwrap());
+    }
+
+    #[test]
+    fn test_cast_instruction_contains_identifier_type() {
+        // A cast to identifier type should be detected.
+        let (_, cast) = Cast::<CurrentNetwork>::parse("cast r0 into r1 as identifier").unwrap();
+        assert!(cast.cast_type().contains_identifier_type().unwrap());
+
+        // A cast to field type should not be detected.
+        let (_, cast) = Cast::<CurrentNetwork>::parse("cast r0 into r1 as field").unwrap();
+        assert!(!cast.cast_type().contains_identifier_type().unwrap());
+
+        // A cast.lossy to identifier type should be detected.
+        let (_, cast) = CastLossy::<CurrentNetwork>::parse("cast.lossy r0 into r1 as identifier").unwrap();
+        assert!(cast.cast_type().contains_identifier_type().unwrap());
     }
 }

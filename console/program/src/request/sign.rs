@@ -111,7 +111,7 @@ impl<N: Network> Request<N> {
             prepared_inputs.push(input.clone());
 
             // Convert index to u16.
-            let index = u16::try_from(index).or_halt_with::<N>("Input index exceeds u16");
+            let index = u16::try_from(index).map_err(|_| anyhow!("Input index exceeds u16"))?;
 
             match input_type {
                 // A constant input is hashed (using `tcm`) to a field element.

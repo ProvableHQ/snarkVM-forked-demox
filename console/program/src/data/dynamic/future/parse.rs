@@ -93,10 +93,10 @@ impl<N: Network> DynamicFuture<N> {
         let (string, _) = tag("}")(string)?;
 
         // Convert to field representation.
-        // Note: These conversions cannot fail because ProgramID and Identifier are valid.
-        let program_name = program_id.name().to_field().expect("Failed to convert program name to field");
-        let program_network = program_id.network().to_field().expect("Failed to convert program network to field");
-        let function_name_field = function_name.to_field().expect("Failed to convert function name to field");
+        // Safe: identifiers are validated to fit within 31 bytes, which always fit in a 253-bit field element.
+        let program_name = program_id.name().to_field().expect("identifier always fits in a field element");
+        let program_network = program_id.network().to_field().expect("identifier always fits in a field element");
+        let function_name_field = function_name.to_field().expect("identifier always fits in a field element");
 
         Ok((string, Self::new_unchecked(program_name, program_network, function_name_field, checksum, None)))
     }

@@ -82,16 +82,16 @@ fn test_fibonacci() {
     // Initialize a new caller.
     let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
 
-    // Initialize the VM at the V12 height.
-    let v12_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
-    let vm = crate::vm::test_helpers::sample_vm_at_height(v12_height, rng);
+    // Initialize the VM at the V14 height.
+    let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
+    let vm = crate::vm::test_helpers::sample_vm_at_height(v14_height, rng);
 
     // Deploy the program
     println!("Deploying program {recursive_calls_program_name}.aleo...");
     let deployment = vm.deploy(&caller_private_key, &recursive_calls_program, None, 0, None, rng).unwrap();
     add_and_test(&vm, &caller_private_key, &[deployment], rng);
 
-    // Execute the the fibonacci function for the given inputs, expected output, and expected number of transitions.
+    // Execute the fibonacci function for the given inputs, expected output, and expected number of transitions.
     #[rustfmt::skip]
     let test_cases = [
         (0, 0, 3), 
@@ -161,9 +161,9 @@ fn test_recursive_dynamic_record_calls() {
     let caller_view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
     let caller_address = Address::try_from(&caller_private_key).unwrap();
 
-    // Initialize the VM at the V12 height.
-    let v12_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
-    let vm = crate::vm::test_helpers::sample_vm_at_height(v12_height, rng);
+    // Initialize the VM at the V14 height.
+    let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
+    let vm = crate::vm::test_helpers::sample_vm_at_height(v14_height, rng);
 
     // Define the first program that defines a record and functions `one`, `two`, `three`, and `four`.
     let basic_records_ops_program_name = Identifier::<CurrentNetwork>::from_str("basic_record_ops").unwrap();
@@ -555,7 +555,7 @@ constructor:
 //
 // Scenario 1 (PASS): A ledger-committed dynamic record forwarded once to a same-program static consumer.
 // Scenario 2 (FAIL): Caller holds a static record, casts it to dynamic, then calls the same-program static consumer — double-spend.
-// Scenario 3 (FAIL): Same dynamic record forwarded to the same same-program static consumer twice at position 0.
+// Scenario 3 (FAIL): Same dynamic record forwarded twice at position 0 to the same-program static consumer.
 // Scenario 4 (FAIL): Same dynamic record forwarded at position 0 and position 1 to two different same-program static consumers.
 #[test]
 fn test_same_program_dynamic_record_security() {

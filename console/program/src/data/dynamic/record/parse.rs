@@ -16,7 +16,7 @@
 use super::*;
 
 impl<N: Network> Parser for DynamicRecord<N> {
-    /// Parses a string as a dynamic record: `{ owner: address, _root: field, _nonce: field, _version: u8 }`.
+    /// Parses a string as a dynamic record: `{ owner: address, _root: field, _nonce: group, _version: u8 }`.
     #[inline]
     fn parse(string: &str) -> ParserResult<Self> {
         // Parse the whitespace and comments from the string.
@@ -67,11 +67,11 @@ impl<N: Network> Parser for DynamicRecord<N> {
         // Parse the nonce from the string.
         let (string, nonce) = Group::parse(string)?;
 
-        // There may be an optional "_version" tag. Parse the "," from the string if it exists.
+        // There may be an optional "_version" tag. Consume the "," separator if it exists.
         let string = match opt(tag(","))(string)? {
-            // If there is a version, then parse the "," from the string.
+            // The "," was consumed; continue with the advanced string.
             (string, Some(_)) => string,
-            // If there is no version, then keep the string as is.
+            // No "," found; keep the string as is.
             (string, None) => string,
         };
 

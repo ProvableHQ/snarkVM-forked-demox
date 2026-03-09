@@ -488,14 +488,15 @@ impl<N: Network> Process<N> {
                     child_transition.outputs().iter().zip_eq(destination_types.iter()).enumerate()
                 {
                     match (output, destination_type) {
-                        // A `DynamicFuture` output: the verifier computes the hash of the dynamic future directly.
+                        // A `Future` output with a `DynamicFuture` destination type: the verifier converts
+                        // the static future to a dynamic future and computes its hash directly.
                         (Output::Future(_id, future), ValueType::DynamicFuture) => {
                             let Some(future) = future else {
                                 bail!("Future is not present for child transition {}", child_transition.id());
                             };
                             let dynamic_future = DynamicFuture::from_future(future)?;
                             let output_index =
-                                u16::try_from(num_inputs + index).or_halt_with::<N>("Output index exceeds u16");
+                                u16::try_from(num_inputs + index).map_err(|_| anyhow!("Output index exceeds u16"))?;
                             let output_id = OutputID::dynamic_future(
                                 child_function_id,
                                 &Value::DynamicFuture(dynamic_future),
@@ -756,7 +757,7 @@ impl<N: Network> Process<N> {
                 }
             }
         }
-        // Check that the the traversal completed correctly.
+        // Check that the traversal completed correctly.
         ensure!(traversal_stack.is_empty(), "Invalid traversal - traversal stack is not empty");
 
         ensure!(

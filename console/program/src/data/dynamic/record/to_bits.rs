@@ -63,7 +63,7 @@ impl<N: Network> DynamicRecord<N> {
         Ok(size)
     }
 
-    /// Returns the number of raw bits in a dynamic future.
+    /// Returns the number of raw bits in a dynamic record.
     #[inline]
     pub fn size_in_bits_raw() -> Result<usize> {
         Self::size_in_bits()

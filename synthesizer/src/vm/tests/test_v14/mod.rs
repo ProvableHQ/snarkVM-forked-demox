@@ -58,6 +58,9 @@ mod program_size;
 // Tests for snark.verify opcode.
 mod snark_verify;
 
+// Tests for identifier literal types with V14 features.
+mod identifier_literal;
+
 // Tests for V3 deployments (amendments).
 mod amendments;
 

@@ -19,7 +19,7 @@ use console::{
     program::{Identifier, Literal, Plaintext, PlaintextType, ProgramID, Register, Value},
 };
 
-/// A dynamic get command that uses the provided default in case of failure, e.g. `get.or_use.dynamic r0 r1 r2[r3] r4 into r5 as boolean;`.
+/// A dynamic get.or_use command that uses the provided default in case of failure, e.g. `get.or_use.dynamic r0 r1 r2[r3] r4 into r5 as boolean;`.
 /// Resolves the `program` and `mapping` operands, gets the value stored at the `key` operand in `mapping`, and stores the result into `destination`.
 /// If the key is not present, `default` is stored in `destination`.
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -100,13 +100,19 @@ impl<N: Network> GetOrUseDynamic<N> {
         // Get the program name.
         let program_name = match registers.load(stack, self.program_name_operand())? {
             Value::Plaintext(Plaintext::Literal(Literal::Field(field), _)) => Identifier::from_field(&field)?,
-            _ => bail!("Expected the first operand of `get.or_use.dynamic` to be a field literal."),
+            Value::Plaintext(Plaintext::Literal(Literal::Identifier(id_lit), _)) => {
+                Identifier::from_field(&id_lit.to_field()?)?
+            }
+            _ => bail!("Expected the first operand of `get.or_use.dynamic` to be a field or identifier literal."),
         };
 
         // Get the program network.
         let program_network = match registers.load(stack, self.program_network_operand())? {
             Value::Plaintext(Plaintext::Literal(Literal::Field(field), _)) => Identifier::from_field(&field)?,
-            _ => bail!("Expected the second operand of `get.or_use.dynamic` to be a field literal."),
+            Value::Plaintext(Plaintext::Literal(Literal::Identifier(id_lit), _)) => {
+                Identifier::from_field(&id_lit.to_field()?)?
+            }
+            _ => bail!("Expected the second operand of `get.or_use.dynamic` to be a field or identifier literal."),
         };
 
         // Construct the program ID.
@@ -115,7 +121,10 @@ impl<N: Network> GetOrUseDynamic<N> {
         // Get the mapping name.
         let mapping_name = match registers.load(stack, self.mapping_name_operand())? {
             Value::Plaintext(Plaintext::Literal(Literal::Field(field), _)) => Identifier::from_field(&field)?,
-            _ => bail!("Expected the third operand of `get.or_use.dynamic` to be a field literal."),
+            Value::Plaintext(Plaintext::Literal(Literal::Identifier(id_lit), _)) => {
+                Identifier::from_field(&id_lit.to_field()?)?
+            }
+            _ => bail!("Expected the third operand of `get.or_use.dynamic` to be a field or identifier literal."),
         };
 
         // Ensure the mapping exists.
@@ -144,7 +153,7 @@ impl<N: Network> GetOrUseDynamic<N> {
             self.destination_type
         );
 
-        // Retrieve the value from storage as a literal.
+        // Retrieve the value from storage as a plaintext.
         let value = match store.get_value_speculative(program_id, mapping_name, &key)? {
             Some(Value::Plaintext(plaintext)) => Value::Plaintext(plaintext),
             Some(Value::Record(..)) => bail!("Cannot 'get.or_use.dynamic' a 'record'"),
@@ -195,6 +204,8 @@ impl<N: Network> Parser for GetOrUseDynamic<N> {
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
         // Parse the mapping name operand from the string.
         let (string, mapping_name) = Operand::parse(string)?;
+        // Parse the whitespace from the string.
+        let (string, _) = Sanitizer::parse_whitespaces(string)?;
 
         // Parse the "[" from the string.
         let (string, _) = tag("[")(string)?;
@@ -272,7 +283,7 @@ impl<N: Network> Display for GetOrUseDynamic<N> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         // Print the command.
         write!(f, "{} ", Self::opcode())?;
-        // Print the program name, program network, mapping and key operand.
+        // Print the program name, program network, mapping name, and key operand.
         write!(
             f,
             "{} {} {}[{}] {} into ",
@@ -379,5 +390,16 @@ mod tests {
         let bytes_le = get.to_bytes_le().unwrap();
         let result = GetOrUseDynamic::<CurrentNetwork>::from_bytes_le(&bytes_le[..]);
         assert!(result.is_ok())
+    }
+
+    #[test]
+    fn test_display_parse_roundtrip() {
+        let input = "get.or_use.dynamic r0 r1 r2[r3] r4 into r5 as boolean;";
+        let (string, original) = GetOrUseDynamic::<CurrentNetwork>::parse(input).unwrap();
+        assert!(string.is_empty());
+        let displayed = format!("{original}");
+        let (remainder, reparsed) = GetOrUseDynamic::<CurrentNetwork>::parse(&displayed).unwrap();
+        assert!(remainder.is_empty());
+        assert_eq!(original, reparsed);
     }
 }
