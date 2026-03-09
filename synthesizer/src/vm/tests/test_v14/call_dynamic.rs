@@ -2804,13 +2804,13 @@ constructor:
 #[test]
 fn test_constant_dynamic_call_output() {
     let network_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
-    let prog_name_field = Identifier::<CurrentNetwork>::from_str("prog").unwrap().to_field().unwrap();
+    let prog_static_name_field = Identifier::<CurrentNetwork>::from_str("prog_static").unwrap().to_field().unwrap();
     let constant_output_function_field =
         Identifier::<CurrentNetwork>::from_str("constant_output").unwrap().to_field().unwrap();
 
-    let program = Program::<CurrentNetwork>::from_str(&format!(
+    let program_static = Program::<CurrentNetwork>::from_str(
         r"
-    program prog.aleo;
+    program prog_static.aleo;
 
     function constant_output:
         input r0 as u16.public;
@@ -2819,10 +2819,20 @@ fn test_constant_dynamic_call_output() {
 
         output r0 as u16.constant;
 
+    constructor:
+        assert.eq true true;
+    ",
+    )
+    .unwrap();
+
+    let program_dynamic = Program::<CurrentNetwork>::from_str(&format!(
+        r"
+    program prog_dynamic.aleo;
+
     function dynamic_constant_output:
         input r0 as u16.public;
 
-        call.dynamic {prog_name_field} {network_field} {constant_output_function_field}
+        call.dynamic {prog_static_name_field} {network_field} {constant_output_function_field}
             with r0 (as u16.public)
             into r1 (as u16.constant);
 
@@ -2840,7 +2850,9 @@ fn test_constant_dynamic_call_output() {
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
-    let transaction_deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
+    let transaction_deploy_static = vm.deploy(&caller_private_key, &program_static, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[transaction_deploy_static], rng);
 
-    add_and_test(&vm, &caller_private_key, &[transaction_deploy], rng);
+    let transaction_deploy_dynamic = vm.deploy(&caller_private_key, &program_dynamic, None, 0, None, rng).unwrap();
+    add_and_test(&vm, &caller_private_key, &[transaction_deploy_dynamic], rng);
 }
