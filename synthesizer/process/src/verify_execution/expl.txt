@@ -1,0 +1,96 @@
+The checks in this file ensure that every Transition t in the given execution satisfies the following:
+
+Guarantee (G): Every non-static record (DynamicRecord or ExternalRecord) input to t or received by t from a
+*function* callee is "connected" to a static Record which exists on the ledger at the end of the full execution
+(whether consumed or not).
+
+Here "connected" refers to the transitive relation between two or more record-like (Record, DynamicRecord or
+ExternalRecord) registers that arises when one of the following happens:
+- they coincide at a function or closure input or output boundary
+- they are connected by a cast-to-dynamic instruction
+
+Among other things, the guarantee makes read operations on DynamicRecord or ExternalRecord more meaningful.
+
+The following is *required* of every function and closure in the execution:
+
+Contract (C): Assuming every non-static record received as an input or received from a (necessarily function)
+**callee exists on the ledger at the end of the execution  (whether consumed or not), every non-static record
+output or passed to a *function* callee (but not necessarily to a closure) exists on the ledger at the end of
+the full execution.
+
+For instance, it is okay to output a DynamicRecord received from a function callee or as an input.
+
+(G) and (C) can be ensured as follows:
+
+  1. Keeping track of each DynamicRecord and ExternalRecord register input to the root call as it travels across
+  function and closure input or output boundaries and cast-to-dynamic (in the external case) instructions, and
+  ensuring that one register connected to it is input to a function receiving it as a static Record (thus
+  consuming it). We refer to this as the *global check*.
+
+  Materialization cannot occur at an output boundary. This boils down to the fact that an input or output of a
+  (function or closure)call cannot be a static Record in the caller and an ExternalRecord in the callee due to
+  dependency-cycle checks.
+
+  2. Local check for functions: ensuring that, in each transition t in the execution, if a static Record R_s is
+  minted locally and cast to a DynamicRecord R_d , if a record-like register connected to R_d is output by t or
+  passed to a child *transition* (i. e. function, not closure) of t, then R_s is also output by t We refer to
+  this as the *local check*.
+
+  3. Local check for closures (note that closures cannot output static Record s or call other functions or
+  closures): ensuring that, for each closure c in the execution, no DynamicRecords cast from static Records
+  minted in c are output (by c).
+
+ensure_records_exist explores the execution tree recursively starting at the root Transition and processing
+instructions (input/output boundaries, closure calls, function calls and Record mints and cast-to-dynamic
+instructions) in order of execution.
+
+- When a function call is encountered, the function process_transition is called. This initialises a
+  FunctionLocalCheck struct which keeps track of which DynamicRecords cast from locally minted static Records
+  are passed to callee functions or output.
+
+    If the function corresponds to the root transition, a GlobalCheck is also initialised with one singleton
+    family per non-static Record input. It is passed across all recursive calls.
+
+    process_transition processes the following situations:
+
+    - Case 1: RecordWithDynamicID and Record registers input to the function, whose families are marked as
+      existing if they are being tracked (global check)
+    - Case 2: connections between the caller registers where call inputs are passed and the callee's input
+      registers (global check).
+    - Case 3: cast instruction minting a static Record (local check)
+    - Case 4: casts of ExternalRecords to DynamicRecords (global check; note an external record cannot be
+      minted locally)
+    - Case 5: casts of locally minted static Records to DynamicRecords (local check)
+    - Call instructions (static or dynamic calls to functions, static calls to closures), in which case
+      process_function and process_closure are called accordingly. In particular
+        - Case 6: DynamicRecords cast from locally minted static Records and passed to a function call (local
+          check)
+    - DynamicRecords cast from locally minted static Records and output (local check)
+    - Checking that all static Records which must be output because of the last two points are so.
+    - Connections between the caller registers where call outputs are received and call and the callee's output
+      registers (global check).
+      
+- When a closure call is encountered, the function process_closure is called, passing it GlobalCheck and the
+  caller's FunctionLocalCheck (note that a closure can affect the local check of its caller - for instance, if
+  it receives a DynamicRecord and outputs it directly; or if it casts a static Record Rs received as an input
+  to a dynamic one Rd and outputs the latter).
+
+    process_closure acts directly on the GlobalCheck and the callers FunctionLocalCheck *in terms of the
+    caller's registers* instead of creating register connections that refer specifically to its own records. It
+    also instantiates a ClosureLocalCheck which keeps track of the simpler closure version of the local check.
+
+    process_closure processes the following situations:
+
+    - Case 1: cast instruction minting a static Record (closure's local check)
+    - Case 2: casts of locally minted static Records to DynamicRecords, the latter of which cannot be output
+      (closure's local check)
+    - Case 3: casts of static Records minted locally in the caller and received from it to DynamicRecords
+      returned to the caller (caller function's local check)
+    - Case 4: casts of ExternalRecords which were input to the caller itself, to DynamicRecords returned to
+      the caller (global check)
+    - Effective remappings of caller registers due to the input/output declaration
+        - Case 5: Adding the caller's output register to the family containing the call's input register, if any
+          (global check)
+        - Case 6: Adding a cast-static-to-dynamic conversion R_s -> R_d' if a DynamicRecord at register R_d
+          cast from a static Record at register R_s minted in the caller function was passed to the closure and
+          received at a different register R_d'. (caller function's local check)

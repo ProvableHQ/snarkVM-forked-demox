@@ -549,7 +549,7 @@ fn test_existence_check() {
     add_and_test(&vm, &caller_private_key, &[deploy_frontier_upgraded], rng);
 
     // Test 1: A child function of the root transition breaks the (function version of the) local check
-    // Involves process_transition cases 3, 5
+    // Involves process_transition cases 3, 5, 7
     println!("Test 1: Calling extension.aleo/call_base...");
 
     let tx_base_function = vm.execute(
@@ -766,7 +766,7 @@ fn test_existence_check() {
 
     add_and_test(&vm, &caller_private_key, &[test_case_5_1_tx], rng);
 
-    // Involves process_transition cases 2, 3, 5, 6, 7
+    // Involves process_transition cases 2, 3, 5, 6, 8
     println!("    5.2) Attempting to pass a locally minted DynamicRecord to a function...");
 
     let test_case_5_2_tx = vm.execute(
@@ -800,7 +800,7 @@ fn test_existence_check() {
 
     add_and_test(&vm, &caller_private_key, &[test_case_5_3_tx], rng);
 
-    // Involves process_transition cases 2, 3, 6, 7 and process_closure case 3
+    // Involves process_transition cases 2, 3, 6, 8 and process_closure case 3
     println!("    5.4) Attempting to pass a locally minted DynamicRecord via external-closure cast to a function...");
 
     let test_case_5_4_tx = vm.execute(
@@ -817,7 +817,7 @@ fn test_existence_check() {
     assert!(err.contains("frontier.aleo/tricky_cast_function does not pass the local record-existence check"));
     assert!(err.contains("locally minted static Record at r1"));
 
-    // Involves process_transition cases 2, 3, 6, 7 and process_closure case 3
+    // Involves process_transition cases 2, 3, 6, 8 and process_closure case 3
     println!("    5.5) Saving case 5.4 by outputting the original static Record...");
 
     let test_case_5_5_tx = vm
@@ -834,7 +834,7 @@ fn test_existence_check() {
 
     add_and_test(&vm, &caller_private_key, &[test_case_5_5_tx], rng);
 
-    // Involves process_transition case 3 and process_closure cases 3, 6
+    // Involves process_transition case 3 and process_closure cases 3, 6, 7
     println!("    5.6) Ruining case 5.3 by outputting the locally minted DynamicRecord (after two remappings)...");
 
     let test_case_5_6_tx = vm.execute(
@@ -874,7 +874,7 @@ fn test_existence_check() {
 
     add_and_test(&vm, &caller_private_key, &[map_record_tx], rng);
 
-    // Involves process_transition cases 1, 2, 4, 7 and process_closure cases 4, 5
+    // Involves process_transition cases 1, 2, 4, 8 and process_closure cases 4, 5
     println!("    6.1) Calling remapper.aleo/growing_family and making the family materialize at the end...");
 
     let growing_family_tx = vm
@@ -910,7 +910,7 @@ fn test_existence_check() {
 
     add_and_test(&vm, &caller_private_key, &[other_map_record_tx], rng);
 
-    // Involves process_transition cases 2, 4, 7 and process_closure cases 4, 5
+    // Involves process_transition cases 2, 4, 8 and process_closure cases 4, 5
     println!("    6.2) Calling remapper.aleo/growing_family and not making the family materialize at the end...");
 
     let growing_family_tx = vm.execute(
