@@ -102,25 +102,6 @@ fn test_dynamic_calls_to_credits_aleo() -> Result<()> {
     assert_eq!(block.aborted_transaction_ids().len(), 0);
     vm.add_next_block(&block)?;
 
-    // TODO (dynamic_dispatch) Uncomment this once we can parse identifiers as literals.
-    // Execute the "static" function.
-    // println!("Executing the `static` function...");
-    // let transaction = vm.execute(
-    //    &caller_private_key,
-    //    ("test_dcall_to_transfer_public.aleo", "static"),
-    //    vec![Value::from_str(&format!("{caller_address}"))?, Value::from_str("1234u64")?].into_iter(),
-    //    None,
-    //    0,
-    //    None,
-    //    rng,
-    // )?;
-    // vm.check_transaction(&transaction, None, rng)?;
-    // let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
-    // assert_eq!(block.transactions().num_accepted(), 1);
-    // assert_eq!(block.transactions().num_rejected(), 0);
-    // assert_eq!(block.aborted_transaction_ids().len(), 0);
-    // vm.add_next_block(&block)?;
-
     // Get the program and function identifiers as fields and check that they are expected.
     println!("Executing the `dynamic` function...");
     let credits_field = Identifier::<CurrentNetwork>::from_str("credits")?.to_field()?;
@@ -305,7 +286,8 @@ fn test_universal_swap() {
             input r3 as dynamic.future;
             await r2;
             await r3;
-            // TODO: implement reserve update logic here.
+            // Note: Reserve update logic is omitted intentionally — this test program only
+            // exercises the dynamic dispatch and future-await mechanics, not AMM state changes.
 
         constructor:
             assert.eq true true;
@@ -2799,4 +2781,227 @@ constructor:
     let block = sample_next_block(&vm_v14, &caller_private_key, &[v2_deployment], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 0, "V2 deployment should be rejected at V14");
     assert_eq!(block.aborted_transaction_ids().len(), 1, "V2 deployment should be aborted at V14");
+}
+
+// Tests that an execution generating more than `MAX_BATCH_PROOF_INSTANCES` (128) proof instances
+// is rejected. The prover-side instance count (transitions + translation proofs) is checked in
+// `prove_batch` before any proof is computed. The instance breakdown for this test is:
+// - Transitions: 1 (caller) + 4×1 (mint_batch) + 4×1 (consume_batch) = 9
+// - Translation proofs: 4×16 (A output static→dynamic) + 4×16 (B input dynamic→static) = 128
+// - Total: 9 + 128 = 137 > MAX_BATCH_PROOF_INSTANCES (128)
+//
+// Two programs are used:
+// - `instance_limit_a.aleo`: defines a `token` record and a `mint_batch` function that creates
+//   16 tokens via `cast` per call (16 outputs).
+// - `instance_limit_b.aleo`: defines a `consume_batch` function that takes 16 external tokens
+//   from A (16 dynamic inputs, translated to static on entry).
+// The caller chains 4 rounds of (call A → call B), each round contributing 32 translation
+// proof instances, for a total that exceeds the 128-instance limit.
+#[test]
+fn test_batch_proof_instance_limit_exceeded() -> Result<()> {
+    let rng = &mut TestRng::default();
+
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key)?;
+
+    // Compute field operands for the dynamic calls.
+    let a_field = Identifier::<CurrentNetwork>::from_str("instance_limit_a")?.to_field()?;
+    let b_field = Identifier::<CurrentNetwork>::from_str("instance_limit_b")?.to_field()?;
+    let net_field = Identifier::<CurrentNetwork>::from_str("aleo")?.to_field()?;
+    let mint_field = Identifier::<CurrentNetwork>::from_str("mint_batch")?.to_field()?;
+    let consume_field = Identifier::<CurrentNetwork>::from_str("consume_batch")?.to_field()?;
+
+    // Program A: mints 16 token records per call via `cast`.
+    let program_a = Program::<CurrentNetwork>::from_str(
+        r"
+        program instance_limit_a.aleo;
+
+        record token:
+            owner as address.private;
+            amount as u64.private;
+
+        function mint_batch:
+            input r0 as address.private;
+            cast r0 1u64 into r1 as token.record;
+            cast r0 2u64 into r2 as token.record;
+            cast r0 3u64 into r3 as token.record;
+            cast r0 4u64 into r4 as token.record;
+            cast r0 5u64 into r5 as token.record;
+            cast r0 6u64 into r6 as token.record;
+            cast r0 7u64 into r7 as token.record;
+            cast r0 8u64 into r8 as token.record;
+            cast r0 9u64 into r9 as token.record;
+            cast r0 10u64 into r10 as token.record;
+            cast r0 11u64 into r11 as token.record;
+            cast r0 12u64 into r12 as token.record;
+            cast r0 13u64 into r13 as token.record;
+            cast r0 14u64 into r14 as token.record;
+            cast r0 15u64 into r15 as token.record;
+            cast r0 16u64 into r16 as token.record;
+            output r1 as token.record;
+            output r2 as token.record;
+            output r3 as token.record;
+            output r4 as token.record;
+            output r5 as token.record;
+            output r6 as token.record;
+            output r7 as token.record;
+            output r8 as token.record;
+            output r9 as token.record;
+            output r10 as token.record;
+            output r11 as token.record;
+            output r12 as token.record;
+            output r13 as token.record;
+            output r14 as token.record;
+            output r15 as token.record;
+            output r16 as token.record;
+
+        constructor:
+            assert.eq true true;
+        ",
+    )?;
+
+    // Program B: spends 16 external token records from A per call.
+    let program_b = Program::<CurrentNetwork>::from_str(
+        r"
+        import instance_limit_a.aleo;
+
+        program instance_limit_b.aleo;
+
+        function consume_batch:
+            input r0 as instance_limit_a.aleo/token.record;
+            input r1 as instance_limit_a.aleo/token.record;
+            input r2 as instance_limit_a.aleo/token.record;
+            input r3 as instance_limit_a.aleo/token.record;
+            input r4 as instance_limit_a.aleo/token.record;
+            input r5 as instance_limit_a.aleo/token.record;
+            input r6 as instance_limit_a.aleo/token.record;
+            input r7 as instance_limit_a.aleo/token.record;
+            input r8 as instance_limit_a.aleo/token.record;
+            input r9 as instance_limit_a.aleo/token.record;
+            input r10 as instance_limit_a.aleo/token.record;
+            input r11 as instance_limit_a.aleo/token.record;
+            input r12 as instance_limit_a.aleo/token.record;
+            input r13 as instance_limit_a.aleo/token.record;
+            input r14 as instance_limit_a.aleo/token.record;
+            input r15 as instance_limit_a.aleo/token.record;
+            output r0.owner as address.private;
+
+        constructor:
+            assert.eq true true;
+        ",
+    )?;
+
+    // The caller chains 3 rounds of (call A to mint 16 tokens, call B to spend them).
+    let caller_program = Program::<CurrentNetwork>::from_str(&format!(
+        r"
+        import instance_limit_a.aleo;
+
+        program instance_limit_caller.aleo;
+
+        function run:
+            input r0 as address.private;
+
+            call.dynamic {a_field} {net_field} {mint_field}
+                with r0 (as address.private)
+                into r1 r2 r3 r4 r5 r6 r7 r8 r9 r10 r11 r12 r13 r14 r15 r16
+                (as dynamic.record dynamic.record dynamic.record dynamic.record
+                    dynamic.record dynamic.record dynamic.record dynamic.record
+                    dynamic.record dynamic.record dynamic.record dynamic.record
+                    dynamic.record dynamic.record dynamic.record dynamic.record);
+            call.dynamic {b_field} {net_field} {consume_field}
+                with r1 r2 r3 r4 r5 r6 r7 r8 r9 r10 r11 r12 r13 r14 r15 r16
+                (as dynamic.record dynamic.record dynamic.record dynamic.record
+                    dynamic.record dynamic.record dynamic.record dynamic.record
+                    dynamic.record dynamic.record dynamic.record dynamic.record
+                    dynamic.record dynamic.record dynamic.record dynamic.record)
+                into r17 (as address.private);
+
+            call.dynamic {a_field} {net_field} {mint_field}
+                with r0 (as address.private)
+                into r18 r19 r20 r21 r22 r23 r24 r25 r26 r27 r28 r29 r30 r31 r32 r33
+                (as dynamic.record dynamic.record dynamic.record dynamic.record
+                    dynamic.record dynamic.record dynamic.record dynamic.record
+                    dynamic.record dynamic.record dynamic.record dynamic.record
+                    dynamic.record dynamic.record dynamic.record dynamic.record);
+            call.dynamic {b_field} {net_field} {consume_field}
+                with r18 r19 r20 r21 r22 r23 r24 r25 r26 r27 r28 r29 r30 r31 r32 r33
+                (as dynamic.record dynamic.record dynamic.record dynamic.record
+                    dynamic.record dynamic.record dynamic.record dynamic.record
+                    dynamic.record dynamic.record dynamic.record dynamic.record
+                    dynamic.record dynamic.record dynamic.record dynamic.record)
+                into r34 (as address.private);
+
+            call.dynamic {a_field} {net_field} {mint_field}
+                with r0 (as address.private)
+                into r35 r36 r37 r38 r39 r40 r41 r42 r43 r44 r45 r46 r47 r48 r49 r50
+                (as dynamic.record dynamic.record dynamic.record dynamic.record
+                    dynamic.record dynamic.record dynamic.record dynamic.record
+                    dynamic.record dynamic.record dynamic.record dynamic.record
+                    dynamic.record dynamic.record dynamic.record dynamic.record);
+            call.dynamic {b_field} {net_field} {consume_field}
+                with r35 r36 r37 r38 r39 r40 r41 r42 r43 r44 r45 r46 r47 r48 r49 r50
+                (as dynamic.record dynamic.record dynamic.record dynamic.record
+                    dynamic.record dynamic.record dynamic.record dynamic.record
+                    dynamic.record dynamic.record dynamic.record dynamic.record
+                    dynamic.record dynamic.record dynamic.record dynamic.record)
+                into r51 (as address.private);
+
+            call.dynamic {a_field} {net_field} {mint_field}
+                with r0 (as address.private)
+                into r52 r53 r54 r55 r56 r57 r58 r59 r60 r61 r62 r63 r64 r65 r66 r67
+                (as dynamic.record dynamic.record dynamic.record dynamic.record
+                    dynamic.record dynamic.record dynamic.record dynamic.record
+                    dynamic.record dynamic.record dynamic.record dynamic.record
+                    dynamic.record dynamic.record dynamic.record dynamic.record);
+            call.dynamic {b_field} {net_field} {consume_field}
+                with r52 r53 r54 r55 r56 r57 r58 r59 r60 r61 r62 r63 r64 r65 r66 r67
+                (as dynamic.record dynamic.record dynamic.record dynamic.record
+                    dynamic.record dynamic.record dynamic.record dynamic.record
+                    dynamic.record dynamic.record dynamic.record dynamic.record
+                    dynamic.record dynamic.record dynamic.record dynamic.record)
+                into r68 (as address.private);
+
+            output r17 as address.private;
+
+        constructor:
+            assert.eq true true;
+        "
+    ))?;
+
+    // Initialize the VM at V14.
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14)?, rng);
+
+    // Deploy program A.
+    let tx = vm.deploy(&caller_private_key, &program_a, None, 0, None, rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, &[tx], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 1);
+    vm.add_next_block(&block)?;
+
+    // Deploy program B.
+    let tx = vm.deploy(&caller_private_key, &program_b, None, 0, None, rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, &[tx], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 1);
+    vm.add_next_block(&block)?;
+
+    // Deploy the caller program.
+    let tx = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, &[tx], rng)?;
+    assert_eq!(block.transactions().num_accepted(), 1);
+    vm.add_next_block(&block)?;
+
+    // Attempt execution. This should fail because 137 > MAX_BATCH_PROOF_INSTANCES (128).
+    let result = vm.execute(
+        &caller_private_key,
+        ("instance_limit_caller.aleo", "run"),
+        vec![Value::from_str(&format!("{caller_address}"))?].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    );
+    assert!(result.is_err(), "Expected execution to fail due to exceeding MAX_BATCH_PROOF_INSTANCES");
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("exceed the maximum allowed"), "Expected instance limit error, got: {err}",);
+
+    Ok(())
 }

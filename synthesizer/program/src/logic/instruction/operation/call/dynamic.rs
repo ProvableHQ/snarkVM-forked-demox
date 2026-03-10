@@ -314,7 +314,7 @@ impl<N: Network> Parser for CallDynamic<N> {
         operands.push(program_network);
         // Parse the whitespace from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
-        // Parse the function name of the call from the string .
+        // Parse the function name of the call from the string.
         let (string, function_name) = Operand::parse(string)?;
         operands.push(function_name);
         // Parse the whitespace from the string.
