@@ -26,12 +26,10 @@ use super::*;
 // - two of them coincide at a function or closure input or output boundary
 // - two of them are related by a cast-to-dynamic instruction
 //
-// Among other things, the guarantee makes read operations on DynamicRecord or ExternalRecord more meaningful.
-//
 // The following is *required* of every function and closure in the execution:
 //
 // Contract (C): Assuming every non-static record received as an input or received from a (necessarily function)
-// callee exists on the ledger at the end of the execution (whether consumed or not), every non-static record
+// callee exists on the ledger at the end of the execution (whether consumed or not), every record-like register
 // output or passed to a *function* callee (but not necessarily to a closure) exists on the ledger at the end of
 // the full execution.
 //
@@ -44,14 +42,12 @@ use super::*;
 //   ensuring that one register connected to it is input to a function receiving it as a static Record (thus
 //   consuming it). We refer to this as the *global check*.
 //
-//   Materialization cannot occur at an output boundary. This boils down to the fact that an input or output of a
-//   (function or closure) call cannot be a static Record in the caller and an ExternalRecord in the callee due to
-//   dependency-cycle checks.
+//   Materialization of non-static recordds input to the root call cannot occur at an output boundary.
 //
 //   2. Local check for functions: ensuring that, in each transition t in the execution, if a static Record R_s is
 //   minted locally and cast to a DynamicRecord R_d, if a record-like register connected to R_d is output by t or
-//   passed to a child *transition* (i.e. function, not closure) of t, then R_s is also output by t. We refer to
-//   this as the *local check*.
+//   passed to a child *transition* (i.e. function, not closure) of t, then R_s or a static-Record register connected
+//   to it (necessarily via an external closure call) is also output by t. We refer to this as the *local check*.
 //
 //   3. Local check for closures (note that closures cannot output static Record s or call other functions or
 //   closures): ensuring that, for each closure c in the execution, no DynamicRecords cast from static Records
@@ -80,12 +76,15 @@ use super::*;
 //     - Case 5: casts of locally minted static Records to DynamicRecords (local check)
 //     - Call instructions (static or dynamic calls to functions, static calls to closures), in which case
 //       process_function and process_closure are called accordingly. In particular
-//         - Case 6: DynamicRecords cast from locally minted static Records and passed to a function call (local
+//         - Case 6a: DynamicRecords cast from locally minted static Records and passed to a function call (local
 //           check)
+//         - Case 6b: Static-Record registers connected to a locally minted static Record and passed to a function
+//           call (local check)
 //     - Case 7: DynamicRecords cast from locally minted static Records and output (local check)
-//     - Case 8: Connections between the caller registers where call outputs are received and call and the callee's output
-//       registers (global check).
-//     - Checking that all static Records which must be output because of the last two points are so.
+//     - Case 8: Connections between the caller registers where call outputs are received and call and the callee's
+//       output registers (global check).
+//     - Checking that, for each static Record R_s which must be output because of the last two points, either R_s or a
+//       connected static-Record register is output.
 //
 // - When a closure call is encountered, the function process_closure is called, passing it GlobalCheck and the
 //   caller's FunctionLocalCheck (note that a closure can affect the local check of its caller - for instance, if
@@ -111,6 +110,8 @@ use super::*;
 //         - Case 6: Adding a cast-static-to-dynamic conversion R_s -> R_d' if a DynamicRecord at register R_d
 //           cast from a static Record at register R_s minted in the caller function was passed to the closure and
 //           received at a different register R_d'. (caller function's local check)
+//         - Case 7: Adding a connection between (caller-side) static-Record registers connected to a static Record
+//           minted in the caller.
 
 // Structure that keeps track of the global record-existence check of an execution, i.e. that each DynamicRecord and
 // ExternalRecord input to the root transition corresponds to a static Record that exists on the ledger at the end of
@@ -181,8 +182,9 @@ impl<N: Network> GlobalCheck<N> {
 // Auxiliary structure for the local record-existence check of a function, i.e. the check that, for each DynamicRecord
 // cast from a locally minted static Record and passed to a non-closure call or output, the static Record is output.
 struct FunctionLocalCheck {
-    // Registers of static Records minted in this function.
-    locally_minted_static: HashSet<u64>,
+    // Each element of this vector is a set containing a locally minted static Record and the local static-Record
+    // registers connected to it via an external closure call.
+    connected_locally_minted_static: Vec<HashSet<u64>>,
     // For each DynamicRecord at r_j cast from a locally minted static Record at r_i, this map contains the entry
     // r_j -> r_i. This also takes into account static-to-dynamic casts occurring in child closures and effective
     // remappings of DynamicRecord registers caused by closure calls.
@@ -196,7 +198,7 @@ impl FunctionLocalCheck {
     // Initialises a function's local check.
     fn new() -> Self {
         Self {
-            locally_minted_static: HashSet::new(),
+            connected_locally_minted_static: Vec::new(),
             locally_minted_dynamic: HashMap::new(),
             must_be_output: HashSet::new(),
         }
@@ -204,20 +206,33 @@ impl FunctionLocalCheck {
 
     // Adds a locally minted static Record to the local check.
     fn mint_static(&mut self, register: u64) {
-        self.locally_minted_static.insert(register);
+        self.connected_locally_minted_static.push(HashSet::from_iter([register]));
     }
 
     // Tracks the information about a static-to-dynamic cast if the operand corresponds to a locally minted static
     // Record.
     fn cast_to_dynamic(&mut self, operand_register: u64, destination_register: u64) {
-        if self.locally_minted_static.contains(&operand_register) {
+        if self.is_locally_minted_static(operand_register) {
             self.locally_minted_dynamic.insert(destination_register, operand_register);
         }
     }
 
-    // Returns whether a given register corresponds to a static Record minted in the function.
+    // Returns whether a given register corresponds to a static Record minted in the function or to a register remapped
+    // to it via an external closure call.
     fn is_locally_minted_static(&self, register: u64) -> bool {
-        self.locally_minted_static.contains(&register)
+        self.connected_locally_minted_static.iter().any(|set| set.contains(&register))
+    }
+
+    // If `old_register` corresponds to a locally minted static Record or is a static-Record register connected to one,
+    // this function adds a connection between `new_register` and `old_register`.
+    fn connect_locally_minted_static(&mut self, old_register: u64, new_register: u64) {
+        for set in self.connected_locally_minted_static.iter_mut() {
+            if set.contains(&old_register) {
+                set.insert(new_register);
+                // At most one set can contain `old_register` by construction.
+                break;
+            }
+        }
     }
 
     // Returns the register of the static Record from which a given DynamicRecord is cast, if any.
@@ -225,11 +240,14 @@ impl FunctionLocalCheck {
         self.locally_minted_dynamic.get(&register).copied()
     }
 
-    // Keeps track of the fact that a register has been passed to a function call: if the register corresponds to a
-    // DynamicRecord cast from a locally minted static Record, this keeps track of the fact that the static Record
-    // must be output.
+    // Keeps track of the fact that a register has been passed to a function call: if the register is connected to a
+    // locally minted static Record, this stores the fact that the latter must be output.
     fn passed_to_function_call(&mut self, register: u64) {
-        if let Some(static_record) = self.locally_minted_dynamic.get(&register) {
+        if self.is_locally_minted_static(register) {
+            // Case a)
+            self.add_must_be_output(register);
+        } else if let Some(static_record) = self.locally_minted_dynamic.get(&register) {
+            // Case b)
             self.add_must_be_output(*static_record);
         }
     }
@@ -245,7 +263,13 @@ impl FunctionLocalCheck {
     // where r_i is one of them.
     fn check_all_are_output(&self, actually_output: HashSet<u64>) -> Option<u64> {
         for register in self.must_be_output.iter() {
-            if !actually_output.contains(register) {
+            // The unwrap is safe by construction because only registers containing locally minted static Records and
+            // static-Record registers connected to those can appear in must_be_output.
+            let connected_registers =
+                self.connected_locally_minted_static.iter().find(|set| set.contains(register)).unwrap();
+
+            // It is enough for any connected static-Record register to be output.
+            if connected_registers.iter().all(|register| !actually_output.contains(register)) {
                 return Some(*register);
             }
         }
@@ -731,10 +755,14 @@ fn process_closure<N: Network>(
             let new_register = (*caller_tid, *caller_output_register);
             global_check.add_to_family(old_register, new_register);
 
-            // Case 6. Caller local-check update.
+            // Case 6. First caller local-check update: remapping of DynamicRecord registers.
             if let Some(original_static) = caller_local_check.get_static_source_of_dynamic(caller_input_register) {
                 caller_local_check.cast_to_dynamic(original_static, *caller_output_register);
             }
+
+            // Case 7. Second caller local-check update: remapping of static-Records registers (connected to a locally
+            // minted one).
+            caller_local_check.connect_locally_minted_static(caller_input_register, *caller_output_register);
         }
     }
 
