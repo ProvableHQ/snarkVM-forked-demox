@@ -15,8 +15,8 @@
 
 use super::*;
 
-// Test the record-existance check passes or fails as expected in a number of
-// scenarios. In particular, all cases documented in process_transition and
+// Tests that the record-existence check passes or fails as expected in a number
+// of scenarios. In particular, all cases documented in process_transition and
 // process_closure (auxiliary functions to ensure_records_exist) are explored.
 #[test]
 fn test_existence_check() {
@@ -28,11 +28,12 @@ fn test_existence_check() {
 
     let network_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
     let program_base_field = Identifier::<CurrentNetwork>::from_str("base").unwrap().to_field().unwrap();
-    let decomission_function_field = Identifier::<CurrentNetwork>::from_str("decomission").unwrap().to_field().unwrap();
-    let decomission_reversed_function_field =
-        Identifier::<CurrentNetwork>::from_str("decomission_reversed").unwrap().to_field().unwrap();
-    let decomission_two_function_field =
-        Identifier::<CurrentNetwork>::from_str("decomission_two").unwrap().to_field().unwrap();
+    let decommission_function_field =
+        Identifier::<CurrentNetwork>::from_str("decommission").unwrap().to_field().unwrap();
+    let decommission_reversed_function_field =
+        Identifier::<CurrentNetwork>::from_str("decommission_reversed").unwrap().to_field().unwrap();
+    let decommission_two_function_field =
+        Identifier::<CurrentNetwork>::from_str("decommission_two").unwrap().to_field().unwrap();
     let mint_rover_function_field = Identifier::<CurrentNetwork>::from_str("mint_rover").unwrap().to_field().unwrap();
     let program_frontier_field = Identifier::<CurrentNetwork>::from_str("frontier").unwrap().to_field().unwrap();
     let program_remapper_field = Identifier::<CurrentNetwork>::from_str("remapper").unwrap().to_field().unwrap();
@@ -82,13 +83,8 @@ fn test_existence_check() {
 
             output r3 as dynamic.record;
 
-        function call_closure_mint:
-            input r0 as u8.public;
-            call dynamic_mint_closure r0 false into r1;
-            output 2u8 as u8.public;
-
         // Consumes a rover Record and outputs whether its planet was the same as that of a DynamicRecord received separately
-        function decomission:
+        function decommission:
             input r0 as rover.record;
             input r1 as dynamic.record;
 
@@ -98,8 +94,8 @@ fn test_existence_check() {
 
             output r3 as boolean.public;
 
-        // Does the same as decomission but receives the DynamicRecord and Record in the opposite order
-        function decomission_reversed:
+        // Does the same as decommission but receives the DynamicRecord and Record in the opposite order
+        function decommission_reversed:
             input r0 as dynamic.record;
             input r1 as rover.record;
 
@@ -110,7 +106,7 @@ fn test_existence_check() {
             output r3 as boolean.public;
 
         // Consumes two rover Records and outputs whether their planets coincide
-        function decomission_two:
+        function decommission_two:
             input r0 as rover.record;
             input r1 as rover.record;
 
@@ -142,7 +138,7 @@ fn test_existence_check() {
             call base.aleo/dynamic_mint_closure r0 false into r1;
             output r1 as dynamic.record;
 
-        function check_decomission_same:
+        function check_decommission_same:
             input r0 as base.aleo/rover.record;
 
             assert.eq r0.active true;
@@ -152,17 +148,11 @@ fn test_existence_check() {
             call dummy 10u16 false into r3 r4 r5;
             call dynamic_pass_through_closure 10u64 r2 into r6 r7;
 
-            call.dynamic {program_base_field} {network_field} {decomission_function_field}
+            call.dynamic {program_base_field} {network_field} {decommission_function_field}
                 with r1 r6 (as dynamic.record dynamic.record)
                 into r8 (as boolean.public);
 
             output r8 as boolean.public;
-
-        function mint_and_decomission_same:
-            input r0 as u8.private;
-            input r1 as boolean.private;
-
-            call base.aleo/mint_rover r0 r1 into r2;
 
         closure dummy:
             input r0 as u16;
@@ -214,8 +204,8 @@ fn test_existence_check() {
             call dynamic_pass_through_closure 11u64 r5 into r7 r8;
             call dynamic_pass_through_closure 1u64 r6 into r9 r10;
 
-            ternary r4 {decomission_function_field} {decomission_reversed_function_field} into r11;
-            ternary r3 {decomission_two_function_field} r11 into r12;
+            ternary r4 {decommission_function_field} {decommission_reversed_function_field} into r11;
+            ternary r3 {decommission_two_function_field} r11 into r12;
 
             call.dynamic {program_base_field} {network_field} r12
                 with r7 r9 (as dynamic.record dynamic.record)
@@ -596,7 +586,7 @@ fn test_existence_check() {
     // Test 3: A static record cast to dynamic twice and passed to a callee once translated and once as dynamic does not break the global or local checks.
     // It involves dynamic-record-register remapping through a closure call.
     // Involves process_transition cases 1, 2, 4 and process_closure case 5
-    println!("Test 3: extension.aleo/check_decomission_same...");
+    println!("Test 3: extension.aleo/check_decommission_same...");
 
     let mint_planet_4_tx = vm
         .execute(
@@ -618,10 +608,10 @@ fn test_existence_check() {
         _ => panic!("expected record output from mint_rover"),
     };
 
-    let check_decomission_same_tx = vm
+    let check_decommission_same_tx = vm
         .execute(
             &caller_private_key,
-            ("extension.aleo", "check_decomission_same"),
+            ("extension.aleo", "check_decommission_same"),
             [Value::<CurrentNetwork>::Record(mint_planet_4_record)].into_iter(),
             None,
             0,
@@ -630,7 +620,7 @@ fn test_existence_check() {
         )
         .unwrap();
 
-    add_and_test(&vm, &caller_private_key, &[check_decomission_same_tx], rng);
+    add_and_test(&vm, &caller_private_key, &[check_decommission_same_tx], rng);
 
     // Test 4: a root function receives a DynamicRecord R_d1 and calls a
     // function that mints a static Record, receiving it as a DynamicRecord
