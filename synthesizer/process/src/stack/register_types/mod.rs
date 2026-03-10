@@ -208,8 +208,11 @@ impl<N: Network> RegisterTypes<N> {
                     };
                     // Retrieve the entry type from the external record.
                     match external_record.entries().get(path_name) {
-                        // Retrieve the plaintext type.
-                        Some(entry_type) => RegisterAccessType::Plaintext(entry_type.plaintext_type().clone()),
+                        // Qualify local struct references so subsequent accesses use the correct stack.
+                        Some(entry_type) => {
+                            let qualified = entry_type.plaintext_type().clone().qualify(*locator.program_id());
+                            RegisterAccessType::Plaintext(qualified)
+                        }
                         None => bail!("'{path_name}' does not exist in external record '{locator}'"),
                     }
                 }
@@ -253,10 +256,13 @@ impl<N: Network> RegisterTypes<N> {
                 }
                 (RegisterAccessType::Plaintext(PlaintextType::ExternalStruct(locator)), Access::Member(identifier)) => {
                     let external_stack = stack.get_external_stack(locator.program_id())?;
-                    // Retrieve the member type from the struct.
+                    // Retrieve the member type from the external struct.
                     match external_stack.program().get_struct(locator.resource())?.members().get(identifier) {
-                        // Update the member type.
-                        Some(member_type) => register_type = RegisterAccessType::Plaintext(member_type.clone()),
+                        // Qualify local struct references so subsequent accesses use the correct stack.
+                        Some(member_type) => {
+                            let qualified = member_type.clone().qualify(*locator.program_id());
+                            register_type = RegisterAccessType::Plaintext(qualified);
+                        }
                         None => bail!("'{identifier}' does not exist in struct '{locator}'"),
                     }
                 }
@@ -292,7 +298,22 @@ impl<N: Network> RegisterTypes<N> {
                         Some(input) => {
                             register_type = match input.finalize_type() {
                                 FinalizeType::Plaintext(plaintext_type) => {
-                                    RegisterAccessType::Plaintext(plaintext_type.clone())
+                                    let plaintext = match external_stack {
+                                        Some(ref external_stack) => {
+                                            // Qualify the finalize input type with the external program ID so that any
+                                            // subsequent accesses are resolved against the correct program context.
+                                            // Without this, the type would appear "local" and later lookups could
+                                            // incorrectly search the current program instead of the external one the
+                                            // struct originated from.
+                                            //
+                                            // Note: this was added in ConsensusVersion::V13 and a check was added to make
+                                            // sure this doesn't affect older consensus versions.
+                                            plaintext_type.clone().qualify(*external_stack.program_id())
+                                        }
+                                        None => plaintext_type.clone(),
+                                    };
+
+                                    RegisterAccessType::Plaintext(plaintext)
                                 }
                                 FinalizeType::Future(locator) => RegisterAccessType::Future(*locator),
                                 FinalizeType::DynamicFuture => RegisterAccessType::DynamicFuture,

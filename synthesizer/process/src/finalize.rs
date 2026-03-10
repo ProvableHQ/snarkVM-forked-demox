@@ -321,6 +321,9 @@ fn finalize_constructor<N: Network, P: FinalizeStorage<N>>(
     // Initialize the finalize registers.
     let mut registers = FinalizeRegisters::new(state, transition_id, *program_id.name(), constructor_types, nonce);
 
+    // Determine the scope name.
+    let scope_name = Identifier::<N>::from_str("constructor")?;
+
     // Initialize a counter for the commands.
     let mut counter = 0;
 
@@ -341,6 +344,7 @@ fn finalize_constructor<N: Network, P: FinalizeStorage<N>>(
                 command,
                 &mut counter,
                 &mut finalize_operations,
+                &scope_name,
             )?,
         };
     }
@@ -405,6 +409,8 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
                 registers.function_name()
             )
         };
+        // Determine the scope name.
+        let scope_name = *registers.function_name();
         // Evaluate the commands.
         while counter < finalize.commands().len() {
             // Retrieve the command.
@@ -487,6 +493,7 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
                     command,
                     &mut counter,
                     &mut finalize_operations,
+                    &scope_name,
                 )?,
             };
         }
@@ -524,7 +531,7 @@ struct FinalizeState<N: Network> {
     awaited: HashSet<Register<N>>,
 }
 
-// A helper function to initialize the finalize state.
+// A helper function to initialize the finalize state for transitions (not constructors).
 fn initialize_finalize_state<N: Network>(
     state: FinalizeGlobalState,
     future: &Future<N>,
@@ -578,6 +585,7 @@ fn finalize_command_except_await<N: Network>(
     command: &Command<N>,
     counter: &mut usize,
     finalize_operations: &mut Vec<FinalizeOperation<N>>,
+    scope_name: &Identifier<N>,
 ) -> Result<()> {
     // Finalize the command.
     match &command {
@@ -588,9 +596,9 @@ fn finalize_command_except_await<N: Network>(
                     *counter = new_counter;
                 }
                 // If the evaluation fails, bail and return the error.
-                Ok(Err(error)) => bail!("'constructor' failed to evaluate command ({command}): {error}"),
+                Ok(Err(error)) => bail!("'{scope_name}' failed to evaluate command ({command}): {error}"),
                 // If the evaluation fails, bail and return the error.
-                Err(_) => bail!("'constructor' failed to evaluate command ({command})"),
+                Err(_) => bail!("'{scope_name}' failed to evaluate command ({command})"),
             }
         }
         Command::BranchNeq(branch_neq) => {
@@ -600,9 +608,9 @@ fn finalize_command_except_await<N: Network>(
                     *counter = new_counter;
                 }
                 // If the evaluation fails, bail and return the error.
-                Ok(Err(error)) => bail!("'constructor' failed to evaluate command ({command}): {error}"),
+                Ok(Err(error)) => bail!("'{scope_name}' failed to evaluate command ({command}): {error}"),
                 // If the evaluation fails, bail and return the error.
-                Err(_) => bail!("'constructor' failed to evaluate command ({command})"),
+                Err(_) => bail!("'{scope_name}' failed to evaluate command ({command})"),
             }
         }
         Command::Await(_) => {
@@ -616,9 +624,9 @@ fn finalize_command_except_await<N: Network>(
                 // If the evaluation succeeds with no operation, continue.
                 Ok(Ok(None)) => {}
                 // If the evaluation fails, bail and return the error.
-                Ok(Err(error)) => bail!("'constructor' failed to evaluate command ({command}): {error}"),
+                Ok(Err(error)) => bail!("'{scope_name}' failed to evaluate command ({command}): {error}"),
                 // If the evaluation fails, bail and return the error.
-                Err(_) => bail!("'constructor' failed to evaluate command ({command})"),
+                Err(_) => bail!("'{scope_name}' failed to evaluate command ({command})"),
             }
             *counter += 1;
         }
