@@ -3006,8 +3006,7 @@ fn test_batch_proof_instance_limit_exceeded() -> Result<()> {
     Ok(())
 }
 
-// Tests that programs containing dynamic calls with declared output types of the form "as <TYPE>.constant"
-// are disallowed.
+// Tests that programs containing dynamic calls with declared output types of the form "as <TYPE>.constant" are disallowed.
 #[test]
 fn test_constant_dynamic_call_input_output() {
     // In this program, the dynamic call attempts to return a single constant output.

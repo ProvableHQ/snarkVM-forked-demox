@@ -69,8 +69,7 @@ impl<N: Network> CallDynamic<N> {
             operands.len().checked_sub(3).expect("operands.len() >= 3 is checked above") == operand_types.len(),
             "The number of operands and operand types must match"
         );
-        // Ensure that the operand types do not contain a future, dynamic future, record, or external record type;
-        // or a constant type.
+        // Ensure that the operand types do not contain a future, dynamic future, record, external record type, or a constant type.
         // Note: `dynamic.record` (i.e. `ValueType::DynamicRecord`) IS allowed as an input operand type.
         for type_ in &operand_types {
             match type_ {
@@ -95,7 +94,7 @@ impl<N: Network> CallDynamic<N> {
             destinations.len() == destination_types.len(),
             "The number of destination registers and destination types must match"
         );
-        // Ensure that the destination types do not contain a future, record, or external record type; or a constant type.
+        // Ensure that the destination types do not contain a future, record, external record type, or a constant type.
         for type_ in &destination_types {
             match type_ {
                 ValueType::Constant(_) => bail!("A dynamic call cannot return a constant output."),
