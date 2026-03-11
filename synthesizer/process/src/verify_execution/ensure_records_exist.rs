@@ -213,7 +213,7 @@ impl<N: Network> LocalCheck<N> {
         {
             // Case 6b)
             bail!(
-                "In {}, dynamic record at r{register} passed to a function call is cast from a locally minted Record at r{static_record} which is not output",
+                "In {}, DynamicRecord at r{register} passed to a function call is cast from a locally minted Record at r{static_record} which is not output",
                 self.locator
             );
         } else {
@@ -227,9 +227,9 @@ impl<N: Network> LocalCheck<N> {
         if let Some(static_record) = self.locally_minted_dynamic.get(&register)
             && !self.output_registers.contains(static_record)
         {
-            // Case 6b)
+            // Case 7)
             bail!(
-                "In {}, dynamic record at r{register} passed to a function call is cast from a locally minted Record at r{static_record} which is not output",
+                "In {}, output DynamicRecord at r{register} is cast from a locally minted Record at r{static_record} which is not output",
                 self.locator
             );
         } else {
@@ -472,8 +472,7 @@ fn process_transition<N: Network>(
 
     // Output processing
 
-    // Completing the local check: DynamicRecords cast from locally minted static Records require the static Record to
-    // be output.
+    // Case 7: DynamicRecords cast from locally minted static Records require the static Record to be output.
     for output in function.outputs().iter() {
         if let Operand::Register(output_register) = output.operand()
             && matches!(output.value_type(), ValueType::DynamicRecord)
