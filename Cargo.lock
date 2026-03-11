@@ -3328,7 +3328,6 @@ dependencies = [
  "enum_index",
  "enum_index_derive",
  "indexmap 2.13.0",
- "itertools 0.14.0",
  "num-derive",
  "num-traits",
  "seq-macro",
