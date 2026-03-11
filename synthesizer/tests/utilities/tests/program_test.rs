@@ -95,10 +95,10 @@ impl ExpectedTest for ProgramTest {
 
         // Parse out the first comment, denoted by `/* ... */`.
         let first_comment_start =
-            source.find("/*").unwrap_or_else(|| panic!("Test file '{:?}' must contain a comment", test_path.as_ref()))
+            source.find("/*").unwrap_or_else(|| panic!("Test file '{:?}' must contain a comment", test_path.as_ref()));
         let end_first_comment = source[first_comment_start + 2..]
             .find("*/")
-            .unwrap_or_else(|| panic!("Test file '{:?}' must contain a comment", test_path.as_ref()))
+            .unwrap_or_else(|| panic!("Test file '{:?}' must contain a comment", test_path.as_ref()));
 
         let comment = &source[first_comment_start + 2..first_comment_start + 2 + end_first_comment];
 
