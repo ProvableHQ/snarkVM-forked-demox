@@ -294,3 +294,54 @@ pub(crate) mod test_helpers {
         ]
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use console::network::MainnetV0;
+
+    type CurrentNetwork = MainnetV0;
+
+    #[test]
+    fn test_to_caller_input_record_with_dynamic_id() {
+        // RecordWithDynamicID should become DynamicRecord(dynamic_id) from caller's view.
+        let serial_number = Field::<CurrentNetwork>::from_u64(1);
+        let tag = Field::<CurrentNetwork>::from_u64(2);
+        let dynamic_id = Field::<CurrentNetwork>::from_u64(3);
+
+        let input = Input::<CurrentNetwork>::RecordWithDynamicID(serial_number, tag, dynamic_id);
+        let caller_input = input.to_caller_input();
+
+        assert_eq!(caller_input, Input::<CurrentNetwork>::DynamicRecord(dynamic_id));
+    }
+
+    #[test]
+    fn test_to_caller_input_external_record_with_dynamic_id() {
+        // ExternalRecordWithDynamicID should become DynamicRecord(dynamic_id) from caller's view.
+        let ext_id = Field::<CurrentNetwork>::from_u64(10);
+        let dynamic_id = Field::<CurrentNetwork>::from_u64(20);
+
+        let input = Input::<CurrentNetwork>::ExternalRecordWithDynamicID(ext_id, dynamic_id);
+        let caller_input = input.to_caller_input();
+
+        assert_eq!(caller_input, Input::<CurrentNetwork>::DynamicRecord(dynamic_id));
+    }
+
+    #[test]
+    fn test_to_caller_input_non_dynamic_variants_unchanged() {
+        // Non-dynamic variants must be returned unchanged.
+        let id = Field::<CurrentNetwork>::from_u64(42);
+
+        let constant = Input::<CurrentNetwork>::Constant(id, None);
+        assert_eq!(constant.to_caller_input(), constant);
+
+        let public = Input::<CurrentNetwork>::Public(id, None);
+        assert_eq!(public.to_caller_input(), public);
+
+        let dynamic_record = Input::<CurrentNetwork>::DynamicRecord(id);
+        assert_eq!(dynamic_record.to_caller_input(), dynamic_record);
+
+        let external = Input::<CurrentNetwork>::ExternalRecord(id);
+        assert_eq!(external.to_caller_input(), external);
+    }
+}

@@ -196,6 +196,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // This implicitly checks that the program checksum and program owner fields are set correctly.
                 let version = deployment.version()?;
 
+                // Legacy checks for old consensus versions.
+                //
+                // These checks do not have any long term implications on verification time because they
+                // are skipped by the time we get to the latest consensus version.
+                //
                 // If the `CONSENSUS_VERSION` is less than `V8`, ensure that
                 //   - the deployment edition is zero.
                 // If the `CONSENSUS_VERSION` is less than `V9` ensure that
@@ -203,9 +208,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 //   - the program checksum is **not** present in the deployment,
                 //   - the program owner is **not** present in the deployment
                 //   - the program does not use constructors, `Operand::Checksum`, `Operand::Edition`, or `Operand::ProgramOwner`
-                // If the `CONSENSUS_VERSION` is greater than or equal to `V9`, then verify that:
-                //   - the program checksum is present in the deployment
-                //   - the program owner is present in the deployment (except for V3 amendments)
                 // If the `CONSENSUS_VERSION` is less than `V11`, ensure that
                 //   - the program does not include V11 syntax
                 // If the `CONSENSUS_VERSION` is less than `V12`, ensure that
@@ -219,6 +221,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 //   - the program does not include V14 syntax (snark.verify, aleo::GENERATOR, identifier literals/types)
                 //   - the argument bit size of futures does not exceed the maximum allowed size of u16::MAX.
                 //   - V3 deployments (amendments) are not allowed.
+                //   - the deployment has exactly one verifying key per function (no record verifying keys)
                 if consensus_version < ConsensusVersion::V8 {
                     ensure!(
                         deployment.edition().is_zero(),
@@ -243,19 +246,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V9`"
                     );
                 }
-                if consensus_version >= ConsensusVersion::V9 {
-                    ensure!(
-                        deployment.program_checksum().is_some(),
-                        "Invalid deployment transaction '{id}' - missing program checksum"
-                    );
-                    // V3 deployments (amendments) do not include a program owner in the deployment.
-                    if version != DeploymentVersion::V3 {
-                        ensure!(
-                            deployment.program_owner().is_some(),
-                            "Invalid deployment transaction '{id}' - missing program owner"
-                        );
-                    }
-                }
                 if consensus_version < ConsensusVersion::V11 {
                     ensure!(
                         !deployment.program().contains_v11_syntax(),
@@ -268,20 +258,49 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V12`"
                     );
                 }
-                if consensus_version >= ConsensusVersion::V12 {
-                    ensure!(
-                        !deployment.program().contains_string_type(),
-                        "Invalid deployment transaction '{id}' - program uses string type after `ConsensusVersion::V12`"
-                    );
-                }
                 if consensus_version < ConsensusVersion::V13 {
+                    let program = deployment.program();
+
                     ensure!(
-                        !deployment.program().contains_external_struct(),
+                        !program.contains_external_struct(),
                         "Invalid deployment transaction '{id}' - external structs may only be used beginning with `ConsensusVersion::V13`"
                     );
-                }
-                if consensus_version >= ConsensusVersion::V13 {
-                    self.process.read().mapping_types_exist(deployment.program())?;
+
+                    // Returns the external record that `locator` references.
+                    let get_external_record = |locator: &Locator<N>| {
+                        let external_stack = self.process.read().get_stack(locator.program_id())?;
+                        external_stack.program().get_record(locator.resource()).cloned()
+                    };
+                    // Returns the external function that `locator` references.
+                    let get_external_function = |locator: &Locator<N>| {
+                        let external_stack = self.process.read().get_stack(locator.program_id())?;
+                        external_stack.program().get_function(locator.resource())
+                    };
+                    // Returns the *external* finalize logic that `locator` references.
+                    let get_external_future = |locator: &Locator<N>| {
+                        if program.id() == locator.program_id() {
+                            anyhow::bail!("external finalize logic refers to the current program")
+                        }
+                        let external_stack = self.process.read().get_stack(locator.program_id())?;
+                        external_stack
+                            .program()
+                            .get_function_ref(locator.resource())?
+                            .finalize_logic()
+                            .cloned()
+                            .ok_or_else(|| anyhow::anyhow!("missing finalize logic for {locator}"))
+                    };
+                    // Does this program have this struct?
+                    let is_local_struct = |identifier: &Identifier<N>| program.structs().contains_key(identifier);
+
+                    ensure!(
+                        !program.violates_pre_v13_external_record_and_future_rules(
+                            &get_external_record,
+                            &get_external_function,
+                            &get_external_future,
+                            &is_local_struct,
+                        ),
+                        "Invalid deployment transaction '{id}' - program violates pre-V13 external record or future rules"
+                    );
                 }
                 if consensus_version < ConsensusVersion::V14 {
                     // V3 deployments (amendments) are not allowed before V14.
@@ -296,6 +315,57 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     // Check that all future argument bit sizes do not exceed the maximum allowed size of u16::MAX.
                     let stack = Stack::new(&self.process().read(), deployment.program())?;
                     check_future_argument_bit_size(deployment.program(), &stack, u16::MAX as usize)?;
+                    // Before V14, record verifying keys are not allowed.
+                    let num_functions = deployment.num_functions();
+                    ensure!(
+                        deployment.verifying_keys().len() == num_functions,
+                        "Invalid deployment transaction '{id}' - expected {num_functions} function verifying keys before `ConsensusVersion::V14`"
+                    );
+                }
+
+                // Checks required for current and future consensus versions (>= V9).
+                //
+                // These validations enforce rules introduced in newer consensus versions.
+                // Unlike legacy checks, they have lasting implications on verification time
+                // and cannot be skipped for recent or future versions.
+                //
+                // If the `CONSENSUS_VERSION` is greater than or equal to `V9`, then verify that:
+                //   - the program checksum is present in the deployment
+                //   - the program owner is present in the deployment (except for V3 amendments)
+                // If the `CONSENSUS_VERSION` is greater than or equal to `V13`, then verify that:
+                //   - the program's mappings do not use non-existent structs.
+                // If the `CONSENSUS_VERSION` is greater than or equal to `V14`, then verify that:
+                //   - the deployment has one verifying key per function and one per record
+                if consensus_version >= ConsensusVersion::V9 {
+                    ensure!(
+                        deployment.program_checksum().is_some(),
+                        "Invalid deployment transaction '{id}' - missing program checksum"
+                    );
+                    // V3 deployments (amendments) do not include a program owner in the deployment.
+                    if version != DeploymentVersion::V3 {
+                        ensure!(
+                            deployment.program_owner().is_some(),
+                            "Invalid deployment transaction '{id}' - missing program owner"
+                        );
+                    }
+                }
+                if consensus_version >= ConsensusVersion::V12 {
+                    ensure!(
+                        !deployment.program().contains_string_type(),
+                        "Invalid deployment transaction '{id}' - program uses string type after `ConsensusVersion::V12`"
+                    );
+                }
+                if consensus_version >= ConsensusVersion::V13 {
+                    self.process.read().mapping_types_exist(deployment.program())?;
+                }
+                if consensus_version >= ConsensusVersion::V14 {
+                    let num_functions = deployment.num_functions();
+                    let num_records = deployment.program().records().len();
+                    let expected = num_functions + num_records;
+                    ensure!(
+                        deployment.verifying_keys().len() == expected,
+                        "Invalid deployment transaction '{id}' - expected {num_functions} function and {num_records} record verifying keys after `ConsensusVersion::V14`"
+                    );
                 }
 
                 // Determine if any of the array types exceed the maximum array elements.
@@ -316,25 +386,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
                 // Ensure the program writes do not exceed the maximum allowed based on the current block height.
                 deployment.program().check_program_writes(current_block_height)?;
-
-                // Enforce record verifying key requirements based on consensus version.
-                // Before V14: record verifying keys are not allowed.
-                // At/after V14: record verifying keys are required.
-                if consensus_version < ConsensusVersion::V14 {
-                    let num_functions = deployment.num_functions();
-                    ensure!(
-                        deployment.verifying_keys().len() == num_functions,
-                        "Invalid deployment transaction '{id}' - expected {num_functions} function verifying keys before `ConsensusVersion::V14`"
-                    );
-                } else {
-                    let num_functions = deployment.num_functions();
-                    let num_records = deployment.program().records().len();
-                    let expected = num_functions + num_records;
-                    ensure!(
-                        deployment.verifying_keys().len() == expected,
-                        "Invalid deployment transaction '{id}' - expected {num_functions} function and {num_records} record verifying keys after `ConsensusVersion::V14`"
-                    );
-                }
 
                 // If the program owner exists in the deployment, then verify that it matches the owner in the transaction.
                 if let Some(given_owner) = deployment.program_owner() {

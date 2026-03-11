@@ -88,6 +88,8 @@ use locktick::parking_lot::RwLock;
 use parking_lot::RwLock;
 use std::{collections::HashMap, sync::Arc};
 
+// Note: a `Process` and all of its fields are meant to be completely stateless. They have no
+// notion of block height or consensus version.
 #[derive(Clone)]
 pub struct Process<N: Network> {
     /// The universal SRS.

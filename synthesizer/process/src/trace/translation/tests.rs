@@ -674,3 +674,87 @@ fn test_external_translation() {
         <CurrentAleo as circuit::Environment>::num_constraints(),
     );
 }
+
+#[test]
+fn test_translation_negative_corrupt_id_dynamic() {
+    let mut rng = TestRng::default();
+
+    let record_str = r#"{
+        owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.private,
+        location_x: 100field.public,
+        location_y: 243field.public,
+        _nonce: 0group.public,
+        _version: 1u8.public
+    }"#;
+
+    let (mut assignment, translation_index) =
+        translation_assignment_from_record_str(record_str, false, false, None, &mut rng);
+
+    // Corrupt the dynamic ID — any field != the correct one should fail.
+    assignment.id_dynamic = Field::<CurrentNetwork>::one();
+
+    assignment.to_circuit_assignment_internal::<CurrentAleo>(translation_index).unwrap();
+    assert!(
+        !<CurrentAleo as circuit::Environment>::is_satisfied(),
+        "Circuit should be unsatisfied with a corrupted id_dynamic"
+    );
+}
+
+#[test]
+fn test_translation_negative_corrupt_id_static() {
+    let mut rng = TestRng::default();
+
+    let record_str = r#"{
+        owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.private,
+        location_x: 100field.public,
+        location_y: 243field.public,
+        _nonce: 0group.public,
+        _version: 1u8.public
+    }"#;
+
+    <CurrentAleo as circuit::Environment>::reset();
+    let (mut assignment, translation_index) =
+        translation_assignment_from_record_str(record_str, false, false, None, &mut rng);
+
+    // Corrupt the static ID — should fail because the circuit verifies the commitment.
+    assignment.id_static = Field::<CurrentNetwork>::one();
+
+    assignment.to_circuit_assignment_internal::<CurrentAleo>(translation_index).unwrap();
+    assert!(
+        !<CurrentAleo as circuit::Environment>::is_satisfied(),
+        "Circuit should be unsatisfied with a corrupted id_static"
+    );
+}
+
+#[test]
+fn test_psd8_console_circuit_id_equivalence() {
+    // This test explicitly documents and verifies that compute_console_dynamic_or_external_record_id
+    // (PSD8 hash) produces the same result as the circuit's internal computation for the same inputs.
+    // If the circuit and console diverge, all translation proofs would fail.
+    let mut rng = TestRng::default();
+
+    let record_str = r#"{
+        owner: aleo1d5hg2z3ma00382pngntdp68e74zv54jdxy249qhaujhks9c72yrs33ddah.private,
+        location_x: 100field.public,
+        location_y: 243field.public,
+        _nonce: 0group.public,
+        _version: 1u8.public
+    }"#;
+
+    <CurrentAleo as circuit::Environment>::reset();
+
+    // Build a valid assignment; the constructor uses compute_console_dynamic_or_external_record_id
+    // to compute id_dynamic. The circuit independently recomputes the same hash.
+    // If they differ, the circuit will not be satisfied.
+    let (assignment, translation_index) =
+        translation_assignment_from_record_str(record_str, false, false, None, &mut rng);
+
+    // Run the circuit.
+    assignment.to_circuit_assignment_internal::<CurrentAleo>(translation_index).unwrap();
+
+    // If satisfied, the circuit agreed with the console computation.
+    assert!(
+        <CurrentAleo as circuit::Environment>::is_satisfied(),
+        "Console and circuit PSD8 ID computations must agree"
+    );
+}
