@@ -2801,58 +2801,51 @@ constructor:
     assert_eq!(block.aborted_transaction_ids().len(), 1, "V2 deployment should be aborted at V14");
 }
 
+// Tests that programs containing dynamic calls with declared output types of the form "as <TYPE>.constant"
+// are disallowed.
 #[test]
 fn test_constant_dynamic_call_output() {
-    let network_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
-    let prog_static_name_field = Identifier::<CurrentNetwork>::from_str("prog_static").unwrap().to_field().unwrap();
-    let constant_output_function_field =
-        Identifier::<CurrentNetwork>::from_str("constant_output").unwrap().to_field().unwrap();
-
-    let program_static = Program::<CurrentNetwork>::from_str(
-        r"
-    program prog_static.aleo;
-
-    function constant_output:
-        input r0 as u16.public;
-
-        assert.eq true true;
-
-        output r0 as u16.constant;
-
-    constructor:
-        assert.eq true true;
-    ",
-    )
-    .unwrap();
-
-    let program_dynamic = Program::<CurrentNetwork>::from_str(&format!(
-        r"
-    program prog_dynamic.aleo;
+    let program_a = |is_constant: bool| {
+        Program::<CurrentNetwork>::from_str(&format!(
+            r"
+    program program_a.aleo;
 
     function dynamic_constant_output:
         input r0 as u16.public;
 
-        call.dynamic {prog_static_name_field} {network_field} {constant_output_function_field}
+        call.dynamic 0field 1field 2field
             with r0 (as u16.public)
-            into r1 (as u16.constant);
+            into r1 (as u16.{});
 
         output r1 as u16.constant;
+    constructor:
+        assert.eq true true;
+    ",
+            if is_constant { "constant" } else { "public" }
+        ))
+    };
+
+    assert!(program_a(false).is_ok());
+    assert!(program_a(true).is_err());
+
+    // In this program, the invalid constant-output declaration is sandwiched in between two valid ones
+    let program_b = |is_constant: bool| {
+        Program::<CurrentNetwork>::from_str(&format!(
+            r"
+    program program_a.aleo;
+
+    function dynamic_constant_output:
+
+        call.dynamic 0field 1field 2field
+            into r0 r1 r2 (as bool.private bool.{} u16.public);
 
     constructor:
         assert.eq true true;
-    "
-    ))
-    .unwrap();
+    ",
+            if is_constant { "constant" } else { "public" }
+        ))
+    };
 
-    let rng = &mut TestRng::default();
-
-    let caller_private_key = sample_genesis_private_key(rng);
-
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
-
-    let transaction_deploy_static = vm.deploy(&caller_private_key, &program_static, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[transaction_deploy_static], rng);
-
-    let transaction_deploy_dynamic = vm.deploy(&caller_private_key, &program_dynamic, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[transaction_deploy_dynamic], rng);
+    assert!(program_b(false).is_ok());
+    assert!(program_b(true).is_err());
 }
