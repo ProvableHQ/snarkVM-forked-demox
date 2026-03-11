@@ -56,7 +56,6 @@ use console::{
         PlaintextType,
         ProgramID,
         Record,
-        RegisterType,
         Request,
         Response,
         Value,
@@ -70,9 +69,7 @@ use snarkvm_ledger_block::{Deployment, DeploymentVersion, Execution, Fee, Input,
 use snarkvm_ledger_store::{FinalizeStorage, FinalizeStore, atomic_batch_scope};
 use snarkvm_synthesizer_program::{
     Branch,
-    CallOperator,
     CastType,
-    ClosureCore,
     Command,
     FinalizeGlobalState,
     FinalizeOperation,
