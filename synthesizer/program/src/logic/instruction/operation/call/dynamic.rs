@@ -507,7 +507,6 @@ mod tests {
         "call.dynamic r0 r1 r2 with r3 (as u8.public)",
         "call.dynamic r0 r1 r2 with r3.owner (as address.private)",
         "call.dynamic r0 r1 r2 with r3 r4 (as u8.public u64.private)",
-        "call.dynamic r0 r1 r2 into r3 (as u8.constant)",
         "call.dynamic r0 r1 r2 into r3 r4 (as foo.public bar.private)",
         "call.dynamic r0 r1 r2 into r3 r4 r5 (as u64.public address.private dynamic.future)",
         "call.dynamic r0 r1 r2 with r3 (as boolean.private) into r4 (as u8.private)",
