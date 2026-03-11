@@ -69,10 +69,11 @@ impl<N: Network> CallDynamic<N> {
             operands.len().checked_sub(3).expect("operands.len() >= 3 is checked above") == operand_types.len(),
             "The number of operands and operand types must match"
         );
-        // Ensure that the operand types do not contain a future, dynamic future, record, or external record type.
+        // Ensure that the operand types do not contain a future, dynamic future, record, external record type, or a constant type.
         // Note: `dynamic.record` (i.e. `ValueType::DynamicRecord`) IS allowed as an input operand type.
         for type_ in &operand_types {
             match type_ {
+                ValueType::Constant(_) => bail!("A constant cannot be passed in as input to a dynamic call."),
                 ValueType::Record(_) => {
                     bail!("A record cannot be passed in as input to a dynamic call, use `dynamic.record` instead.")
                 }
@@ -93,9 +94,10 @@ impl<N: Network> CallDynamic<N> {
             destinations.len() == destination_types.len(),
             "The number of destination registers and destination types must match"
         );
-        // Ensure that the destination types do not contain a future, record, or external record type.
+        // Ensure that the destination types do not contain a future, record, external record type, or a constant type.
         for type_ in &destination_types {
             match type_ {
+                ValueType::Constant(_) => bail!("A dynamic call cannot return a constant output."),
                 ValueType::Record(_) => bail!("A dynamic call cannot return a record, use `dynamic.record` instead."),
                 ValueType::ExternalRecord(_) => {
                     bail!("A dynamic call cannot return an external record, use `dynamic.record` instead.")
@@ -353,6 +355,7 @@ impl<N: Network> Parser for CallDynamic<N> {
                 let (string, destinations) = many_m_n(1, N::MAX_OPERANDS, complete(parse_destination))(string)?;
                 // Parse the destination types from the string.
                 let (string, destination_types) = parse_value_types(string)?;
+
                 // Return the string, the destinations, and the destination types.
                 (string, destinations, destination_types)
             }
@@ -503,7 +506,6 @@ mod tests {
         "call.dynamic r0 r1 r2 with r3 (as u8.public)",
         "call.dynamic r0 r1 r2 with r3.owner (as address.private)",
         "call.dynamic r0 r1 r2 with r3 r4 (as u8.public u64.private)",
-        "call.dynamic r0 r1 r2 into r3 (as u8.constant)",
         "call.dynamic r0 r1 r2 into r3 r4 (as foo.public bar.private)",
         "call.dynamic r0 r1 r2 into r3 r4 r5 (as u64.public address.private dynamic.future)",
         "call.dynamic r0 r1 r2 with r3 (as boolean.private) into r4 (as u8.private)",

@@ -3005,3 +3005,97 @@ fn test_batch_proof_instance_limit_exceeded() -> Result<()> {
 
     Ok(())
 }
+
+// Tests that programs containing dynamic calls with declared output types of the form "as <TYPE>.constant" are disallowed.
+#[test]
+fn test_constant_dynamic_call_input_output() {
+    // In this program, the dynamic call attempts to return a single constant output.
+    let program_a = |is_constant: bool| {
+        Program::<CurrentNetwork>::from_str(&format!(
+            r"
+    program program_a.aleo;
+
+    function dynamic_constant_output:
+        input r0 as u16.public;
+
+        call.dynamic 0field 1field 2field
+            with r0 (as u16.public)
+            into r1 (as u16.{});
+
+        output r1 as u16.constant;
+    constructor:
+        assert.eq true true;
+    ",
+            if is_constant { "constant" } else { "public" }
+        ))
+    };
+
+    assert!(program_a(false).is_ok());
+    assert!(program_a(true).is_err());
+
+    // In this program, the invalid constant-output declaration is sandwiched in between two valid ones
+    let program_b = |is_constant: bool| {
+        Program::<CurrentNetwork>::from_str(&format!(
+            r"
+    program program_c.aleo;
+
+    function dynamic_constant_output:
+
+        call.dynamic 0field 1field 2field
+            into r0 r1 r2 (as bool.private bool.{} u16.public);
+
+    constructor:
+        assert.eq true true;
+    ",
+            if is_constant { "constant" } else { "private" }
+        ))
+    };
+
+    assert!(program_b(false).is_ok());
+    assert!(program_b(true).is_err());
+
+    // In this program, the dynamic call attempts to receive a single constant input, whose value
+    // is furthermore hardcoded (instead of being passed in a register)
+    let program_c = |is_constant: bool| {
+        Program::<CurrentNetwork>::from_str(&format!(
+            r"
+    program program_c.aleo;
+
+    function dynamic_constant_input:
+
+        call.dynamic 0field 1field 2field
+            with 0field (as field.{})
+            into r1 (as u16.private);
+
+        output r1 as u16.constant;
+    constructor:
+        assert.eq true true;
+    ",
+            if is_constant { "constant" } else { "public" }
+        ))
+    };
+
+    assert!(program_c(false).is_ok());
+    assert!(program_c(true).is_err());
+
+    // In this program, the invalid constant-input declaration is sandwiched between several valid ones.
+    let program_d = |is_constant: bool| {
+        Program::<CurrentNetwork>::from_str(&format!(
+            r"
+    program program_d.aleo;
+
+    function dynamic_constant_output:
+
+        call.dynamic 0field 1field 2field
+            with r0 r1 r2 r3 (as bool.private bool.{} u16.public field.public);
+
+    constructor:
+        assert.eq true true;
+    ",
+            if is_constant { "constant" } else { "private" }
+        ))
+    };
+
+    assert!(program_d(false).is_ok());
+    assert!(program_d(true).is_err());
+}
