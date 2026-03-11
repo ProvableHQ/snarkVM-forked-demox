@@ -202,6 +202,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         rng: &mut R,
     ) -> Result<(), CheckBlockError<N>> {
         let latest_block = self.current_block.read();
+        let latest_block_timestamp = latest_block.timestamp();
 
         // Ensure, again, that the ledger has not advanced yet. This prevents cryptic errors form appearing during the block check.
         if block.height() != latest_block.height() + 1 {
@@ -229,7 +230,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         )?;
 
         // Ensure speculation over the unconfirmed transactions is correct and ensure each transaction is well-formed and unique.
-        let time_since_last_block = block.timestamp().saturating_sub(self.latest_timestamp());
+        let time_since_last_block = block.timestamp().saturating_sub(latest_block_timestamp);
         let ratified_finalize_operations = self.vm.check_speculate(
             state,
             time_since_last_block,
@@ -274,7 +275,11 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
                 let prover_address = solution.address();
                 let num_accepted_solutions = *accepted_solutions.get(&prover_address).unwrap_or(&0);
                 // Check if the prover has reached their solution limit.
-                if self.is_solution_limit_reached(&prover_address, num_accepted_solutions) {
+                if self.is_solution_limit_reached_at_timestamp(
+                    &prover_address,
+                    num_accepted_solutions,
+                    latest_block_timestamp,
+                ) {
                     return Err(CheckBlockError::SolutionLimitReached { prover_address });
                 }
                 // Track the already accepted solutions.
