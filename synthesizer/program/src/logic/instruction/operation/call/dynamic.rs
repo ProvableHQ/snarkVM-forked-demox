@@ -514,6 +514,7 @@ mod tests {
         "call.dynamic r0 r1 r2 with r3 r4 r5 (as foo.private dynamic.record boolean.public) into r6 r7 (as u8.private u64.public)",
         "call.dynamic r0 r1 r2 with r3 r4 r5 (as foo.private bar.public boolean.public) into r6 r7 r8 (as u8.private dynamic.record dynamic.future)",
         "call.dynamic r0 r1 r2 with r3 r4 (as address.public u64.public) into r5 (as dynamic.future)",
+        "call.dynamic 'credits' 'aleo' 'transfer_public' with aleo1wfyyj2uvwuqw0c0dqa5x70wrawnlkkvuepn4y08xyaqfqqwweqys39jayw 100u64 (as address.private u64.private) into r0 (as dynamic.future)",
     ];
 
     fn check_parser(
@@ -580,20 +581,18 @@ mod tests {
             ],
         );
 
-        // // TODO (@d0cd) Support for this test case.
-        // check_parser(
-        //     "call.dynamic 'credits' 'aleo' 'transfer_public' with aleo1wfyyj2uvwuqw0c0dqa5x70wrawnlkkvuepn4y08xyaqfqqwweqys39jayw 100u64 (as address.private u6.private) into r0 (as dynamic.future)",
-        //     Operand::ProgramID(ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap()),
-        //     Operand::Identifier(Identifier::from_str("transfer_public").unwrap()),
-        //     vec![
-        //         Operand::Literal(Literal::Address(
-        //             Address::from_str("aleo1wfyyj2uvwuqw0c0dqa5x70wrawnlkkvuepn4y08xyaqfqqwweqys39jayw").unwrap(),
-        //         )),
-        //         Operand::Literal(Literal::U64(U64::from_str("100u64").unwrap())),
-        //     ],
-        //     vec![Register::Locator(0)],
-        //     vec![RegisterType::DynamicFuture],
-        // );
+        check_parser(
+            "call.dynamic 'credits' 'aleo' 'transfer_public' with aleo1wfyyj2uvwuqw0c0dqa5x70wrawnlkkvuepn4y08xyaqfqqwweqys39jayw 100u64 (as address.private u64.private) into r0 (as dynamic.future)",
+            vec![
+                Operand::from_str("'credits'").unwrap(),
+                Operand::from_str("'aleo'").unwrap(),
+                Operand::from_str("'transfer_public'").unwrap(),
+                Operand::from_str("aleo1wfyyj2uvwuqw0c0dqa5x70wrawnlkkvuepn4y08xyaqfqqwweqys39jayw").unwrap(),
+                Operand::from_str("100u64").unwrap(),
+            ],
+            vec![Register::Locator(0)],
+            vec![ValueType::DynamicFuture],
+        );
 
         check_parser(
             "call.dynamic r0 r1 r0",
