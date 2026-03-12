@@ -55,7 +55,7 @@ use super::*;
 //   minted locally and either
 //    - passed to a callee.
 //    - cast to a DynamicRecord R_d which is then passed to a callee or output.
-//   then R_d is itself output. We refer to this as the *local check*. Note that, in case b), if the callee
+//   then R_s is itself output. We refer to this as the *local check*. Note that, in case b), if the callee
 //   would receive the value as a static Record, this would constitute an attempt to consume a Record which has not
 //   been published yet. Since such an execution would be rejected during verification time (whether the
 //   inclusion-proof check happens before or after the record-existence one), we allow the record-existence check to
