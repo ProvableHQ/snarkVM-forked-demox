@@ -13,8 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use core::num::NonZeroU32;
-use rand::RngCore;
+use rand::{Rng, TryRng};
 
 /// `OptionalRng` is a hack that is necessary because `Option<&mut R>` is not
 /// implicitly reborrowed like `&mut R` is. This causes problems when a variable
@@ -24,32 +23,32 @@ use rand::RngCore;
 /// borrowed mutably, without fear of being moved.
 pub struct OptionalRng<R>(pub Option<R>);
 
-impl<R: RngCore> RngCore for OptionalRng<R> {
+impl<R: Rng> TryRng for OptionalRng<R> {
+    type Error = core::convert::Infallible;
+
     #[inline]
-    fn next_u32(&mut self) -> u32 {
-        self.0.as_mut().map(|r| r.next_u32()).expect("Rng was invoked in a non-hiding context")
+    fn try_next_u32(&mut self) -> Result<u32, Self::Error> {
+        Ok(self.0.as_mut().map(|r| r.next_u32()).expect("Rng was invoked in a non-hiding context"))
     }
 
     #[inline]
-    fn next_u64(&mut self) -> u64 {
-        self.0.as_mut().map(|r| r.next_u64()).expect("Rng was invoked in a non-hiding context")
+    fn try_next_u64(&mut self) -> Result<u64, Self::Error> {
+        Ok(self.0.as_mut().map(|r| r.next_u64()).expect("Rng was invoked in a non-hiding context"))
     }
 
     #[inline]
-    fn fill_bytes(&mut self, dest: &mut [u8]) {
-        self.0.as_mut().map(|r| r.fill_bytes(dest)).expect("Rng was invoked in a non-hiding context")
-    }
-
-    #[inline]
-    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand::Error> {
+    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), Self::Error> {
         match &mut self.0 {
-            Some(r) => r.try_fill_bytes(dest),
-            None => Err(NonZeroU32::new(rand::Error::CUSTOM_START).unwrap().into()),
+            Some(r) => {
+                r.fill_bytes(dest);
+                Ok(())
+            }
+            None => todo!(),
         }
     }
 }
 
-impl<R: RngCore> From<R> for OptionalRng<R> {
+impl<R: Rng> From<R> for OptionalRng<R> {
     fn from(other: R) -> Self {
         Self(Some(other))
     }

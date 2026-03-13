@@ -26,7 +26,7 @@ use snarkvm_curves::traits::{AffineCurve, PairingCurve, PairingEngine, Projectiv
 use snarkvm_fields::{One, Zero};
 
 use anyhow::{Result, bail, ensure};
-use rand::{RngCore, SeedableRng};
+use rand::{Rng, SeedableRng};
 use std::{
     borrow::Borrow,
     collections::{BTreeMap, BTreeSet},
@@ -182,7 +182,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         universal_prover: &UniversalProver<E>,
         ck: &CommitterUnionKey<E>,
         polynomials: impl IntoIterator<Item = LabeledPolynomialWithBasis<'b, E::Fr>>,
-        rng: Option<&mut dyn RngCore>,
+        rng: Option<&mut dyn Rng>,
     ) -> Result<(Vec<LabeledCommitment<Commitment<E>>>, Vec<Randomness<E>>), PCError> {
         let rng = &mut OptionalRng(rng);
         let commit_time = start_timer!(|| "Committing to polynomials");
@@ -695,7 +695,7 @@ mod tests {
     use snarkvm_curves::bls12_377::{Bls12_377, Fq};
     use snarkvm_utilities::{FromBytes, ToBytes, rand::TestRng};
 
-    use rand::distributions::Distribution;
+    use rand::distr::Distribution;
 
     type Sponge = PoseidonSponge<Fq, 2, 1>;
     type PC_Bls12_377 = SonicKZG10<Bls12_377, Sponge>;
@@ -703,8 +703,8 @@ mod tests {
     #[test]
     fn test_committer_key_serialization() {
         let rng = &mut TestRng::default();
-        let max_degree = rand::distributions::Uniform::from(8..=64).sample(rng);
-        let supported_degree = rand::distributions::Uniform::from(1..=max_degree).sample(rng);
+        let max_degree = rand::distr::Uniform::new_inclusive(8, 64).unwrap().sample(rng);
+        let supported_degree = rand::distr::Uniform::new_inclusive(1, max_degree).unwrap().sample(rng);
 
         let lagrange_size = |d: usize| if d.is_power_of_two() { d } else { d.next_power_of_two() >> 1 };
 

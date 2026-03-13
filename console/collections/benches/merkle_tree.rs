@@ -19,7 +19,7 @@ extern crate criterion;
 use snarkvm_console_network::{
     MainnetV0,
     Network,
-    prelude::{TestRng, ToBits, Uniform},
+    prelude::{Rng, TestRng, ToBits, Uniform},
 };
 use snarkvm_console_types::Field;
 
@@ -87,7 +87,7 @@ fn update(c: &mut Criterion) {
         let updates = generate_leaves!(std::cmp::min(*UPDATE_SIZES.last().unwrap(), 10_000), &mut rng)
             .into_iter()
             .map(|leaf| {
-                let index: usize = Uniform::rand(&mut rng);
+                let index: usize = rng.random::<u64>() as usize;
                 (index % num_leaves, leaf)
             })
             .collect::<Vec<_>>();
@@ -122,7 +122,7 @@ fn update_many(c: &mut Criterion) {
         let mut updates = generate_leaves!(2 * *UPDATE_SIZES.last().unwrap(), &mut rng)
             .into_iter()
             .map(|leaf| {
-                let index: usize = Uniform::rand(&mut rng);
+                let index: usize = rng.random::<u64>() as usize;
                 (index % num_leaves, leaf)
             })
             .collect::<Vec<_>>();
@@ -160,7 +160,7 @@ fn update_vs_update_many(c: &mut Criterion) {
         // Construct a Merkle tree with the specified number of leaves.
         let tree = MainnetV0::merkle_tree_bhp::<DEPTH>(&leaves[..num_leaves]).unwrap();
         // Generate a new leaf and select a random index to update.
-        let index: usize = Uniform::rand(&mut rng);
+        let index: usize = rng.random::<u64>() as usize;
         let index = index % num_leaves;
         let new_leaf = generate_leaves!(1, &mut rng).pop().unwrap();
         // Benchmark the standard update operation.

@@ -90,7 +90,7 @@ use indexmap::IndexMap;
 use locktick::parking_lot::RwLock;
 #[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
-use rand::{CryptoRng, Rng, SeedableRng, rngs::StdRng};
+use rand::{CryptoRng, RngExt as Rng, SeedableRng, rngs::StdRng};
 use std::{
     cell::OnceCell,
     sync::{Arc, Weak},
