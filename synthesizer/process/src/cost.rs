@@ -15,11 +15,11 @@
 
 use std::collections::HashMap;
 
-use crate::{Authorization, FinalizeTypes, Process, Stack, StackRef, StackTrait};
+use crate::{Authorization, CallStack, FinalizeTypes, Process, Stack, StackRef, StackTrait};
 
+use circuit::Aleo;
 use console::{
-    prelude::*,
-    program::{FinalizeType, Identifier, LiteralType, PlaintextType},
+    account::PrivateKey, prelude::*, program::{FinalizeType, Identifier, LiteralType, PlaintextType, ProgramID, Request, Value}, types::Address
 };
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use snarkvm_ledger_block::{Deployment, Execution, Transaction};
@@ -139,6 +139,37 @@ pub fn execution_cost_for_authorization<N: Network>(
     ))?;
 
     execution_cost_given_size(process, &reconstructed_execution, execution_size, consensus_version)
+}
+
+// TODO (CwPK) architecture, doc, version guard
+pub fn execution_cost_for_request<A: Aleo, R: Rng + CryptoRng>(
+    process: &Process<A::Network>,
+    address: Address<A::Network>,
+    program_id: ProgramID<A::Network>,
+    function_name: Identifier<A::Network>,
+    inputs: impl ExactSizeIterator<Item = impl TryInto<Value<A::Network>>>,
+    consensus_version: ConsensusVersion,
+    rng: &mut R,
+) {
+    let authorization = process.get_stack().authorize_mocked(address, program_id, function_name, inputs, rng).unwrap();
+
+    let stack = process.get_stack(program_id).unwrap();
+    let input_types = stack.get_function(&function_name).unwrap().input_types();
+    
+    let mock_authorization = Authorization::new(Request::sign(
+        &private_key,
+        program_id,
+        function_name,
+        inputs,
+        &input_types,
+        None,
+        true,
+        None,
+        false,
+        rng,
+    ).unwrap());
+
+    let response = process.evaluate::<A>(mock_authorization).unwrap();
 }
 
 /// Returns the compute cost for a deployment in microcredits.

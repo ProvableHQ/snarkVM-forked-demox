@@ -446,6 +446,10 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                     CallStack::Evaluate(..) => {
                         return Err(anyhow!("Cannot 'execute' a function in 'evaluate' mode.").into());
                     }
+                    // In `Mock` mode, throw an error.
+                    CallStack::Mock(..) => {
+                        return Err(anyhow!("Cannot 'execute' a function in 'mock' mode.").into());
+                    }
                     // In `Execute` mode, evaluate and execute the instructions.
                     CallStack::Execute(authorization, _, translations) => {
                         // Get the target.

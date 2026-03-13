@@ -118,6 +118,8 @@ pub enum CallStack<N: Network> {
     CheckDeployment(Vec<Request<N>>, PrivateKey<N>, Assignments<N>, Option<u64>, Option<u64>),
     /// Evaluate a function.
     Evaluate(Authorization<N>),
+    /// Mock an evaluation for cost estimation.
+    Mock(Authorization<N>),
     /// Execute a function and produce a proof.
     Execute(Authorization<N>, Arc<RwLock<Trace<N>>>, Translations<N>),
     /// Execute a function and create the circuit assignment.
@@ -132,6 +134,7 @@ impl<N: Network> CallStack<N> {
             CallStack::Synthesize(..) => "Synthesize".to_string(),
             CallStack::CheckDeployment(..) => "CheckDeployment".to_string(),
             CallStack::Evaluate(..) => "Evaluate".to_string(),
+            CallStack::Mock(..) => "Mock".to_string(),
             CallStack::Execute(..) => "Execute".to_string(),
             CallStack::PackageRun(..) => "PackageRun".to_string(),
         }
@@ -174,6 +177,7 @@ impl<N: Network> CallStack<N> {
                 )
             }
             CallStack::Evaluate(authorization) => CallStack::Evaluate(authorization.replicate()),
+            CallStack::Mock(authorization) => CallStack::Mock(authorization.replicate()),
             CallStack::Execute(authorization, trace, translations) => CallStack::Execute(
                 authorization.replicate(),
                 Arc::new(RwLock::new(trace.read().clone())),
@@ -202,6 +206,7 @@ impl<N: Network> CallStack<N> {
                 requests.push(request)
             }
             CallStack::Evaluate(authorization) => authorization.push(request)?,
+            CallStack::Mock(authorization) => authorization.push(request)?,
             CallStack::Execute(authorization, ..) => authorization.push(request)?,
         }
         Ok(())
@@ -217,6 +222,7 @@ impl<N: Network> CallStack<N> {
                 requests.pop().ok_or_else(|| anyhow!("No more requests on the stack"))
             }
             CallStack::Evaluate(authorization) => authorization.next(),
+            CallStack::Mock(authorization) => authorization.next(),
             CallStack::Execute(authorization, ..) => authorization.next(),
         }
     }
@@ -231,6 +237,7 @@ impl<N: Network> CallStack<N> {
                 requests.last().cloned().ok_or_else(|| anyhow!("No more requests on the stack"))
             }
             CallStack::Evaluate(authorization) => authorization.peek_next(),
+            CallStack::Mock(authorization) => authorization.peek_next(),
             CallStack::Execute(authorization, ..) => authorization.peek_next(),
         }
     }

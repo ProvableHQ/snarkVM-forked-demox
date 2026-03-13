@@ -140,6 +140,7 @@ impl<N: Network> Stack<N> {
             match &mut call_stack {
                 CallStack::Authorize(..) => (call_stack.pop()?, call_stack),
                 CallStack::Evaluate(authorization) => (authorization.next()?, call_stack),
+                CallStack::Mock(authorization) => (authorization.next()?, call_stack),
                 // If the evaluation is performed in the `Execute` mode, create a new `Evaluate` mode.
                 // This is done to ensure that evaluation during execution is performed consistently.
                 CallStack::Execute(authorization, _, _) => {
@@ -161,6 +162,8 @@ impl<N: Network> Stack<N> {
         if **request.network_id() != N::ID {
             return Err(anyhow!("Network ID mismatch. Expected {}, but found {}", N::ID, request.network_id()).into());
         }
+
+        // TODO (CwPK) check whether the signer is used later on and it can affect the size of the transitions; if so, perhaps patch it with the provided address
 
         // Retrieve the function, inputs, and transition view key.
         let function = self.get_function(request.function_name())?;
@@ -192,6 +195,8 @@ impl<N: Network> Stack<N> {
         }
         lap!(timer, "Perform input checks");
 
+        let is_mock = matches!(call_stack, CallStack::Mock(..));
+
         // Initialize the registers.
         let mut registers = Registers::<N, A>::new(call_stack, self.get_register_types(function.name())?.clone());
         // Set the transition signer.
@@ -208,8 +213,10 @@ impl<N: Network> Stack<N> {
         }
         lap!(timer, "Initialize the registers");
 
+        // TODO (CwPK)
+
         // Ensure the request is well-formed.
-        if !request.verify(&function.input_types(), is_root, program_checksum) {
+        if !is_mock && !request.verify(&function.input_types(), is_root, program_checksum) {
             return Err(anyhow!("[Evaluate] Request is invalid").into());
         }
         lap!(timer, "Verify the request");
@@ -321,13 +328,16 @@ impl<N: Network> Stack<N> {
         )?;
         finish!(timer);
 
-        // If the circuit is in `Authorize` mode, then save the transition.
-        if let CallStack::Authorize(_, _, authorization) = registers.call_stack_ref() {
-            // Construct the transition.
-            let transition = Transition::from(&request, &response, &function.output_types(), &output_registers)?;
-            // Add the transition to the authorization.
-            authorization.insert_transition(transition)?;
-            lap!(timer, "Save the transition");
+        // If the circuit is in `Authorize` or `Mock` mode, then save the transition.
+        match registers.call_stack_ref() {
+            CallStack::Authorize(_, _, authorization) | CallStack::Mock(authorization) => {
+                // Construct the transition.
+                let transition = Transition::from(&request, &response, &function.output_types(), &output_registers)?;
+                // Add the transition to the authorization.
+                authorization.insert_transition(transition)?;
+                lap!(timer, "Save the transition");
+            }
+            _ => {}
         }
 
         Ok(response)

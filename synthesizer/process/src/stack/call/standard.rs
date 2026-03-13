@@ -417,6 +417,10 @@ impl<N: Network> CallTrait<N> for Call<N> {
                     CallStack::Evaluate(..) => {
                         return Err(anyhow!("Cannot 'execute' a function in 'evaluate' mode.").into());
                     }
+                    // In `Mock` mode, throw an error.
+                    CallStack::Mock(..) => {
+                        return Err(anyhow!("Cannot 'execute' a function in 'mock' mode.").into());
+                    }
                     // If the circuit is in execute mode, then evaluate and execute the instructions.
                     CallStack::Execute(authorization, ..) => {
                         // Retrieve the next request (without popping it).
