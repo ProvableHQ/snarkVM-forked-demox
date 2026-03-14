@@ -102,6 +102,25 @@ impl<N: Network> Stack<N> {
         // Ensure the deployment is ordered.
         deployment.check_is_ordered()?;
 
+        // At V14+, closures must not output ExternalRecord or DynamicRecord.
+        // Pre-V14 programs may have such closures; restricting them unconditionally would break
+        // backward compatibility. The record-existence check (`ensure_records_exist`) relies on
+        // this invariant holding for all programs deployed at V14+.
+        if _consensus_version >= ConsensusVersion::V14 {
+            for closure in deployment.program().closures().values() {
+                for output in closure.outputs() {
+                    ensure!(
+                        !matches!(
+                            output.register_type(),
+                            RegisterType::ExternalRecord(..) | RegisterType::DynamicRecord
+                        ),
+                        "At V14+, closure '{}' output cannot be ExternalRecord or DynamicRecord",
+                        closure.name()
+                    );
+                }
+            }
+        }
+
         // Ensure the program in the stack and deployment matches.
         ensure!(&self.program == deployment.program(), "The stack program does not match the deployment program");
         // If the deployment contains a checksum, ensure it matches the one computed by the stack.

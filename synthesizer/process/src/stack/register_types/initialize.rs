@@ -45,10 +45,10 @@ impl<N: Network> RegisterTypes<N> {
         // Step 3. Check the outputs are well-formed.
         for output in closure.outputs() {
             // Ensure the closure output register is not a static record.
-            // Dynamic records are allowed as closure outputs.
+            // ExternalRecord and DynamicRecord are checked at V14+ deployment time (see `verify_deployment`).
             ensure!(
                 !matches!(output.register_type(), RegisterType::Record(..)),
-                "Closure outputs do not support static records"
+                "Closure outputs do not support records"
             );
 
             // Check the output operand type.

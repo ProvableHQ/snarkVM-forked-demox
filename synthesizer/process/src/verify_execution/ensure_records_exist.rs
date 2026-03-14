@@ -15,6 +15,9 @@
 
 use super::*;
 
+use console::program::RegisterType;
+use snarkvm_synthesizer_program::CallOperator;
+
 // The checks in this file ensure that every Transition t in the given execution satisfies the following:
 //
 // Guarantee (G): Every non-static record (DynamicRecord or ExternalRecord) input to t or received by t from a
@@ -264,6 +267,28 @@ impl<N: Network> Process<N> {
         // Recursively explore the execution, keeping track of record connections across the relevant casts and calls.
         process_transition(self, &mut global_check, root_transition.id(), None, &tid_to_transition, call_graph)?;
 
+        // ExternalRecord root inputs are already verified by an inclusion proof. If such an input was never
+        // cast to a DynamicRecord (i.e. its family was never extended beyond the singleton), the family is
+        // automatically satisfied and does not need further resolution. Families that were extended (e.g. by a
+        // cast-to-DynamicRecord via Case 4) still need explicit resolution, since the derived DynamicRecord
+        // register is a non-ExternalRecord-root member of the family.
+        //
+        // This relies on the invariant that closure calls cannot extend record families. For programs deployed
+        // at V14+, closures are prohibited from outputting ExternalRecord or DynamicRecord types (enforced by
+        // `Stack::verify_deployment`), and static Record outputs are always prohibited (enforced by `add_output()`
+        // and `initialize_closure_types()`). If that restriction were ever relaxed, this logic must be revisited.
+        let root_external_registers: HashSet<(N::TransitionID, u64)> = root_transition
+            .inputs()
+            .iter()
+            .enumerate()
+            .filter(|(_, input)| matches!(input, Input::ExternalRecord(..)))
+            .map(|(i, _)| (*root_transition.id(), i as u64))
+            .collect();
+        // Retain only families that have at least one member outside the ExternalRecord root set,
+        // meaning the family was extended by a DynamicRecord cast or callee boundary and still needs
+        // verification.
+        global_check.families.retain(|family| !family.iter().all(|member| root_external_registers.contains(member)));
+
         // Ensure the global check passes.
         if global_check.non_existent_families().is_empty() {
             Ok(())
@@ -411,7 +436,49 @@ fn process_transition<N: Network>(
                 if let Instruction::Call(call) = instruction
                     && !call.is_function_call(stack.as_ref())?
                 {
-                    // Closure case: neither the global nor the local check is affected.
+                    // Closure case. This function is only called at V14+.
+                    // Pre-V14 programs may have closures that output ExternalRecord (a pre-V14
+                    // feature). At V14+, such closures bypass the record-existence invariant because
+                    // the algorithm skips closure calls entirely. New V14+ programs are blocked at
+                    // deployment time; this check covers pre-V14 programs deployed before that
+                    // restriction existed.
+                    let has_forbidden_output = match call.operator() {
+                        CallOperator::Resource(resource) => stack
+                            .program()
+                            .get_closure(resource)
+                            .map(|closure| {
+                                closure.outputs().iter().any(|output| {
+                                    matches!(
+                                        output.register_type(),
+                                        RegisterType::ExternalRecord(..) | RegisterType::DynamicRecord
+                                    )
+                                })
+                            })
+                            .unwrap_or(false),
+                        CallOperator::Locator(locator) => process
+                            .get_stack(locator.program_id())
+                            .ok()
+                            .map(|ext_stack| {
+                                ext_stack
+                                    .program()
+                                    .get_closure(locator.resource())
+                                    .map(|closure| {
+                                        closure.outputs().iter().any(|output| {
+                                            matches!(
+                                                output.register_type(),
+                                                RegisterType::ExternalRecord(..) | RegisterType::DynamicRecord
+                                            )
+                                        })
+                                    })
+                                    .unwrap_or(false)
+                            })
+                            .unwrap_or(false),
+                    };
+                    ensure!(
+                        !has_forbidden_output,
+                        "Closure '{}' outputs ExternalRecord or DynamicRecord, which is disallowed at V14+",
+                        call.operator()
+                    );
                 } else {
                     // Function case
 
