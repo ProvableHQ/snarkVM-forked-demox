@@ -91,6 +91,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             .filter_map(|tx_id| {
                 unordered_aborted_transaction_ids.get(&tx_id).map(|error| {
                     warn!("Speculation safely aborted a transaction - {error} ({tx_id})");
+                    dev_eprintln!("Speculation safely aborted a transaction - {error} ({tx_id})");
                     tx_id
                 })
             })

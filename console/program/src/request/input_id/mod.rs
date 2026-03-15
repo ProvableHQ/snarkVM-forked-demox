@@ -137,7 +137,7 @@ impl<N: Network> InputID<N> {
             Value::DynamicFuture(..) => bail!("Expected a record input, found a dynamic future input"),
         };
         // Ensure the record belongs to the signer.
-        ensure!(**record.owner() == *signer, "Input record must belong to the signer");
+        ensure!(**record.owner() == *signer, "Input record '{program_id}/{record_name}' must belong to the signer");
         // Compute the record view key.
         let record_view_key = (*record.nonce() * **view_key).to_x_coordinate();
         // Compute the record commitment.

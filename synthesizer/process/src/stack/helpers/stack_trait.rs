@@ -73,7 +73,7 @@ impl<N: Network> StackTrait<N> for Stack<N> {
             bail!("Expected external record '{record_name}', found external record '{}'", record_type.name())
         }
 
-        self.matches_record_internal(record, record_type, 0)
+        external_stack.matches_record_internal(record, record_type, 0)
     }
 
     /// Checks that the given record matches the layout of the record type.
@@ -671,14 +671,19 @@ impl<N: Network> Stack<N> {
         ensure!(future.arguments().len() == inputs.len(), "Future arguments do not match");
 
         // Check that the arguments match the inputs.
+        // Use the external stack if the future is from an external program.
         for (argument, input) in future.arguments().iter().zip_eq(inputs.iter()) {
             match (argument, input.finalize_type()) {
-                (Argument::Plaintext(plaintext), FinalizeType::Plaintext(plaintext_type)) => {
-                    self.matches_plaintext_internal(plaintext, plaintext_type, depth + 1)?
-                }
-                (Argument::Future(future), FinalizeType::Future(locator)) => {
-                    self.matches_future_internal(future, locator, depth + 1)?
-                }
+                (Argument::Plaintext(plaintext), FinalizeType::Plaintext(plaintext_type)) => match &external_stack {
+                    Some(external_stack) => {
+                        external_stack.matches_plaintext_internal(plaintext, plaintext_type, depth + 1)?
+                    }
+                    None => self.matches_plaintext_internal(plaintext, plaintext_type, depth + 1)?,
+                },
+                (Argument::Future(future), FinalizeType::Future(locator)) => match &external_stack {
+                    Some(external_stack) => external_stack.matches_future_internal(future, locator, depth + 1)?,
+                    None => self.matches_future_internal(future, locator, depth + 1)?,
+                },
                 (Argument::DynamicFuture(_), FinalizeType::DynamicFuture) => {}
                 (_, input_type) => {
                     bail!("Argument type does not match input type: expected '{input_type}'")

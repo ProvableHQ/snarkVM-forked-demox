@@ -138,12 +138,12 @@ use snarkvm_utilities::TestRng;
 //        - output static non-external -> dynamic
 //        - input dynamic -> static external
 //       Run with the snark-print feature and observe the batch with 3 instances at the end
-// - output static {program_a/record_name_a, program_a/record_name_b, program_b/record_name_a, program_b/ record_name_b} -> dynamic: four differeny keys should be fetched
+// - output static {program_a/record_name_a, program_a/record_name_b, program_b/record_name_a, program_b/ record_name_b} -> dynamic: four different keys should be fetched
 //   In: translation.rs::test_differing_keys
 //       Run with the snark-print feature and observe the batch sizes [1, 1, 1, 1, 1, 1, 1, 1, 1] (translation key IDs are also displayed for convenience)
 //
 // Signature consistency
-// - Translate an output record fom a call to a preexisting program to ensure signature-verification circuit has not changed
+// - Translate an output record from a call to a preexisting program to ensure signature-verification circuit has not changed
 //   In: get_record_dynamic.rs::translate_transfer_public_to_private
 
 // Adds the given transactions to a new block and asserts all of them were
