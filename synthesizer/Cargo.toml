@@ -61,6 +61,7 @@ wasm = [
 ]
 dev-print = [ "snarkvm-utilities/dev-print" ]
 dev_skip_checks = [ "snarkvm-synthesizer-process/dev_skip_checks" ]
+snark-print = [ "snarkvm-algorithms/snark-print" ]
 test_consensus_heights = [ "snarkvm-synthesizer-process/test_consensus_heights" ]
 memory-intensive = [ ]
 
@@ -156,6 +157,9 @@ features = [ "sync" ]
 
 [dependencies.tracing]
 workspace = true
+
+[dependencies.tracing-subscriber]
+version = "0.3"
 
 [dev-dependencies.anyhow]
 workspace = true

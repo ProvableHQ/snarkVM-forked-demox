@@ -105,6 +105,8 @@ test_targets = [
   "snarkvm-console/test_targets",
 ]
 timer = [ "aleo-std/timer" ]
+dev-print = [ "snarkvm-utilities/dev-print" ]
+
 
 [dependencies.snarkvm-console]
 workspace = true

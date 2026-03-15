@@ -121,7 +121,7 @@ impl<N: Network> Call<N> {
     /// Returns the opcode.
     #[inline]
     pub const fn opcode() -> Opcode {
-        Opcode::Call
+        Opcode::Call("call")
     }
 
     /// Return the operator.

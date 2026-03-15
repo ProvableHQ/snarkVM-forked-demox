@@ -8,6 +8,11 @@ repository = "https://github.com/ProvableHQ/snarkVM"
 license = "Apache-2.0"
 edition = "2024"
 
+[[bench]]
+name = "dynamic_data"
+path = "benches/dynamic_data.rs"
+harness = false
+
 [features]
 default = [ ]
 test = [ ]
@@ -58,4 +63,7 @@ features = [ "preserve_order" ]
 version = "0.3"
 
 [dev-dependencies.bincode]
+workspace = true
+
+[dev-dependencies.criterion]
 workspace = true

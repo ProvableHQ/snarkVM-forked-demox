@@ -108,6 +108,7 @@ use console::{
         PlaintextType,
         ProgramID,
         RecordType,
+        RegisterType,
         StructType,
         ValueType,
     },
@@ -281,7 +282,7 @@ impl<N: Network> ProgramCore<N> {
     #[rustfmt::skip]
     pub const RESTRICTED_KEYWORDS: &'static [(ConsensusVersion, &'static [&'static str])] = &[
         (ConsensusVersion::V6, &["constructor"]),
-        (ConsensusVersion::V14, &["identifier"])
+        (ConsensusVersion::V14, &["dynamic", "identifier"]),
     ];
 
     /// Initializes an empty program.
@@ -1180,9 +1181,9 @@ impl<N: Network> ProgramCore<N> {
 
     /// Checks that the program writes size does not exceed the maximum allowed size for the given block height.
     pub fn check_program_writes(&self, block_height: u32) -> Result<()> {
-        // Determine the maximum allowed program size for the current consensus version.
+        // Determine the maximum allowed number of writes for the current consensus version.
         let max_num_writes = consensus_config_value!(N, MAX_WRITES, block_height)
-            .ok_or(anyhow!("Failed to fetch maximum program size"))?;
+            .ok_or(anyhow!("Failed to fetch maximum number of writes"))?;
 
         // Check if the constructor exceeds the maximum number of writes.
         if self.constructor().is_some_and(|constructor| constructor.num_writes() > max_num_writes) {
@@ -1209,53 +1210,77 @@ impl<N: Network> ProgramCore<N> {
     }
 
     /// Returns `true` if a program contains any V14 syntax.
-    /// This includes `snark.verify.*` opcodes, `Operand::AleoGenerator`, `Operand::AleoGeneratorPowers`,
-    /// or `Literal::Identifier`. Also checks for identifier type declarations in function inputs/outputs,
-    /// finalize inputs/outputs, closures, structs, mappings, and records.
+    /// This includes:
+    /// 1. `snark.verify.*` opcodes.
+    /// 2. `Operand::AleoGenerator` or `Operand::AleoGeneratorPowers` operands.
+    /// 3. `Literal::Identifier` operands.
+    /// 4. `call.dynamic` instructions.
+    /// 5. `get.record.dynamic` instructions.
+    /// 6. `cast` instructions targeting `dynamic.record`.
+    /// 7. `dynamic.record` or `dynamic.future` in function input or output types.
+    /// 8. `contains.dynamic`, `get.dynamic`, or `get.or_use.dynamic` commands in finalize blocks.
+    /// 9. `dynamic.record` or `dynamic.future` in closure input or output types.
+    /// 10. `dynamic.future` in finalize block input types.
+    /// 11. Identifier types in any type declarations.
+    ///
     /// This is enforced to be `false` for programs before `ConsensusVersion::V14`.
     #[inline]
     pub fn contains_v14_syntax(&self) -> Result<bool> {
-        /// Returns `true` if the operand is V14 syntax.
-        fn is_v14_operand<N: Network>(operand: &Operand<N>) -> bool {
-            matches!(
-                operand,
-                Operand::AleoGeneratorPowers(_)
-                    | Operand::AleoGenerator
-                    | Operand::Literal(console::program::Literal::Identifier(..))
-            )
+        /// Returns `true` if the instruction uses V14-only opcodes or operands (infallible checks).
+        fn is_v14_instruction<N: Network>(instr: &Instruction<N>) -> bool {
+            matches!(instr, Instruction::CallDynamic(_) | Instruction::GetRecordDynamic(_))
+                || matches!(instr, Instruction::Cast(cast) if *cast.cast_type() == CastType::DynamicRecord)
+                || instr.opcode().starts_with("snark.verify")
+                || cfg_iter!(instr.operands()).any(|operand| {
+                    matches!(
+                        operand,
+                        Operand::AleoGenerator
+                            | Operand::AleoGeneratorPowers(_)
+                            | Operand::Literal(console::program::Literal::Identifier(..))
+                    )
+                })
         }
 
-        // Check functions: instructions, finalize commands, and type declarations in one pass.
+        /// Returns `true` if the command uses V14-only syntax (infallible checks).
+        fn is_v14_command<N: Network>(cmd: &Command<N>) -> bool {
+            matches!(cmd, Command::ContainsDynamic(_) | Command::GetDynamic(_) | Command::GetOrUseDynamic(_))
+                || matches!(cmd, Command::Instruction(instr) if is_v14_instruction(instr))
+        }
+
+        // Helper to check if a value type is a V14-only dynamic type.
+        let is_dynamic_value_type =
+            |vt: &ValueType<N>| matches!(vt, ValueType::DynamicRecord | ValueType::DynamicFuture);
+
+        // Helper to check if a register type is a V14-only dynamic type.
+        let is_dynamic_register_type =
+            |rt: &RegisterType<N>| matches!(rt, RegisterType::DynamicRecord | RegisterType::DynamicFuture);
+
+        // Check functions: instructions, finalize commands, and type declarations.
         for (_, function) in self.functions() {
-            if function.instructions().iter().any(|instruction| {
-                instruction.opcode().starts_with("snark.verify")
-                    || cfg_iter!(instruction.operands()).any(is_v14_operand)
-            }) {
-                return Ok(true);
-            }
-            if function
-                .finalize_logic()
-                .map(|finalize| {
-                    finalize.commands().iter().any(|cmd| {
-                        matches!(cmd, Command::Instruction(instr) if instr.opcode().starts_with("snark.verify"))
-                            || cfg_iter!(cmd.operands()).any(is_v14_operand)
-                    })
-                })
-                .unwrap_or(false)
+            if function.instructions().iter().any(is_v14_instruction)
+                || function.inputs().iter().any(|input| is_dynamic_value_type(input.value_type()))
+                || function.outputs().iter().any(|output| is_dynamic_value_type(output.value_type()))
             {
                 return Ok(true);
+            }
+            if let Some(finalize) = function.finalize_logic() {
+                if finalize.inputs().iter().any(|input| matches!(input.finalize_type(), FinalizeType::DynamicFuture))
+                    || finalize.commands().iter().any(is_v14_command)
+                {
+                    return Ok(true);
+                }
             }
             if function.contains_identifier_type()? {
                 return Ok(true);
             }
         }
 
-        // Check closures: instructions and type declarations in one pass.
+        // Check closures: instructions and type declarations.
         for (_, closure) in self.closures() {
-            if closure.instructions().iter().any(|instruction| {
-                instruction.opcode().starts_with("snark.verify")
-                    || cfg_iter!(instruction.operands()).any(is_v14_operand)
-            }) {
+            if closure.instructions().iter().any(is_v14_instruction)
+                || closure.inputs().iter().any(|input| is_dynamic_register_type(input.register_type()))
+                || closure.outputs().iter().any(|output| is_dynamic_register_type(output.register_type()))
+            {
                 return Ok(true);
             }
             if closure.contains_identifier_type()? {
@@ -1263,19 +1288,11 @@ impl<N: Network> ProgramCore<N> {
             }
         }
 
-        // Check constructor commands.
-        let constructor_contains = self.constructor.iter().any(|constructor| {
-            constructor.commands().iter().any(|cmd| {
-                matches!(cmd, Command::Instruction(instr) if instr.opcode().starts_with("snark.verify"))
-                    || cfg_iter!(cmd.operands()).any(is_v14_operand)
-            })
-        });
-        if constructor_contains {
-            return Ok(true);
-        }
-
-        // Check constructor for identifier types in cast destinations and type declarations.
+        // Check constructor commands and identifier types.
         if let Some(constructor) = &self.constructor {
+            if constructor.commands().iter().any(is_v14_command) {
+                return Ok(true);
+            }
             if constructor.contains_identifier_type()? {
                 return Ok(true);
             }
@@ -1475,8 +1492,8 @@ function swap:
         assert_eq!(function.instructions().len(), 2);
 
         // Ensure the instructions are calls.
-        assert_eq!(function.instructions()[0].opcode(), Opcode::Call);
-        assert_eq!(function.instructions()[1].opcode(), Opcode::Call);
+        assert_eq!(function.instructions()[0].opcode(), Opcode::Call("call"));
+        assert_eq!(function.instructions()[1].opcode(), Opcode::Call("call"));
 
         // Ensure there are two outputs.
         assert_eq!(function.outputs().len(), 2);
@@ -1574,5 +1591,237 @@ finalize check:
             r"program test.aleo; function dummy: struct foo: data as u8;",
             false,
         );
+    }
+
+    #[test]
+    fn test_contains_v14_syntax() -> Result<()> {
+        // A baseline program with no V14 syntax.
+        let no_v14 = Program::<CurrentNetwork>::from_str(
+            r"program test.aleo;
+function foo:
+    input r0 as u64.public;
+    output r0 as u64.public;",
+        )?;
+        assert!(!no_v14.contains_v14_syntax()?);
+
+        // A program with `dynamic.record` as a function input type.
+        let dynamic_record_input = Program::<CurrentNetwork>::from_str(
+            r"program test.aleo;
+function foo:
+    input r0 as dynamic.record;",
+        )?;
+        assert!(dynamic_record_input.contains_v14_syntax()?);
+
+        // A program with `dynamic.future` as a function output type.
+        let dynamic_future_output = Program::<CurrentNetwork>::from_str(
+            r"program test.aleo;
+function foo:
+    output r0 as dynamic.future;",
+        )?;
+        assert!(dynamic_future_output.contains_v14_syntax()?);
+
+        // A program with a `call.dynamic` instruction.
+        let call_dynamic = Program::<CurrentNetwork>::from_str(
+            r"program test.aleo;
+function foo:
+    input r0 as field.public;
+    input r1 as field.public;
+    input r2 as field.public;
+    call.dynamic r0 r1 r2 into r3 (as u64.public);
+    output r3 as u64.public;",
+        )?;
+        assert!(call_dynamic.contains_v14_syntax()?);
+
+        // A program with a `get.record.dynamic` instruction.
+        let get_record_dynamic = Program::<CurrentNetwork>::from_str(
+            r"program test.aleo;
+function foo:
+    input r0 as dynamic.record;
+    get.record.dynamic r0.amount into r1 as field;
+    output r1 as field.public;",
+        )?;
+        assert!(get_record_dynamic.contains_v14_syntax()?);
+
+        // A program with a `cast ... as dynamic.record` instruction.
+        let cast_dynamic_record = Program::<CurrentNetwork>::from_str(
+            r"program test.aleo;
+record token:
+    owner as address.private;
+    amount as u64.private;
+function foo:
+    input r0 as token.record;
+    cast r0 into r1 as dynamic.record;
+    output r0.owner as address.private;",
+        )?;
+        assert!(cast_dynamic_record.contains_v14_syntax()?);
+
+        // A program with `contains.dynamic` in a finalize block.
+        let contains_dynamic = Program::<CurrentNetwork>::from_str(
+            r"program test.aleo;
+function bar:
+    input r0 as field.public;
+    input r1 as field.public;
+    input r2 as field.public;
+    input r3 as field.public;
+    async bar r0 r1 r2 r3 into r4;
+    output r4 as test.aleo/bar.future;
+finalize bar:
+    input r0 as field.public;
+    input r1 as field.public;
+    input r2 as field.public;
+    input r3 as field.public;
+    contains.dynamic r0 r1 r2[r3] into r4;",
+        )?;
+        assert!(contains_dynamic.contains_v14_syntax()?);
+
+        // A program with `get.dynamic` in a finalize block.
+        let get_dynamic = Program::<CurrentNetwork>::from_str(
+            r"program test.aleo;
+function bar:
+    input r0 as field.public;
+    input r1 as field.public;
+    input r2 as field.public;
+    input r3 as field.public;
+    async bar r0 r1 r2 r3 into r4;
+    output r4 as test.aleo/bar.future;
+finalize bar:
+    input r0 as field.public;
+    input r1 as field.public;
+    input r2 as field.public;
+    input r3 as field.public;
+    get.dynamic r0 r1 r2[r3] into r4 as field;",
+        )?;
+        assert!(get_dynamic.contains_v14_syntax()?);
+
+        // A program with `dynamic.future` as a finalize input type.
+        let dynamic_future_finalize_input = Program::<CurrentNetwork>::from_str(
+            r"program test.aleo;
+function foo:
+    input r0 as field.public;
+    async foo r0 into r1;
+    output r1 as test.aleo/foo.future;
+finalize foo:
+    input r0 as dynamic.future;
+    await r0;",
+        )?;
+        assert!(dynamic_future_finalize_input.contains_v14_syntax()?);
+
+        // A program with `dynamic.record` as a closure input type.
+        let closure_dynamic_input = Program::<CurrentNetwork>::from_str(
+            r"program test.aleo;
+closure bar:
+    input r0 as dynamic.record;
+    input r1 as field;
+    add r1 r1 into r2;",
+        )?;
+        assert!(closure_dynamic_input.contains_v14_syntax()?);
+
+        // A program with `dynamic.record` as a closure output type.
+        let closure_dynamic_output = Program::<CurrentNetwork>::from_str(
+            r"program test.aleo;
+closure bar:
+    input r0 as field;
+    add r0 r0 into r1;
+    output r1 as dynamic.record;",
+        )?;
+        assert!(closure_dynamic_output.contains_v14_syntax()?);
+
+        // A program with `get.or_use.dynamic` in a finalize block.
+        let get_or_use_dynamic = Program::<CurrentNetwork>::from_str(
+            r"program test.aleo;
+function bar:
+    input r0 as field.public;
+    input r1 as field.public;
+    input r2 as field.public;
+    input r3 as field.public;
+    input r4 as u64.public;
+    async bar r0 r1 r2 r3 r4 into r5;
+    output r5 as test.aleo/bar.future;
+finalize bar:
+    input r0 as field.public;
+    input r1 as field.public;
+    input r2 as field.public;
+    input r3 as field.public;
+    input r4 as u64.public;
+    get.or_use.dynamic r0 r1 r2[r3] r4 into r5 as u64;",
+        )?;
+        assert!(get_or_use_dynamic.contains_v14_syntax()?);
+
+        // A program with `snark.verify` in a finalize block.
+        let snark_verify = Program::<CurrentNetwork>::from_str(
+            r"program test.aleo;
+function foo:
+    input r0 as [u8; 8u32].public;
+    input r1 as [field; 1u32].public;
+    input r2 as [u8; 8u32].public;
+    async foo r0 r1 r2 into r3;
+    output r3 as test.aleo/foo.future;
+finalize foo:
+    input r0 as [u8; 8u32].public;
+    input r1 as [field; 1u32].public;
+    input r2 as [u8; 8u32].public;
+    snark.verify r0 1u8 r1 r2 into r3;",
+        )?;
+        assert!(snark_verify.contains_v14_syntax()?);
+
+        // A program with `snark.verify.batch` in a finalize block.
+        let snark_verify_batch = Program::<CurrentNetwork>::from_str(
+            r"program test.aleo;
+function foo:
+    input r0 as [[u8; 8u32]; 1u32].public;
+    input r1 as [[[field; 1u32]; 1u32]; 1u32].public;
+    input r2 as [u8; 8u32].public;
+    async foo r0 r1 r2 into r3;
+    output r3 as test.aleo/foo.future;
+finalize foo:
+    input r0 as [[u8; 8u32]; 1u32].public;
+    input r1 as [[[field; 1u32]; 1u32]; 1u32].public;
+    input r2 as [u8; 8u32].public;
+    snark.verify.batch r0 1u8 r1 r2 into r3;",
+        )?;
+        assert!(snark_verify_batch.contains_v14_syntax()?);
+
+        // A program with `aleo::GENERATOR` as an operand.
+        let aleo_generator = Program::<CurrentNetwork>::from_str(
+            r"program test.aleo;
+function foo:
+    input r0 as scalar.public;
+    mul aleo::GENERATOR r0 into r1;
+    output r1 as group.public;",
+        )?;
+        assert!(aleo_generator.contains_v14_syntax()?);
+
+        // A program with `aleo::GENERATOR_POWERS` as an operand.
+        let aleo_generator_powers = Program::<CurrentNetwork>::from_str(
+            r"program test.aleo;
+function foo:
+    input r0 as scalar.public;
+    mul aleo::GENERATOR_POWERS[0u32] r0 into r1;
+    output r1 as group.public;",
+        )?;
+        assert!(aleo_generator_powers.contains_v14_syntax()?);
+
+        // A program with `dynamic.future` as a closure output type.
+        let closure_dynamic_future_output = Program::<CurrentNetwork>::from_str(
+            r"program test.aleo;
+closure bar:
+    input r0 as field;
+    add r0 r0 into r1;
+    output r1 as dynamic.future;",
+        )?;
+        assert!(closure_dynamic_future_output.contains_v14_syntax()?);
+
+        // A program with a V14 opcode (`aleo::GENERATOR`) in a constructor block.
+        let constructor_v14 = Program::<CurrentNetwork>::from_str(
+            r"program test.aleo;
+function dummy:
+    input r0 as field.public;
+    output r0 as field.public;
+constructor:
+    assert.eq aleo::GENERATOR aleo::GENERATOR;",
+        )?;
+        assert!(constructor_v14.contains_v14_syntax()?);
+
+        Ok(())
     }
 }

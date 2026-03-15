@@ -3076,6 +3076,7 @@ dependencies = [
 name = "snarkvm-circuit-environment"
 version = "4.5.0"
 dependencies = [
+ "anyhow",
  "criterion",
  "indexmap 2.13.0",
  "itertools 0.14.0",
@@ -3322,6 +3323,7 @@ name = "snarkvm-console-program"
 version = "4.5.0"
 dependencies = [
  "bincode",
+ "criterion",
  "enum-iterator",
  "enum_index",
  "enum_index_derive",
@@ -3524,6 +3526,7 @@ dependencies = [
  "anyhow",
  "bincode",
  "indexmap 2.13.0",
+ "itertools 0.14.0",
  "rayon",
  "serde_json",
  "snarkvm-algorithms",
@@ -3843,6 +3846,7 @@ dependencies = [
  "test-log",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "walkdir",
 ]
 
@@ -3865,6 +3869,7 @@ dependencies = [
  "colored 3.1.1",
  "criterion",
  "indexmap 2.13.0",
+ "itertools 0.14.0",
  "locktick",
  "parking_lot",
  "rand 0.8.5",

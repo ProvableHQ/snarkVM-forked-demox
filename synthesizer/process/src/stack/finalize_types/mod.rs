@@ -41,9 +41,12 @@ use snarkvm_synthesizer_program::{
     Command,
     Constructor,
     Contains,
+    ContainsDynamic,
     Finalize,
     Get,
+    GetDynamic,
     GetOrUse,
+    GetOrUseDynamic,
     Instruction,
     MAX_ADDITIONAL_SEEDS,
     Opcode,
@@ -233,6 +236,7 @@ impl<N: Network> FinalizeTypes<N> {
                                     FinalizeType::Plaintext(plaintext)
                                 }
                                 FinalizeType::Future(locator) => FinalizeType::Future(*locator),
+                                FinalizeType::DynamicFuture => bail!("Cannot access arguments of a dynamic future"),
                             }
                         }
                         // Halts if the index is out of bounds.
@@ -244,7 +248,8 @@ impl<N: Network> FinalizeTypes<N> {
                     Access::Index(..),
                 )
                 | (FinalizeType::Plaintext(PlaintextType::Array(..)), Access::Member(..))
-                | (FinalizeType::Future(..), Access::Member(..)) => {
+                | (FinalizeType::Future(..), Access::Member(..))
+                | (FinalizeType::DynamicFuture, _) => {
                     bail!("Invalid access `{access}`")
                 }
             }
@@ -266,6 +271,7 @@ pub fn finalize_types_equivalent<N: Network>(
             types_equivalent(stack0, plaintext0, stack1, plaintext1)
         }
         (FinalizeType::Future(future0), FinalizeType::Future(future1)) => Ok(future0 == future1),
+        (FinalizeType::DynamicFuture, FinalizeType::DynamicFuture) => Ok(true),
         _ => Ok(false),
     }
 }

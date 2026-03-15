@@ -37,12 +37,14 @@ mod evaluate;
 mod execute;
 mod helpers;
 
-use crate::{CallMetrics, Process, Trace};
+use crate::{CallMetrics, Process, Trace, TranslationAssignment, compute_console_dynamic_or_external_record_id};
 use console::{
     account::{Address, PrivateKey},
     network::prelude::*,
     program::{
         Argument,
+        DynamicFuture,
+        DynamicRecord,
         Entry,
         EntryType,
         FinalizeType,
@@ -59,6 +61,7 @@ use console::{
         RegisterType,
         Request,
         Response,
+        ToFields,
         U8,
         U16,
         Value,
@@ -87,7 +90,7 @@ use indexmap::IndexMap;
 use locktick::parking_lot::RwLock;
 #[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
-use rand::{CryptoRng, Rng};
+use rand::{CryptoRng, Rng, SeedableRng, rngs::StdRng};
 use std::{
     cell::OnceCell,
     sync::{Arc, Weak},
@@ -97,9 +100,14 @@ use std::{
 use rayon::prelude::*;
 
 pub type Assignments<N> = Arc<RwLock<Vec<(circuit::Assignment<<N as Environment>::Field>, CallMetrics<N>)>>>;
+/// A stack of translations for the transitions in the execution. Each function execution level pushes a new group,
+/// and translations for dynamic calls made at that level are collected into the top group. When the transition is
+/// inserted, the top group is popped and its translations are associated with that transition (the caller's
+/// transition ID). Each translation datum is paired with the proving key for its record type.
+pub type Translations<N> = Arc<RwLock<Vec<Vec<(TranslationAssignment<N>, ProvingKey<N>)>>>>;
 
 /// The `CallStack` is used to track the current state of the program execution.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum CallStack<N: Network> {
     /// Authorize an `Execute` transaction.
     Authorize(Vec<Request<N>>, Option<PrivateKey<N>>, Authorization<N>),
@@ -110,9 +118,23 @@ pub enum CallStack<N: Network> {
     /// Evaluate a function.
     Evaluate(Authorization<N>),
     /// Execute a function and produce a proof.
-    Execute(Authorization<N>, Arc<RwLock<Trace<N>>>),
+    Execute(Authorization<N>, Arc<RwLock<Trace<N>>>, Translations<N>),
     /// Execute a function and create the circuit assignment.
     PackageRun(Vec<Request<N>>, PrivateKey<N>, Assignments<N>),
+}
+
+// impl to_string for CallStack<N>
+impl<N: Network> CallStack<N> {
+    fn type_as_string(&self) -> String {
+        match self {
+            CallStack::Authorize(..) => "Authorize".to_string(),
+            CallStack::Synthesize(..) => "Synthesize".to_string(),
+            CallStack::CheckDeployment(..) => "CheckDeployment".to_string(),
+            CallStack::Evaluate(..) => "Evaluate".to_string(),
+            CallStack::Execute(..) => "Execute".to_string(),
+            CallStack::PackageRun(..) => "PackageRun".to_string(),
+        }
+    }
 }
 
 impl<N: Network> CallStack<N> {
@@ -122,8 +144,12 @@ impl<N: Network> CallStack<N> {
     }
 
     /// Initializes a call stack as `Self::Execute`.
-    pub fn execute(authorization: Authorization<N>, trace: Arc<RwLock<Trace<N>>>) -> Result<Self> {
-        Ok(CallStack::Execute(authorization, trace))
+    pub fn execute(
+        authorization: Authorization<N>,
+        trace: Arc<RwLock<Trace<N>>>,
+        translations: Translations<N>,
+    ) -> Result<Self> {
+        Ok(CallStack::Execute(authorization, trace, translations))
     }
 }
 
@@ -147,9 +173,11 @@ impl<N: Network> CallStack<N> {
                 )
             }
             CallStack::Evaluate(authorization) => CallStack::Evaluate(authorization.replicate()),
-            CallStack::Execute(authorization, trace) => {
-                CallStack::Execute(authorization.replicate(), Arc::new(RwLock::new(trace.read().clone())))
-            }
+            CallStack::Execute(authorization, trace, translations) => CallStack::Execute(
+                authorization.replicate(),
+                Arc::new(RwLock::new(trace.read().clone())),
+                Arc::new(RwLock::new(translations.read().clone())),
+            ),
             CallStack::PackageRun(requests, private_key, assignments) => {
                 CallStack::PackageRun(requests.clone(), *private_key, Arc::new(RwLock::new(assignments.read().clone())))
             }
@@ -193,7 +221,7 @@ impl<N: Network> CallStack<N> {
     }
 
     /// Peeks at the next request from the stack.
-    pub fn peek(&mut self) -> Result<Request<N>> {
+    pub fn peek(&self) -> Result<Request<N>> {
         match self {
             CallStack::Authorize(requests, ..)
             | CallStack::Synthesize(requests, ..)
@@ -221,9 +249,11 @@ pub struct Stack<N: Network> {
     finalize_types: Arc<RwLock<IndexMap<Identifier<N>, FinalizeTypes<N>>>>,
     /// The universal SRS.
     universal_srs: UniversalSRS<N>,
-    /// The mapping of function name to proving key.
+    /// The mapping of function name or record name to proving key.
+    /// Function names map to function proving keys, record names map to translation proving keys.
     proving_keys: Arc<RwLock<IndexMap<Identifier<N>, ProvingKey<N>>>>,
-    /// The mapping of function name to verifying key.
+    /// The mapping of function name or record name to verifying key.
+    /// Function names map to function verifying keys, record names map to translation verifying keys.
     verifying_keys: Arc<RwLock<IndexMap<Identifier<N>, VerifyingKey<N>>>>,
     /// The program address.
     program_address: Address<N>,
@@ -265,7 +295,9 @@ impl<N: Network> Stack<N> {
     }
 
     /// Partially initializes a new stack, given the process and the program, without checking for validity.
-    /// Note. This method should **NOT** be used by the on-chain VM to add new program, use `Stack::new` instead.
+    /// Unlike `Stack::new`, this method accepts an explicit edition and skips upgrade validation,
+    /// which is necessary for amendments that preserve the existing edition rather than incrementing it.
+    /// A `Stack` created by this method must also call `initialize_and_check`.
     pub fn new_raw(process: &Process<N>, program: &Program<N>, edition: u16) -> Result<Self> {
         // Check that the program is well-formed.
         check_program_is_well_formed(program)?;
@@ -342,9 +374,9 @@ impl<N: Network> Stack<N> {
 
         // Check that the functions are valid.
         for function in self.program.functions().values() {
-            // Determine the number of calls for the function.
-            // This includes a safety check for the maximum number of calls.
-            self.get_number_of_calls(function.name())?;
+            // Determine the minimum number of calls for the function.
+            // This includes a safety check against maximum allowed number of calls.
+            self.get_minimum_number_of_calls(function.name())?;
         }
         Ok(())
     }
