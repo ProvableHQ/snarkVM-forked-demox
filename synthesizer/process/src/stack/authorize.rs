@@ -130,7 +130,8 @@ impl<N: Network> Stack<N> {
         Ok(authorization)
     }
 
-        /// Authorizes a call to the program function for the given inputs.
+    // TODO (CwPK)
+    /// Authorizes a call to the program function for the given inputs.
     /// Compared to `authorize`, this method does not check for circuit satisfiability of the request.
     #[inline]
     pub fn authorize_mocked<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
@@ -142,6 +143,11 @@ impl<N: Network> Stack<N> {
         rng: &mut R,
     ) -> Result<Authorization<N>, StackAuthError> {
         let timer = timer!("Stack::authorize_unchecked");
+
+        // TODO (CwPK)
+        if program_id != *self.program.id() {
+            return Err(anyhow!("Program ID mismatch").into());
+        }
 
         // Get the program ID.
         let program_id = *self.program.id();
@@ -163,11 +169,11 @@ impl<N: Network> Stack<N> {
             false => None,
         };
 
-        let private_key = PrivateKey::new(rng).unwrap();
+        let mocked_private_key = PrivateKey::new(rng).unwrap();
 
         // Compute the request.
-        let request = Request::sign(
-            &private_key,
+        let mut mocked_request = Request::sign(
+            &mocked_private_key,
             program_id,
             function_name,
             inputs,
@@ -178,11 +184,14 @@ impl<N: Network> Stack<N> {
             false,
             rng,
         )?;
+
+        mocked_request.overwrite_signer(address);
+
         lap!(timer, "Compute the request");
         // Initialize the authorization.
-        let authorization = Authorization::new(request.clone());
+        let authorization = Authorization::new(mocked_request.clone());
         // Construct the call stack.
-        let call_stack = CallStack::Mock(authorization.clone());
+        let call_stack = CallStack::Mock(vec![mocked_request], address, mocked_private_key, authorization.clone());
         // Construct the authorization from the function.
         let _response = self.evaluate_function::<A, R>(call_stack, caller, root_tvk, rng)?;
         finish!(timer, "Construct the authorization from the function");

@@ -140,7 +140,7 @@ impl<N: Network> Stack<N> {
             match &mut call_stack {
                 CallStack::Authorize(..) => (call_stack.pop()?, call_stack),
                 CallStack::Evaluate(authorization) => (authorization.next()?, call_stack),
-                CallStack::Mock(authorization) => (authorization.next()?, call_stack),
+                CallStack::Mock(..) => (call_stack.pop()?, call_stack),
                 // If the evaluation is performed in the `Execute` mode, create a new `Evaluate` mode.
                 // This is done to ensure that evaluation during execution is performed consistently.
                 CallStack::Execute(authorization, _, _) => {
@@ -152,7 +152,7 @@ impl<N: Network> Stack<N> {
                     (request, call_stack)
                 }
                 _ => return Err(anyhow!(
-                    "Illegal operation: call stack must be `Authorize`, `Evaluate` or `Execute` in `evaluate_function`."
+                    "Illegal operation: call stack must be `Authorize`, `Evaluate`, `Mock` or `Execute` in `evaluate_function`."
                 )
                 .into()),
             };
@@ -330,7 +330,7 @@ impl<N: Network> Stack<N> {
 
         // If the circuit is in `Authorize` or `Mock` mode, then save the transition.
         match registers.call_stack_ref() {
-            CallStack::Authorize(_, _, authorization) | CallStack::Mock(authorization) => {
+            CallStack::Authorize(_, _, authorization) | CallStack::Mock(_, _, _, authorization) => {
                 // Construct the transition.
                 let transition = Transition::from(&request, &response, &function.output_types(), &output_registers)?;
                 // Add the transition to the authorization.

@@ -93,13 +93,24 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             let mut call_stack = registers.call_stack();
 
             // In Authorize mode, we need to compute the new request and add it to the authorization.
-            if let CallStack::Authorize(requests, private_key, authorization) = &mut call_stack {
+            if let CallStack::Authorize(requests, _, authorization) | CallStack::Mock(requests, _, _, authorization) = &mut call_stack {
+
                 // Set 'is_root'.
                 let is_root = false;
+
+                // TODO (CwPK) appease borrow checker to only get & here
                 // Ensure that we have a private key to sign the new request.
-                let Some(private_key) = private_key else {
-                    return Err(anyhow!("Cannot authorize a new function call without a private key.").into());
+                let private_key = match &call_stack.clone() {
+                    CallStack::Authorize(_, private_key_opt, _) => {
+                        let Some(private_key) = private_key_opt else {
+                            return Err(anyhow!("Cannot authorize a new function call without a private key.").into());
+                        };
+                        private_key
+                    }
+                    CallStack::Mock(_, _, private_key, _) => private_key,
+                    _ => return Err(anyhow!("Unreachable.").into()),
                 };
+
                 // Retrieve the program checksum, if the program has a constructor.
                 let program_checksum = match substack.program().contains_constructor() {
                     true => Some(substack.program_checksum_as_field()?),
@@ -117,8 +128,8 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                 let callee_inputs = convert_caller_inputs_to_callee_inputs(inputs, &input_types, substack)?;
 
                 // Compute the request.
-                let request = Request::sign(
-                    private_key,
+                let mut request = Request::sign(
+                    &private_key,
                     *substack.program_id(),
                     *function.name(),
                     callee_inputs.iter(),
@@ -129,6 +140,12 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                     true,
                     rng,
                 )?;
+
+                // TODO (CwPK) appease borrow checker to avoid clone
+                if let CallStack::Mock(_, address, _, _) = call_stack.clone() {
+                    request.overwrite_signer(address);
+                }
+    
                 // Add the request to the requests.
                 requests.push(request.clone());
                 // Add the request to the authorization.

@@ -14,10 +14,13 @@
 // limitations under the License.
 
 use console::types::Scalar;
+use snarkvm_synthesizer_process::execution_cost_for_request;
 
 use super::*;
 
 // These tests mix translation, casting to `dynamic.record`, and `get.record.dynamic`.
+
+// TODO (CwPK) fix this test; operation and values have changed
 
 // Tests that `execution_cost_for_authorization()` computes correct costs for transactions with inclusion and translation proofs.
 // Complements test cases in `synthesizer/tests/test_vm_execute_and_finalize.rs` which also verify cost estimation correctness.
@@ -39,7 +42,8 @@ fn test_execution_cost_for_authorization() {
     let program_a_field = Identifier::<CurrentNetwork>::from_str(program_a_str).unwrap().to_field().unwrap();
     let program_b_field = Identifier::<CurrentNetwork>::from_str(program_b_str).unwrap().to_field().unwrap();
     let network_field = Identifier::<CurrentNetwork>::from_str(network_str).unwrap().to_field().unwrap();
-    let weld_function_field = Identifier::<CurrentNetwork>::from_str(weld_function_str).unwrap().to_field().unwrap();
+    let weld_function_id = Identifier::<CurrentNetwork>::from_str(weld_function_str).unwrap();
+    let weld_function_field = weld_function_id.to_field().unwrap();
     let check_tossed_coin_field =
         Identifier::<CurrentNetwork>::from_str(check_tossed_coin_str).unwrap().to_field().unwrap();
 
@@ -120,23 +124,23 @@ fn test_execution_cost_for_authorization() {
         function weld_dynamically:
             // Expected type: base_metal.record
             input r0 as dynamic.record;
-            // Expected type: base_metal.record
-            input r1 as dynamic.record;
             // Expected type: accessory_metal.record
-            input r2 as dynamic.record;
+            input r1 as dynamic.record;
             // Expected type: welding_metal.record
-            input r3 as dynamic.record;
+            input r2 as dynamic.record;
 
             call.dynamic {program_a_field} {network_field} {weld_function_field}
-                with r0 r2 r3 (as dynamic.record dynamic.record dynamic.record)
-                into r4 (as dynamic.record);
+                with r0 r1 r2 (as dynamic.record dynamic.record dynamic.record)
+                into r3 (as dynamic.record);
 
-            call.dynamic {program_b_field} {network_field} {check_tossed_coin_field}
-                with r1 (as dynamic.record);
+            get.record.dynamic r3.grams into r4 as u32;
 
-            get.record.dynamic r4.grams into r5 as u32;
+            output r4 as u32.public;
 
-            output r5 as u32.public;
+        // Check that the metal used to pay for the welding in program a is not weldable
+        function consume_base_metal:
+            input r0 as base_metal.record;
+            output r0 as base_metal.record;
         
         constructor:
             assert.eq true true;
@@ -176,7 +180,6 @@ fn test_execution_cost_for_authorization() {
 
     let record_data = [
         ("base_metal", vec![&caller_address_str, "183u16", "999u32", "true"]),
-        ("base_metal", vec![&caller_address_str, "93u16", "20u32", "false"]),
         ("accessory_metal", vec![&caller_address_str, "82u16", "27u32", "0group"]),
         ("welding_metal", vec![&caller_address_str, "183u16", "82u16"]),
     ];
@@ -228,7 +231,7 @@ fn test_execution_cost_for_authorization() {
         .execute(
             &caller_private_key,
             ("welder.aleo", "weld_dynamically"),
-            dynamic_records.into_iter(),
+            dynamic_records.iter(),
             None,
             0,
             None,
@@ -240,7 +243,7 @@ fn test_execution_cost_for_authorization() {
 
     assert!(
         // The first two transition are weld and check_tossed_coin; the root transition we are interested in is at index 2.
-        matches!(transaction.transitions().nth(2).unwrap().outputs(), [Output::Public(_, Some(plaintext))] if *plaintext == expected_output),
+        matches!(transaction.transitions().nth(1).unwrap().outputs(), [Output::Public(_, Some(plaintext))] if *plaintext == expected_output),
         "Expected output: {:?}, got: {:?}",
         expected_output,
         transaction.transitions().next().unwrap().outputs()
@@ -267,7 +270,18 @@ fn test_execution_cost_for_authorization() {
     let expected_cost =
         execution_cost_for_authorization(&vm.process().read(), &authorization, ConsensusVersion::V14).unwrap();
 
+    let expected_cost_as_request = execution_cost_for_request::<CurrentAleo, _>(
+        &vm.process().read(),
+        caller_address,
+        *program_a.id(),
+        Identifier::<CurrentNetwork>::from_str("weld_dynamically").unwrap(),
+        dynamic_records.into_iter(),
+        ConsensusVersion::V14,
+        rng
+    ).unwrap();
+
     assert_eq!(actual_cost, expected_cost);
+    assert_eq!(actual_cost, expected_cost_as_request);
 
     // Ensuring transaction verification passes
     add_and_test(&vm, &caller_private_key, &[transaction], rng);

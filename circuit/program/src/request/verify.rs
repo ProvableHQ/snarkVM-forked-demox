@@ -254,8 +254,9 @@ impl<A: Aleo> Request<A> {
                             // Ensure the input is a record.
                             Value::Plaintext(..) => A::halt("Expected a record input, found a plaintext input"),
                             Value::Future(..) => A::halt("Expected a record input, found a future input"),
+                            // TODO (CwPK)
                             Value::DynamicRecord(..) => {
-                                A::halt("Expected a record input, found a dynamic record input")
+                                A::halt("(3) Expected a record input, found a dynamic record input")
                             }
                             Value::DynamicFuture(..) => {
                                 A::halt("Expected a record input, found a dynamic future input")

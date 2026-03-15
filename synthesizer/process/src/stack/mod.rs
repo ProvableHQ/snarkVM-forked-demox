@@ -119,7 +119,7 @@ pub enum CallStack<N: Network> {
     /// Evaluate a function.
     Evaluate(Authorization<N>),
     /// Mock an evaluation for cost estimation.
-    Mock(Authorization<N>),
+    Mock(Vec<Request<N>>, Address<N>, PrivateKey<N>, Authorization<N>),
     /// Execute a function and produce a proof.
     Execute(Authorization<N>, Arc<RwLock<Trace<N>>>, Translations<N>),
     /// Execute a function and create the circuit assignment.
@@ -177,7 +177,7 @@ impl<N: Network> CallStack<N> {
                 )
             }
             CallStack::Evaluate(authorization) => CallStack::Evaluate(authorization.replicate()),
-            CallStack::Mock(authorization) => CallStack::Mock(authorization.replicate()),
+            CallStack::Mock(requests, address, mocked_private_key, authorization) => CallStack::Mock(requests.clone(), *address, *mocked_private_key, authorization.replicate()),
             CallStack::Execute(authorization, trace, translations) => CallStack::Execute(
                 authorization.replicate(),
                 Arc::new(RwLock::new(trace.read().clone())),
@@ -193,6 +193,7 @@ impl<N: Network> CallStack<N> {
     pub fn push(&mut self, request: Request<N>) -> Result<()> {
         match self {
             CallStack::Authorize(requests, ..)
+            | CallStack::Mock(requests, ..)
             | CallStack::Synthesize(requests, ..)
             | CallStack::CheckDeployment(requests, ..)
             | CallStack::PackageRun(requests, ..) => {
@@ -206,7 +207,6 @@ impl<N: Network> CallStack<N> {
                 requests.push(request)
             }
             CallStack::Evaluate(authorization) => authorization.push(request)?,
-            CallStack::Mock(authorization) => authorization.push(request)?,
             CallStack::Execute(authorization, ..) => authorization.push(request)?,
         }
         Ok(())
@@ -216,13 +216,13 @@ impl<N: Network> CallStack<N> {
     pub fn pop(&mut self) -> Result<Request<N>> {
         match self {
             CallStack::Authorize(requests, ..)
+            | CallStack::Mock(requests, ..)
             | CallStack::Synthesize(requests, ..)
             | CallStack::CheckDeployment(requests, ..)
             | CallStack::PackageRun(requests, ..) => {
                 requests.pop().ok_or_else(|| anyhow!("No more requests on the stack"))
             }
             CallStack::Evaluate(authorization) => authorization.next(),
-            CallStack::Mock(authorization) => authorization.next(),
             CallStack::Execute(authorization, ..) => authorization.next(),
         }
     }
@@ -231,13 +231,13 @@ impl<N: Network> CallStack<N> {
     pub fn peek(&self) -> Result<Request<N>> {
         match self {
             CallStack::Authorize(requests, ..)
+            | CallStack::Mock(requests, ..)
             | CallStack::Synthesize(requests, ..)
             | CallStack::CheckDeployment(requests, ..)
             | CallStack::PackageRun(requests, ..) => {
                 requests.last().cloned().ok_or_else(|| anyhow!("No more requests on the stack"))
             }
             CallStack::Evaluate(authorization) => authorization.peek_next(),
-            CallStack::Mock(authorization) => authorization.peek_next(),
             CallStack::Execute(authorization, ..) => authorization.peek_next(),
         }
     }

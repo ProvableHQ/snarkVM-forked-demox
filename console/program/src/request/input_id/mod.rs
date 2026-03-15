@@ -133,7 +133,8 @@ impl<N: Network> InputID<N> {
             // Ensure the input is a record.
             Value::Plaintext(..) => bail!("Expected a record input, found a plaintext input"),
             Value::Future(..) => bail!("Expected a record input, found a future input"),
-            Value::DynamicRecord(..) => bail!("Expected a record input, found a dynamic record input"),
+            // TODO (CwPK)
+            Value::DynamicRecord(..) => bail!("(2) Expected a record input, found a dynamic record input, program ID: {}, record name: {}", program_id, record_name),
             Value::DynamicFuture(..) => bail!("Expected a record input, found a dynamic future input"),
         };
         // Ensure the record belongs to the signer.

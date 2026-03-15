@@ -150,26 +150,13 @@ pub fn execution_cost_for_request<A: Aleo, R: Rng + CryptoRng>(
     inputs: impl ExactSizeIterator<Item = impl TryInto<Value<A::Network>>>,
     consensus_version: ConsensusVersion,
     rng: &mut R,
-) {
-    let authorization = process.get_stack().authorize_mocked(address, program_id, function_name, inputs, rng).unwrap();
-
-    let stack = process.get_stack(program_id).unwrap();
-    let input_types = stack.get_function(&function_name).unwrap().input_types();
+) -> Result<(MinimumCost, ExecuteCostDetails)> {
     
-    let mock_authorization = Authorization::new(Request::sign(
-        &private_key,
-        program_id,
-        function_name,
-        inputs,
-        &input_types,
-        None,
-        true,
-        None,
-        false,
-        rng,
-    ).unwrap());
+    let stack = process.get_stack(program_id).unwrap();
+    let authorization = stack.authorize_mocked::<A, R>(address, program_id, function_name, inputs, rng)?;
 
-    let response = process.evaluate::<A>(mock_authorization).unwrap();
+    execution_cost_for_authorization(process, &authorization, consensus_version)
+
 }
 
 /// Returns the compute cost for a deployment in microcredits.
