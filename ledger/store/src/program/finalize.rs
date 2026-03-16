@@ -253,7 +253,6 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         Ok(FinalizeOperation::InitializeMapping(to_mapping_id(&program_id, &mapping_name)?))
     }
 
-    // NOTE: THIS IS NEVER USED IN PROD
     /// Stores the given `(key, value)` pair at the given `program ID` and `mapping name` in storage.
     /// If the `mapping name` is not initialized, an error is returned.
     /// If the `key` already exists, the method returns an error.
@@ -284,9 +283,6 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
             // Update the historical maps.
             #[cfg(feature = "history")]
             {
-                // TODO: TODO: Is here where we would want to stream the data?
-                // NOTE: MAYBE WE WOULD WANT TO PUSH TO A BUFFER HERE AND THEN STREAM IT
-                // IN ATOMIC_POST_RATIFY()
                 let current_height = self.current_block_height().load(Ordering::SeqCst);
 
                 // Insert the initial value as the first historical update.
@@ -337,10 +333,9 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         let value_id = N::hash_bhp1024(&(key_id, N::hash_bhp1024(&value.to_bits_le())?).to_bits_le())?;
 
         atomic_batch_scope!(self, {
-            // Update the historical maps. // NOTE: THIS GETS CALLED IN vm/finalize.rs, TODO: STREAM HERE
+            // Update the historical maps.
             #[cfg(feature = "history")]
             {
-                // TODO: Add to buffer here for optional streaming?
                 let current_height = self.current_block_height().load(Ordering::SeqCst);
 
                 // Register the updated value at the current height.
