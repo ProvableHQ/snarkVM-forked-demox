@@ -443,36 +443,26 @@ fn process_transition<N: Network>(
                     // deployment time; this check covers pre-V14 programs deployed before that
                     // restriction existed.
                     let has_forbidden_output = match call.operator() {
-                        CallOperator::Resource(resource) => stack
-                            .program()
-                            .get_closure(resource)
-                            .map(|closure| {
-                                closure.outputs().iter().any(|output| {
-                                    matches!(
-                                        output.register_type(),
-                                        RegisterType::ExternalRecord(..) | RegisterType::DynamicRecord
-                                    )
-                                })
+                        CallOperator::Resource(resource) => {
+                            stack.program().get_closure(resource)?.outputs().iter().any(|output| {
+                                matches!(
+                                    output.register_type(),
+                                    RegisterType::ExternalRecord(..) | RegisterType::DynamicRecord
+                                )
                             })
-                            .unwrap_or(false),
+                        }
                         CallOperator::Locator(locator) => process
-                            .get_stack(locator.program_id())
-                            .ok()
-                            .map(|ext_stack| {
-                                ext_stack
-                                    .program()
-                                    .get_closure(locator.resource())
-                                    .map(|closure| {
-                                        closure.outputs().iter().any(|output| {
-                                            matches!(
-                                                output.register_type(),
-                                                RegisterType::ExternalRecord(..) | RegisterType::DynamicRecord
-                                            )
-                                        })
-                                    })
-                                    .unwrap_or(false)
-                            })
-                            .unwrap_or(false),
+                            .get_stack(locator.program_id())?
+                            .program()
+                            .get_closure(locator.resource())?
+                            .outputs()
+                            .iter()
+                            .any(|output| {
+                                matches!(
+                                    output.register_type(),
+                                    RegisterType::ExternalRecord(..) | RegisterType::DynamicRecord
+                                )
+                            }),
                     };
                     ensure!(
                         !has_forbidden_output,

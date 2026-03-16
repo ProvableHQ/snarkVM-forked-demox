@@ -633,6 +633,435 @@ fn test_pre_v14_closure_external_record_input_works_at_v14() -> Result<()> {
     Ok(())
 }
 
+// Tests that executing a pre-V14 program whose closure outputs ExternalRecord is rejected at V14+.
+// This covers the runtime `has_forbidden_output` check, which is the only code path exercising
+// that check — deployment-time rejection prevents new programs from reaching execution.
+#[test]
+fn test_pre_v14_closure_external_record_output_rejected_at_v14_runtime() -> Result<()> {
+    let rng = &mut TestRng::default();
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key)?;
+    let caller_view_key = ViewKey::try_from(&caller_private_key)?;
+
+    // Start at V9 (height 12), before the V14 closure-output restriction (height 17).
+    let vm = sample_vm_at_height(12, rng);
+
+    // Parent defines the record.
+    let parent_program = Program::from_str(
+        r"
+        program pre_v14_ext_out_parent.aleo;
+
+        record widget:
+            owner as address.private;
+            value as u64.private;
+
+        function mint_widget:
+            input r0 as address.private;
+            input r1 as u64.private;
+            cast r0 r1 into r2 as widget.record;
+            output r2 as widget.record;
+
+        constructor:
+            assert.eq true true;
+        ",
+    )?;
+
+    // Child has a closure that passes an ExternalRecord through as an output.
+    // This is allowed at pre-V14 but forbidden at V14+.
+    let child_program = Program::from_str(
+        r"
+        import pre_v14_ext_out_parent.aleo;
+
+        program pre_v14_ext_out_child.aleo;
+
+        closure passthrough_widget:
+            input r0 as pre_v14_ext_out_parent.aleo/widget.record;
+            assert.eq true true;
+            output r0 as pre_v14_ext_out_parent.aleo/widget.record;
+
+        function use_closure:
+            input r0 as pre_v14_ext_out_parent.aleo/widget.record;
+            call passthrough_widget r0 into r1;
+            output r1 as pre_v14_ext_out_parent.aleo/widget.record;
+
+        constructor:
+            assert.eq true true;
+        ",
+    )?;
+
+    // Deploy both programs before V14. Both deployments must be accepted.
+    let tx = vm.deploy(&caller_private_key, &parent_program, None, 0, None, rng)?;
+    add_and_test(&vm, &caller_private_key, &[tx], rng);
+
+    let tx = vm.deploy(&caller_private_key, &child_program, None, 0, None, rng)?;
+    add_and_test(&vm, &caller_private_key, &[tx], rng);
+
+    // Mint a widget to use as input.
+    let tx = vm.execute(
+        &caller_private_key,
+        ("pre_v14_ext_out_parent.aleo", "mint_widget"),
+        [Value::from_str(&caller_address.to_string())?, Value::from_str("42u64")?].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    )?;
+    let widget_record = match &tx.transitions().next().unwrap().outputs()[0] {
+        Output::Record(_, _, ct, _) => ct.as_ref().unwrap().decrypt(&caller_view_key)?,
+        _ => panic!("expected record output"),
+    };
+    add_and_test(&vm, &caller_private_key, &[tx], rng);
+
+    // Advance to V14 (height 17) by adding empty blocks.
+    let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14)?;
+    for _ in vm.block_store().current_block_height()..v14_height {
+        let block = sample_next_block(&vm, &caller_private_key, &[], rng)?;
+        vm.add_next_block(&block)?;
+    }
+
+    // At V14+, executing `use_closure` must fail: the runtime `has_forbidden_output` check
+    // detects that `passthrough_widget` outputs ExternalRecord and rejects the execution.
+    let result = vm.execute(
+        &caller_private_key,
+        ("pre_v14_ext_out_child.aleo", "use_closure"),
+        [Value::<CurrentNetwork>::Record(widget_record)].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    );
+
+    assert!(result.is_err(), "Execution must fail: pre-V14 closure outputting ExternalRecord is disallowed at V14+");
+
+    Ok(())
+}
+
+// Tests that executing a pre-V14 program whose closure outputs DynamicRecord is rejected at V14+.
+// Parallel to `test_pre_v14_closure_external_record_output_rejected_at_v14_runtime` but for the
+// DynamicRecord variant of the `has_forbidden_output` check.
+#[test]
+fn test_pre_v14_closure_dynamic_record_output_rejected_at_v14_runtime() -> Result<()> {
+    let rng = &mut TestRng::default();
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key)?;
+    let caller_view_key = ViewKey::try_from(&caller_private_key)?;
+
+    // Start at V9 (height 12), before the V14 closure-output restriction (height 17).
+    let vm = sample_vm_at_height(12, rng);
+
+    // Program with a closure that casts a record to DynamicRecord and outputs it.
+    // This is allowed at pre-V14 but forbidden at V14+.
+    let program = Program::from_str(
+        r"
+        program pre_v14_dyn_out.aleo;
+
+        record coin:
+            owner as address.private;
+            amount as u64.private;
+
+        closure cast_to_dynamic:
+            input r0 as coin.record;
+            cast r0 into r1 as dynamic.record;
+            output r1 as dynamic.record;
+
+        function use_closure:
+            input r0 as coin.record;
+            call cast_to_dynamic r0 into r1;
+            output r1 as dynamic.record;
+
+        function mint_coin:
+            input r0 as address.private;
+            input r1 as u64.private;
+            cast r0 r1 into r2 as coin.record;
+            output r2 as coin.record;
+
+        constructor:
+            assert.eq true true;
+        ",
+    )?;
+
+    // Deploy before V14. Deployment must be accepted.
+    let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
+    add_and_test(&vm, &caller_private_key, &[tx], rng);
+
+    // Mint a coin to use as input.
+    let tx = vm.execute(
+        &caller_private_key,
+        ("pre_v14_dyn_out.aleo", "mint_coin"),
+        [Value::from_str(&caller_address.to_string())?, Value::from_str("10u64")?].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    )?;
+    let coin_record = match &tx.transitions().next().unwrap().outputs()[0] {
+        Output::Record(_, _, ct, _) => ct.as_ref().unwrap().decrypt(&caller_view_key)?,
+        _ => panic!("expected record output"),
+    };
+    add_and_test(&vm, &caller_private_key, &[tx], rng);
+
+    // Advance to V14 (height 17) by adding empty blocks.
+    let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14)?;
+    for _ in vm.block_store().current_block_height()..v14_height {
+        let block = sample_next_block(&vm, &caller_private_key, &[], rng)?;
+        vm.add_next_block(&block)?;
+    }
+
+    // At V14+, executing `use_closure` must fail: the runtime `has_forbidden_output` check
+    // detects that `cast_to_dynamic` outputs DynamicRecord and rejects the execution.
+    let result = vm.execute(
+        &caller_private_key,
+        ("pre_v14_dyn_out.aleo", "use_closure"),
+        [Value::<CurrentNetwork>::Record(coin_record)].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    );
+
+    assert!(result.is_err(), "Execution must fail: pre-V14 closure outputting DynamicRecord is disallowed at V14+");
+
+    Ok(())
+}
+
+// Tests that when a function contains multiple closures — one with a forbidden output and one
+// without — execution is rejected. Verifies that the check is per-closure and not accidentally
+// bypassed when benign closures are present.
+#[test]
+fn test_mixed_closures_forbidden_output_rejected_at_v14_runtime() -> Result<()> {
+    let rng = &mut TestRng::default();
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key)?;
+    let caller_view_key = ViewKey::try_from(&caller_private_key)?;
+
+    // Start at V9 (height 12), before the V14 closure-output restriction (height 17).
+    let vm = sample_vm_at_height(12, rng);
+
+    let parent_program = Program::from_str(
+        r"
+        program mixed_closures_parent.aleo;
+
+        record token:
+            owner as address.private;
+            amount as u64.private;
+
+        function mint_token:
+            input r0 as address.private;
+            input r1 as u64.private;
+            cast r0 r1 into r2 as token.record;
+            output r2 as token.record;
+
+        constructor:
+            assert.eq true true;
+        ",
+    )?;
+
+    // Child has two closures: one benign (reads a field), one forbidden (outputs ExternalRecord).
+    // The function calls the benign closure first, then the forbidden one.
+    let child_program = Program::from_str(
+        r"
+        import mixed_closures_parent.aleo;
+
+        program mixed_closures_child.aleo;
+
+        closure extract_amount:
+            input r0 as mixed_closures_parent.aleo/token.record;
+            add r0.amount 0u64 into r1;
+            output r1 as u64;
+
+        closure passthrough:
+            input r0 as mixed_closures_parent.aleo/token.record;
+            assert.eq true true;
+            output r0 as mixed_closures_parent.aleo/token.record;
+
+        function use_both_closures:
+            input r0 as mixed_closures_parent.aleo/token.record;
+            call extract_amount r0 into r1;
+            call passthrough r0 into r2;
+            output r1 as u64.public;
+
+        constructor:
+            assert.eq true true;
+        ",
+    )?;
+
+    // Deploy both programs before V14. Both deployments must be accepted.
+    let tx = vm.deploy(&caller_private_key, &parent_program, None, 0, None, rng)?;
+    add_and_test(&vm, &caller_private_key, &[tx], rng);
+
+    let tx = vm.deploy(&caller_private_key, &child_program, None, 0, None, rng)?;
+    add_and_test(&vm, &caller_private_key, &[tx], rng);
+
+    // Mint a token.
+    let tx = vm.execute(
+        &caller_private_key,
+        ("mixed_closures_parent.aleo", "mint_token"),
+        [Value::from_str(&caller_address.to_string())?, Value::from_str("50u64")?].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    )?;
+    let token_record = match &tx.transitions().next().unwrap().outputs()[0] {
+        Output::Record(_, _, ct, _) => ct.as_ref().unwrap().decrypt(&caller_view_key)?,
+        _ => panic!("expected record output"),
+    };
+    add_and_test(&vm, &caller_private_key, &[tx], rng);
+
+    // Advance to V14.
+    let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14)?;
+    for _ in vm.block_store().current_block_height()..v14_height {
+        let block = sample_next_block(&vm, &caller_private_key, &[], rng)?;
+        vm.add_next_block(&block)?;
+    }
+
+    // At V14+, the function calls both a safe closure and a forbidden one. Execution must be
+    // rejected because `passthrough` outputs ExternalRecord.
+    let result = vm.execute(
+        &caller_private_key,
+        ("mixed_closures_child.aleo", "use_both_closures"),
+        [Value::<CurrentNetwork>::Record(token_record)].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    );
+
+    assert!(result.is_err(), "Execution must fail: function contains a closure with forbidden ExternalRecord output");
+
+    Ok(())
+}
+
+// Tests that executing a pre-V14 cross-program closure call (`CallOperator::Locator`) whose
+// closure outputs ExternalRecord is rejected at V14+ runtime. This covers the Locator branch of
+// `has_forbidden_output`, where the closure lives in a different program and is referenced by
+// `call other_program.aleo/closure_name` syntax.
+#[test]
+fn test_pre_v14_cross_program_closure_forbidden_output_rejected_at_v14_runtime() -> Result<()> {
+    let rng = &mut TestRng::default();
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key)?;
+    let caller_view_key = ViewKey::try_from(&caller_private_key)?;
+
+    // Start at V9 (height 12), before the V14 closure-output restriction (height 17).
+    let vm = sample_vm_at_height(12, rng);
+
+    // Parent program defines the record.
+    let parent_program = Program::from_str(
+        r"
+        program locator_parent.aleo;
+
+        record widget:
+            owner as address.private;
+            amount as u64.private;
+
+        function mint_widget:
+            input r0 as address.private;
+            input r1 as u64.private;
+            cast r0 r1 into r2 as widget.record;
+            output r2 as widget.record;
+
+        constructor:
+            assert.eq true true;
+        ",
+    )?;
+
+    // Lib program imports parent and defines a closure that passes an ExternalRecord through as
+    // an output. This is allowed at pre-V14 but forbidden at V14+. A dummy function is required
+    // because programs must have at least one function.
+    let lib_program = Program::from_str(
+        r"
+        import locator_parent.aleo;
+
+        program locator_lib.aleo;
+
+        closure passthrough_widget:
+            input r0 as locator_parent.aleo/widget.record;
+            assert.eq true true;
+            output r0 as locator_parent.aleo/widget.record;
+
+        function noop:
+            input r0 as u64.public;
+            output r0 as u64.public;
+
+        constructor:
+            assert.eq true true;
+        ",
+    )?;
+
+    // Caller program imports both and calls the closure from locator_lib.aleo via a Locator
+    // (`call locator_lib.aleo/passthrough_widget`), creating a `CallOperator::Locator`.
+    let caller_program = Program::from_str(
+        r"
+        import locator_parent.aleo;
+        import locator_lib.aleo;
+
+        program locator_caller.aleo;
+
+        function use_external_closure:
+            input r0 as locator_parent.aleo/widget.record;
+            call locator_lib.aleo/passthrough_widget r0 into r1;
+            output r1 as locator_parent.aleo/widget.record;
+
+        constructor:
+            assert.eq true true;
+        ",
+    )?;
+
+    // Deploy all three programs before V14. All deployments must be accepted.
+    let tx = vm.deploy(&caller_private_key, &parent_program, None, 0, None, rng)?;
+    add_and_test(&vm, &caller_private_key, &[tx], rng);
+
+    let tx = vm.deploy(&caller_private_key, &lib_program, None, 0, None, rng)?;
+    add_and_test(&vm, &caller_private_key, &[tx], rng);
+
+    let tx = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng)?;
+    add_and_test(&vm, &caller_private_key, &[tx], rng);
+
+    // Mint a widget to use as input.
+    let tx = vm.execute(
+        &caller_private_key,
+        ("locator_parent.aleo", "mint_widget"),
+        [Value::from_str(&caller_address.to_string())?, Value::from_str("42u64")?].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    )?;
+    let widget_record = match &tx.transitions().next().unwrap().outputs()[0] {
+        Output::Record(_, _, ct, _) => ct.as_ref().unwrap().decrypt(&caller_view_key)?,
+        _ => panic!("expected record output"),
+    };
+    add_and_test(&vm, &caller_private_key, &[tx], rng);
+
+    // Advance to V14 (height 17) by adding empty blocks.
+    let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14)?;
+    for _ in vm.block_store().current_block_height()..v14_height {
+        let block = sample_next_block(&vm, &caller_private_key, &[], rng)?;
+        vm.add_next_block(&block)?;
+    }
+
+    // At V14+, executing `use_external_closure` must fail: the runtime `has_forbidden_output`
+    // check (Locator branch) detects that `locator_lib.aleo/passthrough_widget` outputs
+    // ExternalRecord and rejects the execution.
+    let result = vm.execute(
+        &caller_private_key,
+        ("locator_caller.aleo", "use_external_closure"),
+        [Value::<CurrentNetwork>::Record(widget_record)].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    );
+
+    assert!(
+        result.is_err(),
+        "Execution must fail: pre-V14 cross-program closure (Locator) outputting ExternalRecord is disallowed at V14+"
+    );
+
+    Ok(())
+}
+
 // Tests that a closure outputting a DynamicRecord is rejected at V14+ deployment.
 // The program parses successfully, but `verify_deployment` (called during block production)
 // rejects it at V14+ because `ensure_records_exist` assumes closures cannot extend record families.
