@@ -71,6 +71,9 @@ impl<N: Network> Stack<N> {
         finish!(timer);
 
         // Return the deployment.
+        // Note: The owner placeholder `Address::zero()` is unconditionally overwritten by
+        // `VM::deploy()` before the deployment reaches the ledger (the caller's address is set
+        // for V9+, or the owner is cleared for pre-V9).
         Deployment::new(
             *self.program_edition,
             self.program.clone(),

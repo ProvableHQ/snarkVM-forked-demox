@@ -250,6 +250,17 @@ impl<N: Network> Process<N> {
                 self.get_stack(program_id).and_then(|stack| stack.get_verifying_key(record_name))
             },
         )?;
+        // Sanity check: the number of translation inputs computed here must match the count
+        // derived from the authorization. We only compare totals because
+        // `Authorization::translation_batch_sizes` does not preserve order; the prover and
+        // verifier agree on order through the use of `translation_index`.
+        let expected_n_translations =
+            Authorization::translation_batch_sizes(self, execution.transitions())?.into_iter().sum::<usize>();
+        let actual_n_translations = batch_translation_inputs.iter().map(|(_, inputs)| inputs.len()).sum::<usize>();
+        ensure!(
+            actual_n_translations == expected_n_translations,
+            "Unexpected number of translation inputs: {actual_n_translations} instead of {expected_n_translations}",
+        );
         for (verifying_key, batch_translation_inputs_for_record) in batch_translation_inputs.into_iter() {
             // Insert the translation verifier inputs.
             verifier_inputs.push((verifying_key.clone(), batch_translation_inputs_for_record));

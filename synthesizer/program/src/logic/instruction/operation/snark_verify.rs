@@ -422,7 +422,7 @@ impl<N: Network, const VARIANT: u8> SnarkVerification<N, VARIANT> {
             "Instruction '{}' expects the number of circuits ({num_circuits}) to match the number of verifying keys ({num_vks}).",
             Self::opcode()
         );
-        // Check that the number of circuit is properly bound.
+        // Check that the number of circuits is properly bound.
         ensure!(
             num_circuits <= MAX_SNARK_VERIFY_CIRCUITS,
             "Instruction '{}' supports a maximum of {MAX_SNARK_VERIFY_CIRCUITS} batched circuits, found {num_circuits} circuits.",

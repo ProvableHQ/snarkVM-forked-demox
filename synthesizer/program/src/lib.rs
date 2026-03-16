@@ -100,7 +100,18 @@ use console::{
             take,
         },
     },
-    program::{FinalizeType, Identifier, PlaintextType, ProgramID, RecordType, RegisterType, StructType, ValueType},
+    program::{
+        EntryType,
+        FinalizeType,
+        Identifier,
+        Locator,
+        PlaintextType,
+        ProgramID,
+        RecordType,
+        RegisterType,
+        StructType,
+        ValueType,
+    },
     types::U8,
 };
 use snarkvm_utilities::{cfg_find_map, cfg_iter};
@@ -979,6 +990,118 @@ impl<N: Network> ProgramCore<N> {
             || self.closures.values().any(|closure| closure.contains_external_struct())
             || self.functions.values().any(|function| function.contains_external_struct())
             || self.constructor.iter().any(|constructor| constructor.contains_external_struct())
+    }
+
+    /// Returns `true` if this program violates pre-V13 rules for external records
+    /// or futures by containing registers with non-local struct types across program boundaries.
+    ///
+    /// Notes:
+    /// 1. We only need to check functions because closures and constructors cannot reference
+    ///    external records or futures.
+    /// 2. We need to check function inputs.
+    /// 3. No need to check instructions other than `Call`. The only other instruction that can
+    ///    refer to a record is a `cast` but we cannot cast to external records anyways.
+    ///4.  No need to check function outputs, because they have already been checked in either the
+    ///    inputs or call instruction.
+    pub fn violates_pre_v13_external_record_and_future_rules<F0, F1, F2, F3>(
+        &self,
+        get_external_record: &F0,
+        get_external_function: &F1,
+        get_external_future: &F2,
+        is_local_struct: &F3,
+    ) -> bool
+    where
+        F0: Fn(&Locator<N>) -> Result<RecordType<N>>,
+        F1: Fn(&Locator<N>) -> Result<FunctionCore<N>>,
+        F2: Fn(&Locator<N>) -> Result<FinalizeCore<N>>,
+        F3: Fn(&Identifier<N>) -> bool,
+    {
+        // Helper: does a plaintext type (possibly nested in arrays) reference a struct not defined locally?
+        fn plaintext_uses_nonlocal_struct<N: Network>(
+            ty: &PlaintextType<N>,
+            is_local_struct: &impl Fn(&Identifier<N>) -> bool,
+        ) -> bool {
+            match ty {
+                PlaintextType::Struct(name) => !is_local_struct(name),
+                PlaintextType::Array(array_type) => {
+                    plaintext_uses_nonlocal_struct(array_type.base_element_type(), is_local_struct)
+                }
+                _ => false,
+            }
+        }
+
+        // Helper: does a record contain any struct not defined locally?
+        let record_uses_nonlocal_struct = |record: &RecordType<N>| {
+            record.entries().iter().any(|(_, member)| match member {
+                EntryType::Constant(ty) | EntryType::Private(ty) | EntryType::Public(ty) => {
+                    plaintext_uses_nonlocal_struct(ty, is_local_struct)
+                }
+            })
+        };
+
+        for function in self.functions.values() {
+            // Scan function inputs for external record types.
+            for input in function.inputs() {
+                let ValueType::ExternalRecord(locator) = input.value_type() else {
+                    continue;
+                };
+                let Ok(record) = get_external_record(locator) else {
+                    continue;
+                };
+                if record_uses_nonlocal_struct(&record) {
+                    return true;
+                }
+            }
+
+            // Scan instructions for calls to external programs.
+            for instruction in function.instructions() {
+                let Instruction::Call(call) = instruction else { continue };
+                let CallOperator::Locator(locator) = call.operator() else { continue };
+                let Ok(external_function) = get_external_function(locator) else {
+                    continue;
+                };
+
+                // Check if the outputs of the external function reference a struct that is not
+                // locally available.
+                for output in external_function.outputs() {
+                    match output.value_type() {
+                        ValueType::Record(identifier) => {
+                            let locator = Locator::new(*locator.program_id(), *identifier);
+                            let Ok(record) = get_external_record(&locator) else {
+                                continue;
+                            };
+                            if record_uses_nonlocal_struct(&record) {
+                                return true;
+                            }
+                        }
+
+                        ValueType::Future(loc) => {
+                            let Ok(future) = get_external_future(loc) else {
+                                continue;
+                            };
+                            for input in future.input_types() {
+                                let FinalizeType::Plaintext(ty) = input else {
+                                    continue;
+                                };
+
+                                // We intentionally ignore `FinalizeType::Future(_)` here. Any such future
+                                // originates from another program whose deployment would already have been
+                                // validated under the same pre-V13 rules. At this point, only plaintext inputs
+                                // can introduce new non-local struct violations.
+
+                                if plaintext_uses_nonlocal_struct(&ty, is_local_struct) {
+                                    return true;
+                                }
+                            }
+                        }
+
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        false
     }
 
     /// Returns `true` if the program contains an array type with a size that exceeds the given maximum.

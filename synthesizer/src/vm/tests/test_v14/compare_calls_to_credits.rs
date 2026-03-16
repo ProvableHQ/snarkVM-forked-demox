@@ -657,20 +657,6 @@ fn test_compare_transfer_private() {
     };
     add_and_test(&vm, &caller_private_key, &[dynamic_deploy_tx], rng);
 
-    // DEBUG: Print deployment structure details
-    println!("\n=== DEPLOYMENT COMPARISON ===");
-    println!("STATIC (sw_transfer_private.aleo):");
-    for (name, (vk, _)) in static_deployment.verifying_keys() {
-        println!("  Function {}: {} vars, {} constraints", name, vk.num_variables(), vk.circuit_info.num_constraints);
-    }
-    println!("  Translation VKs: {:?}", static_deployment.translation_verifying_keys().map(|t| t.len()));
-
-    println!("DYNAMIC (dw_transfer_private.aleo):");
-    for (name, (vk, _)) in dynamic_deployment.verifying_keys() {
-        println!("  Function {}: {} vars, {} constraints", name, vk.num_variables(), vk.circuit_info.num_constraints);
-    }
-    println!("  Translation VKs: {:?}", dynamic_deployment.translation_verifying_keys().map(|t| t.len()));
-
     // Calculate the difference
     let static_vars: u64 = static_deployment.verifying_keys().iter().map(|(_, (vk, _))| vk.num_variables()).sum();
     let static_constraints: u64 =

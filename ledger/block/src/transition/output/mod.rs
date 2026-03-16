@@ -498,3 +498,51 @@ pub(crate) mod test_helpers {
         ]
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use console::network::MainnetV0;
+
+    type CurrentNetwork = MainnetV0;
+
+    #[test]
+    fn test_to_caller_output_record_with_dynamic_id() {
+        // RecordWithDynamicID should become DynamicRecord(dynamic_id) from caller's view.
+        let commitment = Field::<CurrentNetwork>::from_u64(1);
+        let checksum = Field::<CurrentNetwork>::from_u64(2);
+        let dynamic_id = Field::<CurrentNetwork>::from_u64(3);
+
+        let output = Output::<CurrentNetwork>::RecordWithDynamicID(commitment, checksum, None, None, dynamic_id);
+        let caller_output = output.to_caller_output();
+
+        assert_eq!(caller_output, Output::<CurrentNetwork>::DynamicRecord(dynamic_id));
+    }
+
+    #[test]
+    fn test_to_caller_output_external_record_with_dynamic_id() {
+        // ExternalRecordWithDynamicID should become DynamicRecord(dynamic_id) from caller's view.
+        let ext_id = Field::<CurrentNetwork>::from_u64(10);
+        let dynamic_id = Field::<CurrentNetwork>::from_u64(20);
+
+        let output = Output::<CurrentNetwork>::ExternalRecordWithDynamicID(ext_id, dynamic_id);
+        let caller_output = output.to_caller_output();
+
+        assert_eq!(caller_output, Output::<CurrentNetwork>::DynamicRecord(dynamic_id));
+    }
+
+    #[test]
+    fn test_to_caller_output_non_dynamic_variants_unchanged() {
+        // Non-dynamic variants must be returned unchanged.
+        let id = Field::<CurrentNetwork>::from_u64(42);
+
+        let constant = Output::<CurrentNetwork>::Constant(id, None);
+        assert_eq!(constant.to_caller_output(), constant);
+
+        let dynamic_record = Output::<CurrentNetwork>::DynamicRecord(id);
+        assert_eq!(dynamic_record.to_caller_output(), dynamic_record);
+
+        let external = Output::<CurrentNetwork>::ExternalRecord(id);
+        assert_eq!(external.to_caller_output(), external);
+    }
+}

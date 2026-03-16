@@ -69,10 +69,11 @@ impl<N: Network> CallDynamic<N> {
             operands.len().checked_sub(3).expect("operands.len() >= 3 is checked above") == operand_types.len(),
             "The number of operands and operand types must match"
         );
-        // Ensure that the operand types do not contain a future, dynamic future, record, or external record type.
+        // Ensure that the operand types do not contain a future, dynamic future, record, external record type, or a constant type.
         // Note: `dynamic.record` (i.e. `ValueType::DynamicRecord`) IS allowed as an input operand type.
         for type_ in &operand_types {
             match type_ {
+                ValueType::Constant(_) => bail!("A constant cannot be passed in as input to a dynamic call."),
                 ValueType::Record(_) => {
                     bail!("A record cannot be passed in as input to a dynamic call, use `dynamic.record` instead.")
                 }
@@ -93,9 +94,10 @@ impl<N: Network> CallDynamic<N> {
             destinations.len() == destination_types.len(),
             "The number of destination registers and destination types must match"
         );
-        // Ensure that the destination types do not contain a future, record, or external record type.
+        // Ensure that the destination types do not contain a future, record, external record type, or a constant type.
         for type_ in &destination_types {
             match type_ {
+                ValueType::Constant(_) => bail!("A dynamic call cannot return a constant output."),
                 ValueType::Record(_) => bail!("A dynamic call cannot return a record, use `dynamic.record` instead."),
                 ValueType::ExternalRecord(_) => {
                     bail!("A dynamic call cannot return an external record, use `dynamic.record` instead.")
@@ -314,7 +316,7 @@ impl<N: Network> Parser for CallDynamic<N> {
         operands.push(program_network);
         // Parse the whitespace from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
-        // Parse the function name of the call from the string .
+        // Parse the function name of the call from the string.
         let (string, function_name) = Operand::parse(string)?;
         operands.push(function_name);
         // Parse the whitespace from the string.
@@ -353,6 +355,7 @@ impl<N: Network> Parser for CallDynamic<N> {
                 let (string, destinations) = many_m_n(1, N::MAX_OPERANDS, complete(parse_destination))(string)?;
                 // Parse the destination types from the string.
                 let (string, destination_types) = parse_value_types(string)?;
+
                 // Return the string, the destinations, and the destination types.
                 (string, destinations, destination_types)
             }
@@ -503,7 +506,6 @@ mod tests {
         "call.dynamic r0 r1 r2 with r3 (as u8.public)",
         "call.dynamic r0 r1 r2 with r3.owner (as address.private)",
         "call.dynamic r0 r1 r2 with r3 r4 (as u8.public u64.private)",
-        "call.dynamic r0 r1 r2 into r3 (as u8.constant)",
         "call.dynamic r0 r1 r2 into r3 r4 (as foo.public bar.private)",
         "call.dynamic r0 r1 r2 into r3 r4 r5 (as u64.public address.private dynamic.future)",
         "call.dynamic r0 r1 r2 with r3 (as boolean.private) into r4 (as u8.private)",
@@ -512,6 +514,7 @@ mod tests {
         "call.dynamic r0 r1 r2 with r3 r4 r5 (as foo.private dynamic.record boolean.public) into r6 r7 (as u8.private u64.public)",
         "call.dynamic r0 r1 r2 with r3 r4 r5 (as foo.private bar.public boolean.public) into r6 r7 r8 (as u8.private dynamic.record dynamic.future)",
         "call.dynamic r0 r1 r2 with r3 r4 (as address.public u64.public) into r5 (as dynamic.future)",
+        "call.dynamic 'credits' 'aleo' 'transfer_public' with aleo1wfyyj2uvwuqw0c0dqa5x70wrawnlkkvuepn4y08xyaqfqqwweqys39jayw 100u64 (as address.private u64.private) into r0 (as dynamic.future)",
     ];
 
     fn check_parser(
@@ -578,20 +581,18 @@ mod tests {
             ],
         );
 
-        // // TODO (@d0cd) Support for this test case.
-        // check_parser(
-        //     "call.dynamic 'credits' 'aleo' 'transfer_public' with aleo1wfyyj2uvwuqw0c0dqa5x70wrawnlkkvuepn4y08xyaqfqqwweqys39jayw 100u64 (as address.private u6.private) into r0 (as dynamic.future)",
-        //     Operand::ProgramID(ProgramID::<CurrentNetwork>::from_str("credits.aleo").unwrap()),
-        //     Operand::Identifier(Identifier::from_str("transfer_public").unwrap()),
-        //     vec![
-        //         Operand::Literal(Literal::Address(
-        //             Address::from_str("aleo1wfyyj2uvwuqw0c0dqa5x70wrawnlkkvuepn4y08xyaqfqqwweqys39jayw").unwrap(),
-        //         )),
-        //         Operand::Literal(Literal::U64(U64::from_str("100u64").unwrap())),
-        //     ],
-        //     vec![Register::Locator(0)],
-        //     vec![RegisterType::DynamicFuture],
-        // );
+        check_parser(
+            "call.dynamic 'credits' 'aleo' 'transfer_public' with aleo1wfyyj2uvwuqw0c0dqa5x70wrawnlkkvuepn4y08xyaqfqqwweqys39jayw 100u64 (as address.private u64.private) into r0 (as dynamic.future)",
+            vec![
+                Operand::from_str("'credits'").unwrap(),
+                Operand::from_str("'aleo'").unwrap(),
+                Operand::from_str("'transfer_public'").unwrap(),
+                Operand::from_str("aleo1wfyyj2uvwuqw0c0dqa5x70wrawnlkkvuepn4y08xyaqfqqwweqys39jayw").unwrap(),
+                Operand::from_str("100u64").unwrap(),
+            ],
+            vec![Register::Locator(0)],
+            vec![ValueType::DynamicFuture],
+        );
 
         check_parser(
             "call.dynamic r0 r1 r0",
