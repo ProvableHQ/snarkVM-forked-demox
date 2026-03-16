@@ -42,6 +42,7 @@ fn test_execution_cost_for_authorization() {
     let weld_function_field = Identifier::<CurrentNetwork>::from_str(weld_function_str).unwrap().to_field().unwrap();
     let check_tossed_coin_field =
         Identifier::<CurrentNetwork>::from_str(check_tossed_coin_str).unwrap().to_field().unwrap();
+    let consume_base_metal_field = Identifier::<CurrentNetwork>::from_str("consume_base_metal").unwrap().to_field().unwrap();
 
     let program_a_source = format!(
         r"
@@ -134,9 +135,15 @@ fn test_execution_cost_for_authorization() {
             call.dynamic {program_b_field} {network_field} {check_tossed_coin_field}
                 with r1 (as dynamic.record);
 
+            call.dynamic {program_a_field} {network_field} {consume_base_metal_field}
+                with r1 (as dynamic.record);
+
             get.record.dynamic r4.grams into r5 as u32;
 
             output r5 as u32.public;
+
+        function consume_base_metal:
+            input r0 as base_metal.record;
         
         constructor:
             assert.eq true true;
@@ -239,8 +246,8 @@ fn test_execution_cost_for_authorization() {
     let expected_output = Plaintext::<CurrentNetwork>::from_str("1026u32").unwrap();
 
     assert!(
-        // The first two transition are weld and check_tossed_coin; the root transition we are interested in is at index 2.
-        matches!(transaction.transitions().nth(2).unwrap().outputs(), [Output::Public(_, Some(plaintext))] if *plaintext == expected_output),
+        // The root transition is at index 3.
+        matches!(transaction.transitions().nth(3).unwrap().outputs(), [Output::Public(_, Some(plaintext))] if *plaintext == expected_output),
         "Expected output: {:?}, got: {:?}",
         expected_output,
         transaction.transitions().next().unwrap().outputs()

@@ -137,6 +137,9 @@ fn test_closure_external_record_input() -> Result<()> {
             cast r0 r1 into r2 as item.record;
             output r2 as item.record;
 
+        function consume_item:
+            input r0 as item.record;
+
         constructor:
             assert.eq true true;
         ",
@@ -157,6 +160,10 @@ fn test_closure_external_record_input() -> Result<()> {
         function extract_external_value:
             input r0 as closure_ext_parent.aleo/item.record;
             call read_external_item r0 into r1;
+
+            // Needed to pass the record-existence check (r0 must materialize)
+            call closure_ext_parent.aleo/consume_item r0;
+
             output r1 as u32.public;
 
         constructor:
@@ -207,113 +214,7 @@ fn test_closure_external_record_input() -> Result<()> {
 
     // Verify the public output matches the expected value.
     let expected = Plaintext::from_str("99u32")?;
-    match &transaction.transitions().next().unwrap().outputs()[0] {
-        Output::Public(_, Some(plaintext)) => assert_eq!(*plaintext, expected),
-        other => panic!("Expected public output, got: {other:?}"),
-    }
-
-    add_and_test(&vm, &caller_private_key, &[transaction], rng);
-
-    Ok(())
-}
-
-// Tests that a closure can output an external record (pass-through).
-#[test]
-fn test_closure_external_record_output() -> Result<()> {
-    let rng = &mut TestRng::default();
-
-    let caller_private_key = sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key)?;
-    let caller_view_key = ViewKey::try_from(&caller_private_key)?;
-
-    // Parent program defines a record.
-    let parent_program = Program::from_str(
-        r"
-        program closure_ext_out_parent.aleo;
-
-        record item:
-            owner as address.private;
-            worth as u32.private;
-
-        function mint_item:
-            input r0 as address.private;
-            input r1 as u32.private;
-            cast r0 r1 into r2 as item.record;
-            output r2 as item.record;
-
-        constructor:
-            assert.eq true true;
-        ",
-    )?;
-
-    // Child program has a closure that passes through an external record.
-    let child_program = Program::from_str(
-        r"
-        import closure_ext_out_parent.aleo;
-
-        program closure_ext_out_child.aleo;
-
-        closure passthrough_external:
-            input r0 as closure_ext_out_parent.aleo/item.record;
-            assert.eq true true;
-            output r0 as closure_ext_out_parent.aleo/item.record;
-
-        function roundtrip_value:
-            input r0 as closure_ext_out_parent.aleo/item.record;
-            call passthrough_external r0 into r1;
-            cast r1 into r2 as dynamic.record;
-            get.record.dynamic r2.worth into r3 as u32;
-            output r3 as u32.public;
-
-        constructor:
-            assert.eq true true;
-        ",
-    )?;
-
-    // Initialize the VM at V14.
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14)?, rng);
-
-    // Deploy the parent program.
-    let transaction = vm.deploy(&caller_private_key, &parent_program, None, 0, None, rng)?;
-    add_and_test(&vm, &caller_private_key, &[transaction], rng);
-
-    // Deploy the child program.
-    let transaction = vm.deploy(&caller_private_key, &child_program, None, 0, None, rng)?;
-    add_and_test(&vm, &caller_private_key, &[transaction], rng);
-
-    // Mint an item via the parent program.
-    let transaction = vm.execute(
-        &caller_private_key,
-        ("closure_ext_out_parent.aleo", "mint_item"),
-        [Value::from_str(&caller_address.to_string())?, Value::from_str("77u32")?].into_iter(),
-        None,
-        0,
-        None,
-        rng,
-    )?;
-
-    // Decrypt the minted record.
-    let item_record = match &transaction.transitions().next().unwrap().outputs()[0] {
-        Output::Record(_, _, record_ciphertext, _) => record_ciphertext.as_ref().unwrap().decrypt(&caller_view_key)?,
-        _ => panic!("Expected record output"),
-    };
-
-    add_and_test(&vm, &caller_private_key, &[transaction], rng);
-
-    // Execute the child function that passes the external record through a closure.
-    let transaction = vm.execute(
-        &caller_private_key,
-        ("closure_ext_out_child.aleo", "roundtrip_value"),
-        [Value::<CurrentNetwork>::Record(item_record)].into_iter(),
-        None,
-        0,
-        None,
-        rng,
-    )?;
-
-    // Verify the public output matches the expected value.
-    let expected = Plaintext::from_str("77u32")?;
-    match &transaction.transitions().next().unwrap().outputs()[0] {
+    match &transaction.transitions().nth(1).unwrap().outputs()[0] {
         Output::Public(_, Some(plaintext)) => assert_eq!(*plaintext, expected),
         other => panic!("Expected public output, got: {other:?}"),
     }

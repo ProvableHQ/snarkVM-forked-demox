@@ -15,6 +15,8 @@
 
 use super::*;
 
+// TODO fix
+
 fn test_translation(
     caller_private_key: &PrivateKey<CurrentNetwork>,
     // Program and function to call
@@ -1201,6 +1203,9 @@ fn test_malicious_external_record_dynamic_id_tampering() {
         call.dynamic {program_a_name_field} {network_field} {get_external_liters_function_field}
             with r0 (as dynamic.record)
             into r1 (as u64.public);
+
+        // Needed to pass the record-existence check (r0 must materialize)
+        call {program_a_name_str}.aleo/consume_gas_container r0;
 
         output r1 as u64.public;
 

@@ -188,6 +188,9 @@ fn test_recursive_dynamic_record_calls() {
     let four_indexed_name = Identifier::<CurrentNetwork>::from_str("four_indexed").unwrap();
     let four_indexed_field = four_indexed_name.to_field().unwrap();
 
+    let consume_data_name = Identifier::<CurrentNetwork>::from_str("consume_data").unwrap();
+    let consume_data_field = consume_data_name.to_field().unwrap();
+
     let basic_records_ops_program_str = format!(
         r"
 program {basic_records_ops_program_name}.aleo;
@@ -201,6 +204,9 @@ function mint:
     input r1 as u64.private;
     cast r0 r1 into r2 as Data.record;
     output r2 as Data.record;
+
+function {consume_data_name}:
+    input r0 as Data.record;
 
 function {one_name}:
     input r0 as Data.record;
@@ -268,6 +274,9 @@ function {six_name}:
     input r0 as dynamic.record;
     call.dynamic {basic_records_ops_program_field} {aleo_field} {four_field} with r0 (as dynamic.record);
     call.dynamic {basic_records_ops_program_field} {aleo_field} {four_field} with r0 (as dynamic.record);
+
+    // Needed to pass the record-existence check (r0 must materialize)
+    call.dynamic {basic_records_ops_program_field} {aleo_field} {consume_data_field} with r0 (as dynamic.record);
 
 function {seven_name}:
     input r0 as dynamic.record;
