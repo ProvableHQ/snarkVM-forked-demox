@@ -36,6 +36,10 @@ use std::{
     borrow::Cow,
     sync::atomic::{AtomicU32, Ordering},
 };
+#[cfg(any(feature = "history", feature = "history-staking-rewards"))]
+use std::sync::{Arc, OnceLock, RwLock, atomic::AtomicBool};
+#[cfg(any(feature = "history", feature = "history-staking-rewards"))]
+use snarkvm_slipstream_plugin_manager::SlipstreamPluginManager;
 
 /// TODO (howardwu): Remove this.
 /// Returns the mapping ID for the given `program ID` and `mapping name`.
@@ -249,6 +253,7 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         Ok(FinalizeOperation::InitializeMapping(to_mapping_id(&program_id, &mapping_name)?))
     }
 
+    // NOTE: THIS IS NEVER USED IN PROD
     /// Stores the given `(key, value)` pair at the given `program ID` and `mapping name` in storage.
     /// If the `mapping name` is not initialized, an error is returned.
     /// If the `key` already exists, the method returns an error.
@@ -279,6 +284,9 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
             // Update the historical maps.
             #[cfg(feature = "history")]
             {
+                // TODO: TODO: Is here where we would want to stream the data?
+                // NOTE: MAYBE WE WOULD WANT TO PUSH TO A BUFFER HERE AND THEN STREAM IT
+                // IN ATOMIC_POST_RATIFY()
                 let current_height = self.current_block_height().load(Ordering::SeqCst);
 
                 // Insert the initial value as the first historical update.
@@ -329,9 +337,10 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         let value_id = N::hash_bhp1024(&(key_id, N::hash_bhp1024(&value.to_bits_le())?).to_bits_le())?;
 
         atomic_batch_scope!(self, {
-            // Update the historical maps.
+            // Update the historical maps. // NOTE: THIS GETS CALLED IN vm/finalize.rs, TODO: STREAM HERE
             #[cfg(feature = "history")]
             {
+                // TODO: Add to buffer here for optional streaming?
                 let current_height = self.current_block_height().load(Ordering::SeqCst);
 
                 // Register the updated value at the current height.
@@ -654,6 +663,14 @@ pub struct FinalizeStore<N: Network, P: FinalizeStorage<N>> {
     storage: P,
     /// PhantomData.
     _phantom: PhantomData<N>,
+    /// Indicates that canonical finalize is currently in progress.
+    /// When `true`, storage writes notify registered Slipstream plugins.
+    #[cfg(any(feature = "history", feature = "history-staking-rewards"))]
+    is_finalize_mode: Arc<AtomicBool>,
+    /// Optional plugin manager for streaming canonical mapping and staking updates.
+    /// Uses `OnceLock` so it can be installed from a shared reference after construction.
+    #[cfg(any(feature = "history", feature = "history-staking-rewards"))]
+    slipstream_plugin_manager: OnceLock<Arc<RwLock<SlipstreamPluginManager>>>,
 }
 
 impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
@@ -665,7 +682,14 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
     /// Initializes a finalize store from storage.
     pub fn from(storage: P) -> Result<Self> {
         // Return the finalize store.
-        Ok(Self { storage, _phantom: PhantomData })
+        Ok(Self {
+            storage,
+            _phantom: PhantomData,
+            #[cfg(any(feature = "history", feature = "history-staking-rewards"))]
+            is_finalize_mode: Arc::new(AtomicBool::new(false)),
+            #[cfg(any(feature = "history", feature = "history-staking-rewards"))]
+            slipstream_plugin_manager: OnceLock::new(),
+        })
     }
 
     /// Starts an atomic batch write operation.
@@ -712,6 +736,61 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
     #[cfg(feature = "history")]
     pub fn current_block_height(&self) -> &AtomicU32 {
         self.storage.current_block_height()
+    }
+
+    /// Returns a reference to the canonical finalize mode flag.
+    ///
+    /// When `true`, storage writes notify registered Slipstream plugins.
+    /// Set to `true` by the VM before canonical finalize runs and reset to `false` afterwards.
+    #[cfg(any(feature = "history", feature = "history-staking-rewards"))]
+    pub fn is_finalize_mode(&self) -> &Arc<AtomicBool> {
+        &self.is_finalize_mode
+    }
+
+    /// Installs a Slipstream plugin manager to receive canonical mapping and staking updates.
+    ///
+    /// May be called from a shared reference. Logs a warning if called more than once.
+    #[cfg(any(feature = "history", feature = "history-staking-rewards"))]
+    pub fn set_slipstream_plugin_manager(&self, manager: Arc<RwLock<SlipstreamPluginManager>>) {
+        if self.slipstream_plugin_manager.set(manager).is_err() {
+            tracing::warn!("Slipstream plugin manager is already set; ignoring subsequent call.");
+        }
+    }
+
+    /// Notifies all interested plugins of a staking reward, if canonical finalize is active.
+    ///
+    /// Errors from plugin calls are logged but never propagated.
+    #[cfg(feature = "history-staking-rewards")]
+    pub fn notify_staking_reward(
+        &self,
+        staker: &Address<N>,
+        validator: &Address<N>,
+        reward: u64,
+        new_stake: u64,
+        block_height: u32,
+    ) {
+        if !self.is_finalize_mode.load(std::sync::atomic::Ordering::SeqCst) {
+            return;
+        }
+        if let Some(mgr) = self.slipstream_plugin_manager.get() {
+            let staker_bytes = match staker.to_bytes_le() {
+                Ok(b) => b,
+                Err(e) => {
+                    tracing::warn!("Slipstream: failed to serialize staker address: {e}");
+                    return;
+                }
+            };
+            let validator_bytes = match validator.to_bytes_le() {
+                Ok(b) => b,
+                Err(e) => {
+                    tracing::warn!("Slipstream: failed to serialize validator address: {e}");
+                    return;
+                }
+            };
+            mgr.read()
+                .unwrap()
+                .notify_staking_reward(&staker_bytes, &validator_bytes, reward, new_stake, block_height);
+        }
     }
 
     /// Returns the historical value of a mapping.
@@ -827,7 +906,32 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for FinalizeStore<
         key: Plaintext<N>,
         value: Value<N>,
     ) -> Result<FinalizeOperation<N>> {
-        self.storage.update_key_value(program_id, mapping_name, key, value)
+        // Serialize before moving, if a plugin notification may be needed.
+        #[cfg(feature = "history")]
+        let plugin_data =
+            if self.is_finalize_mode.load(Ordering::SeqCst) && self.slipstream_plugin_manager.get().is_some() {
+                Some((
+                    program_id.to_bytes_le()?,
+                    mapping_name.to_bytes_le()?,
+                    key.to_bytes_le()?,
+                    value.to_bytes_le()?,
+                ))
+            } else {
+                None
+            };
+
+        let result = self.storage.update_key_value(program_id, mapping_name, key, value)?;
+
+        // Notify plugins of the update if in canonical finalize mode.
+        #[cfg(feature = "history")]
+        if let Some((pid, mname, k, v)) = plugin_data {
+            let height = self.storage.current_block_height().load(Ordering::SeqCst);
+            if let Some(mgr) = self.slipstream_plugin_manager.get() {
+                mgr.read().unwrap().notify_mapping_update(&pid, &mname, &k, &v, height);
+            }
+        }
+
+        Ok(result)
     }
 
     /// Removes the key-value pair for the given `program ID`, `mapping name`, and `key` from storage.
@@ -860,7 +964,35 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         mapping_name: Identifier<N>,
         entries: Vec<(Plaintext<N>, Value<N>)>,
     ) -> Result<FinalizeOperation<N>> {
-        self.storage.replace_mapping(program_id, mapping_name, entries)
+        // Serialize mapping identity and all entries before moving them into storage,
+        // so they are available for plugin notification after the storage call.
+        #[cfg(feature = "history")]
+        let plugin_data: Option<(Vec<u8>, Vec<u8>, Vec<(Vec<u8>, Vec<u8>)>)> =
+            if self.is_finalize_mode.load(Ordering::SeqCst) && self.slipstream_plugin_manager.get().is_some() {
+                let mut serialized_entries = Vec::with_capacity(entries.len());
+                for (key, value) in &entries {
+                    serialized_entries.push((key.to_bytes_le()?, value.to_bytes_le()?));
+                }
+                Some((program_id.to_bytes_le()?, mapping_name.to_bytes_le()?, serialized_entries))
+            } else {
+                None
+            };
+
+        let result = self.storage.replace_mapping(program_id, mapping_name, entries)?;
+
+        // Notify plugins of each updated key-value pair if in canonical finalize mode.
+        #[cfg(feature = "history")]
+        if let Some((pid, mname, serialized_entries)) = plugin_data {
+            let height = self.storage.current_block_height().load(Ordering::SeqCst);
+            if let Some(mgr) = self.slipstream_plugin_manager.get() {
+                let mgr_guard = mgr.read().unwrap();
+                for (k, v) in &serialized_entries {
+                    mgr_guard.notify_mapping_update(&pid, &mname, k, v, height);
+                }
+            }
+        }
+
+        Ok(result)
     }
 
     /// Removes the mapping for the given `program ID` and `mapping name` from storage,

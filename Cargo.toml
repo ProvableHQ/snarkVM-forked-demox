@@ -87,7 +87,9 @@ members = [
   "synthesizer/snark",
   "utilities",
   "utilities/derives",
-  "wasm"
+  "wasm",
+  "plugins/slipstream_plugin_interface",
+  "plugins/slipstream_plugin_manager"
 ]
 
 [lib]
@@ -389,6 +391,14 @@ default-features = false
 [workspace.dependencies.snarkvm-ledger-store]
 path = "ledger/store"
 version = "=4.6.0"
+
+[workspace.dependencies.snarkvm-slipstream-plugin-interface]
+path = "plugins/slipstream_plugin_interface"
+version = "=4.5.0"
+
+[workspace.dependencies.snarkvm-slipstream-plugin-manager]
+path = "plugins/slipstream_plugin_manager"
+version = "=4.5.0"
 
 [workspace.dependencies.snarkvm-ledger-test-helpers]
 path = "ledger/test-helpers"

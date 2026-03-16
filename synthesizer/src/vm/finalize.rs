@@ -654,8 +654,15 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             .current_block_height()
             .store(state.block_height(), std::sync::atomic::Ordering::SeqCst);
 
+        // Signal to Slipstream plugins that canonical finalize is starting.
+        #[cfg(any(feature = "history", feature = "history-staking-rewards"))]
+        self.store
+            .finalize_store()
+            .is_finalize_mode()
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+
         // Perform the finalize operation on the preset finalize mode.
-        atomic_finalize!(self.finalize_store(), FinalizeMode::RealRun, {
+        let finalize_result = atomic_finalize!(self.finalize_store(), FinalizeMode::RealRun, {
             // Initialize an iterator for ratifications before finalize.
             let pre_ratifications = ratifications.iter().filter(|r| match r {
                 Ratify::Genesis(_, _, _) => true,
@@ -876,7 +883,16 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             finish!(timer); // <- Note: This timer does **not** include the time to write batch to DB.
 
             Ok(ratified_finalize_operations)
-        })
+        });
+
+        // Reset the canonical finalize flag regardless of whether finalize succeeded or failed.
+        #[cfg(any(feature = "history", feature = "history-staking-rewards"))]
+        self.store
+            .finalize_store()
+            .is_finalize_mode()
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+
+        finalize_result
     }
 
     /// Returns `Some(reason)` if the transaction is aborted. Otherwise, returns `None`.
@@ -1285,6 +1301,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     // Insert the next committee into storage.
                     store.committee_store().insert(state.block_height(), *(committee.clone()))?;
                     // Store the finalize operations for updating the committee and bonded mapping.
+                    // TODO: NOTE THIS IS WHERE WE MIGHT WANT TO STREAM SOME OF THE DATA?
                     finalize_operations.extend(&[
                         // Replace the committee mapping in storage.
                         store.replace_mapping(program_id, committee_mapping, next_committee_map)?,
@@ -1295,7 +1312,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         // Replace the withdraw mapping in storage.
                         store.replace_mapping(program_id, withdraw_mapping, next_withdraw_map)?,
                     ]);
-
+                    
+                    // TODO: STREAM HERE IF ENABLED
                     // Update the number of validators.
                     finalize_operations.extend(&[
                         // Update the number of validators in the metadata mapping.
@@ -1306,7 +1324,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             Value::from_str(&format!("{}u32", committee.num_members()))?,
                         )?,
                     ]);
-
+                    
+                    // TODO: STREAM HERE IF ENABLED
                     // Update the number of delegators.
                     finalize_operations.extend(&[
                         // Update the number of delegators in the metadata mapping.
@@ -1402,15 +1421,19 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
                     // Compute the updated stakers, using the committee and block reward.
                     let next_stakers = staking_rewards(&current_stakers, &current_committee, *block_reward);
-
+                    
                     #[cfg(feature = "history-staking-rewards")]
                     {
+                        let height = state.block_height();
                         for (curr_stake, (staker, (validator, new_stake))) in
                             current_stakers.values().map(|(_, current_stake)| current_stake).zip(&next_stakers)
                         {
                             let reward = new_stake - curr_stake;
-                            let height = state.block_height();
                             store.staking_rewards_map().insert((*staker, height), (*validator, reward, *new_stake))?;
+                            // Notify Slipstream plugins of the staking reward, if in canonical finalize mode.
+                            if IS_FINALIZE {
+                                store.notify_staking_reward(staker, validator, reward, *new_stake, height);
+                            }
                         }
                     }
 
