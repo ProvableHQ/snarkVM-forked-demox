@@ -180,7 +180,7 @@ impl<N: Network> ClosureCore<N> {
         ensure!(self.outputs.len() < N::MAX_OUTPUTS, "Cannot add more than {} outputs", N::MAX_OUTPUTS);
 
         // Ensure the closure output register is not a static record.
-        // ExternalRecord and DynamicRecord are checked at V14+ deployment time (see `verify_deployment`).
+        // ExternalRecord and DynamicRecord are checked at V14+ deployment time (see `VM::check_transaction`).
         ensure!(!matches!(output.register_type(), RegisterType::Record(..)), "Closure outputs do not support records");
 
         // Insert the output statement.
