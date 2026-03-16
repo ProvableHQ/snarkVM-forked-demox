@@ -15,11 +15,11 @@
 
 use std::collections::HashMap;
 
-use crate::{Authorization, CallStack, FinalizeTypes, Process, Stack, StackRef, StackTrait};
+use crate::{Authorization, FinalizeTypes, Process, Stack, StackRef, StackTrait};
 
 use circuit::Aleo;
 use console::{
-    account::PrivateKey, prelude::*, program::{FinalizeType, Identifier, LiteralType, PlaintextType, ProgramID, Request, Value}, types::Address
+    prelude::*, program::{FinalizeType, Identifier, LiteralType, PlaintextType, ProgramID, Value}, types::Address
 };
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use snarkvm_ledger_block::{Deployment, Execution, Transaction};
@@ -156,7 +156,6 @@ pub fn execution_cost_for_request<A: Aleo, R: Rng + CryptoRng>(
     let authorization = stack.authorize_mocked::<A, R>(address, program_id, function_name, inputs, rng)?;
 
     execution_cost_for_authorization(process, &authorization, consensus_version)
-
 }
 
 /// Returns the compute cost for a deployment in microcredits.

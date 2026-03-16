@@ -267,10 +267,11 @@ fn test_execution_cost_for_authorization() {
     // - the next 2 ones come from the (input) translations for accessory_metal.record and welding_metal.record
     // - the next one comes from the (output) translation for welded_chunk.record
 
-    let expected_cost =
+    let expected_cost_authorization =
         execution_cost_for_authorization(&vm.process().read(), &authorization, ConsensusVersion::V14).unwrap();
 
-    let expected_cost_as_request = execution_cost_for_request::<CurrentAleo, _>(
+    // TODO (CwPK) modify documentaiton of this test
+    let expected_cost_request = execution_cost_for_request::<CurrentAleo, _>(
         &vm.process().read(),
         caller_address,
         *program_a.id(),
@@ -280,8 +281,8 @@ fn test_execution_cost_for_authorization() {
         rng
     ).unwrap();
 
-    assert_eq!(actual_cost, expected_cost);
-    assert_eq!(actual_cost, expected_cost_as_request);
+    assert_eq!(actual_cost, expected_cost_authorization);
+    assert_eq!(actual_cost, expected_cost_request);
 
     // Ensuring transaction verification passes
     add_and_test(&vm, &caller_private_key, &[transaction], rng);

@@ -101,8 +101,7 @@ impl<N: Network> Request<N> {
                             Value::Record(record) => record,
                             Value::Plaintext(..) => bail!("Expected a record input, found a plaintext input"),
                             Value::Future(..) => bail!("Expected a record input, found a future input"),
-                            // TODO (CwPK)
-                            Value::DynamicRecord(..) => bail!("(1) Expected a record input, found a dynamic record input"),
+                            Value::DynamicRecord(..) => bail!("Expected a record input, found a dynamic record input"),
                             Value::DynamicFuture(..) => bail!("Expected a record input, found a dynamic future input"),
                         };
                         // Retrieve the record name.

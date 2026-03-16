@@ -138,11 +138,6 @@ impl<N: Network> Request<N> {
         &self.signer
     }
 
-    // TODO (CwPK)
-    pub fn overwrite_signer(&mut self, signer: Address<N>) {
-        self.signer = signer;
-    }
-
     /// Returns the network ID.
     pub const fn network_id(&self) -> &U16<N> {
         &self.network_id

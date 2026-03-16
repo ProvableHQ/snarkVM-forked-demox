@@ -172,8 +172,9 @@ impl<N: Network> Stack<N> {
         let mocked_private_key = PrivateKey::new(rng).unwrap();
 
         // Compute the request.
-        let mut mocked_request = Request::sign(
+        let mocked_request = Request::mock_sign(
             &mocked_private_key,
+            address,
             program_id,
             function_name,
             inputs,
@@ -184,8 +185,6 @@ impl<N: Network> Stack<N> {
             false,
             rng,
         )?;
-
-        mocked_request.overwrite_signer(address);
 
         lap!(timer, "Compute the request");
         // Initialize the authorization.

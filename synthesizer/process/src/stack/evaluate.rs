@@ -139,8 +139,8 @@ impl<N: Network> Stack<N> {
         let (request, call_stack) =
             match &mut call_stack {
                 CallStack::Authorize(..) => (call_stack.pop()?, call_stack),
-                CallStack::Evaluate(authorization) => (authorization.next()?, call_stack),
                 CallStack::Mock(..) => (call_stack.pop()?, call_stack),
+                CallStack::Evaluate(authorization) => (authorization.next()?, call_stack),
                 // If the evaluation is performed in the `Execute` mode, create a new `Evaluate` mode.
                 // This is done to ensure that evaluation during execution is performed consistently.
                 CallStack::Execute(authorization, _, _) => {

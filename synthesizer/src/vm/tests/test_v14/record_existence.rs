@@ -24,6 +24,7 @@ fn test_existence_check() {
 
     let caller_private_key = sample_genesis_private_key(rng);
     let caller_view_key = ViewKey::<CurrentNetwork>::try_from(&caller_private_key).unwrap();
+    let caller_address = Address::<CurrentNetwork>::try_from(&caller_private_key).unwrap();
 
     let network_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
     let program_base_field = Identifier::<CurrentNetwork>::from_str("base").unwrap().to_field().unwrap();
@@ -518,11 +519,13 @@ fn test_existence_check() {
     // Involves process_transition case 3
     println!("    2.2) Locally minted Record passed to a function call and output");
 
+    let inputs = [Value::from_str("3u16").unwrap(), Value::from_str("4u16").unwrap()];
+
     let tx_base_function_2_2 = vm
         .execute(
             &caller_private_key,
             ("frontier.aleo", "mint_and_read_then_output"),
-            [Value::from_str("3u16").unwrap(), Value::from_str("4u16").unwrap()].into_iter(),
+            inputs.iter(),
             None,
             0,
             None,
@@ -530,7 +533,7 @@ fn test_existence_check() {
         )
         .unwrap();
 
-    add_and_test(&vm, &caller_private_key, &[tx_base_function_2_2], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&inputs], &[tx_base_function_2_2], rng);
 
     // Involves process_transition cases 3, 5, 6b
     println!(
@@ -556,11 +559,12 @@ fn test_existence_check() {
     // Involves process_transition cases 3, 5
     println!("    2.4) DynamicRecord cast from locally minted static Record passed to a function call, static output");
 
+    let inputs = [Value::from_str("5u16").unwrap(), Value::from_str("6u16").unwrap()];
     let tx_base_function_2_4 = vm
         .execute(
             &caller_private_key,
             ("frontier.aleo", "mint_cast_and_read_then_output"),
-            [Value::from_str("5u16").unwrap(), Value::from_str("6u16").unwrap()].into_iter(),
+            inputs.iter(),
             None,
             0,
             None,
@@ -568,16 +572,17 @@ fn test_existence_check() {
         )
         .unwrap();
 
-    add_and_test(&vm, &caller_private_key, &[tx_base_function_2_4], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&inputs], &[tx_base_function_2_4], rng);
 
     println!("    2.5) Both static Record and DynamicRecord passed to a function call; both also output");
 
+    let inputs = [Value::from_str("5u16").unwrap(), Value::from_str("6u16").unwrap()];
     // Involves process_transition cases 1, 3, 4, 5
     let tx_base_function_2_5 = vm
         .execute(
             &caller_private_key,
             ("frontier.aleo", "mint_cast_and_read_then_output"),
-            [Value::from_str("5u16").unwrap(), Value::from_str("6u16").unwrap()].into_iter(),
+            inputs.iter(),
             None,
             0,
             None,
@@ -585,7 +590,7 @@ fn test_existence_check() {
         )
         .unwrap();
 
-    add_and_test(&vm, &caller_private_key, &[tx_base_function_2_5], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&inputs], &[tx_base_function_2_5], rng);
 
     // Test 3: A static record cast to dynamic twice and passed to a callee once
     // translated and once as dynamic does not break the global or local checks.
@@ -612,11 +617,13 @@ fn test_existence_check() {
         _ => panic!("expected record output from mint_rover"),
     };
 
+    let inputs = [Value::<CurrentNetwork>::Record(mint_planet_4_record)];
+
     let check_decommission_same_tx = vm
         .execute(
             &caller_private_key,
             ("extension.aleo", "check_decommission_same"),
-            [Value::<CurrentNetwork>::Record(mint_planet_4_record)].into_iter(),
+            inputs.iter(),
             None,
             0,
             None,
@@ -624,7 +631,7 @@ fn test_existence_check() {
         )
         .unwrap();
 
-    add_and_test(&vm, &caller_private_key, &[check_decommission_same_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&inputs], &[check_decommission_same_tx], rng);
 
     // Test 4: a root function receives a DynamicRecord R_d1 and calls a
     // function that mints a static Record, receiving it as a DynamicRecord
@@ -639,12 +646,14 @@ fn test_existence_check() {
     // Records and 4.3 nets -1 unspent Records on the ledger.
     println!("Test 4: mint_own_and_decom_wrapper...");
 
+    let one_input = [Value::from_str("5u8").unwrap(), Value::from_str("true").unwrap()];
+
     let three_mint_txs = (0..3)
         .map(|_| {
             vm.execute(
                 &caller_private_key,
                 ("base.aleo", "mint_rover"),
-                [Value::from_str("5u8").unwrap(), Value::from_str("true").unwrap()].into_iter(),
+                one_input.iter(),
                 None,
                 0,
                 None,
@@ -662,7 +671,7 @@ fn test_existence_check() {
         })
         .collect::<Vec<_>>();
 
-    add_and_test(&vm, &caller_private_key, &three_mint_txs, rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&one_input, &one_input, &one_input], &three_mint_txs, rng);
 
     // Involves process_transition cases 1, 2, 3, 4, 8
     println!("    4.1) Final function receives (DynamicRecord, Record)...");
@@ -694,18 +703,18 @@ fn test_existence_check() {
     // Involves process_transition cases 1, 2, 3, 4, 8
     println!("    4.2) Final function receives (Record, DynamicRecord)...");
 
+    let inputs = [
+        Value::<CurrentNetwork>::Record(three_records[1].clone()),
+        Value::from_str("6u8").unwrap(),
+        Value::from_str("true").unwrap(),
+        Value::from_str("false").unwrap(),
+        Value::from_str("false").unwrap(), // Together with the previous flag: select the function that receives (DynamicRecord, Record)
+    ];
     let mint_own_and_decom_4_2_tx = vm
         .execute(
             &caller_private_key,
             ("extension.aleo", "mint_own_and_decom_int"),
-            [
-                Value::<CurrentNetwork>::Record(three_records[1].clone()),
-                Value::from_str("6u8").unwrap(),
-                Value::from_str("true").unwrap(),
-                Value::from_str("false").unwrap(),
-                Value::from_str("false").unwrap(), // Together with the previous flag: select the function that receives (DynamicRecord, Record)
-            ]
-            .into_iter(),
+            inputs.iter(),
             None,
             0,
             None,
@@ -713,7 +722,7 @@ fn test_existence_check() {
         )
         .unwrap();
 
-    add_and_test(&vm, &caller_private_key, &[mint_own_and_decom_4_2_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&inputs], &[mint_own_and_decom_4_2_tx], rng);
 
     let num_unspent_records_2 =
         vm.transition_store().records().count() - vm.transition_store().serial_numbers().count();
@@ -723,18 +732,19 @@ fn test_existence_check() {
     // Involves process_transition cases 1, 2, 3, 4, 8
     println!("    4.3) Final function receives (Record, Record)...");
 
+    let inputs = [
+        Value::<CurrentNetwork>::Record(three_records[2].clone()),
+        Value::from_str("6u8").unwrap(),
+        Value::from_str("true").unwrap(),
+        Value::from_str("true").unwrap(), // Select the function that receives (Record, Record)
+        Value::from_str("false").unwrap(),
+    ];
+
     let mint_own_and_decom_4_3_tx = vm
         .execute(
             &caller_private_key,
             ("extension.aleo", "mint_own_and_decom_int"),
-            [
-                Value::<CurrentNetwork>::Record(three_records[2].clone()),
-                Value::from_str("6u8").unwrap(),
-                Value::from_str("true").unwrap(),
-                Value::from_str("true").unwrap(), // Select the function that receives (Record, Record)
-                Value::from_str("false").unwrap(),
-            ]
-            .into_iter(),
+            inputs.iter(),
             None,
             0,
             None,
@@ -742,7 +752,7 @@ fn test_existence_check() {
         )
         .unwrap();
 
-    add_and_test(&vm, &caller_private_key, &[mint_own_and_decom_4_3_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&inputs], &[mint_own_and_decom_4_3_tx], rng);
 
     let num_unspent_records_3 =
         vm.transition_store().records().count() - vm.transition_store().serial_numbers().count();
@@ -788,7 +798,7 @@ fn test_existence_check() {
         _ => panic!("expected record output from mint_map"),
     };
 
-    add_and_test(&vm, &caller_private_key, &[map_record_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&[]], &[map_record_tx], rng);
 
     let other_map_record_tx = vm
         .execute(
@@ -807,16 +817,18 @@ fn test_existence_check() {
         _ => panic!("expected record output from mint_map"),
     };
 
-    add_and_test(&vm, &caller_private_key, &[other_map_record_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&[]], &[other_map_record_tx], rng);
 
     // Involves process_transition cases 1, 2, 4, 8
     println!("    6.1) Calling remapper.aleo/growing_family and making the family materialize at the end...");
+
+    let inputs = [Value::<CurrentNetwork>::Record(map_record.clone()), Value::from_str("true").unwrap()];
 
     let growing_family_tx = vm
         .execute(
             &caller_private_key,
             ("remapper.aleo", "growing_family"),
-            [Value::<CurrentNetwork>::Record(map_record.clone()), Value::from_str("true").unwrap()].into_iter(),
+            inputs.iter(),
             None,
             0,
             None,
@@ -824,7 +836,7 @@ fn test_existence_check() {
         )
         .unwrap();
 
-    add_and_test(&vm, &caller_private_key, &[growing_family_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&inputs], &[growing_family_tx], rng);
 
     // Involves process_transition cases 2, 4, 8
     println!("    6.2) Calling remapper.aleo/growing_family and not making the family materialize at the end...");

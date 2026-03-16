@@ -92,25 +92,23 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             // Get the call stack.
             let mut call_stack = registers.call_stack();
 
+            // TODO (CwPK) appease borrow checker to only get & here
+            // Ensure that we have a private key to sign the new request.
+            let (private_key_opt, address_opt) = match call_stack {
+                CallStack::Authorize(_, private_key_opt, _) => {
+                    let Some(private_key) = private_key_opt else {
+                        return Err(anyhow!("Cannot authorize a new function call without a private key.").into());
+                    };
+                    (Some(private_key.clone()), None)
+                }
+                CallStack::Mock(_, address, private_key, _) => (Some(private_key.clone()), Some(address.clone())),
+                _ => (None, None),
+            };
+
             // In Authorize mode, we need to compute the new request and add it to the authorization.
             if let CallStack::Authorize(requests, _, authorization) | CallStack::Mock(requests, _, _, authorization) = &mut call_stack {
-
                 // Set 'is_root'.
                 let is_root = false;
-
-                // TODO (CwPK) appease borrow checker to only get & here
-                // Ensure that we have a private key to sign the new request.
-                let private_key = match &call_stack.clone() {
-                    CallStack::Authorize(_, private_key_opt, _) => {
-                        let Some(private_key) = private_key_opt else {
-                            return Err(anyhow!("Cannot authorize a new function call without a private key.").into());
-                        };
-                        private_key
-                    }
-                    CallStack::Mock(_, _, private_key, _) => private_key,
-                    _ => return Err(anyhow!("Unreachable.").into()),
-                };
-
                 // Retrieve the program checksum, if the program has a constructor.
                 let program_checksum = match substack.program().contains_constructor() {
                     true => Some(substack.program_checksum_as_field()?),
@@ -128,24 +126,34 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                 let callee_inputs = convert_caller_inputs_to_callee_inputs(inputs, &input_types, substack)?;
 
                 // Compute the request.
-                let mut request = Request::sign(
-                    &private_key,
-                    *substack.program_id(),
-                    *function.name(),
-                    callee_inputs.iter(),
-                    &function.input_types(),
-                    root_tvk,
-                    is_root,
-                    program_checksum,
-                    true,
-                    rng,
-                )?;
-
-                // TODO (CwPK) appease borrow checker to avoid clone
-                if let CallStack::Mock(_, address, _, _) = call_stack.clone() {
-                    request.overwrite_signer(address);
-                }
-    
+                let request = if let Some(address) = address_opt {
+                    Request::mock_sign(
+                        &private_key_opt.unwrap(),
+                        address,
+                        *substack.program_id(),
+                        *function.name(),
+                        callee_inputs.iter(),
+                        &function.input_types(),
+                        root_tvk,
+                        is_root,
+                        program_checksum,
+                        true,
+                        rng,
+                    )?
+                } else {
+                    Request::sign(
+                        &private_key_opt.unwrap(),
+                        *substack.program_id(),
+                        *function.name(),
+                        callee_inputs.iter(),
+                        &function.input_types(),
+                        root_tvk,
+                        is_root,
+                        program_checksum,
+                        true,
+                        rng,
+                    )?
+                };
                 // Add the request to the requests.
                 requests.push(request.clone());
                 // Add the request to the authorization.
@@ -332,7 +340,8 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
 
                         // Return the request verification inputs and response.
                         (request_verification_inputs, caller_response_outputs)
-                    }
+                    },
+                    CallStack::Mock(..) => return Err(anyhow!("Cannot 'execute' a function in 'mock' mode.").into()),
                     // In `Synthesize` or `CheckDeployment` mode, we use dummy inputs and outputs to avoid building a full sub-circuit.
                     CallStack::Synthesize(_, private_key, ..) | CallStack::CheckDeployment(_, private_key, ..) => {
                         // Note that it does not matter what program ID we use here, since we are only synthesizing dummy outputs.
@@ -462,10 +471,6 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                     // In `Evaluate` mode, throw an error.
                     CallStack::Evaluate(..) => {
                         return Err(anyhow!("Cannot 'execute' a function in 'evaluate' mode.").into());
-                    }
-                    // In `Mock` mode, throw an error.
-                    CallStack::Mock(..) => {
-                        return Err(anyhow!("Cannot 'execute' a function in 'mock' mode.").into());
                     }
                     // In `Execute` mode, evaluate and execute the instructions.
                     CallStack::Execute(authorization, _, translations) => {
