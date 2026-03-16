@@ -113,12 +113,10 @@ impl SlipstreamPluginManager {
         block_height: u32,
     ) {
         for plugin in &self.plugins {
-            if plugin.history_enabled() {
-                if let Err(e) =
+            if plugin.history_enabled() && let Err(e) =
                     plugin.notify_mapping_update(program_id, mapping_name, key, value, block_height)
-                {
-                    warn!("Slipstream plugin '{}' mapping_update error: {e}", plugin.name());
-                }
+            {
+                warn!("Slipstream plugin '{}' mapping_update error: {e}", plugin.name());
             }
         }
     }
@@ -134,12 +132,10 @@ impl SlipstreamPluginManager {
         block_height: u32,
     ) {
         for plugin in &self.plugins {
-            if plugin.history_staking_rewards_enabled() {
-                if let Err(e) =
+            if plugin.history_staking_rewards_enabled() && let Err(e) =
                     plugin.notify_staking_reward(staker, validator, reward, new_stake, block_height)
-                {
-                    warn!("Slipstream plugin '{}' staking_reward error: {e}", plugin.name());
-                }
+            {
+                warn!("Slipstream plugin '{}' staking_reward error: {e}", plugin.name());
             }
         }
     }

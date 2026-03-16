@@ -40,6 +40,8 @@ use std::{
 use std::sync::{Arc, OnceLock, RwLock, atomic::AtomicBool};
 #[cfg(any(feature = "history", feature = "history-staking-rewards"))]
 use snarkvm_slipstream_plugin_manager::SlipstreamPluginManager;
+#[cfg(feature = "history")]
+type SerializedMappingEntries = Option<(Vec<u8>, Vec<u8>, Vec<(Vec<u8>, Vec<u8>)>)>;
 
 /// TODO (howardwu): Remove this.
 /// Returns the mapping ID for the given `program ID` and `mapping name`.
@@ -962,7 +964,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         // Serialize mapping identity and all entries before moving them into storage,
         // so they are available for plugin notification after the storage call.
         #[cfg(feature = "history")]
-        let plugin_data: Option<(Vec<u8>, Vec<u8>, Vec<(Vec<u8>, Vec<u8>)>)> =
+        let plugin_data: SerializedMappingEntries =
             if self.is_finalize_mode.load(Ordering::SeqCst) && self.slipstream_plugin_manager.get().is_some() {
                 let mut serialized_entries = Vec::with_capacity(entries.len());
                 for (key, value) in &entries {

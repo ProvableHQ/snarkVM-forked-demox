@@ -1301,7 +1301,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     // Insert the next committee into storage.
                     store.committee_store().insert(state.block_height(), *(committee.clone()))?;
                     // Store the finalize operations for updating the committee and bonded mapping.
-                    // TODO: NOTE THIS IS WHERE WE MIGHT WANT TO STREAM SOME OF THE DATA?
                     finalize_operations.extend(&[
                         // Replace the committee mapping in storage.
                         store.replace_mapping(program_id, committee_mapping, next_committee_map)?,
@@ -1313,7 +1312,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         store.replace_mapping(program_id, withdraw_mapping, next_withdraw_map)?,
                     ]);
                     
-                    // TODO: STREAM HERE IF ENABLED
                     // Update the number of validators.
                     finalize_operations.extend(&[
                         // Update the number of validators in the metadata mapping.
@@ -1325,7 +1323,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         )?,
                     ]);
                     
-                    // TODO: STREAM HERE IF ENABLED
                     // Update the number of delegators.
                     finalize_operations.extend(&[
                         // Update the number of delegators in the metadata mapping.
