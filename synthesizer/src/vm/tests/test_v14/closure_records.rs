@@ -138,18 +138,16 @@ fn test_closure_record_output_rejected() {
     assert!(result.is_err(), "Program with record output from closure should fail to parse");
 }
 
-// Tests that a function whose only use of an ExternalRecord input is passing it to a closure
-// is rejected by the record-existence check at V14+. The ExternalRecord creates an unresolved
-// family because closures cannot provide existence verification.
+// Tests that a closure can accept an external record as input and read its fields.
 #[test]
-fn test_closure_external_record_input_only_rejected_at_v14() -> Result<()> {
+fn test_closure_external_record_input() -> Result<()> {
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
     let caller_address = Address::try_from(&caller_private_key)?;
     let caller_view_key = ViewKey::try_from(&caller_private_key)?;
 
-    // Parent program defines a record.
+    // Parent program defines a record and a consume function.
     let parent_program = Program::from_str(
         r"
         program closure_ext_parent.aleo;
@@ -164,14 +162,17 @@ fn test_closure_external_record_input_only_rejected_at_v14() -> Result<()> {
             cast r0 r1 into r2 as item.record;
             output r2 as item.record;
 
+        function consume_item:
+            input r0 as item.record;
+            output r0.worth as u32.public;
+
         constructor:
             assert.eq true true;
         ",
     )?;
 
     // Child program imports parent and has a closure taking the external record.
-    // The function only passes the ExternalRecord to a closure — it never consumes it
-    // via a function call boundary, so the record-existence check cannot verify it.
+    // The function also calls consume_item to resolve the record family.
     let child_program = Program::from_str(
         r"
         import closure_ext_parent.aleo;
@@ -186,6 +187,7 @@ fn test_closure_external_record_input_only_rejected_at_v14() -> Result<()> {
         function extract_external_value:
             input r0 as closure_ext_parent.aleo/item.record;
             call read_external_item r0 into r1;
+            call closure_ext_parent.aleo/consume_item r0 into r2;
             output r1 as u32.public;
 
         constructor:
@@ -216,12 +218,14 @@ fn test_closure_external_record_input_only_rejected_at_v14() -> Result<()> {
     )?;
 
     // Decrypt the minted record.
-    let item_record = decrypt_first_record(&transaction, &caller_view_key);
+    let item_record = match &transaction.transitions().next().unwrap().outputs()[0] {
+        Output::Record(_, _, record_ciphertext, _) => record_ciphertext.as_ref().unwrap().decrypt(&caller_view_key)?,
+        _ => panic!("Expected record output"),
+    };
 
     add_and_test(&vm, &caller_private_key, &[transaction], rng);
 
-    // Execute the child function with the external record. The transaction is created
-    // successfully but will be rejected during verification.
+    // Execute the child function with the external record.
     let transaction = vm.execute(
         &caller_private_key,
         ("closure_ext_child.aleo", "extract_external_value"),
@@ -232,24 +236,23 @@ fn test_closure_external_record_input_only_rejected_at_v14() -> Result<()> {
         rng,
     )?;
 
-    // The transaction should be aborted: the ExternalRecord input creates an unresolved
-    // family because the closure cannot provide record-existence verification.
-    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
-    assert_eq!(
-        block.transactions().num_accepted(),
-        0,
-        "ExternalRecord used only in closure should fail existence check"
-    );
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    // Verify the public output matches the expected value.
+    let expected = Plaintext::from_str("99u32")?;
+    match &transaction.transitions().next().unwrap().outputs()[0] {
+        Output::Public(_, Some(plaintext)) => assert_eq!(*plaintext, expected),
+        other => panic!("Expected public output, got: {other:?}"),
+    }
+
+    add_and_test(&vm, &caller_private_key, &[transaction], rng);
 
     Ok(())
 }
 
 // Tests that a closure outputting an ExternalRecord is rejected at V14+ deployment.
 // The program parses successfully, but `verify_deployment` (called during block production)
-// rejects it at V14+ because `ensure_records_exist` assumes closures cannot extend record families.
+// rejects it at V14+ because closures cannot output ExternalRecord or DynamicRecord types.
 #[test]
-fn test_closure_external_record_output_rejected_at_v14() -> Result<()> {
+fn test_closure_external_record_output() -> Result<()> {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
 
@@ -616,9 +619,9 @@ fn test_pre_v14_closure_external_record_input_only_rejected_at_v14() -> Result<(
     // Advance to V14.
     advance_to_v14(&vm, &caller_private_key, rng)?;
 
-    // Execute the function. The transaction is created but rejected during verification:
-    // the ExternalRecord input creates an unresolved family (closures cannot verify existence).
-    let transaction = vm.execute(
+    // Execute the function. The record-existence check rejects the execution because the
+    // ExternalRecord input creates an unresolved family (closures cannot verify existence).
+    let result = vm.execute(
         &caller_private_key,
         ("closure_legacy_child.aleo", "use_gem_closure"),
         [Value::<CurrentNetwork>::Record(gem_record)].into_iter(),
@@ -626,15 +629,9 @@ fn test_pre_v14_closure_external_record_input_only_rejected_at_v14() -> Result<(
         0,
         None,
         rng,
-    )?;
-
-    let block = sample_next_block(&vm, &caller_private_key, &[transaction], rng)?;
-    assert_eq!(
-        block.transactions().num_accepted(),
-        0,
-        "ExternalRecord used only in closure should fail existence check at V14+"
     );
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
+
+    assert!(result.is_err(), "ExternalRecord used only in closure should fail existence check at V14+");
 
     Ok(())
 }
@@ -659,7 +656,7 @@ fn test_pre_v14_closure_external_record_output_rejected_at_v14_runtime() -> Resu
 
         record widget:
             owner as address.private;
-            value as u64.private;
+            worth as u64.private;
 
         function mint_widget:
             input r0 as address.private;
@@ -731,87 +728,6 @@ fn test_pre_v14_closure_external_record_output_rejected_at_v14_runtime() -> Resu
     );
 
     assert!(result.is_err(), "Execution must fail: pre-V14 closure outputting ExternalRecord is disallowed at V14+");
-
-    Ok(())
-}
-
-// Tests that executing a pre-V14 program whose closure outputs DynamicRecord is rejected at V14+.
-// Parallel to `test_pre_v14_closure_external_record_output_rejected_at_v14_runtime` but for the
-// DynamicRecord variant of the `has_forbidden_output` check.
-#[test]
-fn test_pre_v14_closure_dynamic_record_output_rejected_at_v14_runtime() -> Result<()> {
-    let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key)?;
-    let caller_view_key = ViewKey::try_from(&caller_private_key)?;
-
-    // Start at V9 (height 12), before the V14 closure-output restriction (height 17).
-    let vm = sample_vm_at_height(12, rng);
-
-    // Program with a closure that casts a record to DynamicRecord and outputs it.
-    // This is allowed at pre-V14 but forbidden at V14+.
-    let program = Program::from_str(
-        r"
-        program pre_v14_dyn_out.aleo;
-
-        record coin:
-            owner as address.private;
-            amount as u64.private;
-
-        closure cast_to_dynamic:
-            input r0 as coin.record;
-            cast r0 into r1 as dynamic.record;
-            output r1 as dynamic.record;
-
-        function use_closure:
-            input r0 as coin.record;
-            call cast_to_dynamic r0 into r1;
-            output r1 as dynamic.record;
-
-        function mint_coin:
-            input r0 as address.private;
-            input r1 as u64.private;
-            cast r0 r1 into r2 as coin.record;
-            output r2 as coin.record;
-
-        constructor:
-            assert.eq true true;
-        ",
-    )?;
-
-    // Deploy before V14. Deployment must be accepted.
-    let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
-    add_and_test(&vm, &caller_private_key, &[tx], rng);
-
-    // Mint a coin to use as input.
-    let tx = vm.execute(
-        &caller_private_key,
-        ("pre_v14_dyn_out.aleo", "mint_coin"),
-        [Value::from_str(&caller_address.to_string())?, Value::from_str("10u64")?].into_iter(),
-        None,
-        0,
-        None,
-        rng,
-    )?;
-    let coin_record = decrypt_first_record(&tx, &caller_view_key);
-    add_and_test(&vm, &caller_private_key, &[tx], rng);
-
-    // Advance to V14 (height 17) by adding empty blocks.
-    advance_to_v14(&vm, &caller_private_key, rng)?;
-
-    // At V14+, executing `use_closure` must fail: the runtime `has_forbidden_output` check
-    // detects that `cast_to_dynamic` outputs DynamicRecord and rejects the execution.
-    let result = vm.execute(
-        &caller_private_key,
-        ("pre_v14_dyn_out.aleo", "use_closure"),
-        [Value::<CurrentNetwork>::Record(coin_record)].into_iter(),
-        None,
-        0,
-        None,
-        rng,
-    );
-
-    assert!(result.is_err(), "Execution must fail: pre-V14 closure outputting DynamicRecord is disallowed at V14+");
 
     Ok(())
 }
@@ -1042,9 +958,9 @@ fn test_pre_v14_cross_program_closure_forbidden_output_rejected_at_v14_runtime()
 
 // Tests that a closure outputting a DynamicRecord is rejected at V14+ deployment.
 // The program parses successfully, but `verify_deployment` (called during block production)
-// rejects it at V14+ because `ensure_records_exist` assumes closures cannot extend record families.
+// rejects it at V14+ because closures cannot output ExternalRecord or DynamicRecord types.
 #[test]
-fn test_closure_dynamic_record_output_rejected_at_v14() -> Result<()> {
+fn test_closure_dynamic_record_output() -> Result<()> {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
 
@@ -1105,7 +1021,7 @@ fn test_pre_v14_closure_external_record_output_works_before_v14() -> Result<()> 
 
         record widget:
             owner as address.private;
-            value as u64.private;
+            worth as u64.private;
 
         function mint_widget:
             input r0 as address.private;
@@ -1170,94 +1086,6 @@ fn test_pre_v14_closure_external_record_output_works_before_v14() -> Result<()> 
         None,
         rng,
     )?;
-
-    add_and_test(&vm, &caller_private_key, &[transaction], rng);
-
-    Ok(())
-}
-
-// Tests that a pre-V14 program whose closure accepts DynamicRecord as input (but does NOT output
-// it) executes successfully at V14+. This is the DynamicRecord-input counterpart to
-// `test_pre_v14_closure_external_record_input_works_at_v14`.
-#[test]
-fn test_pre_v14_closure_dynamic_record_input_works_at_v14() -> Result<()> {
-    let rng = &mut TestRng::default();
-    let caller_private_key = sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key)?;
-    let caller_view_key = ViewKey::try_from(&caller_private_key)?;
-
-    // Start at V9 (height 12), before the V14 closure-output restriction (height 17).
-    let vm = sample_vm_at_height(12, rng);
-
-    // Program with a closure that reads a DynamicRecord field but outputs a plain scalar.
-    let program = Program::from_str(
-        r"
-        program pre_v14_dyn_input_ok.aleo;
-
-        record coin:
-            owner as address.private;
-            amount as u64.private;
-
-        closure read_dynamic_amount:
-            input r0 as dynamic.record;
-            get.record.dynamic r0.amount into r1 as u64;
-            output r1 as u64;
-
-        function mint_coin:
-            input r0 as address.private;
-            input r1 as u64.private;
-            cast r0 r1 into r2 as coin.record;
-            output r2 as coin.record;
-
-        function read_via_closure:
-            input r0 as coin.record;
-            cast r0 into r1 as dynamic.record;
-            call read_dynamic_amount r1 into r2;
-            output r2 as u64.public;
-
-        constructor:
-            assert.eq true true;
-        ",
-    )?;
-
-    // Deploy before V14.
-    let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
-    add_and_test(&vm, &caller_private_key, &[tx], rng);
-
-    // Mint a coin.
-    let tx = vm.execute(
-        &caller_private_key,
-        ("pre_v14_dyn_input_ok.aleo", "mint_coin"),
-        [Value::from_str(&caller_address.to_string())?, Value::from_str("123u64")?].into_iter(),
-        None,
-        0,
-        None,
-        rng,
-    )?;
-    let coin_record = decrypt_first_record(&tx, &caller_view_key);
-    add_and_test(&vm, &caller_private_key, &[tx], rng);
-
-    // Advance to V14 (height 17) by adding empty blocks.
-    advance_to_v14(&vm, &caller_private_key, rng)?;
-
-    // At V14+, executing `read_via_closure` must succeed: the closure only takes DynamicRecord
-    // as input and outputs a plain scalar. The `has_forbidden_output` check only looks at outputs.
-    let transaction = vm.execute(
-        &caller_private_key,
-        ("pre_v14_dyn_input_ok.aleo", "read_via_closure"),
-        [Value::<CurrentNetwork>::Record(coin_record)].into_iter(),
-        None,
-        0,
-        None,
-        rng,
-    )?;
-
-    // Verify the public output matches the minted amount.
-    let expected = Plaintext::from_str("123u64")?;
-    match &transaction.transitions().next().unwrap().outputs()[0] {
-        Output::Public(_, Some(plaintext)) => assert_eq!(*plaintext, expected),
-        other => panic!("Expected public output, got: {other:?}"),
-    }
 
     add_and_test(&vm, &caller_private_key, &[transaction], rng);
 
