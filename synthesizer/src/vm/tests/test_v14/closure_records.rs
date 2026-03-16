@@ -17,6 +17,31 @@ use super::*;
 
 use super::add_and_test;
 
+/// Advances the VM to V14 consensus height by adding empty blocks.
+fn advance_to_v14(
+    vm: &VM<CurrentNetwork, LedgerType>,
+    caller_private_key: &PrivateKey<CurrentNetwork>,
+    rng: &mut TestRng,
+) -> Result<()> {
+    let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14)?;
+    for _ in vm.block_store().current_block_height()..v14_height {
+        let block = sample_next_block(vm, caller_private_key, &[], rng)?;
+        vm.add_next_block(&block)?;
+    }
+    Ok(())
+}
+
+/// Decrypts the first record output from the first transition in a transaction.
+fn decrypt_first_record(
+    tx: &Transaction<CurrentNetwork>,
+    view_key: &ViewKey<CurrentNetwork>,
+) -> Record<CurrentNetwork, Plaintext<CurrentNetwork>> {
+    match &tx.transitions().next().unwrap().outputs()[0] {
+        Output::Record(_, _, ct, _) => ct.as_ref().unwrap().decrypt(view_key).unwrap(),
+        other => panic!("Expected record output, got: {other:?}"),
+    }
+}
+
 // Tests that a closure can accept a record as input and read its fields.
 #[test]
 fn test_closure_record_input() -> Result<()> {
@@ -187,10 +212,7 @@ fn test_closure_external_record_input() -> Result<()> {
     )?;
 
     // Decrypt the minted record.
-    let item_record = match &transaction.transitions().next().unwrap().outputs()[0] {
-        Output::Record(_, _, record_ciphertext, _) => record_ciphertext.as_ref().unwrap().decrypt(&caller_view_key)?,
-        _ => panic!("Expected record output"),
-    };
+    let item_record = decrypt_first_record(&transaction, &caller_view_key);
 
     add_and_test(&vm, &caller_private_key, &[transaction], rng);
 
@@ -335,10 +357,7 @@ fn test_closure_dynamic_record_input() -> Result<()> {
     )?;
 
     // Decrypt the minted record.
-    let asset_record = match &transaction.transitions().next().unwrap().outputs()[0] {
-        Output::Record(_, _, record_ciphertext, _) => record_ciphertext.as_ref().unwrap().decrypt(&caller_view_key)?,
-        _ => panic!("Expected record output"),
-    };
+    let asset_record = decrypt_first_record(&transaction, &caller_view_key);
 
     add_and_test(&vm, &caller_private_key, &[transaction], rng);
 
@@ -491,10 +510,7 @@ fn test_external_record_cast_to_dynamic_then_closure_fails_existence_check() -> 
         rng,
     )?;
 
-    let gem_record = match &tx.transitions().next().unwrap().outputs()[0] {
-        Output::Record(_, _, ct, _) => ct.as_ref().unwrap().decrypt(&caller_view_key)?,
-        _ => panic!("expected record output"),
-    };
+    let gem_record = decrypt_first_record(&tx, &caller_view_key);
 
     add_and_test(&vm, &caller_private_key, &[tx], rng);
 
@@ -595,18 +611,11 @@ fn test_pre_v14_closure_external_record_input_works_at_v14() -> Result<()> {
         None,
         rng,
     )?;
-    let gem_record = match &mint_tx.transitions().next().unwrap().outputs()[0] {
-        Output::Record(_, _, ct, _) => ct.as_ref().unwrap().decrypt(&caller_view_key)?,
-        _ => panic!("expected record output"),
-    };
+    let gem_record = decrypt_first_record(&mint_tx, &caller_view_key);
     add_and_test(&vm, &caller_private_key, &[mint_tx], rng);
 
     // Advance to V14 (height 17 in the test schedule) by adding empty blocks.
-    let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14)?;
-    for _ in vm.block_store().current_block_height()..v14_height {
-        let block = sample_next_block(&vm, &caller_private_key, &[], rng)?;
-        vm.add_next_block(&block)?;
-    }
+    advance_to_v14(&vm, &caller_private_key, rng)?;
 
     // At V14+, executing a function that calls a closure with an ExternalRecord *input* (but no
     // record output) must succeed. The closure only reads a field, so `ensure_records_exist` has
@@ -706,18 +715,11 @@ fn test_pre_v14_closure_external_record_output_rejected_at_v14_runtime() -> Resu
         None,
         rng,
     )?;
-    let widget_record = match &tx.transitions().next().unwrap().outputs()[0] {
-        Output::Record(_, _, ct, _) => ct.as_ref().unwrap().decrypt(&caller_view_key)?,
-        _ => panic!("expected record output"),
-    };
+    let widget_record = decrypt_first_record(&tx, &caller_view_key);
     add_and_test(&vm, &caller_private_key, &[tx], rng);
 
     // Advance to V14 (height 17) by adding empty blocks.
-    let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14)?;
-    for _ in vm.block_store().current_block_height()..v14_height {
-        let block = sample_next_block(&vm, &caller_private_key, &[], rng)?;
-        vm.add_next_block(&block)?;
-    }
+    advance_to_v14(&vm, &caller_private_key, rng)?;
 
     // At V14+, executing `use_closure` must fail: the runtime `has_forbidden_output` check
     // detects that `passthrough_widget` outputs ExternalRecord and rejects the execution.
@@ -794,18 +796,11 @@ fn test_pre_v14_closure_dynamic_record_output_rejected_at_v14_runtime() -> Resul
         None,
         rng,
     )?;
-    let coin_record = match &tx.transitions().next().unwrap().outputs()[0] {
-        Output::Record(_, _, ct, _) => ct.as_ref().unwrap().decrypt(&caller_view_key)?,
-        _ => panic!("expected record output"),
-    };
+    let coin_record = decrypt_first_record(&tx, &caller_view_key);
     add_and_test(&vm, &caller_private_key, &[tx], rng);
 
     // Advance to V14 (height 17) by adding empty blocks.
-    let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14)?;
-    for _ in vm.block_store().current_block_height()..v14_height {
-        let block = sample_next_block(&vm, &caller_private_key, &[], rng)?;
-        vm.add_next_block(&block)?;
-    }
+    advance_to_v14(&vm, &caller_private_key, rng)?;
 
     // At V14+, executing `use_closure` must fail: the runtime `has_forbidden_output` check
     // detects that `cast_to_dynamic` outputs DynamicRecord and rejects the execution.
@@ -902,18 +897,11 @@ fn test_mixed_closures_forbidden_output_rejected_at_v14_runtime() -> Result<()> 
         None,
         rng,
     )?;
-    let token_record = match &tx.transitions().next().unwrap().outputs()[0] {
-        Output::Record(_, _, ct, _) => ct.as_ref().unwrap().decrypt(&caller_view_key)?,
-        _ => panic!("expected record output"),
-    };
+    let token_record = decrypt_first_record(&tx, &caller_view_key);
     add_and_test(&vm, &caller_private_key, &[tx], rng);
 
     // Advance to V14.
-    let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14)?;
-    for _ in vm.block_store().current_block_height()..v14_height {
-        let block = sample_next_block(&vm, &caller_private_key, &[], rng)?;
-        vm.add_next_block(&block)?;
-    }
+    advance_to_v14(&vm, &caller_private_key, rng)?;
 
     // At V14+, the function calls both a safe closure and a forbidden one. Execution must be
     // rejected because `passthrough` outputs ExternalRecord.
@@ -1028,18 +1016,11 @@ fn test_pre_v14_cross_program_closure_forbidden_output_rejected_at_v14_runtime()
         None,
         rng,
     )?;
-    let widget_record = match &tx.transitions().next().unwrap().outputs()[0] {
-        Output::Record(_, _, ct, _) => ct.as_ref().unwrap().decrypt(&caller_view_key)?,
-        _ => panic!("expected record output"),
-    };
+    let widget_record = decrypt_first_record(&tx, &caller_view_key);
     add_and_test(&vm, &caller_private_key, &[tx], rng);
 
     // Advance to V14 (height 17) by adding empty blocks.
-    let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14)?;
-    for _ in vm.block_store().current_block_height()..v14_height {
-        let block = sample_next_block(&vm, &caller_private_key, &[], rng)?;
-        vm.add_next_block(&block)?;
-    }
+    advance_to_v14(&vm, &caller_private_key, rng)?;
 
     // At V14+, executing `use_external_closure` must fail: the runtime `has_forbidden_output`
     // check (Locator branch) detects that `locator_lib.aleo/passthrough_widget` outputs
@@ -1100,6 +1081,259 @@ fn test_closure_dynamic_record_output_rejected_at_v14() -> Result<()> {
     let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
     let block = sample_next_block(&vm, &caller_private_key, &[tx], rng)?;
     assert_eq!(block.transactions().num_accepted(), 0, "DynamicRecord closure output should be rejected at V14+");
+    assert_eq!(block.aborted_transaction_ids().len(), 1);
+
+    Ok(())
+}
+
+// Tests that a pre-V14 program whose closure outputs ExternalRecord executes successfully
+// *before* V14. This is the backward-compatibility counterpart to
+// `test_pre_v14_closure_external_record_output_rejected_at_v14_runtime`: both deploy at pre-V14,
+// but this test executes before V14 (where the restriction does not apply) and confirms the
+// output is accepted.
+#[test]
+fn test_pre_v14_closure_external_record_output_works_before_v14() -> Result<()> {
+    let rng = &mut TestRng::default();
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key)?;
+    let caller_view_key = ViewKey::try_from(&caller_private_key)?;
+
+    // Start at V9 (height 12), before the V14 closure-output restriction (height 17).
+    let vm = sample_vm_at_height(12, rng);
+
+    // Parent defines the record.
+    let parent_program = Program::from_str(
+        r"
+        program pre_v14_ok_parent.aleo;
+
+        record widget:
+            owner as address.private;
+            value as u64.private;
+
+        function mint_widget:
+            input r0 as address.private;
+            input r1 as u64.private;
+            cast r0 r1 into r2 as widget.record;
+            output r2 as widget.record;
+
+        constructor:
+            assert.eq true true;
+        ",
+    )?;
+
+    // Child has a closure that passes an ExternalRecord through as an output.
+    let child_program = Program::from_str(
+        r"
+        import pre_v14_ok_parent.aleo;
+
+        program pre_v14_ok_child.aleo;
+
+        closure passthrough_widget:
+            input r0 as pre_v14_ok_parent.aleo/widget.record;
+            assert.eq true true;
+            output r0 as pre_v14_ok_parent.aleo/widget.record;
+
+        function use_closure:
+            input r0 as pre_v14_ok_parent.aleo/widget.record;
+            call passthrough_widget r0 into r1;
+            output r1 as pre_v14_ok_parent.aleo/widget.record;
+
+        constructor:
+            assert.eq true true;
+        ",
+    )?;
+
+    // Deploy both programs before V14.
+    let tx = vm.deploy(&caller_private_key, &parent_program, None, 0, None, rng)?;
+    add_and_test(&vm, &caller_private_key, &[tx], rng);
+
+    let tx = vm.deploy(&caller_private_key, &child_program, None, 0, None, rng)?;
+    add_and_test(&vm, &caller_private_key, &[tx], rng);
+
+    // Mint a widget.
+    let tx = vm.execute(
+        &caller_private_key,
+        ("pre_v14_ok_parent.aleo", "mint_widget"),
+        [Value::from_str(&caller_address.to_string())?, Value::from_str("42u64")?].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    )?;
+    let widget_record = decrypt_first_record(&tx, &caller_view_key);
+    add_and_test(&vm, &caller_private_key, &[tx], rng);
+
+    // Execute at pre-V14. The closure outputs ExternalRecord, which must be accepted.
+    let transaction = vm.execute(
+        &caller_private_key,
+        ("pre_v14_ok_child.aleo", "use_closure"),
+        [Value::<CurrentNetwork>::Record(widget_record)].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    )?;
+
+    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+
+    Ok(())
+}
+
+// Tests that a pre-V14 program whose closure accepts DynamicRecord as input (but does NOT output
+// it) executes successfully at V14+. This is the DynamicRecord-input counterpart to
+// `test_pre_v14_closure_external_record_input_works_at_v14`.
+#[test]
+fn test_pre_v14_closure_dynamic_record_input_works_at_v14() -> Result<()> {
+    let rng = &mut TestRng::default();
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key)?;
+    let caller_view_key = ViewKey::try_from(&caller_private_key)?;
+
+    // Start at V9 (height 12), before the V14 closure-output restriction (height 17).
+    let vm = sample_vm_at_height(12, rng);
+
+    // Program with a closure that reads a DynamicRecord field but outputs a plain scalar.
+    let program = Program::from_str(
+        r"
+        program pre_v14_dyn_input_ok.aleo;
+
+        record coin:
+            owner as address.private;
+            amount as u64.private;
+
+        closure read_dynamic_amount:
+            input r0 as dynamic.record;
+            get.record.dynamic r0.amount into r1 as u64;
+            output r1 as u64;
+
+        function mint_coin:
+            input r0 as address.private;
+            input r1 as u64.private;
+            cast r0 r1 into r2 as coin.record;
+            output r2 as coin.record;
+
+        function read_via_closure:
+            input r0 as coin.record;
+            cast r0 into r1 as dynamic.record;
+            call read_dynamic_amount r1 into r2;
+            output r2 as u64.public;
+
+        constructor:
+            assert.eq true true;
+        ",
+    )?;
+
+    // Deploy before V14.
+    let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
+    add_and_test(&vm, &caller_private_key, &[tx], rng);
+
+    // Mint a coin.
+    let tx = vm.execute(
+        &caller_private_key,
+        ("pre_v14_dyn_input_ok.aleo", "mint_coin"),
+        [Value::from_str(&caller_address.to_string())?, Value::from_str("123u64")?].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    )?;
+    let coin_record = decrypt_first_record(&tx, &caller_view_key);
+    add_and_test(&vm, &caller_private_key, &[tx], rng);
+
+    // Advance to V14 (height 17) by adding empty blocks.
+    advance_to_v14(&vm, &caller_private_key, rng)?;
+
+    // At V14+, executing `read_via_closure` must succeed: the closure only takes DynamicRecord
+    // as input and outputs a plain scalar. The `has_forbidden_output` check only looks at outputs.
+    let transaction = vm.execute(
+        &caller_private_key,
+        ("pre_v14_dyn_input_ok.aleo", "read_via_closure"),
+        [Value::<CurrentNetwork>::Record(coin_record)].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    )?;
+
+    // Verify the public output matches the minted amount.
+    let expected = Plaintext::from_str("123u64")?;
+    match &transaction.transitions().next().unwrap().outputs()[0] {
+        Output::Public(_, Some(plaintext)) => assert_eq!(*plaintext, expected),
+        other => panic!("Expected public output, got: {other:?}"),
+    }
+
+    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+
+    Ok(())
+}
+
+// Tests that deploying a program at V14+ with mixed closures — one safe (outputs scalar) and one
+// forbidden (outputs ExternalRecord) — is rejected. Ensures the deploy-time check iterates all
+// closures and does not short-circuit after the first safe one.
+#[test]
+fn test_mixed_closures_deploy_rejected_at_v14() -> Result<()> {
+    let rng = &mut TestRng::default();
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    // Parent defines the record.
+    let parent_program = Program::from_str(
+        r"
+        program mixed_deploy_parent.aleo;
+
+        record token:
+            owner as address.private;
+            amount as u64.private;
+
+        function noop:
+            input r0 as u64.public;
+            output r0 as u64.public;
+
+        constructor:
+            assert.eq true true;
+        ",
+    )?;
+
+    // Child has two closures: one safe (outputs u64), one forbidden (outputs ExternalRecord).
+    let child_program = Program::from_str(
+        r"
+        import mixed_deploy_parent.aleo;
+
+        program mixed_deploy_child.aleo;
+
+        closure safe_extract:
+            input r0 as mixed_deploy_parent.aleo/token.record;
+            add r0.amount 0u64 into r1;
+            output r1 as u64;
+
+        closure bad_passthrough:
+            input r0 as mixed_deploy_parent.aleo/token.record;
+            assert.eq true true;
+            output r0 as mixed_deploy_parent.aleo/token.record;
+
+        function noop:
+            input r0 as u64.public;
+            output r0 as u64.public;
+
+        constructor:
+            assert.eq true true;
+        ",
+    )?;
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14)?, rng);
+
+    // Deploy the parent program.
+    let tx = vm.deploy(&caller_private_key, &parent_program, None, 0, None, rng)?;
+    add_and_test(&vm, &caller_private_key, &[tx], rng);
+
+    // Deploy the child program. The transaction is created, but rejected during block production
+    // because `bad_passthrough` outputs ExternalRecord.
+    let tx = vm.deploy(&caller_private_key, &child_program, None, 0, None, rng)?;
+    let block = sample_next_block(&vm, &caller_private_key, &[tx], rng)?;
+    assert_eq!(
+        block.transactions().num_accepted(),
+        0,
+        "Mixed closures with one forbidden output should be rejected at V14+"
+    );
     assert_eq!(block.aborted_transaction_ids().len(), 1);
 
     Ok(())
