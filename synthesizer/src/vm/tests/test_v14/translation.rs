@@ -272,7 +272,7 @@ fn test_translation(
         .execute(
             caller_private_key,
             (root_program_name, root_function_name),
-            computed_input_values.into_iter(),
+            computed_input_values.iter(),
             None,
             0,
             None,
@@ -281,7 +281,7 @@ fn test_translation(
         .unwrap();
 
     println!("Verifying transaction...");
-    add_and_test(&vm, caller_private_key, &[transaction.clone()], rng);
+    add_and_test_with_costs(&vm, caller_private_key, &caller_address, &[&computed_input_values], &[transaction.clone()], rng);
 
     if let Some(expected_public_outputs) = expected_public_outputs {
         println!("Asserting output correctness on {} expected public outputs...", expected_public_outputs.len());
@@ -312,6 +312,7 @@ fn test_translation_output_non_external_dynamic_content() {
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     let provider_name_str = "gas_pump_provider";
     let caller_name_str = "gas_pump_caller";
@@ -403,7 +404,7 @@ fn test_translation_output_non_external_dynamic_content() {
         root_transition.outputs()
     );
 
-    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&[]], &[transaction], rng);
 }
 
 // Verifies that the dynamic→external-static input translation preserves record content.
@@ -494,18 +495,18 @@ fn test_translation_input_external_dynamic_content() {
     let deploy_provider = vm.deploy(&caller_private_key, &provider_program, None, 0, None, rng).unwrap();
     add_and_test(&vm, &caller_private_key, &[deploy_provider], rng);
 
+    let inputs = vec![
+        Value::from_str(&caller_address.to_string()).unwrap(),
+        Value::from_str(&format!("{expected_liters}u64")).unwrap(),
+        Value::from_str(&format!("{expected_active}")).unwrap(),
+    ];
     // Mint a container record with known liters and active values and add it to the ledger.
     println!("Minting container record with {expected_liters} liters and active = {expected_active}...");
     let mint_tx = vm
         .execute(
             &caller_private_key,
             (format!("{caller_name_str}.aleo"), "mint_container"),
-            vec![
-                Value::from_str(&caller_address.to_string()).unwrap(),
-                Value::from_str(&format!("{expected_liters}u64")).unwrap(),
-                Value::from_str(&format!("{expected_active}")).unwrap(),
-            ]
-            .into_iter(),
+            inputs.iter(),
             None,
             0,
             None,
@@ -525,10 +526,12 @@ fn test_translation_input_external_dynamic_content() {
         })
         .unwrap();
 
-    add_and_test(&vm, &caller_private_key, &[mint_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&inputs], &[mint_tx], rng);
 
     // Convert the minted record to a dynamic record for the call.
     let dynamic_record = DynamicRecord::from_record(&minted_record).unwrap();
+
+    let inputs = vec![Value::DynamicRecord(dynamic_record)];
 
     // Execute pipe_and_read; the dynamic record is translated to an external static record
     // inside provider.aleo/get_liters, and both liters and active fields are returned.
@@ -537,7 +540,7 @@ fn test_translation_input_external_dynamic_content() {
         .execute(
             &caller_private_key,
             (format!("{caller_name_str}.aleo"), "pipe_and_read"),
-            vec![Value::DynamicRecord(dynamic_record)].into_iter(),
+            inputs.iter(),
             None,
             0,
             None,
@@ -559,7 +562,7 @@ fn test_translation_input_external_dynamic_content() {
         root_transition.outputs()
     );
 
-    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&inputs], &[transaction], rng);
 }
 
 // Tests translation of a dynamic record input to a non-external static record.
@@ -927,18 +930,19 @@ fn test_translation_traversal_consistency() {
     let (transaction_mint_b_1, dynamic_record_b_1) = mint_record("mint_b");
     let (transaction_mint_b_2, dynamic_record_b_2) = mint_record("mint_b");
 
-    add_and_test(&vm, &caller_private_key, &[transaction_mint_a, transaction_mint_b_1, transaction_mint_b_2], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&[], &[], &[]], &[transaction_mint_a, transaction_mint_b_1, transaction_mint_b_2], rng);
+
+    let inputs = vec![
+        Value::DynamicRecord(dynamic_record_a),
+        Value::DynamicRecord(dynamic_record_b_1),
+        Value::DynamicRecord(dynamic_record_b_2),
+    ];
 
     let transaction = vm
         .execute(
             &caller_private_key,
             ("quotes.aleo", "quadruple_caller"),
-            [
-                Value::DynamicRecord(dynamic_record_a),
-                Value::DynamicRecord(dynamic_record_b_1),
-                Value::DynamicRecord(dynamic_record_b_2),
-            ]
-            .into_iter(),
+            inputs.iter(),
             None,
             0,
             None,
@@ -948,7 +952,7 @@ fn test_translation_traversal_consistency() {
 
     // This indeed results of three batches for translation proving/verification:
     // one of size 3 for a.record, one of size 8 for b.record, and one of size 2 for c.record.
-    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&inputs], &[transaction], rng);
 }
 
 // Tests that stripping or altering `dynamic_id` from `RecordWithDynamicID` inputs causes verification failure.
@@ -1413,6 +1417,7 @@ fn test_differing_keys() {
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
@@ -1449,7 +1454,7 @@ fn test_differing_keys() {
             rng,
         )
         .unwrap();
-    add_and_test(&vm, &caller_private_key, &[transaction_mint_all], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&[]], &[transaction_mint_all], rng);
 }
 
 // Tests translation with a record containing exactly 32 entries (MAX_DATA_ENTRIES boundary).
@@ -1460,6 +1465,7 @@ fn test_translation_max_entries_record() {
 
     let caller_private_key = sample_genesis_private_key(rng);
     let caller_view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     let program_name_field = Identifier::<CurrentNetwork>::from_str("max_entries").unwrap().to_field().unwrap();
     let network_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
@@ -1543,17 +1549,19 @@ fn test_translation_max_entries_record() {
         _ => panic!("Expected a record output"),
     };
 
-    add_and_test(&vm, &caller_private_key, &[mint_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&[]], &[mint_tx], rng);
 
     // Convert to dynamic record and test translation
     println!("Testing translation of 32-entry record...");
     let dynamic_record = DynamicRecord::from_record(&max_record).unwrap();
 
+    let inputs = vec![Value::DynamicRecord(dynamic_record)];
+
     let consume_tx = vm
         .execute(
             &caller_private_key,
             ("max_entries.aleo", "dynamic_consume_max"),
-            vec![Value::<CurrentNetwork>::DynamicRecord(dynamic_record)].into_iter(),
+            inputs.iter(),
             None,
             0,
             None,
@@ -1562,6 +1570,6 @@ fn test_translation_max_entries_record() {
         .unwrap();
 
     // Verify the transaction succeeds (sum of 0+1+2+...+31 = 496)
-    add_and_test(&vm, &caller_private_key, &[consume_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&inputs], &[consume_tx], rng);
     println!("Successfully translated 32-entry record (MAX_DATA_ENTRIES boundary)");
 }
