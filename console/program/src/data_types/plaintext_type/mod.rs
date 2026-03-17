@@ -57,6 +57,7 @@ impl<N: Network> PlaintextType<N> {
             PlaintextType::Struct(name) => PlaintextType::ExternalStruct(Locator::new(id, name)),
             PlaintextType::Array(array_type) => {
                 let element_type = array_type.next_element_type().clone().qualify(id);
+                // Safe: the length is preserved from the original array type.
                 PlaintextType::Array(ArrayType::new(element_type, vec![*array_type.length()]).unwrap())
             }
         }

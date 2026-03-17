@@ -297,6 +297,24 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     let stack = Stack::new(&self.process().read(), deployment.program())?;
                     check_future_argument_bit_size(deployment.program(), &stack, u16::MAX as usize)?;
                 }
+                if consensus_version >= ConsensusVersion::V14 {
+                    // At V14+, closures must not output records.
+                    use console::program::RegisterType;
+                    for closure in deployment.program().closures().values() {
+                        for output in closure.outputs() {
+                            ensure!(
+                                !matches!(
+                                    output.register_type(),
+                                    RegisterType::Record(..)
+                                        | RegisterType::ExternalRecord(..)
+                                        | RegisterType::DynamicRecord
+                                ),
+                                "Invalid deployment transaction '{id}' - closure '{}' outputs a record type, which is not allowed at `ConsensusVersion::V14` or later",
+                                closure.name()
+                            );
+                        }
+                    }
+                }
 
                 // Determine if any of the array types exceed the maximum array elements.
                 // Do not perform this check if the consensus version is beyond the latest version threshold for `MAX_ARRAY_ELEMENTS`.

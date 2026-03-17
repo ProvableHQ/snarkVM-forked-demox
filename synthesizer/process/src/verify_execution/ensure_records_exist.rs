@@ -15,6 +15,9 @@
 
 use super::*;
 
+use console::program::RegisterType;
+use snarkvm_synthesizer_program::CallOperator;
+
 // The checks in this file ensure that every Transition t in the given execution satisfies the following:
 //
 // Guarantee (G): Every non-static record (DynamicRecord or ExternalRecord) input to t or received by t from a
@@ -65,9 +68,11 @@ use super::*;
 //
 // The function ensure_records_exist explores the execution tree recursively starting at the root Transition and
 // processing instructions (input/output boundaries, function calls, Record mintings and cast-to-dynamic instructions)
-// in order of execution. Closure calls do not need to be explored since they cannot output Records, DynamicRecords or
-// ExternalRecords and therefore cannot influence any of the checks above (in particular, they cannot lead to
-// connections between Record-like registers in the caller).
+// in order of execution. It also ensures that no closure outputs ExternalRecord or DynamicRecord types, which is
+// enforced at deployment time for V14+ programs and checked at runtime for pre-V14 programs. Closure calls do not
+// need to be explored since they cannot output Records, DynamicRecords or ExternalRecords and therefore cannot
+// influence any of the checks above (in particular, they cannot lead to connections between Record-like registers
+// in the caller).
 //
 // When a function call is encountered, the function process_transition is called. This initialises a
 // FunctionLocalCheck struct which keeps track of which locally minted static Records are passed to callees; or cast to
@@ -411,7 +416,35 @@ fn process_transition<N: Network>(
                 if let Instruction::Call(call) = instruction
                     && !call.is_function_call(stack.as_ref())?
                 {
-                    // Closure case: neither the global nor the local check is affected.
+                    // Runtime check: reject pre-V14 programs whose closures output records.
+                    // New programs are blocked at deployment time; this covers legacy programs.
+                    let has_forbidden_output = match call.operator() {
+                        CallOperator::Resource(resource) => {
+                            stack.program().get_closure(resource)?.outputs().iter().any(|output| {
+                                matches!(
+                                    output.register_type(),
+                                    RegisterType::ExternalRecord(..) | RegisterType::DynamicRecord
+                                )
+                            })
+                        }
+                        CallOperator::Locator(locator) => process
+                            .get_stack(locator.program_id())?
+                            .program()
+                            .get_closure(locator.resource())?
+                            .outputs()
+                            .iter()
+                            .any(|output| {
+                                matches!(
+                                    output.register_type(),
+                                    RegisterType::ExternalRecord(..) | RegisterType::DynamicRecord
+                                )
+                            }),
+                    };
+                    ensure!(
+                        !has_forbidden_output,
+                        "Closure '{}' outputs ExternalRecord or DynamicRecord, which is disallowed at V14+",
+                        call.operator()
+                    );
                 } else {
                     // Function case
 
