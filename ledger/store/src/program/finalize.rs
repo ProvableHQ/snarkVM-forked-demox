@@ -754,6 +754,15 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         }
     }
 
+    /// Returns the Slipstream plugin manager, if one has been installed.
+    ///
+    /// The returned `Arc` is a lightweight additional handle to the same manager instance;
+    /// it does not clone the manager itself.
+    #[cfg(any(feature = "history", feature = "history-staking-rewards"))]
+    pub fn slipstream_plugin_manager(&self) -> Option<Arc<RwLock<SlipstreamPluginManager>>> {
+        self.slipstream_plugin_manager.get().cloned()
+    }
+
     /// Notifies all interested plugins of a staking reward, if canonical finalize is active.
     ///
     /// Errors from plugin calls are logged but never propagated.
