@@ -75,7 +75,7 @@ use snarkvm_synthesizer_program::CallOperator;
 // The function ensure_records_exist explores the execution tree recursively starting at the root Transition and
 // processing instructions (input/output boundaries, function calls, Record mintings and cast-to-dynamic instructions)
 // in order of execution. It also ensures that no closure outputs ExternalRecord or DynamicRecord types, which is
-// enforced at deployment time for V14+ programs and checked at runtime for pre-V14 programs. Closure calls do not
+// enforced at deployment time for V15+ programs and checked at runtime for pre-V15 programs. Closure calls do not
 // need to be explored since they cannot output Records, DynamicRecords or ExternalRecords and therefore cannot
 // influence any of the checks above (in particular, they cannot lead to connections between Record-like registers
 // in the caller).

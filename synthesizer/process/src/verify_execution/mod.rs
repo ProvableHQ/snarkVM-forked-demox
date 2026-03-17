@@ -71,11 +71,11 @@ impl<N: Network> Process<N> {
         // Construct the call graph of the execution.
         let call_graph = self.construct_call_graph(execution.transitions())?;
 
-        // From ConsensusVersion::V14 onwards, ensure that, for each non-closure
+        // From ConsensusVersion::V15 onwards, ensure that, for each non-closure
         // function in the execution, all DynamicRecords and ExternalRecords
         // received as inputs or from callees exist on the ledger at the end of
         // the execution (whether spent or not).
-        if consensus_version >= ConsensusVersion::V14 {
+        if consensus_version >= ConsensusVersion::V15 {
             self.ensure_records_exist(execution.transitions(), &call_graph)?;
         }
 
