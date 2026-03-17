@@ -118,15 +118,10 @@ struct GlobalCheck<N: Network> {
 }
 
 impl<N: Network> GlobalCheck<N> {
-    // Initialises the global check with an empty collection of register families. Families are created only at one
-    // point of the existence check: when processing the inputs to the root transition.
-    fn new() -> Self {
-        Self { families: Vec::new() }
-    }
-
-    // Adds a singleton family containing a given register.
-    fn add_family(&mut self, register: (N::TransitionID, u64)) {
-        self.families.push(IndexSet::from_iter([register]));
+    // Initialises the global check with one singleton family per register provided.
+    fn new(non_static_input_registers: Vec<(N::TransitionID, u64)>) -> Self {
+        let families = non_static_input_registers.into_iter().map(|register| IndexSet::from_iter([register])).collect();
+        Self { families }
     }
 
     // Adds a register to the family containing another register, if any, thus connecting their existence status.
@@ -166,10 +161,15 @@ impl<N: Network> GlobalCheck<N> {
         }
     }
 
-    // Returns the families of registers that are not known to correspond to static Records on the ledger. This is only
-    // called once in the entire existence check, at the very end.
-    fn non_existent_families(&self) -> &[IndexSet<(N::TransitionID, u64)>] {
-        &self.families
+    // Checks that all families have been found to correspond to a static Record on the ledger. Otherwise, returns the
+    // original register of a family not known to correspond to one.
+    fn validate(&self) -> Result<(), u64> {
+        if self.families.is_empty() {
+            Ok(())
+        } else {
+            // The unwrap is safe since all families have at least one element by construction.
+            Err(self.families[0].iter().next().unwrap().1)
+        }
     }
 }
 
@@ -219,7 +219,8 @@ impl<N: Network> LocalCheck<N> {
                 "In {}, locally minted Record at r{register} is passed to a function call but not output",
                 self.locator
             );
-        } else if let Some(static_record) = self.locally_minted_dynamic.get(&register)
+        }
+        if let Some(static_record) = self.locally_minted_dynamic.get(&register)
             && !self.output_registers.contains(static_record)
         {
             // Case 6b)
@@ -227,9 +228,8 @@ impl<N: Network> LocalCheck<N> {
                 "In {}, DynamicRecord at r{register} passed to a function call is cast from a locally minted Record at r{static_record} which is not output",
                 self.locator
             );
-        } else {
-            Ok(())
         }
+        Ok(())
     }
 
     // Validates an output register: if it contains a DynamicRecord cast from a locally minted static Record, ensures
@@ -243,9 +243,8 @@ impl<N: Network> LocalCheck<N> {
                 "In {}, output DynamicRecord at r{register} is cast from a locally minted Record at r{static_record} which is not output",
                 self.locator
             );
-        } else {
-            Ok(())
         }
+        Ok(())
     }
 }
 
@@ -270,23 +269,51 @@ impl<N: Network> Process<N> {
         let tid_to_transition: HashMap<N::TransitionID, &Transition<N>> =
             transitions.map(|transition| (*transition.id(), transition)).collect();
 
-        let mut global_check = GlobalCheck::new();
+        // Initialise the global check with one (singleton) family per DynamicRecord and ExternalRecord input to the
+        // root transition.
+        let root_transition_id = root_transition.id();
+
+        let input_registers = {
+            let stack = self.get_stack(root_transition.program_id())?;
+            let root_function = stack.get_function_ref(root_transition.function_name())?;
+
+            root_function.inputs().iter().map(|input| input.register().locator()).collect::<Vec<u64>>()
+        };
+
+        ensure!(
+            root_transition.inputs().len() == input_registers.len(),
+            "Mismatch in the number of inputs and registers in the root call: {}/{}: {} vs. {}",
+            root_transition.program_id(),
+            root_transition.function_name(),
+            root_transition.inputs().len(),
+            input_registers.len(),
+        );
+
+        let non_static_input_registers = root_transition
+            .inputs()
+            .iter()
+            .zip_eq(input_registers.iter())
+            .filter_map(|(input, register)| {
+                if matches!(input, Input::DynamicRecord(..) | Input::ExternalRecord(..)) {
+                    Some((*root_transition_id, *register))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<(N::TransitionID, u64)>>();
+
+        // Note: even if non_static_input_registers is empty, we need to process the transitions to enforce the
+        // local-check restrictions.
+        let mut global_check = GlobalCheck::new(non_static_input_registers);
 
         // Recursively explore the execution, keeping track of record connections across the relevant casts and calls.
         process_transition(self, &mut global_check, root_transition.id(), None, &tid_to_transition, call_graph)?;
 
         // Ensure the global check passes.
-        if global_check.non_existent_families().is_empty() {
-            Ok(())
-        } else {
-            Err(anyhow!(
-                "Non-static record input at r{} of the root function {}/{} is not known to correspond to a record on the ledger",
-                // The unwrap is safe since all families have at least one element by construction.
-                global_check.non_existent_families()[0].iter().next().unwrap().1,
-                root_transition.program_id(),
-                root_transition.function_name(),
-            ))
-        }
+        global_check.validate().map_err(|register| anyhow!("Non-static record input at r{register} of the root function {}/{} is not known to correspond to a record on the ledger",
+            root_transition.program_id(),
+            root_transition.function_name(),
+        ))
     }
 }
 
@@ -341,10 +368,8 @@ fn process_transition<N: Network>(
     // Number of function calls encountered in the current transition so far.
     let mut processed_function_calls = 0;
 
-    // Processing the inputs.
+    // Processing the inputs if the transition is not the root.
     if let Some((caller_tid, caller_input_registers, _)) = &caller_info {
-        // Non-root transition case.
-
         ensure!(
             inputs.len() == input_registers.len() && inputs.len() == caller_input_registers.len(),
             "Mismatch in the number of callee/caller inputs and registers in call to {locator} (TransitionID {transition_id})",
@@ -371,19 +396,6 @@ fn process_transition<N: Network>(
                 }
             }
         }
-    } else {
-        // Root transition case.
-
-        // Initialise the record families with one (singleton) family per DynamicRecord and ExternalRecord input.
-        // Length check performed above.
-        for (input, register) in transition.inputs().iter().zip_eq(input_registers.iter()) {
-            if matches!(input, Input::DynamicRecord(..) | Input::ExternalRecord(..)) {
-                global_check.add_family((*transition_id, *register));
-            }
-        }
-
-        // Note: even if there are no record families to keep track of in the global check, we need to process
-        // the transitions to enforce the local-check restrictions.
     }
 
     for instruction in function.instructions() {
@@ -418,92 +430,92 @@ fn process_transition<N: Network>(
                     _ => {}
                 }
             }
-            Instruction::Call(..) | Instruction::CallDynamic(..) => {
-                if let Instruction::Call(call) = instruction
-                    && !call.is_function_call(stack.as_ref())?
-                {
-                    // Runtime check: reject pre-V14 programs whose closures output records.
-                    // New programs are blocked at deployment time; this covers legacy programs.
-                    let has_forbidden_output = match call.operator() {
-                        CallOperator::Resource(resource) => {
-                            stack.program().get_closure(resource)?.outputs().iter().any(|output| {
-                                matches!(
-                                    output.register_type(),
-                                    RegisterType::ExternalRecord(..) | RegisterType::DynamicRecord
-                                )
-                            })
-                        }
-                        CallOperator::Locator(locator) => process
-                            .get_stack(locator.program_id())?
-                            .program()
-                            .get_closure(locator.resource())?
-                            .outputs()
-                            .iter()
-                            .any(|output| {
-                                matches!(
-                                    output.register_type(),
-                                    RegisterType::ExternalRecord(..) | RegisterType::DynamicRecord
-                                )
-                            }),
-                    };
-                    ensure!(
-                        !has_forbidden_output,
-                        "Closure '{}' outputs ExternalRecord or DynamicRecord, which is disallowed at V14+",
-                        call.operator()
-                    );
-                } else {
-                    // Function case
+            Instruction::Call(call) if !call.is_function_call(stack.as_ref())? => {
+                // Closure case
 
-                    let caller_input_operands = match instruction {
-                        Instruction::Call(..) => instruction.operands(),
-                        // The first three operands of a call.dynamic instruction are reserved for the target and always
-                        // present.
-                        Instruction::CallDynamic(..) => &instruction.operands()[3..],
-                        _ => bail!("Unreachable"),
-                    };
-
-                    let caller_input_registers: Vec<Option<u64>> =
-                        caller_input_operands
-                            .iter()
-                            .map(|operand| {
-                                if let Operand::Register(register) = operand { Some(register.locator()) } else { None }
-                            })
-                            .collect();
-
-                    let caller_output_registers: Vec<u64> =
-                        instruction.destinations().iter().map(|destination| destination.locator()).collect();
-
-                    let tid_callee = if let Some(tid) =
-                        // The unwrap is safe (assuming a correct call graph) as we are processing a Transition which
-                        // is part of the execution.
-                        call_graph.get(transition_id).unwrap().get(processed_function_calls)
-                    {
-                        processed_function_calls += 1;
-                        tid
-                    } else {
-                        bail!(
-                            "Entry with Transition ID {transition_id} ({locator}) in the call graph has fewer elements than the number of calls in the corresponding function"
-                        );
-                    };
-
-                    for input_register in caller_input_operands.iter() {
-                        if let Operand::Register(register) = input_register {
-                            // Case 6: Any locally minted static Records passed to a function call or cast to dynamic
-                            // and passed to a function call must be output.
-                            local_check.validate_call_input(register.locator())?;
-                        }
+                // Runtime check: reject pre-V15 programs whose closures output records.
+                // New programs are blocked at deployment time; this covers legacy programs.
+                let has_forbidden_output = match call.operator() {
+                    CallOperator::Resource(resource) => {
+                        stack.program().get_closure(resource)?.outputs().iter().any(|output| {
+                            matches!(
+                                output.register_type(),
+                                RegisterType::ExternalRecord(..) | RegisterType::DynamicRecord
+                            )
+                        })
                     }
+                    CallOperator::Locator(locator) => process
+                        .get_stack(locator.program_id())?
+                        .program()
+                        .get_closure(locator.resource())?
+                        .outputs()
+                        .iter()
+                        .any(|output| {
+                            matches!(
+                                output.register_type(),
+                                RegisterType::ExternalRecord(..) | RegisterType::DynamicRecord
+                            )
+                        }),
+                };
+                ensure!(
+                    !has_forbidden_output,
+                    "Closure '{}' outputs ExternalRecord or DynamicRecord, which is disallowed at V14+",
+                    call.operator()
+                );
+            }
+            Instruction::Call(..) | Instruction::CallDynamic(..) => {
+                // Function case (note: closures have been matched in the previous arm)
 
-                    // Recursively updating the global check and performing the local check in the callee.
-                    process_transition(
-                        process,
-                        global_check,
-                        tid_callee,
-                        Some((*transition_id, &caller_input_registers, &caller_output_registers)),
-                        tid_to_transition,
-                        call_graph,
-                    )?;
+                let caller_input_operands = match instruction {
+                    Instruction::Call(..) => instruction.operands(),
+                    // The first three operands of a call.dynamic instruction are reserved for the target and always
+                    // present.
+                    Instruction::CallDynamic(..) => &instruction.operands()[3..],
+                    _ => bail!("Unreachable"),
+                };
+
+                let caller_input_registers: Vec<Option<u64>> = caller_input_operands
+                    .iter()
+                    .map(
+                        |operand| {
+                            if let Operand::Register(register) = operand { Some(register.locator()) } else { None }
+                        },
+                    )
+                    .collect();
+
+                let caller_output_registers: Vec<u64> =
+                    instruction.destinations().iter().map(|destination| destination.locator()).collect();
+
+                let tid_callee = if let Some(tid) =
+                    // The unwrap is safe (assuming a correct call graph) as we are processing a Transition which
+                    // is part of the execution.
+                    call_graph.get(transition_id).unwrap().get(processed_function_calls)
+                {
+                    processed_function_calls += 1;
+                    tid
+                } else {
+                    bail!(
+                        "Entry with Transition ID {transition_id} ({locator}) in the call graph has fewer elements than the number of calls in the corresponding function"
+                    );
+                };
+
+                for input_register in caller_input_operands.iter() {
+                    if let Operand::Register(register) = input_register {
+                        // Case 6: Any locally minted static Records passed to a function call or cast to dynamic
+                        // and passed to a function call must be output.
+                        local_check.validate_call_input(register.locator())?;
+                    }
                 }
+
+                // Recursively updating the global check and performing the local check in the callee.
+                process_transition(
+                    process,
+                    global_check,
+                    tid_callee,
+                    Some((*transition_id, &caller_input_registers, &caller_output_registers)),
+                    tid_to_transition,
+                    call_graph,
+                )?;
             }
             _ => {}
         }
