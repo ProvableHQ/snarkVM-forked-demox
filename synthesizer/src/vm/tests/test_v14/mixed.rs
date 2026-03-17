@@ -42,7 +42,8 @@ fn test_execution_cost_for_authorization() {
     let weld_function_field = Identifier::<CurrentNetwork>::from_str(weld_function_str).unwrap().to_field().unwrap();
     let check_tossed_coin_field =
         Identifier::<CurrentNetwork>::from_str(check_tossed_coin_str).unwrap().to_field().unwrap();
-    let consume_base_metal_field = Identifier::<CurrentNetwork>::from_str("consume_base_metal").unwrap().to_field().unwrap();
+    let consume_base_metal_field =
+        Identifier::<CurrentNetwork>::from_str("consume_base_metal").unwrap().to_field().unwrap();
 
     let program_a_source = format!(
         r"

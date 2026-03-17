@@ -191,6 +191,26 @@ fn test_recursive_dynamic_record_calls() {
     let consume_data_name = Identifier::<CurrentNetwork>::from_str("consume_data").unwrap();
     let consume_data_field = consume_data_name.to_field().unwrap();
 
+    // Define the second program that defines functions `five`, `six`, `seven`, `eight`, and `nine`.
+    let test_functions_program_name = Identifier::<CurrentNetwork>::from_str("test_functions").unwrap();
+
+    let five_name = Identifier::<CurrentNetwork>::from_str("five").unwrap();
+
+    let six_name = Identifier::<CurrentNetwork>::from_str("six").unwrap();
+
+    let seven_name = Identifier::<CurrentNetwork>::from_str("seven").unwrap();
+    let seven_field = seven_name.to_field().unwrap();
+
+    let eight_name = Identifier::<CurrentNetwork>::from_str("eight").unwrap();
+    let eight_field = eight_name.to_field().unwrap();
+
+    let nine_name = Identifier::<CurrentNetwork>::from_str("nine").unwrap();
+    let nine_field = nine_name.to_field().unwrap();
+
+    let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
+    let basic_records_ops_program_field = basic_records_ops_program_name.to_field().unwrap();
+    let test_functions_program_field = test_functions_program_name.to_field().unwrap();
+
     let basic_records_ops_program_str = format!(
         r"
 program {basic_records_ops_program_name}.aleo;
@@ -227,6 +247,9 @@ function {two_indexed_name}:
     input r0 as dynamic.record;
     input r1 as u8.public;
 
+    // Needed to pass the record-existence check (r0 must materialize)
+    call.dynamic {basic_records_ops_program_field} {aleo_field} {consume_data_field} with r0 (as dynamic.record);
+
 function {three_indexed_name}:
     input r0 as dynamic.record;
     input r1 as u8.public;
@@ -240,26 +263,6 @@ constructor:
     assert.eq true true;
 "
     );
-
-    // Define the second program that defines functions `five`, `six`, `seven`, `eight`, and `nine`.
-    let test_functions_program_name = Identifier::<CurrentNetwork>::from_str("test_functions").unwrap();
-
-    let five_name = Identifier::<CurrentNetwork>::from_str("five").unwrap();
-
-    let six_name = Identifier::<CurrentNetwork>::from_str("six").unwrap();
-
-    let seven_name = Identifier::<CurrentNetwork>::from_str("seven").unwrap();
-    let seven_field = seven_name.to_field().unwrap();
-
-    let eight_name = Identifier::<CurrentNetwork>::from_str("eight").unwrap();
-    let eight_field = eight_name.to_field().unwrap();
-
-    let nine_name = Identifier::<CurrentNetwork>::from_str("nine").unwrap();
-    let nine_field = nine_name.to_field().unwrap();
-
-    let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
-    let basic_records_ops_program_field = basic_records_ops_program_name.to_field().unwrap();
-    let test_functions_program_field = test_functions_program_name.to_field().unwrap();
 
     let test_functions_program_str = format!(
         r"
@@ -382,7 +385,7 @@ constructor:
         );
 
         if should_succeed {
-            let transaction = result.unwrap_or_else(|_| panic!("Expected {function_name} to succeed"));
+            let transaction = result.map_err(|e| anyhow!("{function_name} failed with: {e}")).unwrap();
             add_and_test(&vm, &caller_private_key, &[transaction], rng);
         } else {
             match result {
@@ -447,7 +450,7 @@ constructor:
 
     // Test function `seven` at the maximum valid depth which should pass.
     {
-        let test_index = Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 3; // Account for the fee transition and zero indexing.
+        let test_index = Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 4; // Account for the fee transition, record-consumption and zero indexing.
         execute_and_check(
             seven_name,
             vec![
@@ -463,7 +466,7 @@ constructor:
 
     // Test function `seven` at the maximum call depth which should fail.
     {
-        let test_index = Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 2; // Account for the fee transition and zero indexing.
+        let test_index = Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 3; // Account for the fee transition, record-consumption and zero indexing.
         execute_and_check(
             seven_name,
             vec![

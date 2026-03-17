@@ -50,8 +50,11 @@ use snarkvm_synthesizer_program::CallOperator;
 //   ensuring that one register connected to it is input to a function receiving it as a static Record (thus
 //   consuming it). We refer to this as the *global check*.
 //
-//   It can be shown that materialization of a non-static record input to the root transition cannot occur due to a
-//   connected static Record being output (by a function in the program containing the record definition) - at least,
+//   This property depends on the root call of a Transaction and the flow of the execution and is therefore in the
+//   hands of the party authorising the Transaction (and not in those of the developer of an Aleo program).
+//
+//   N.B.: It can be shown that materialization of a non-static record input to the root transition cannot occur due to
+//   a connected static Record being output (by a function in the program containing the record definition) - at least,
 //   not without first materializing it by consuming it as a static-Record input.
 //
 //   2. Ensuring that, in each transition t in the execution, if a static Record R_s is
@@ -65,6 +68,9 @@ use snarkvm_synthesizer_program::CallOperator;
 //   reject such an execution even though it does not violate (C) (this slightly simplifies the implementation). This
 //   Record -> Record boundary cannot occur in case a), as it would either be a local static call or a dynamic call
 //   receiving a static-Record input and both are disallowed.
+//
+//   This property depends on the definition of the functions involved and is therefore in the hands of the developers
+//   Aleo programs.
 //
 // The function ensure_records_exist explores the execution tree recursively starting at the root Transition and
 // processing instructions (input/output boundaries, function calls, Record mintings and cast-to-dynamic instructions)
