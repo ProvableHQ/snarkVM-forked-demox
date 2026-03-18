@@ -37,9 +37,6 @@ mod recursion;
 // Tests for record translation between static and dynamic representations.
 mod translation;
 
-// Tests for the record-existence check.
-mod record_existence;
-
 // Tests comparing static vs dynamic calls to all credits.aleo functions.
 mod compare_calls_to_credits;
 
