@@ -15,6 +15,8 @@
 
 use super::*;
 
+// TODO fix
+
 fn test_translation(
     caller_private_key: &PrivateKey<CurrentNetwork>,
     // Program and function to call
@@ -165,6 +167,8 @@ fn test_translation(
         call.dynamic {program_a_name_field} {network_field} {get_external_liters_function_field}
             with r0 (as dynamic.record)
             into r1 (as u64.public);
+
+        call.dynamic {program_b_name_field} {network_field} {static_gas_leak_function_field} with r0 (as dynamic.record) into r2 (as dynamic.record);
         
         output r1 as u64.public;
 
@@ -191,6 +195,11 @@ fn test_translation(
         call.dynamic {program_a_name_field} {network_field} {gas_pipe_function_field}
             with r0 (as dynamic.record)
             into r1 (as dynamic.record);
+
+        // Needed to pass the record-existence check (r0 must materialize)
+        call.dynamic {program_b_name_field} {network_field} {static_gas_leak_function_field}
+            with r0 (as dynamic.record)
+            into r2 (as dynamic.record);
     
     // Consume a gas record and produce a new one containing 10 fewer liters
     function static_gas_leak:
@@ -423,8 +432,11 @@ fn test_translation_input_external_dynamic_content() {
     let provider_name_str = "ext_dyn_provider";
 
     let provider_field = Identifier::<CurrentNetwork>::from_str(provider_name_str).unwrap().to_field().unwrap();
+    let caller_name_field = Identifier::<CurrentNetwork>::from_str(caller_name_str).unwrap().to_field().unwrap();
     let network_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
     let get_liters_field = Identifier::<CurrentNetwork>::from_str("get_liters").unwrap().to_field().unwrap();
+    let consume_container_function_field =
+        Identifier::<CurrentNetwork>::from_str("consume_container").unwrap().to_field().unwrap();
 
     let expected_liters = 77u64;
     let expected_active = true;
@@ -440,18 +452,27 @@ fn test_translation_input_external_dynamic_content() {
         liters as u64.public;
         active as boolean.private;
 
+    function consume_container:
+        input r0 as container.record;
+
     function mint_container:
         input r0 as address.private;
         input r1 as u64.public;
         input r2 as boolean.private;
+        
         cast r0 r1 r2 into r3 as container.record;
+        
         output r3 as container.record;
 
     function pipe_and_read:
         input r0 as dynamic.record;
+        
         call.dynamic {provider_field} {network_field} {get_liters_field}
             with r0 (as dynamic.record)
             into r1 r2 (as u64.public boolean.public);
+
+        call.dynamic {caller_name_field} {network_field} {consume_container_function_field} with r0 (as dynamic.record);
+        
         output r1 as u64.public;
         output r2 as boolean.public;
 
@@ -1162,9 +1183,12 @@ fn test_malicious_external_record_dynamic_id_tampering() {
     let program_a_name_str = "flow_external";
     let program_b_name_str = "gas_manager_external";
     let program_a_name_field = Identifier::<CurrentNetwork>::from_str(program_a_name_str).unwrap().to_field().unwrap();
+    let program_b_name_field = Identifier::<CurrentNetwork>::from_str(program_b_name_str).unwrap().to_field().unwrap();
     let network_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
     let get_external_liters_function_field =
         Identifier::<CurrentNetwork>::from_str("get_external_liters").unwrap().to_field().unwrap();
+    let consume_gas_container_function_field =
+        Identifier::<CurrentNetwork>::from_str("consume_gas_container").unwrap().to_field().unwrap();
 
     // Define program_a which accepts an external record from program_b.
     let program_a_str = format!(
@@ -1194,6 +1218,9 @@ fn test_malicious_external_record_dynamic_id_tampering() {
         liters as u64.public;
         flammable as boolean.private;
 
+    function consume_gas_container:
+        input r0 as gas_container.record;
+
     function hardcoded_gas_pump:
         cast {gas_owner} 100u64 false into r0 as gas_container.record;
         output r0 as gas_container.record;
@@ -1205,6 +1232,9 @@ fn test_malicious_external_record_dynamic_id_tampering() {
         call.dynamic {program_a_name_field} {network_field} {get_external_liters_function_field}
             with r0 (as dynamic.record)
             into r1 (as u64.public);
+
+        // Needed to pass the record-existence check (r0 must materialize)
+        call.dynamic {program_b_name_field} {network_field} {consume_gas_container_function_field} with r0 (as dynamic.record);
 
         output r1 as u64.public;
 
