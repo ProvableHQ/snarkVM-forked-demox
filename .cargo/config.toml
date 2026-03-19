@@ -5,8 +5,8 @@ rustflags = ["-C", "target-cpu=native"]
 rustflags = [
     # LLD is generally faster and might be the default for Rust in the future.
     # See here: https://github.com/rust-lang/rust/issues/71515
-    "-C", "link-arg=-fuse-ld=lld"#,
-    # "-C", "target-cpu=native"
+    "-C", "link-arg=-fuse-ld=lld",
+    "-C", "target-cpu=native"
 ]
 
 [env]
