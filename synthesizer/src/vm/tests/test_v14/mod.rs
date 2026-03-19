@@ -37,9 +37,6 @@ mod recursion;
 // Tests for record translation between static and dynamic representations.
 mod translation;
 
-// Tests for the record-existence check.
-mod record_existence;
-
 // Tests comparing static vs dynamic calls to all credits.aleo functions.
 mod compare_calls_to_credits;
 
@@ -80,7 +77,7 @@ use console::{
     network::ConsensusVersion,
     program::{DynamicRecord, Entry, Identifier, Value},
 };
-use snarkvm_synthesizer_process::{deployment_cost, execution_cost, execution_cost_for_authorization, execution_cost_for_request};
+use snarkvm_synthesizer_process::{deployment_cost, execution_cost, execution_cost_for_authorization, execution_cost_for_call};
 use snarkvm_synthesizer_program::Program;
 use snarkvm_utilities::TestRng;
 
@@ -148,7 +145,7 @@ use snarkvm_utilities::TestRng;
 
 // Adds the given transactions to a new block and asserts all of them were
 // accepted
-fn add_and_test(
+pub(crate) fn add_and_test(
     vm: &VM<CurrentNetwork, LedgerType>,
     caller_private_key: &PrivateKey<CurrentNetwork>,
     transactions: &[Transaction<CurrentNetwork>],
@@ -185,7 +182,7 @@ fn add_and_test(
 
 
 // TODO (CwPK) test cost estimation for requests
-fn add_and_test_with_costs(
+pub(crate) fn add_and_test_with_costs(
     vm: &VM<CurrentNetwork, LedgerType>,
     caller_private_key: &PrivateKey<CurrentNetwork>,
     caller_address: &Address<CurrentNetwork>,
@@ -228,7 +225,7 @@ fn add_and_test_with_costs(
             assert_eq!(actual_cost, estimated_cost_authorization);
 
             let root_transition = execution.transitions().last().unwrap();
-            let estimated_cost_request = execution_cost_for_request::<CurrentAleo, _>(
+            let estimated_cost_request = execution_cost_for_call::<CurrentAleo, _>(
                 &vm.process().read(),
                 *caller_address,
                 *root_transition.program_id(),
@@ -238,6 +235,8 @@ fn add_and_test_with_costs(
                 rng,
             ).unwrap();
             assert_eq!(actual_cost, estimated_cost_request);
+            // TODO (CwPK) remove
+            println!(" * cost estimation OK")
         }
     }
     // Add the next block to the VM.

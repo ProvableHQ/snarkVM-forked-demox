@@ -142,7 +142,7 @@ pub fn execution_cost_for_authorization<N: Network>(
 }
 
 // TODO (CwPK) architecture, doc, version guard
-pub fn execution_cost_for_request<A: Aleo, R: Rng + CryptoRng>(
+pub fn execution_cost_for_call<A: Aleo, R: Rng + CryptoRng>(
     process: &Process<A::Network>,
     address: Address<A::Network>,
     program_id: ProgramID<A::Network>,

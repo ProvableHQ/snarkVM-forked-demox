@@ -38,6 +38,7 @@ where
 }
 
 /// A fast RNG used **solely** for testing and benchmarking, **not** for any real world purposes.
+#[derive(Clone)]
 pub struct TestRng {
     seed: u64,
     rng: XorShiftRng,

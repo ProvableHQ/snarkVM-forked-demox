@@ -14,7 +14,7 @@
 // limitations under the License.
 
 use console::types::Scalar;
-use snarkvm_synthesizer_process::execution_cost_for_request;
+use snarkvm_synthesizer_process::execution_cost_for_call;
 
 use super::*;
 
@@ -40,12 +40,9 @@ fn test_execution_cost_for_authorization() {
     let check_tossed_coin_str = "check_tossed_coin";
 
     let program_a_field = Identifier::<CurrentNetwork>::from_str(program_a_str).unwrap().to_field().unwrap();
-    let program_b_field = Identifier::<CurrentNetwork>::from_str(program_b_str).unwrap().to_field().unwrap();
     let network_field = Identifier::<CurrentNetwork>::from_str(network_str).unwrap().to_field().unwrap();
     let weld_function_id = Identifier::<CurrentNetwork>::from_str(weld_function_str).unwrap();
     let weld_function_field = weld_function_id.to_field().unwrap();
-    let check_tossed_coin_field =
-        Identifier::<CurrentNetwork>::from_str(check_tossed_coin_str).unwrap().to_field().unwrap();
     let consume_base_metal_field =
         Identifier::<CurrentNetwork>::from_str("consume_base_metal").unwrap().to_field().unwrap();
 
@@ -283,7 +280,7 @@ fn test_execution_cost_for_authorization() {
 
     
     // TODO (CwPK) modify documentaiton of this test
-    let expected_cost_request = execution_cost_for_request::<CurrentAleo, _>(
+    let expected_cost_request = execution_cost_for_call::<CurrentAleo, _>(
         &vm.process().read(),
         caller_address,
         *program_a.id(),

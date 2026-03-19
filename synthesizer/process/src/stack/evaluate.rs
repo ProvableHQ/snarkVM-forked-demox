@@ -139,7 +139,6 @@ impl<N: Network> Stack<N> {
         let (request, call_stack) =
             match &mut call_stack {
                 CallStack::Authorize(..) => (call_stack.pop()?, call_stack),
-                CallStack::Mock(..) => (call_stack.pop()?, call_stack),
                 CallStack::Evaluate(authorization) => (authorization.next()?, call_stack),
                 // If the evaluation is performed in the `Execute` mode, create a new `Evaluate` mode.
                 // This is done to ensure that evaluation during execution is performed consistently.
@@ -151,10 +150,12 @@ impl<N: Network> Stack<N> {
                     let call_stack = CallStack::Evaluate(authorization);
                     (request, call_stack)
                 }
+                CallStack::Mock(..) => (call_stack.pop()?, call_stack),
                 _ => return Err(anyhow!(
-                    "Illegal operation: call stack must be `Authorize`, `Evaluate`, `Mock` or `Execute` in `evaluate_function`."
+                    "Illegal operation: call stack must be `Authorize`, `Evaluate`, `Execute` or `Mock` in `evaluate_function`."
                 )
                 .into()),
+                
             };
         lap!(timer, "Retrieve the next request");
 
@@ -195,8 +196,12 @@ impl<N: Network> Stack<N> {
         }
         lap!(timer, "Perform input checks");
 
-        let is_mock = matches!(call_stack, CallStack::Mock(..));
-
+        // Ensure the request is well-formed (unless it has been mocked).
+        if !matches!(call_stack, CallStack::Mock(..)) && !request.verify(&function.input_types(), is_root, program_checksum) {
+            return Err(anyhow!("[Evaluate] Request is invalid").into());
+        }
+        lap!(timer, "Verify the request");
+        
         // Initialize the registers.
         let mut registers = Registers::<N, A>::new(call_stack, self.get_register_types(function.name())?.clone());
         // Set the transition signer.
@@ -212,14 +217,6 @@ impl<N: Network> Stack<N> {
             registers.set_root_tvk(tvk);
         }
         lap!(timer, "Initialize the registers");
-
-        // TODO (CwPK)
-
-        // Ensure the request is well-formed.
-        if !is_mock && !request.verify(&function.input_types(), is_root, program_checksum) {
-            return Err(anyhow!("[Evaluate] Request is invalid").into());
-        }
-        lap!(timer, "Verify the request");
 
         // Store the inputs.
         function.inputs().iter().map(|i| i.register()).zip_eq(inputs).try_for_each(|(register, input)| {

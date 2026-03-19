@@ -130,9 +130,11 @@ impl<N: Network> Stack<N> {
         Ok(authorization)
     }
 
-    // TODO (CwPK)
-    /// Authorizes a call to the program function for the given inputs.
-    /// Compared to `authorize`, this method does not check for circuit satisfiability of the request.
+    /// Produces a mock authorization for a call to the given function on the
+    /// supplied inputs using the provided caller address. The resulting
+    /// authorization has the same size as the one which would be produced (and
+    /// signed) using the private key corresponding to that address. This method
+    /// does not check for circuit satisfiability of the requests.
     #[inline]
     pub fn authorize_mocked<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
         &self,
@@ -142,9 +144,8 @@ impl<N: Network> Stack<N> {
         inputs: impl ExactSizeIterator<Item = impl TryInto<Value<A::Network>>>,
         rng: &mut R,
     ) -> Result<Authorization<N>, StackAuthError> {
-        let timer = timer!("Stack::authorize_unchecked");
+        let timer = timer!("Stack::authorize_mocked");
 
-        // TODO (CwPK)
         if program_id != *self.program.id() {
             return Err(anyhow!("Program ID mismatch").into());
         }
@@ -169,9 +170,12 @@ impl<N: Network> Stack<N> {
             false => None,
         };
 
+        // We sample a mock private key. The signer of the request objects will
+        // be the supplied address and not the address corresponding to this
+        // private key.
         let mocked_private_key = PrivateKey::new(rng).unwrap();
 
-        // Compute the request.
+        // Compute the mock request.
         let mocked_request = Request::mock_sign(
             &mocked_private_key,
             address,
@@ -186,14 +190,14 @@ impl<N: Network> Stack<N> {
             rng,
         )?;
 
-        lap!(timer, "Compute the request");
+        lap!(timer, "Compute the mocked request");
         // Initialize the authorization.
         let authorization = Authorization::new(mocked_request.clone());
         // Construct the call stack.
         let call_stack = CallStack::Mock(vec![mocked_request], address, mocked_private_key, authorization.clone());
         // Construct the authorization from the function.
         let _response = self.evaluate_function::<A, R>(call_stack, caller, root_tvk, rng)?;
-        finish!(timer, "Construct the authorization from the function");
+        finish!(timer, "Construct the mocked authorization from the function");
 
         // Return the authorization.
         Ok(authorization)

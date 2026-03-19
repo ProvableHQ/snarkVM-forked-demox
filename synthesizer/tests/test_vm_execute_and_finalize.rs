@@ -34,7 +34,7 @@ use snarkvm_ledger_block::{
 };
 use snarkvm_ledger_store::{ConsensusStorage, ConsensusStore};
 use snarkvm_synthesizer::{Authorization, VM, program::FinalizeOperation};
-use snarkvm_synthesizer_process::{execution_cost, execution_cost_for_authorization};
+use snarkvm_synthesizer_process::{execution_cost, execution_cost_for_authorization, execution_cost_for_call};
 use snarkvm_synthesizer_program::FinalizeGlobalState;
 
 use anyhow::Result;
@@ -221,6 +221,8 @@ fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
             None => genesis_private_key,
         };
 
+        let address = Address::try_from(&private_key).unwrap();
+
         // A helper function to run the test and extract the outputs as YAML, to be compared against the expectation.
         let mut run_test = || -> (serde_yaml::Value, serde_yaml::Value) {
             // Create a mapping to store the result of the test.
@@ -245,13 +247,31 @@ fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
             let consensus_version = CurrentNetwork::CONSENSUS_VERSION(vm.block_store().current_block_height()).unwrap();
             let execution = transaction.execution().unwrap();
 
-            // Test cost computation for Authorization
+            // Test cost computation given the Authorization and the request
             if consensus_version >= ConsensusVersion::V4 {
                 let actual_cost = execution_cost(&vm.process().read(), execution, consensus_version).unwrap();
+                
                 let authorization = Authorization::from_unchecked((vec![], execution.transitions().cloned().collect()));
-                let expected_cost =
+                let expected_cost_given_authorization =
                     execution_cost_for_authorization(&vm.process().read(), &authorization, consensus_version).unwrap();
-                assert_eq!(actual_cost, expected_cost);
+                assert_eq!(actual_cost, expected_cost_given_authorization);
+
+                // TODO (CwPK) remove if we're willing to regenerate expectations.
+                let mut cloned_rng = rng.clone();
+
+                let expected_cost_given_call = execution_cost_for_call::<CurrentAleo, _>(
+                    &vm.process().read(),
+                    address,
+                    program_id,
+                    function_name,
+                    inputs.iter(),
+                    consensus_version,
+                    &mut cloned_rng,
+                ).unwrap();
+
+                assert_eq!(actual_cost, expected_cost_given_call);
+                // TODO (CwPK) remove
+                println!(" * in _finalize: cost estimation OK")
             }
 
             // Attempt to verify the transaction.
