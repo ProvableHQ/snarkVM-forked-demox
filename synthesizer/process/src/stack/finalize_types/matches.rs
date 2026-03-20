@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -58,6 +58,8 @@ impl<N: Network> FinalizeTypes<N> {
                         FinalizeType::Plaintext(plaintext_type) => plaintext_type,
                         // If the register is a future, throw an error.
                         FinalizeType::Future(..) => bail!("Struct member cannot be a future"),
+                        // If the register is a dynamic future, throw an error.
+                        FinalizeType::DynamicFuture => bail!("Struct member cannot be a dynamic future"),
                     };
                     // Ensure the register type matches the member type.
                     ensure!(
@@ -65,11 +67,13 @@ impl<N: Network> FinalizeTypes<N> {
                         "Struct member '{struct_name}.{member_name}' expects {member_type}, but found '{plaintext_type}' in the operand '{operand}'.",
                     )
                 }
-                // Ensure the program ID, block height, block timestamp, network ID, checksum, edition, and program owner types matches the member type.
+                // Ensure the program ID, block height, block timestamp, network ID, generator, checksum, edition, and program owner types matches the member type.
                 Operand::ProgramID(..)
                 | Operand::BlockHeight
                 | Operand::BlockTimestamp
                 | Operand::NetworkID
+                | Operand::AleoGenerator
+                | Operand::AleoGeneratorPowers(_)
                 | Operand::Checksum(_)
                 | Operand::Edition(_)
                 | Operand::ProgramOwner(_) => {
@@ -106,8 +110,8 @@ impl<N: Network> FinalizeTypes<N> {
             bail!("'{array_type}' must have at least {} operand(s)", N::MIN_ARRAY_ELEMENTS)
         }
         // Ensure the number of elements not exceed the maximum.
-        if operands.len() > N::MAX_ARRAY_ELEMENTS {
-            bail!("'{array_type}' cannot exceed {} elements", N::MAX_ARRAY_ELEMENTS)
+        if operands.len() > N::LATEST_MAX_ARRAY_ELEMENTS() {
+            bail!("'{array_type}' cannot exceed {} elements", N::LATEST_MAX_ARRAY_ELEMENTS())
         }
 
         // Ensure the number of operands matches the length of the array.
@@ -137,6 +141,8 @@ impl<N: Network> FinalizeTypes<N> {
                         FinalizeType::Plaintext(plaintext_type) => plaintext_type,
                         // If the register is a future, throw an error.
                         FinalizeType::Future(..) => bail!("Array element cannot be a future"),
+                        // If the register is a dynamic future, throw an error.
+                        FinalizeType::DynamicFuture => bail!("Array element cannot be a dynamic future"),
                     };
                     // Ensure the register type matches the element type.
                     ensure!(
@@ -145,11 +151,13 @@ impl<N: Network> FinalizeTypes<N> {
                         array_type.next_element_type()
                     )
                 }
-                // Ensure the program ID, block height, network ID, checksum, edition, and program owner types matches the element type.
+                // Ensure the program ID, block height, network ID, generator, checksum, edition, and program owner types matches the element type.
                 Operand::ProgramID(..)
                 | Operand::BlockHeight
                 | Operand::BlockTimestamp
                 | Operand::NetworkID
+                | Operand::AleoGenerator
+                | Operand::AleoGeneratorPowers(_)
                 | Operand::Checksum(_)
                 | Operand::Edition(_)
                 | Operand::ProgramOwner(_) => {

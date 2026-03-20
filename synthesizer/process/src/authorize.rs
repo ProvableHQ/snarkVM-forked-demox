@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,6 +15,8 @@
 
 use super::*;
 
+use snarkvm_synthesizer_error::*;
+
 impl<N: Network> Process<N> {
     /// Authorizes a call to the program function for the given inputs.
     ///
@@ -27,9 +29,11 @@ impl<N: Network> Process<N> {
         function_name: impl TryInto<Identifier<N>>,
         inputs: impl ExactSizeIterator<Item = impl TryInto<Value<N>>>,
         rng: &mut R,
-    ) -> Result<Authorization<N>> {
+    ) -> Result<Authorization<N>, ProcessAuthError> {
         // Authorize the call.
-        self.get_stack(program_id)?.authorize::<A, R>(private_key, function_name, inputs, rng)
+        self.get_stack(program_id)?
+            .authorize::<A, R>(private_key, function_name, inputs, rng)
+            .map_err(ProcessAuthError::from)
     }
 
     /// Authorizes a call to the program function for the given inputs.
@@ -42,9 +46,11 @@ impl<N: Network> Process<N> {
         function_name: impl TryInto<Identifier<N>>,
         inputs: impl ExactSizeIterator<Item = impl TryInto<Value<N>>>,
         rng: &mut R,
-    ) -> Result<Authorization<N>> {
+    ) -> Result<Authorization<N>, ProcessAuthError> {
         // Authorize the call.
-        self.get_stack(program_id)?.authorize_unchecked::<A, R>(private_key, function_name, inputs, rng)
+        self.get_stack(program_id)?
+            .authorize_unchecked::<A, R>(private_key, function_name, inputs, rng)
+            .map_err(ProcessAuthError::from)
     }
 
     /// Authorizes a call to the program function for the given inputs.
@@ -54,11 +60,11 @@ impl<N: Network> Process<N> {
         &self,
         request: Request<N>,
         rng: &mut R,
-    ) -> Result<Authorization<N>> {
+    ) -> Result<Authorization<N>, ProcessAuthError> {
         // Initialize the program id.
         let program_id = request.program_id();
         // Authorize the call.
-        self.get_stack(program_id)?.authorize_request::<A, R>(request, rng)
+        self.get_stack(program_id)?.authorize_request::<A, R>(request, rng).map_err(ProcessAuthError::from)
     }
 
     /// Authorizes the fee given the credits record, the fee amount (in microcredits),
@@ -72,7 +78,7 @@ impl<N: Network> Process<N> {
         priority_fee_in_microcredits: u64,
         deployment_or_execution_id: Field<N>,
         rng: &mut R,
-    ) -> Result<Authorization<N>> {
+    ) -> Result<Authorization<N>, ProcessAuthError> {
         let timer = timer!("Process::authorize_fee_private");
 
         // Ensure the fee has the correct program ID.
@@ -113,7 +119,7 @@ impl<N: Network> Process<N> {
         priority_fee_in_microcredits: u64,
         deployment_or_execution_id: Field<N>,
         rng: &mut R,
-    ) -> Result<Authorization<N>> {
+    ) -> Result<Authorization<N>, ProcessAuthError> {
         let timer = timer!("Process::authorize_fee_public");
 
         // Ensure the fee has the correct program ID.

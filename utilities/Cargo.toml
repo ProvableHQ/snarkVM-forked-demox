@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-utilities"
-version = "4.4.0"
+version = "4.5.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Utilities for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -22,6 +22,11 @@ categories = [
 include = [ "Cargo.toml", "src", "README.md", "LICENSE.md" ]
 license = "Apache-2.0"
 edition = "2024"
+
+[[bench]]
+name = "bigint"
+path = "benches/bigint.rs"
+harness = false
 
 [dependencies.snarkvm-utilities-derives]
 workspace = true
@@ -77,6 +82,9 @@ default-features = false
 [dependencies.zeroize]
 workspace = true
 features = [ "derive" ]
+
+[dev-dependencies.criterion]
+workspace = true
 
 [dev-dependencies.tracing-test]
 workspace = true

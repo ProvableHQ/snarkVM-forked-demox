@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -278,7 +278,7 @@ impl<P: Parameters> ProjectiveCurve for Projective<P> {
             self.x -= &v.double();
 
             // Y3 = r*(V-X3)-2*Y1*J
-            self.y = P::BaseField::sum_of_products([r, -self.y.double()].iter(), [(v - self.x), j].iter());
+            self.y = P::BaseField::sum_of_products(&[r, -self.y.double()], &[(v - self.x), j]);
 
             // Z3 = (Z1+H)^2-Z1Z1-HH
             self.z += &h;
@@ -457,7 +457,7 @@ impl<'a, P: Parameters> AddAssign<&'a Self> for Projective<P> {
             self.x = r.square() - j - (v.double());
 
             // Y3 = r*(V - X3) - 2*S1*J
-            self.y = P::BaseField::sum_of_products([r, -s1.double()].iter(), [(v - self.x), j].iter());
+            self.y = P::BaseField::sum_of_products(&[r, -s1.double()], &[(v - self.x), j]);
 
             // Z3 = ((Z1+Z2)^2 - Z1Z1 - Z2Z2)*H
             self.z = ((self.z + other.z).square() - z1z1 - z2z2) * h;

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -91,6 +91,24 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
         // Compute lineval sumcheck witnesses
         let mut job_pool = ExecutionPool::with_capacity(total_instances * 3);
         // Iterate for each circuit in the batch.
+        anyhow::ensure!(
+            state.circuit_specific_states.len() == fft_precomputations.len(),
+            "[calculate Prep Lineval Sumcheck Witness] Expected {} circuit specific states, but {} were provided.",
+            fft_precomputations.len(),
+            state.circuit_specific_states.len()
+        );
+        anyhow::ensure!(
+            state.circuit_specific_states.len() == assignments.len(),
+            "[calculate Prep Lineval Sumcheck Witness] Expected {} assignments, but {} were provided.",
+            assignments.len(),
+            state.circuit_specific_states.len()
+        );
+        anyhow::ensure!(
+            state.circuit_specific_states.len() == matrix_transposes.len(),
+            "[calculate Prep Lineval Sumcheck Witness] Expected {} matrix transposes, but {} were provided.",
+            matrix_transposes.len(),
+            state.circuit_specific_states.len()
+        );
         for ((((&circuit, circuit_specific_state), precomp), assignments_i), matrix_transposes_i) in state
             .circuit_specific_states
             .iter()

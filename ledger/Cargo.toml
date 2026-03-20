@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-ledger"
-version = "4.4.0"
+version = "4.5.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A node ledger for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -62,6 +62,14 @@ async = [
   "snarkvm-ledger-query/async",
   "snarkvm-synthesizer/async"
 ]
+history = [
+  "snarkvm-ledger-store/history",
+  "snarkvm-synthesizer/history",
+]
+history-staking-rewards = [
+  "snarkvm-ledger-store/history-staking-rewards",
+  "snarkvm-synthesizer/history-staking-rewards",
+]
 locktick = [
   "dep:locktick",
   "snarkvm-ledger-puzzle/locktick",
@@ -97,6 +105,8 @@ test_targets = [
   "snarkvm-console/test_targets",
 ]
 timer = [ "aleo-std/timer" ]
+dev-print = [ "snarkvm-utilities/dev-print" ]
+
 
 [dependencies.snarkvm-console]
 workspace = true
@@ -134,6 +144,9 @@ optional = true
 [dependencies.snarkvm-synthesizer]
 workspace = true
 
+[dependencies.snarkvm-synthesizer-error]
+workspace = true
+
 [dependencies.snarkvm-utilities]
 workspace = true
 
@@ -168,15 +181,14 @@ workspace = true
 [dependencies.rayon]
 workspace = true
 
+[dependencies.thiserror]
+workspace = true
+
 [dependencies.time]
 workspace = true
 
 [dependencies.tracing]
 workspace = true
-
-[dependencies.thiserror]
-workspace = true
-features = [ "std" ]
 
 [dev-dependencies.bincode]
 workspace = true
