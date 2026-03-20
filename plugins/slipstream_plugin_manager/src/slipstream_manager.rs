@@ -112,6 +112,10 @@ impl SlipstreamPluginManager {
         value: &[u8],
         block_height: u32,
     ) {
+        // NOTE: TODO: TEMPORARY DIAGNOSTIC — remove after confirming callbacks fire
+        tracing::info!(                                                                                                                                                     
+          "Slipstream Postgres: notify_mapping_update called at height {block_height}"                                                                                    
+        );
         for plugin in &self.plugins {
             if plugin.history_enabled() && let Err(e) =
                     plugin.notify_mapping_update(program_id, mapping_name, key, value, block_height)
