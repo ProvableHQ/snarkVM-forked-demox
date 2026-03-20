@@ -152,7 +152,7 @@ pub const TESTNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V11, 11_952_000),
     (ConsensusVersion::V12, 12_669_000),
     (ConsensusVersion::V13, 14_906_000),
-    (ConsensusVersion::V14, u32::MAX),
+    (ConsensusVersion::V14, 15_370_000),
 ];
 
 /// The consensus version heights when the `test_consensus_heights` feature is enabled.
