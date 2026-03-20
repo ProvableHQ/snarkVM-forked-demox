@@ -18,7 +18,7 @@ use crate::{
     helpers::{Map, MapRead, NestedMap, NestedMapRead},
     program::{CommitteeStorage, CommitteeStore},
 };
-#[cfg(feature = "history-staking-rewards")]
+#[cfg(all(feature = "history-staking-rewards", feature = "slipstream-plugins"))]
 use console::types::Address;
 use console::{
     network::prelude::*,
@@ -34,13 +34,15 @@ use indexmap::IndexSet;
 #[cfg(feature = "history")]
 use std::{
     borrow::Cow,
-    sync::atomic::{AtomicU32, Ordering},
+    sync::atomic::AtomicU32,
 };
-#[cfg(any(feature = "history", feature = "history-staking-rewards"))]
+#[cfg(feature = "slipstream-plugins")]
 use std::sync::{Arc, OnceLock, RwLock, atomic::AtomicBool};
-#[cfg(any(feature = "history", feature = "history-staking-rewards"))]
+#[cfg(all(feature = "history", feature = "slipstream-plugins"))]
+use std::sync::atomic::Ordering;
+#[cfg(feature = "slipstream-plugins")]
 use snarkvm_slipstream_plugin_manager::SlipstreamPluginManager;
-#[cfg(feature = "history")]
+#[cfg(all(feature = "history", feature = "slipstream-plugins"))]
 type SerializedMappingEntries = Option<(Vec<u8>, Vec<u8>, Vec<(Vec<u8>, Vec<u8>)>)>;
 
 /// TODO (howardwu): Remove this.
@@ -662,11 +664,11 @@ pub struct FinalizeStore<N: Network, P: FinalizeStorage<N>> {
     _phantom: PhantomData<N>,
     /// Indicates that canonical finalize is currently in progress.
     /// When `true`, storage writes notify registered Slipstream plugins.
-    #[cfg(any(feature = "history", feature = "history-staking-rewards"))]
+    #[cfg(feature = "slipstream-plugins")]
     is_finalize_mode: Arc<AtomicBool>,
     /// Optional plugin manager for streaming canonical mapping and staking updates.
     /// Uses `OnceLock` so it can be installed from a shared reference after construction.
-    #[cfg(any(feature = "history", feature = "history-staking-rewards"))]
+    #[cfg(feature = "slipstream-plugins")]
     slipstream_plugin_manager: OnceLock<Arc<RwLock<SlipstreamPluginManager>>>,
 }
 
@@ -682,9 +684,9 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         Ok(Self {
             storage,
             _phantom: PhantomData,
-            #[cfg(any(feature = "history", feature = "history-staking-rewards"))]
+            #[cfg(feature = "slipstream-plugins")]
             is_finalize_mode: Arc::new(AtomicBool::new(false)),
-            #[cfg(any(feature = "history", feature = "history-staking-rewards"))]
+            #[cfg(feature = "slipstream-plugins")]
             slipstream_plugin_manager: OnceLock::new(),
         })
     }
@@ -739,7 +741,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
     ///
     /// When `true`, storage writes notify registered Slipstream plugins.
     /// Set to `true` by the VM before canonical finalize runs and reset to `false` afterwards.
-    #[cfg(any(feature = "history", feature = "history-staking-rewards"))]
+    #[cfg(feature = "slipstream-plugins")]
     pub fn is_finalize_mode(&self) -> &Arc<AtomicBool> {
         &self.is_finalize_mode
     }
@@ -747,7 +749,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
     /// Installs a Slipstream plugin manager to receive canonical mapping and staking updates.
     ///
     /// May be called from a shared reference. Logs a warning if called more than once.
-    #[cfg(any(feature = "history", feature = "history-staking-rewards"))]
+    #[cfg(feature = "slipstream-plugins")]
     pub fn set_slipstream_plugin_manager(&self, manager: Arc<RwLock<SlipstreamPluginManager>>) {
         if self.slipstream_plugin_manager.set(manager).is_err() {
             tracing::warn!("Slipstream plugin manager is already set; ignoring subsequent call.");
@@ -758,7 +760,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
     ///
     /// The returned `Arc` is a lightweight additional handle to the same manager instance;
     /// it does not clone the manager itself.
-    #[cfg(any(feature = "history", feature = "history-staking-rewards"))]
+    #[cfg(feature = "slipstream-plugins")]
     pub fn slipstream_plugin_manager(&self) -> Option<Arc<RwLock<SlipstreamPluginManager>>> {
         self.slipstream_plugin_manager.get().cloned()
     }
@@ -766,7 +768,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
     /// Notifies all interested plugins of a staking reward, if canonical finalize is active.
     ///
     /// Errors from plugin calls are logged but never propagated.
-    #[cfg(feature = "history-staking-rewards")]
+    #[cfg(all(feature = "history-staking-rewards", feature = "slipstream-plugins"))]
     pub fn notify_staking_reward(
         &self,
         staker: &Address<N>,
@@ -913,7 +915,13 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for FinalizeStore<
         value: Value<N>,
     ) -> Result<FinalizeOperation<N>> {
         // Serialize before moving, if a plugin notification may be needed.
-        #[cfg(feature = "history")]
+        #[cfg(all(feature = "history", feature = "slipstream-plugins"))]
+        tracing::debug!(
+            target: "slipstream",
+            "update_key_value: is_finalize_mode={} program={program_id} mapping={mapping_name}",
+            self.is_finalize_mode.load(Ordering::SeqCst)
+        );
+        #[cfg(all(feature = "history", feature = "slipstream-plugins"))]
         let plugin_data =
             if self.is_finalize_mode.load(Ordering::SeqCst) && self.slipstream_plugin_manager.get().is_some() {
                 Some((
@@ -929,10 +937,14 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for FinalizeStore<
         let result = self.storage.update_key_value(program_id, mapping_name, key, value)?;
 
         // Notify plugins of the update if in canonical finalize mode.
-        #[cfg(feature = "history")]
+        #[cfg(all(feature = "history", feature = "slipstream-plugins"))]
         if let Some((pid, mname, k, v)) = plugin_data {
+            #[cfg(feature = "history")]
             let height = self.storage.current_block_height().load(Ordering::SeqCst);
+            #[cfg(all(not(feature = "history"), feature = "slipstream-plugins"))]
+            let height = 0u32;
             if let Some(mgr) = self.slipstream_plugin_manager.get() {
+                tracing::info!(target: "slipstream", "dispatching notify_mapping_update to plugin manager");
                 mgr.read().unwrap().notify_mapping_update(&pid, &mname, &k, &v, height);
             }
         }
@@ -972,7 +984,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
     ) -> Result<FinalizeOperation<N>> {
         // Serialize mapping identity and all entries before moving them into storage,
         // so they are available for plugin notification after the storage call.
-        #[cfg(feature = "history")]
+        #[cfg(all(feature = "history", feature = "slipstream-plugins"))]
         let plugin_data: SerializedMappingEntries =
             if self.is_finalize_mode.load(Ordering::SeqCst) && self.slipstream_plugin_manager.get().is_some() {
                 let mut serialized_entries = Vec::with_capacity(entries.len());
@@ -987,9 +999,12 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         let result = self.storage.replace_mapping(program_id, mapping_name, entries)?;
 
         // Notify plugins of each updated key-value pair if in canonical finalize mode.
-        #[cfg(feature = "history")]
+        #[cfg(all(feature = "history", feature = "slipstream-plugins"))]
         if let Some((pid, mname, serialized_entries)) = plugin_data {
+            #[cfg(feature = "history")]
             let height = self.storage.current_block_height().load(Ordering::SeqCst);
+            #[cfg(all(not(feature = "history"), feature = "slipstream-plugins"))]
+            let height = 0u32;
             if let Some(mgr) = self.slipstream_plugin_manager.get() {
                 let mgr_guard = mgr.read().unwrap();
                 for (k, v) in &serialized_entries {
