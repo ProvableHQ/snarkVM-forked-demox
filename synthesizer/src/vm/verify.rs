@@ -53,7 +53,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Verify the transactions in batches.
         for transactions in deployments_for_verification.chain(executions_for_verification) {
             // Ensure each transaction is well-formed and unique.
-            let rngs = (0..transactions.len()).map(|_| StdRng::from_seed(rng.r#gen())).collect::<Vec<_>>();
+            let rngs = (0..transactions.len()).map(|_| StdRng::from_seed(rng.random())).collect::<Vec<_>>();
             cfg_iter!(transactions).zip(rngs).try_for_each(|((transaction, rejected_id), mut rng)| {
                 self.check_transaction(transaction, *rejected_id, &mut rng)
                     .map_err(|e| anyhow!("Invalid transaction found in the transactions list: {e}"))
@@ -925,6 +925,9 @@ mod tests {
     #[cfg(feature = "test")]
     use snarkvm_utilities::bytes_from_bits_le;
 
+    #[cfg(feature = "test")]
+    use k256::elliptic_curve::Generate;
+
     type CurrentNetwork = test_helpers::CurrentNetwork;
 
     // A helper function to create the cache key for a transaction in the partially-verified transactions cache.
@@ -1625,10 +1628,10 @@ function compute:
         vm.add_next_block(&next_block).unwrap();
 
         // Execute the program and ensure that the signature verifies.
-        let ecdsa_signing_key = k256::ecdsa::SigningKey::random(rng);
+        let ecdsa_signing_key = k256::ecdsa::SigningKey::generate_from_rng(rng);
         let ecdsa_verifying_key = k256::ecdsa::VerifyingKey::from(&ecdsa_signing_key);
         let ethereum_address = ECDSASignature::ethereum_address_from_public_key(&ecdsa_verifying_key).unwrap();
-        let message: [u8; 100] = (0..100).map(|_| rng.r#gen::<u8>()).collect::<Vec<u8>>().try_into().unwrap();
+        let message: [u8; 100] = (0..100).map(|_| rng.random::<u8>()).collect::<Vec<u8>>().try_into().unwrap();
         let hasher = Keccak256::default();
         let signature = ECDSASignature::sign(&ecdsa_signing_key, &hasher, &message.to_bits_le()).unwrap();
         let signature_bytes = signature.to_bytes_le().unwrap();
@@ -1668,7 +1671,7 @@ function compute:
         let valid_tx_id_2 = digest_verification_transaction.id();
 
         // Construct an invalid execution transaction by mutating the message.
-        let invalid_message: [u8; 100] = (0..100).map(|_| rng.r#gen::<u8>()).collect::<Vec<u8>>().try_into().unwrap();
+        let invalid_message: [u8; 100] = (0..100).map(|_| rng.random::<u8>()).collect::<Vec<u8>>().try_into().unwrap();
         let invalid_message: [U8<CurrentNetwork>; 100] =
             invalid_message.into_iter().map(U8::new).collect::<Vec<U8<CurrentNetwork>>>().try_into().unwrap();
 
