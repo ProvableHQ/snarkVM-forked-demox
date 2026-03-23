@@ -17,7 +17,7 @@ use crate::{
     AlgebraicSponge,
     fft::DensePolynomial,
     msm::variable_base::VariableBase,
-    polycommit::{PCError, kzg10, optional_rng::OptionalRng},
+    polycommit::{PCError, kzg10},
     srs::{UniversalProver, UniversalVerifier},
 };
 use hashbrown::HashMap;
@@ -182,14 +182,13 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         universal_prover: &UniversalProver<E>,
         ck: &CommitterUnionKey<E>,
         polynomials: impl IntoIterator<Item = LabeledPolynomialWithBasis<'b, E::Fr>>,
-        rng: Option<&mut dyn Rng>,
+        mut rng: Option<&mut dyn Rng>,
     ) -> Result<(Vec<LabeledCommitment<Commitment<E>>>, Vec<Randomness<E>>), PCError> {
-        let rng = &mut OptionalRng(rng);
         let commit_time = start_timer!(|| "Committing to polynomials");
 
         let mut pool = snarkvm_utilities::ExecutionPool::<Result<_, _>>::new();
         for p in polynomials {
-            let seed = rng.0.as_mut().map(|r| {
+            let seed = rng.as_mut().map(|r| {
                 let mut seed = [0u8; 32];
                 r.fill_bytes(&mut seed);
                 seed
