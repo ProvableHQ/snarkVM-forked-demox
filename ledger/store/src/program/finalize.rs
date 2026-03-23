@@ -777,7 +777,14 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         new_stake: u64,
         block_height: u32,
     ) {
-        if !self.is_finalize_mode.load(std::sync::atomic::Ordering::SeqCst) {
+
+        tracing::info!(
+            target: "slipstream",
+            "notify_staking_reward(): is_finalize_mode={} staker={staker} validator={validator} reward={reward}",
+            self.is_finalize_mode.load(Ordering::SeqCst)
+        );
+
+        if !self.is_finalize_mode.load(Ordering::SeqCst) {
             return;
         }
         if let Some(mgr) = self.slipstream_plugin_manager.get() {
@@ -916,7 +923,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for FinalizeStore<
     ) -> Result<FinalizeOperation<N>> {
         // Serialize before moving, if a plugin notification may be needed.
         #[cfg(all(feature = "history", feature = "slipstream-plugins"))]
-        tracing::debug!(
+        tracing::info!(
             target: "slipstream",
             "update_key_value: is_finalize_mode={} program={program_id} mapping={mapping_name}",
             self.is_finalize_mode.load(Ordering::SeqCst)
