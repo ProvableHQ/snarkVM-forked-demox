@@ -136,7 +136,7 @@ impl<N: Network> Stack<N> {
     /// signed) using the private key corresponding to that address. This method
     /// does not check for circuit satisfiability of the requests.
     #[inline]
-    pub fn authorize_mocked<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
+    pub fn sample_authorization<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
         &self,
         address: Address<A::Network>,
         program_id: ProgramID<A::Network>,
@@ -144,7 +144,7 @@ impl<N: Network> Stack<N> {
         inputs: impl ExactSizeIterator<Item = impl TryInto<Value<A::Network>>>,
         rng: &mut R,
     ) -> Result<Authorization<N>, StackAuthError> {
-        let timer = timer!("Stack::authorize_mocked");
+        let timer = timer!("Stack::sample_authorization");
 
         if program_id != *self.program.id() {
             return Err(anyhow!("Program ID mismatch").into());
@@ -176,25 +176,20 @@ impl<N: Network> Stack<N> {
         let mocked_private_key = PrivateKey::new(rng).unwrap();
 
         // Compute the mock request.
-        let mocked_request = Request::mock_sign(
-            &mocked_private_key,
+        let mocked_request = Request::sample(
             address,
             program_id,
             function_name,
             inputs,
             &input_types,
-            root_tvk,
-            is_root,
-            program_checksum,
             false,
-            rng,
         )?;
 
         lap!(timer, "Compute the mocked request");
         // Initialize the authorization.
         let authorization = Authorization::new(mocked_request.clone());
         // Construct the call stack.
-        let call_stack = CallStack::Mock(vec![mocked_request], address, mocked_private_key, authorization.clone());
+        let call_stack = CallStack::AuthorizeMocked(vec![mocked_request], address, mocked_private_key, authorization.clone());
         // Construct the authorization from the function.
         let _response = self.evaluate_function::<A, R>(call_stack, caller, root_tvk, rng)?;
         finish!(timer, "Construct the mocked authorization from the function");

@@ -193,18 +193,13 @@ impl<N: Network> Request<N> {
     }
 
     // TODO (CwPK) modify documentaiton of this function
-    pub fn mock_sign<R: Rng + CryptoRng>(
-        mocked_private_key: &PrivateKey<N>,
+    pub fn sample(
         signer: Address<N>,
         program_id: ProgramID<N>,
         function_name: Identifier<N>,
         inputs: impl ExactSizeIterator<Item = impl TryInto<Value<N>>>,
         input_types: &[ValueType<N>],
-        root_tvk: Option<Field<N>>,
-        is_root: bool,
-        program_checksum: Option<Field<N>>,
         is_dynamic: bool,
-        rng: &mut R,
     ) -> Result<Self> {
         // Ensure the number of inputs matches the number of input types.
         if input_types.len() != inputs.len() {
@@ -213,52 +208,6 @@ impl<N: Network> Request<N> {
                 input_types.len(),
                 inputs.len()
             )
-        }
-
-        // Retrieve `sk_sig`.
-        let sk_sig = mocked_private_key.sk_sig();
-
-        // Derive the compute key.
-        let compute_key = ComputeKey::try_from(mocked_private_key)?;
-        // Retrieve `pk_sig`.
-        let pk_sig = compute_key.pk_sig();
-        // Retrieve `pr_sig`.
-        let pr_sig = compute_key.pr_sig();
-
-        // Derive the view key.
-        let view_key = ViewKey::try_from((mocked_private_key, &compute_key))?;
-        // Derive `sk_tag` from the graph key.
-        let sk_tag = GraphKey::try_from(view_key)?.sk_tag();
-
-        // Sample a random nonce.
-        let nonce = Field::<N>::rand(rng);
-        // Compute a `r` as `HashToScalar(sk_sig || nonce)`. Note: This is the transition secret key `tsk`.
-        let r = N::hash_to_scalar_psd4(&[N::serial_number_domain(), sk_sig.to_field()?, nonce])?;
-        // Compute `g_r` as `r * G`. Note: This is the transition public key `tpk`.
-        let g_r = N::g_scalar_multiply(&r);
-
-        // Compute the transition view key `tvk` as `r * signer`.
-        let tvk = (*signer * r).to_x_coordinate();
-        // Compute the transition commitment `tcm` as `Hash(tvk)`.
-        let tcm = N::hash_psd2(&[tvk])?;
-        // Compute the signer commitment `scm` as `Hash(signer || root_tvk)`.
-        let root_tvk = root_tvk.unwrap_or(tvk);
-        let scm = N::hash_psd2(&[signer.deref().to_x_coordinate(), root_tvk])?;
-        // Compute 'is_root' as a field element.
-        let is_root = if is_root { Field::<N>::one() } else { Field::<N>::zero() };
-
-        // Retrieve the network ID.
-        let network_id = U16::new(N::ID);
-        // Compute the function ID.
-        let function_id = compute_function_id(&network_id, &program_id, &function_name)?;
-
-        // Construct the hash input as `(r * G, pk_sig, pr_sig, signer, [tvk, tcm, function ID, is_root, program checksum?, input IDs])`.
-        let mut message = Vec::with_capacity(9 + 2 * inputs.len());
-        message.extend([g_r, pk_sig, pr_sig, *signer].map(|point| point.to_x_coordinate()));
-        message.extend([tvk, tcm, function_id, is_root]);
-        // Add the program checksum to the hash input if it was provided.
-        if let Some(program_checksum) = program_checksum {
-            message.push(program_checksum);
         }
 
         // Initialize a vector to store the prepared inputs.
@@ -282,84 +231,46 @@ impl<N: Network> Request<N> {
             // Store the prepared input.
             prepared_inputs.push(input.clone());
 
-            // Convert index to u16.
-            let index = u16::try_from(index).map_err(|_| anyhow!("Input index exceeds u16"))?;
-
             match input_type {
-                // A constant input is hashed (using `tcm`) to a field element.
                 ValueType::Constant(..) => {
-                    let input_id = InputID::constant(function_id, &input, tcm, index)?;
-                    message.push(*input_id.id());
-                    input_ids.push(input_id);
+                    input_ids.push(InputID::Constant(Field::zero()));
                 }
-                // A public input is hashed (using `tcm`) to a field element.
                 ValueType::Public(..) => {
-                    let input_id = InputID::public(function_id, &input, tcm, index)?;
-                    message.push(*input_id.id());
-                    input_ids.push(input_id);
+                    input_ids.push(InputID::Public(Field::zero()));
                 }
-                // A private input is encrypted (using `tvk`) and hashed to a field element.
                 ValueType::Private(..) => {
-                    let input_id = InputID::private(function_id, &input, tvk, index)?;
-                    message.push(*input_id.id());
-                    input_ids.push(input_id);
+                    input_ids.push(InputID::Private(Field::zero()));
                 }
-                // A record input is computed to its serial number.
                 ValueType::Record(record_name) => {
-                    // Compute the input ID (commitment, gamma, record view key, serial number, tag).
-                    let input_id =
-                        InputID::record(&program_id, record_name, &input, &signer, &view_key, &sk_sig, sk_tag)?;
-                    // Extract the commitment, gamma, and tag for the message.
-                    let (commitment, gamma, tag) = match &input_id {
-                        InputID::Record(c, g, _, _, t) => (*c, *g, *t),
-                        // InputID::record always returns the Record variant.
-                        _ => unreachable!(),
-                    };
-                    // Compute the generator `H` as `HashToGroup(commitment)`.
-                    let h = N::hash_to_group_psd2(&[N::serial_number_domain(), commitment])?;
-                    // Compute `h_r` as `r * H`.
-                    let h_r = h * r;
-                    // Add (`H`, `r * H`, `gamma`, `tag`) to the preimage.
-                    message.extend([h, h_r, gamma].iter().map(|point| point.to_x_coordinate()));
-                    message.push(tag);
-                    input_ids.push(input_id);
+                    input_ids.push(InputID::Record(Field::zero(), Group::zero(), Field::zero(), Field::zero(), Field::zero()));
                 }
-                // An external record input is hashed (using `tvk`) to a field element.
                 ValueType::ExternalRecord(..) => {
-                    let input_id = InputID::external_record(function_id, &input, tvk, index)?;
-                    message.push(*input_id.id());
-                    input_ids.push(input_id);
+                    input_ids.push(InputID::ExternalRecord(Field::zero()));
                 }
-                // A future is not a valid input.
                 ValueType::Future(..) => bail!("A future is not a valid input"),
-                // A dynamic record input is hashed (using `tvk`) to a field element.
                 ValueType::DynamicRecord => {
-                    let input_id = InputID::dynamic_record(function_id, &input, tvk, index)?;
-                    message.push(*input_id.id());
-                    input_ids.push(input_id);
+                    input_ids.push(InputID::DynamicRecord(Field::zero()));
                 }
-                // A dynamic future is not a valid input.
                 ValueType::DynamicFuture => bail!("A dynamic future is not a valid input"),
             }
         }
 
-        // Compute `challenge` as `HashToScalar(r * G, pk_sig, pr_sig, signer, [tvk, tcm, function ID, is_root, program checksum?, input IDs])`.
-        let challenge = N::hash_to_scalar_psd8(&message)?;
-        // Compute `response` as `r - challenge * sk_sig`.
-        let response = r - challenge * sk_sig;
+        let challenge = Scalar::zero();
+        let response = Scalar::zero();
+        let compute_key = ComputeKey::<N>::new_unchecked(Group::zero(), Group::zero(), Scalar::zero());
 
         Ok(Self {
             signer,
-            network_id,
+            network_id: U16::new(N::ID),
             program_id,
             function_name,
             input_ids,
             inputs: prepared_inputs,
             signature: Signature::from((challenge, response, compute_key)),
-            sk_tag,
-            tvk,
-            tcm,
-            scm,
+            sk_tag: Field::zero(),
+            tvk: Field::zero(),
+            tcm: Field::zero(),
+            scm: Field::zero(),
             is_dynamic,
         })
     }

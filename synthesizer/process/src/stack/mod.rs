@@ -123,7 +123,7 @@ pub enum CallStack<N: Network> {
     /// Execute a function and create the circuit assignment.
     PackageRun(Vec<Request<N>>, PrivateKey<N>, Assignments<N>),
     /// Mock an evaluation for cost estimation.
-    Mock(Vec<Request<N>>, Address<N>, PrivateKey<N>, Authorization<N>),
+    AuthorizeMocked(Vec<Request<N>>, Address<N>, PrivateKey<N>, Authorization<N>),
 }
 
 // impl to_string for CallStack<N>
@@ -136,7 +136,7 @@ impl<N: Network> CallStack<N> {
             CallStack::Evaluate(..) => "Evaluate".to_string(),
             CallStack::Execute(..) => "Execute".to_string(),
             CallStack::PackageRun(..) => "PackageRun".to_string(),
-            CallStack::Mock(..) => "Mock".to_string(),
+            CallStack::AuthorizeMocked(..) => "Mock".to_string(),
         }
     }
 }
@@ -185,8 +185,8 @@ impl<N: Network> CallStack<N> {
             CallStack::PackageRun(requests, private_key, assignments) => {
                 CallStack::PackageRun(requests.clone(), *private_key, Arc::new(RwLock::new(assignments.read().clone())))
             }
-            CallStack::Mock(requests, address, mocked_private_key, authorization) => {
-                CallStack::Mock(requests.clone(), *address, *mocked_private_key, authorization.replicate())
+            CallStack::AuthorizeMocked(requests, address, mocked_private_key, authorization) => {
+                CallStack::AuthorizeMocked(requests.clone(), *address, *mocked_private_key, authorization.replicate())
             }
         }
     }
@@ -198,7 +198,7 @@ impl<N: Network> CallStack<N> {
             | CallStack::Synthesize(requests, ..)
             | CallStack::CheckDeployment(requests, ..)
             | CallStack::PackageRun(requests, ..)
-            | CallStack::Mock(requests, ..) => {
+            | CallStack::AuthorizeMocked(requests, ..) => {
                 // Check that the number of requests does not exceed the maximum.
                 ensure!(
                     requests.len() < Transaction::<N>::MAX_TRANSITIONS,
@@ -221,7 +221,7 @@ impl<N: Network> CallStack<N> {
             | CallStack::Synthesize(requests, ..)
             | CallStack::CheckDeployment(requests, ..)
             | CallStack::PackageRun(requests, ..)
-            | CallStack::Mock(requests, ..) => {
+            | CallStack::AuthorizeMocked(requests, ..) => {
                 requests.pop().ok_or_else(|| anyhow!("No more requests on the stack"))
             }
             CallStack::Evaluate(authorization) => authorization.next(),
@@ -236,7 +236,7 @@ impl<N: Network> CallStack<N> {
             | CallStack::Synthesize(requests, ..)
             | CallStack::CheckDeployment(requests, ..)
             | CallStack::PackageRun(requests, ..)
-            | CallStack::Mock(requests, ..) => {
+            | CallStack::AuthorizeMocked(requests, ..) => {
                 requests.last().cloned().ok_or_else(|| anyhow!("No more requests on the stack"))
             }
             CallStack::Evaluate(authorization) => authorization.peek_next(),

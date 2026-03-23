@@ -150,7 +150,7 @@ impl<N: Network> Stack<N> {
                     let call_stack = CallStack::Evaluate(authorization);
                     (request, call_stack)
                 }
-                CallStack::Mock(..) => (call_stack.pop()?, call_stack),
+                CallStack::AuthorizeMocked(..) => (call_stack.pop()?, call_stack),
                 _ => return Err(anyhow!(
                     "Illegal operation: call stack must be `Authorize`, `Evaluate`, `Execute` or `Mock` in `evaluate_function`."
                 )
@@ -197,7 +197,7 @@ impl<N: Network> Stack<N> {
         lap!(timer, "Perform input checks");
 
         // Ensure the request is well-formed (unless it has been mocked).
-        if !matches!(call_stack, CallStack::Mock(..)) && !request.verify(&function.input_types(), is_root, program_checksum) {
+        if !matches!(call_stack, CallStack::AuthorizeMocked(..)) && !request.verify(&function.input_types(), is_root, program_checksum) {
             return Err(anyhow!("[Evaluate] Request is invalid").into());
         }
         lap!(timer, "Verify the request");
@@ -327,9 +327,16 @@ impl<N: Network> Stack<N> {
 
         // If the circuit is in `Authorize` or `Mock` mode, then save the transition.
         match registers.call_stack_ref() {
-            CallStack::Authorize(_, _, authorization) | CallStack::Mock(_, _, _, authorization) => {
+            CallStack::Authorize(_, _, authorization) => {
                 // Construct the transition.
                 let transition = Transition::from(&request, &response, &function.output_types(), &output_registers)?;
+                // Add the transition to the authorization.
+                authorization.insert_transition(transition)?;
+                lap!(timer, "Save the transition");
+            }
+            CallStack::AuthorizeMocked(_, _, _, authorization) => {
+                // Construct the transition.
+                let transition = Transition::from_unchecked(&request, &response, &function.output_types(), &output_registers)?;
                 // Add the transition to the authorization.
                 authorization.insert_transition(transition)?;
                 lap!(timer, "Save the transition");

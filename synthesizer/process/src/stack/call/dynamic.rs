@@ -139,7 +139,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             };
 
             // In Mock mode, we operate similarly to the Authorize mode but mock the request.
-            if let CallStack::Mock(requests, address, mocked_private_key, authorization) = &mut call_stack {
+            if let CallStack::AuthorizeMocked(requests, address, mocked_private_key, authorization) = &mut call_stack {
                 // Set 'is_root'.
                 let is_root = false;
                 // Retrieve the program checksum, if the program has a constructor.
@@ -160,18 +160,13 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
 
                 // TODO (CwPK) change to references
                 // Mock the request.
-                let request = Request::mock_sign(
-                    &*mocked_private_key,
+                let request = Request::sample(
                     *address,
                     *substack.program_id(),
                     *function.name(),
                     callee_inputs.iter(),
                     &function.input_types(),
-                    root_tvk,
-                    is_root,
-                    program_checksum,
                     true,
-                    rng,
                 )?;
 
                 // Add the request to the requests.
@@ -655,7 +650,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         (callee_request_verification_inputs, caller_console_outputs)
                     }
                     // In `Mock` mode, throw an error.
-                    CallStack::Mock(..) => return Err(anyhow!("Cannot 'execute' a function in 'mock' mode.").into()),
+                    CallStack::AuthorizeMocked(..) => return Err(anyhow!("Cannot 'execute' a function in 'mock' mode.").into()),
                 }
             };
             lap!(timer, "Computed the request and response");

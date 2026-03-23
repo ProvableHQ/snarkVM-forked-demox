@@ -43,6 +43,11 @@ pub struct ComputeKey<N: Network> {
 }
 
 impl<N: Network> ComputeKey<N> {
+    /// Creates a new `ComputeKey` from the given inputs without checking its correctness.
+    pub fn new_unchecked(pk_sig: Group<N>, pr_sig: Group<N>, sk_prf: Scalar<N>) -> Self {
+        Self { pk_sig, pr_sig, sk_prf }
+    }
+
     /// Returns the signature public key.
     pub const fn pk_sig(&self) -> Group<N> {
         self.pk_sig

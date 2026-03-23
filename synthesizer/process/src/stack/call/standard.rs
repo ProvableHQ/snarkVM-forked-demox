@@ -83,69 +83,40 @@ impl<N: Network> CallTrait<N> for Call<N> {
             // Get the call stack.
             let mut call_stack = registers.call_stack();
 
-            // TODO (CwPK) appease borrow checker to only get & here
-            // Ensure that we have a private key to sign the new request.
-            let (private_key_opt, address_opt) = match call_stack {
-                CallStack::Authorize(_, private_key_opt, _) => {
-                    let Some(private_key) = private_key_opt else {
-                        return Err(anyhow!("Cannot authorize a new function call without a private key.").into());
-                    };
-                    (Some(private_key.clone()), None)
-                }
-                CallStack::Mock(_, address, private_key, _) => (Some(private_key.clone()), Some(address.clone())),
-                _ => (None, None),
-            };
-
             // In Authorize mode, we need to compute the new request and push it onto the call stack.
-            if let CallStack::Authorize(requests, _, authorization) | CallStack::Mock(requests, _, _, authorization) = &mut call_stack {
+            match &mut call_stack
+                CallStack::Authorize(requests, private_key, authorization) => 
+
                 // Set 'is_root'.
                 let is_root = false;
                 // Ensure that we have a private key to sign the new request.
-                let Some(private_key) = private_key_opt else {
-                    return Err(anyhow!("Cannot authorize or mock a new function call without a private key.").into());
+                let Some(private_key) = private_key else {
+                    return Err(anyhow!("Cannot authorize a new function call without a private key.").into());
                 };
                 // Retrieve the program checksum, if the program has a constructor.
                 let program_checksum = match substack.program().contains_constructor() {
                     true => Some(substack.program_checksum_as_field()?),
                     false => None,
                 };
-                // TODO (CwPK) appease borrow checker to only get & here
                 // Compute the request.
-                let request = if let Some(address) = address_opt {
-                    Request::mock_sign(
-                        &private_key,
-                        address,
-                        *substack.program_id(),
-                        *function.name(),
-                        inputs.iter(),
-                        &function.input_types(),
-                        root_tvk,
-                        is_root,
-                        program_checksum,
-                        false,
-                        rng,
-                    )?
-                } else {
-                    Request::sign(
-                        &private_key,
-                        *substack.program_id(),
-                        *function.name(),
-                        inputs.iter(),
-                        &function.input_types(),
-                        root_tvk,
-                        is_root,
-                        program_checksum,
-                        false,
-                        rng,
-                    )?
-                };
-
+                let request = Request::sign(
+                    private_key,
+                    *substack.program_id(),
+                    *function.name(),
+                    inputs.iter(),
+                    &function.input_types(),
+                    root_tvk,
+                    is_root,
+                    program_checksum,
+                    false,
+                    rng,
+                )?;
                 // Add the request to the requests.
                 requests.push(request.clone());
                 // Add the request to the authorization.
                 authorization.push(request.clone())?;
             };
-
+            
             // Set the (console) caller.
             let console_caller = Some(*stack.program_id());
             // Evaluate the function.
@@ -487,10 +458,6 @@ impl<N: Network> CallTrait<N> for Call<N> {
                         }
                         // Return the request and response.
                         (request, response)
-                    },
-                    // In `Mock` mode, throw an error.
-                    CallStack::Mock(..) => {
-                        return Err(anyhow!("Cannot 'execute' a function in 'mock' mode.").into());
                     }
                 }
             };

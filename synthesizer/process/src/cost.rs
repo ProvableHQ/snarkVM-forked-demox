@@ -153,7 +153,7 @@ pub fn execution_cost_for_call<A: Aleo, R: Rng + CryptoRng>(
 ) -> Result<(MinimumCost, ExecuteCostDetails)> {
     
     let stack = process.get_stack(program_id).unwrap();
-    let authorization = stack.authorize_mocked::<A, R>(address, program_id, function_name, inputs, rng)?;
+    let authorization = stack.sample_authorization::<A, R>(address, program_id, function_name, inputs, rng)?;
 
     execution_cost_for_authorization(process, &authorization, consensus_version)
 }
