@@ -45,7 +45,7 @@ fn fake_transition(
 /// Builds a `Process` pre-loaded with `credits.aleo` and the given programs.
 /// Programs must be listed in dependency order (dependencies before dependents).
 fn make_process(programs: &[&str]) -> Process<CurrentNetwork> {
-    let mut process = Process::load().unwrap(); // unwrap: always succeeds in tests
+    let process = Process::load().unwrap(); // unwrap: always succeeds in tests
     for src in programs {
         let (rest, program) = Program::<CurrentNetwork>::parse(src).unwrap(); // unwrap: valid test program
         assert!(rest.is_empty(), "Parser did not consume the full program string");

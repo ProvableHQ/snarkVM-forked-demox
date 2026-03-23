@@ -98,7 +98,7 @@ function test_serde_equivalence:
         let rng = &mut TestRng::default();
 
         // Load the process.
-        let mut process = Process::<CurrentNetwork>::load().unwrap();
+        let process = Process::<CurrentNetwork>::load().unwrap();
 
         // Structs are not supported.
         let fail_get_struct = |_: &Identifier<CurrentNetwork>| bail!("structs are not supported");
@@ -192,7 +192,7 @@ fn test_value_size_in_bits() {
     const ITERATIONS: usize = 1000;
 
     // Load a process.
-    let mut process = Process::<CurrentNetwork>::load().unwrap();
+    let process = Process::<CurrentNetwork>::load().unwrap();
 
     // Define a program .
     let program0 = Program::<CurrentNetwork>::from_str(

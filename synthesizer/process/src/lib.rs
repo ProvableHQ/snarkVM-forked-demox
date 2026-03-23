@@ -86,9 +86,13 @@ use aleo_std::prelude::{finish, lap, timer};
 use indexmap::{IndexMap, IndexSet};
 
 #[cfg(feature = "locktick")]
-use locktick::parking_lot::RwLock;
+use locktick::{
+    LockGuard,
+    parking_lot::{Mutex, RwLock},
+};
+use parking_lot::MutexGuard;
 #[cfg(not(feature = "locktick"))]
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -96,14 +100,16 @@ use std::{
 
 // Note: a `Process` and all of its fields are meant to be completely stateless. They have no
 // notion of block height or consensus version.
-#[derive(Clone)]
 pub struct Process<N: Network> {
     /// The universal SRS.
     universal_srs: UniversalSRS<N>,
     /// The mapping of program IDs to stacks.
     stacks: Arc<RwLock<IndexMap<ProgramID<N>, Arc<Stack<N>>>>>,
     /// The mapping of program IDs to old stacks.
-    old_stacks: Arc<RwLock<IndexMap<ProgramID<N>, Option<Arc<Stack<N>>>>>>,
+    old_stacks: RwLock<IndexMap<ProgramID<N>, Option<Arc<Stack<N>>>>>,
+    /// A lock guarding the entire Process in case no concurrent reads or writes
+    /// on the object are to be permitted.
+    lock: Mutex<()>,
 }
 
 impl<N: Network> Process<N> {
@@ -113,8 +119,12 @@ impl<N: Network> Process<N> {
         let timer = timer!("Process:setup");
 
         // Initialize the process.
-        let mut process =
-            Self { universal_srs: UniversalSRS::load()?, stacks: Default::default(), old_stacks: Default::default() };
+        let process = Self {
+            universal_srs: UniversalSRS::load()?,
+            stacks: Default::default(),
+            old_stacks: Default::default(),
+            lock: Default::default(),
+        };
         lap!(timer, "Initialize process");
 
         // Initialize the 'credits.aleo' program.
@@ -143,11 +153,23 @@ impl<N: Network> Process<N> {
         Ok(process)
     }
 
+    /// Guard the Process against any concurrent reads or writes.
+    #[cfg(feature = "locktick")]
+    pub fn lock(&self) -> LockGuard<MutexGuard<()>> {
+        self.lock.lock()
+    }
+
+    /// Guard the Process against any concurrent reads or writes.
+    #[cfg(not(feature = "locktick"))]
+    pub fn lock(&self) -> MutexGuard<()> {
+        self.lock.lock()
+    }
+
     /// Adds a new stack to the process.
     /// If the program already exists, then the existing stack is replaced and the original stack is returned.
     /// Note. This method assumes that the provided stack is valid.
     #[inline]
-    pub fn add_stack(&mut self, stack: Stack<N>) -> Option<Arc<Stack<N>>> {
+    pub fn add_stack(&self, stack: Stack<N>) -> Option<Arc<Stack<N>>> {
         // Get the program ID.
         let program_id = *stack.program_id();
         // Arc the stack first to limit the scope of the write lock.
@@ -243,8 +265,12 @@ impl<N: Network> Process<N> {
         let timer = timer!("Process::load");
 
         // Initialize the process.
-        let mut process =
-            Self { universal_srs: UniversalSRS::load()?, stacks: Default::default(), old_stacks: Default::default() };
+        let process = Self {
+            universal_srs: UniversalSRS::load()?,
+            stacks: Default::default(),
+            old_stacks: Default::default(),
+            lock: Default::default(),
+        };
         lap!(timer, "Initialize process");
 
         // Initialize the 'credits.aleo' program.
@@ -283,8 +309,12 @@ impl<N: Network> Process<N> {
         let timer = timer!("Process::load_v0");
 
         // Initialize the process.
-        let mut process =
-            Self { universal_srs: UniversalSRS::load()?, stacks: Default::default(), old_stacks: Default::default() };
+        let process = Self {
+            universal_srs: UniversalSRS::load()?,
+            stacks: Default::default(),
+            old_stacks: Default::default(),
+            lock: Default::default(),
+        };
         lap!(timer, "Initialize process");
 
         // Initialize the 'credits.aleo' program.
@@ -322,8 +352,12 @@ impl<N: Network> Process<N> {
     #[cfg(feature = "wasm")]
     pub fn load_web() -> Result<Self> {
         // Initialize the process.
-        let mut process =
-            Self { universal_srs: UniversalSRS::load()?, stacks: Default::default(), old_stacks: Default::default() };
+        let process = Self {
+            universal_srs: UniversalSRS::load()?,
+            stacks: Default::default(),
+            old_stacks: Default::default(),
+            lock: Default::default(),
+        };
 
         // Initialize the 'credits.aleo' program.
         let program = Program::credits()?;
@@ -342,7 +376,7 @@ impl<N: Network> Process<N> {
     /// If the program exists, then the existing stack is replaced and discarded.
     /// Note. This method should **NOT** be used by the on-chain VM to add new program, use `finalize_deployment` or `load_deployment` instead instead.
     #[inline]
-    pub fn add_program(&mut self, program: &Program<N>) -> Result<()> {
+    pub fn add_program(&self, program: &Program<N>) -> Result<()> {
         // Initialize the 'credits.aleo' program ID.
         let credits_program_id = ProgramID::<N>::from_str("credits.aleo")?;
         // If the program is not 'credits.aleo', compute the program stack, and add it to the process.
@@ -356,7 +390,7 @@ impl<N: Network> Process<N> {
     /// If the program exists, then the existing stack is replaced and discarded.
     /// Note. This method should **NOT** be used by the on-chain VM to add new program, use `finalize_deployment` or `load_deployment` instead instead.
     #[inline]
-    pub fn add_program_with_edition(&mut self, program: &Program<N>, edition: u16) -> Result<()> {
+    pub fn add_program_with_edition(&self, program: &Program<N>, edition: u16) -> Result<()> {
         // Initialize the 'credits.aleo' program ID.
         let credits_program_id = ProgramID::<N>::from_str("credits.aleo")?;
         // If the program is not 'credits.aleo', compute the program stack, and add it to the process.
@@ -373,7 +407,7 @@ impl<N: Network> Process<N> {
     /// Either all programs are added or none are.
     /// Note. This method should **NOT** be used by the on-chain VM to add new program, use `finalize_deployment` or `load_deployment` instead instead.
     #[inline]
-    pub fn add_programs_with_editions(&mut self, programs: &[(Program<N>, u16)]) -> Result<()> {
+    pub fn add_programs_with_editions(&self, programs: &[(Program<N>, u16)]) -> Result<()> {
         // Initialize the 'credits.aleo' program ID.
         let credits_program_id = ProgramID::<N>::from_str("credits.aleo")?;
         // Defer cleanup of the uncommitted stacks.
@@ -683,7 +717,7 @@ function compute:
     /// Initializes a new process with the given program.
     pub(crate) fn sample_process(program: &Program<CurrentNetwork>) -> Process<CurrentNetwork> {
         // Construct a new process.
-        let mut process = Process::load().unwrap();
+        let process = Process::load().unwrap();
         // Add the program to the process.
         process.add_program(program).unwrap();
         // Return the process.

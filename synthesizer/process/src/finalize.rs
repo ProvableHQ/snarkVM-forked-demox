@@ -753,7 +753,7 @@ function compute:
         .unwrap();
 
         // Initialize a new process.
-        let mut process = Process::load().unwrap();
+        let process = Process::load().unwrap();
         // Deploy the program.
         let deployment = process.deploy::<CurrentAleo, _>(&program, rng).unwrap();
 

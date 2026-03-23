@@ -129,7 +129,7 @@ fn test_cross_program_structs_equivalence() -> Result<()> {
 #[test]
 fn test_external_vs_local_struct_equivalence() -> Result<()> {
     // Create a single process to hold both programs
-    let mut process = Process::<CurrentNetwork>::load()?;
+    let process = Process::<CurrentNetwork>::load()?;
 
     // External program
     let external_program = Program::from_str(
@@ -173,7 +173,7 @@ fn test_external_and_array_struct_equivalence() -> Result<()> {
     use snarkvm_synthesizer_program::types_equivalent;
 
     // ---------- Create a single process ----------
-    let mut process = Process::<CurrentNetwork>::load()?;
+    let process = Process::<CurrentNetwork>::load()?;
 
     // ---------- External program ----------
     let external_program = Program::from_str(

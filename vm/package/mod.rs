@@ -152,7 +152,7 @@ impl<N: Network> Package<N> {
     /// Returns a new process for the package.
     pub fn get_process(&self) -> Result<Process<N>> {
         // Load the default process.
-        let mut process = Process::load()?;
+        let process = Process::load()?;
         // Get the imported programs.
         let imports_directory = self.imports_directory();
         let mut programs = self

@@ -1147,7 +1147,7 @@ function transfer:
     assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
 
     // Construct the process.
-    let mut process = crate::test_helpers::sample_process(&program0);
+    let process = crate::test_helpers::sample_process(&program0);
     // Initialize another program.
     let (string, program1) = Program::<CurrentNetwork>::parse(
         r"
@@ -1307,7 +1307,7 @@ finalize compute:
     process.synthesize_key::<CurrentAleo, _>(program.id(), &function_name, rng).unwrap();
 
     // Reset the process.
-    let mut process = Process::load().unwrap();
+    let process = Process::load().unwrap();
 
     // Initialize a new block store.
     let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
@@ -1425,7 +1425,7 @@ finalize compute:
     process.synthesize_key::<CurrentAleo, _>(program.id(), &function_name, rng).unwrap();
 
     // Reset the process.
-    let mut process = Process::load().unwrap();
+    let process = Process::load().unwrap();
 
     // Initialize a new block store.
     let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
@@ -1558,7 +1558,7 @@ finalize mint_public:
     process.synthesize_key::<CurrentAleo, _>(program.id(), &function_name, rng).unwrap();
 
     // Reset the process.
-    let mut process = Process::load().unwrap();
+    let process = Process::load().unwrap();
 
     // Initialize a new block store.
     let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
@@ -1693,7 +1693,7 @@ finalize mint_public:
     process.synthesize_key::<CurrentAleo, _>(program0.id(), &function_name, rng).unwrap();
 
     // Reset the process.
-    let mut process = Process::load().unwrap();
+    let process = Process::load().unwrap();
 
     // Initialize a new block store.
     let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
@@ -1857,7 +1857,7 @@ finalize compute:
     process.synthesize_key::<CurrentAleo, _>(program.id(), &function_name, rng).unwrap();
 
     // Reset the process.
-    let mut process = Process::load().unwrap();
+    let process = Process::load().unwrap();
 
     // Initialize a new block store.
     let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
@@ -1956,7 +1956,7 @@ finalize c:
     assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
 
     // Construct the process.
-    let mut process = crate::test_helpers::sample_process(&program0);
+    let process = crate::test_helpers::sample_process(&program0);
 
     // Initialize another program (middle node).
     let (string, program1) = Program::<CurrentNetwork>::parse(
@@ -2151,7 +2151,7 @@ fn test_complex_execution_order() {
     assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
 
     // Construct the process.
-    let mut process = crate::test_helpers::sample_process(&program0);
+    let process = crate::test_helpers::sample_process(&program0);
 
     // Initialize another program (leaf).
     let (string, program1) = Program::<CurrentNetwork>::parse(
@@ -2438,7 +2438,7 @@ finalize compute:
     process.synthesize_key::<CurrentAleo, _>(program.id(), &function_name, rng).unwrap();
 
     // Reset the process.
-    let mut process = Process::load().unwrap();
+    let process = Process::load().unwrap();
 
     // Initialize a new block store.
     let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
@@ -2623,6 +2623,7 @@ fn test_process_deploy_credits_program() {
         universal_srs: UniversalSRS::<CurrentNetwork>::load().unwrap(),
         stacks: Default::default(),
         old_stacks: Default::default(),
+        lock: Default::default(),
     };
 
     // Construct the process.
@@ -2680,7 +2681,7 @@ function {function_name}:
     .unwrap();
 
     // Reset the process.
-    let mut process = Process::load().unwrap();
+    let process = Process::load().unwrap();
 
     // Initialize a new block store.
     let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
@@ -2756,7 +2757,7 @@ fn test_long_import_chain() {
     .unwrap();
 
     // Construct the process.
-    let mut process = crate::test_helpers::sample_process(&program);
+    let process = crate::test_helpers::sample_process(&program);
 
     // Add `MAX_PROGRAM_DEPTH` programs to the process.
     for i in 1..=MAX_PROGRAM_DEPTH {
@@ -2801,7 +2802,7 @@ fn test_long_import_chain_with_calls() {
     .unwrap();
 
     // Construct the process.
-    let mut process = crate::test_helpers::sample_process(&program);
+    let process = crate::test_helpers::sample_process(&program);
 
     // Check that the number of calls, up to `Transaction::MAX_TRANSITIONS - 1`, is correct.
     for i in 1..(Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 1) {
@@ -2846,7 +2847,7 @@ fn test_long_import_chain_with_calls() {
 #[test]
 fn test_max_imports() {
     // Construct the process.
-    let mut process = Process::<CurrentNetwork>::load().unwrap();
+    let process = Process::<CurrentNetwork>::load().unwrap();
 
     // Add `MAX_IMPORTS` programs to the process.
     for i in 0..CurrentNetwork::MAX_IMPORTS {

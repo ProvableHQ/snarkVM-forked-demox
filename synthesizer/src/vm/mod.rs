@@ -124,7 +124,7 @@ type TransactionCacheKey<N> = (<N as Network>::TransactionID, Vec<U16<N>>);
 #[derive(Clone)]
 pub struct VM<N: Network, C: ConsensusStorage<N>> {
     /// The process.
-    process: Arc<RwLock<Process<N>>>,
+    process: Arc<Process<N>>,
     /// The puzzle.
     puzzle: Puzzle<N>,
     /// The VM store.
@@ -159,7 +159,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let block_store = store.block_store();
 
         #[cfg(not(any(test, feature = "test")))]
-        let mut process = {
+        let process = {
             // Determine the latest block height.
             let latest_block_height = block_store.current_block_height();
             // Determine the consensus version.
@@ -173,7 +173,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         };
         #[cfg(any(test, feature = "test"))]
         // Initialize a new process.
-        let mut process = Process::load()?;
+        let process = Process::load()?;
 
         // Retrieve the list of deployment transaction IDs and their associated block heights.
         let deployment_ids = transaction_store.deployment_transaction_ids().collect::<Vec<_>>();
@@ -227,7 +227,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         // Construct the VM object.
         let vm = Self {
-            process: Arc::new(RwLock::new(process)),
+            process: Arc::new(process),
             puzzle: Self::new_puzzle()?,
             store,
             partially_verified_transactions: Arc::new(RwLock::new(LruCache::new(
@@ -253,13 +253,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Returns `true` if a program with the given program ID exists.
     #[inline]
     pub fn contains_program(&self, program_id: &ProgramID<N>) -> bool {
-        self.process.read().contains_program(program_id)
+        self.process.contains_program(program_id)
     }
 
     /// Returns the process.
     #[inline]
-    pub fn process(&self) -> Arc<RwLock<Process<N>>> {
-        self.process.clone()
+    pub fn process(&self) -> &Arc<Process<N>> {
+        &self.process
     }
 
     /// Returns the puzzle.
@@ -577,8 +577,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Initialize the store for 'credits.aleo'.
         let credits = Program::<N>::credits()?;
 
-        // Acquire the process lock.
-        let process = self.process.write();
+        // Acquire the process.
+        let process = &self.process;
 
         // Synthesize the 'credits.aleo' verifying keys.
         for function_name in credits.functions().keys() {
@@ -3130,7 +3130,7 @@ function check:
         assert!(vm.contains_program(&ProgramID::from_str("grandparent_program.aleo").unwrap()));
 
         // Initialize the process.
-        let mut process = Process::<CurrentNetwork>::load().unwrap();
+        let process = Process::<CurrentNetwork>::load().unwrap();
 
         // Load the child and parent program
         process.add_program(&child_program_1).unwrap();
@@ -3285,7 +3285,7 @@ function adder:
         // Check that the account has enough to pay for the deployment.
         assert_eq!(*deployment_1.fee_amount().unwrap(), 2483025);
         // Add the first program to the off-chain VM.
-        off_chain_vm.process().write().add_program(&program_1).unwrap();
+        off_chain_vm.process().add_program(&program_1).unwrap();
         // Deploy the second program.
         let deployment_2 = off_chain_vm.deploy(&private_key_2, &program_2, None, 0, None, rng).unwrap();
         // Check that the account has enough to pay for the deployment.
@@ -3300,7 +3300,7 @@ function adder:
         vm.add_next_block(&block).unwrap();
 
         // Check that only `child_program.aleo` is in the VM.
-        assert!(vm.process().read().contains_program(&ProgramID::from_str("child_program.aleo").unwrap()));
+        assert!(vm.process().contains_program(&ProgramID::from_str("child_program.aleo").unwrap()));
     }
 
     #[cfg(feature = "test")]
@@ -3403,7 +3403,7 @@ function adder:
         // Check that the account has enough to pay for the deployment.
         assert_eq!(*deployment.fee_amount().unwrap(), 2483025);
         // Add the program to the off-chain VM.
-        off_chain_vm.process().write().add_program(&program).unwrap();
+        off_chain_vm.process().add_program(&program).unwrap();
         // Execute the program.
         let transaction = off_chain_vm
             .execute(
@@ -3430,7 +3430,7 @@ function adder:
         vm.add_next_block(&block).unwrap();
 
         // Check that the program was deployed.
-        assert!(vm.process().read().contains_program(&ProgramID::from_str("adder_program.aleo").unwrap()));
+        assert!(vm.process().contains_program(&ProgramID::from_str("adder_program.aleo").unwrap()));
     }
 
     #[cfg(feature = "test")]
@@ -3519,7 +3519,7 @@ constructor:
         // vm.add_next_block(&block).unwrap();
 
         // // Check that the program was deployed.
-        // assert!(vm.process().read().contains_program(&ProgramID::from_str("strings_0.aleo").unwrap()));
+        // assert!(vm.process().contains_program(&ProgramID::from_str("strings_0.aleo").unwrap()));
 
         // let hello_literal = Literal::String(StringType::new("hello"));
         // let hello_friend_literal = Literal::String(StringType::new("hello_friend"));
@@ -3597,6 +3597,6 @@ constructor:
         // vm.add_next_block(&block).unwrap();
 
         // // Check that the program was notdeployed.
-        // assert!(!vm.process().read().contains_program(&ProgramID::from_str("strings_1.aleo").unwrap()));
+        // assert!(!vm.process().contains_program(&ProgramID::from_str("strings_1.aleo").unwrap()));
     }
 }
