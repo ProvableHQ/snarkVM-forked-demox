@@ -222,6 +222,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 //   - the argument bit size of futures does not exceed the maximum allowed size of u16::MAX.
                 //   - V3 deployments (amendments) are not allowed.
                 //   - the deployment has exactly one verifying key per function (no record verifying keys)
+                // If the `CONSENSUS_VERSION` is greater than or equal to `V15`, ensure that
+                //   - the closures in the program do not output Records, DynamicRecords or ExternalRecords.
                 if consensus_version < ConsensusVersion::V8 {
                     ensure!(
                         deployment.edition().is_zero(),
@@ -367,8 +369,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         "Invalid deployment transaction '{id}' - expected {num_functions} function and {num_records} record verifying keys after `ConsensusVersion::V14`"
                     );
                 }
-                if consensus_version >= ConsensusVersion::V14 {
-                    // At V14+, closures must not output records.
+                if consensus_version >= ConsensusVersion::V15 {
+                    // At V15+, closures must not output Records, ExternalRecords or DynamicRecords.
                     use console::program::RegisterType;
                     for closure in deployment.program().closures().values() {
                         for output in closure.outputs() {
@@ -379,7 +381,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                         | RegisterType::ExternalRecord(..)
                                         | RegisterType::DynamicRecord
                                 ),
-                                "Invalid deployment transaction '{id}' - closure '{}' outputs a record type, which is not allowed at `ConsensusVersion::V14` or later",
+                                "Invalid deployment transaction '{id}' - closure '{}' outputs a record type, which is not allowed at `ConsensusVersion::V15` or later",
                                 closure.name()
                             );
                         }
