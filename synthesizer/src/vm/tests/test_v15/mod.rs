@@ -16,6 +16,9 @@
 // Tests for the record-existence check.
 mod record_existence;
 
+// Tests on the input/output behaviour of closures and related functionality.
+mod closure_records;
+
 use super::*;
 
 use crate::vm::test_helpers::{sample_vm_at_height, *};
