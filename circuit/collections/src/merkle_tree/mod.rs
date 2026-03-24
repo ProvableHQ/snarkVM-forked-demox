@@ -340,7 +340,7 @@ mod tests {
 
             let console_leaves = (0..num_leaves)
                 .map(|_| {
-                    let leaf_length = rng.gen_range(MIN_LEAF_LENGTH..=MAX_LEAF_LENGTH);
+                    let leaf_length = rng.random_range(MIN_LEAF_LENGTH..=MAX_LEAF_LENGTH);
                     (0..leaf_length).map(|_| console::Field::<CurrentNetwork>::rand(rng)).collect_vec()
                 })
                 .collect_vec();

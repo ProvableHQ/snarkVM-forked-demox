@@ -115,16 +115,16 @@ mod test_helpers {
     /// Samples a transition leaf with version 1 (static).
     pub(super) fn sample_leaf(rng: &mut TestRng) -> TransitionLeaf<CurrentNetwork> {
         // Construct a new leaf.
-        TransitionLeaf::new(rng.r#gen(), rng.r#gen(), Uniform::rand(rng))
+        TransitionLeaf::new(rng.random(), rng.random(), Uniform::rand(rng))
     }
 
     /// Samples a transition leaf with version 2 (dynamic).
     pub(super) fn sample_dynamic_leaf(rng: &mut TestRng) -> TransitionLeaf<CurrentNetwork> {
         // Randomly choose between Record (variant 3) and ExternalRecord (variant 4).
-        if rng.r#gen() {
-            TransitionLeaf::new_record_with_dynamic_id(rng.r#gen(), Uniform::rand(rng))
+        if rng.random() {
+            TransitionLeaf::new_record_with_dynamic_id(rng.random(), Uniform::rand(rng))
         } else {
-            TransitionLeaf::new_external_record_with_dynamic_id(rng.r#gen(), Uniform::rand(rng))
+            TransitionLeaf::new_external_record_with_dynamic_id(rng.random(), Uniform::rand(rng))
         }
     }
 }

@@ -45,7 +45,7 @@ fn test_circuit_dynamic_record_from_record() {
         let reported_on_year = format!("{}u16", <u16 as Uniform>::rand(&mut rng));
         let reported_on_privacy = if Uniform::rand(&mut rng) { "public" } else { "private" };
         // Cap the array length to stay within MAX_DATA_SIZE_IN_FIELDS when serialized.
-        let jewels_len = rng.gen_range(1..512);
+        let jewels_len = rng.random_range(1..512);
         let jewel_privacy = if Uniform::rand(&mut rng) { "public" } else { "private" };
         let jewel_iter = (0..jewels_len)
             .map(|_| {
@@ -60,7 +60,7 @@ fn test_circuit_dynamic_record_from_record() {
             .collect::<Vec<_>>();
         let jewels = jewel_iter.join(", ");
         let nonce = <Group<CurrentNetwork> as Uniform>::rand(&mut rng);
-        let version = format!("{}u8", rng.gen_range(0..=1));
+        let version = format!("{}u8", rng.random_range(0..=1));
 
         let record_str = format!(
             r"{{

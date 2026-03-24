@@ -53,7 +53,9 @@ version = "0.4"
 
 [dependencies.rand]
 workspace = true
-features = [ "getrandom", "std_rng" ]
+
+[dependencies.rand_xorshift]
+version = "0.5"
 
 [dependencies.rayon]
 workspace = true
@@ -74,10 +76,6 @@ workspace = true
 
 [dependencies.thiserror]
 workspace = true
-
-[dependencies.rand_xorshift]
-version = "0.3"
-default-features = false
 
 [dependencies.zeroize]
 workspace = true

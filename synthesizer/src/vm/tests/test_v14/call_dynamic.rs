@@ -888,7 +888,7 @@ fn test_complex_dynamic_graph_construction() {
     // Random static-/dynamic-call mixes
     let rng = &mut TestRng::default();
     for _ in 0..num_random_mixes {
-        let mix: [bool; 7] = rng.r#gen();
+        let mix: [bool; 7] = rng.random();
         test_complex_dynamic_graph_construction_internal(mix[0], mix[1], mix[2], mix[3], mix[4], mix[5], mix[6]);
     }
 }
