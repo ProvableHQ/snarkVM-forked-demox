@@ -956,7 +956,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for FinalizeStore<
             };
 
         #[cfg(all(feature = "history", feature = "slipstream-plugins"))]
-        tracing::info!("Is plugin data NONE????: {plugin_data.is_none()}");
+        tracing::info!("Is plugin data NONE????: {}", plugin_data.is_none());
 
         let result = self.storage.update_key_value(program_id, mapping_name, key, value)?;
         
