@@ -84,7 +84,10 @@ impl SlipstreamPluginManager {
 
     /// Check which plugins are interested in regular mapping data.
     pub fn history_mappings_enabled(&self) -> bool {
+        // TODO: REMOVE
+        tracing::info!("SLIPSTREAM: Inside history_mappings_enabled()");
         for plugin in &self.plugins {
+            tracing::info!("Inside history_mappings_enabled(), plugin is {{plugin.name()}}");
             if plugin.history_enabled() {
                 return true;
             }
@@ -94,7 +97,10 @@ impl SlipstreamPluginManager {
 
     /// Check if there is any plugin interested in historical staking data.
     pub fn history_staking_rewards_enabled(&self) -> bool {
+        // TODO: REMOVE
+        tracing::info!("SLIPSTREAM: Inside history_staking_rewards_enabled()");
         for plugin in &self.plugins {
+            tracing::info!("Inside history_staking_rewards_enabled(), plugin is {{plugin.name()}}");
             if plugin.history_staking_rewards_enabled() {
                 return true;
             }
@@ -112,7 +118,7 @@ impl SlipstreamPluginManager {
         value: &[u8],
         block_height: u32,
     ) {
-        tracing::debug!(
+        tracing::info!(
             target: "slipstream",
             "notify_mapping_update called: block_height={block_height} plugins={}",
             self.plugins.len()
@@ -136,7 +142,7 @@ impl SlipstreamPluginManager {
         new_stake: u64,
         block_height: u32,
     ) {
-        tracing::debug!(
+        tracing::info!(
             target: "slipstream",
             "notify_staking_reward called: block_height={block_height} reward={reward} new_stake={new_stake} plugins={}",
             self.plugins.len()

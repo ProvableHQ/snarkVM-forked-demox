@@ -785,9 +785,12 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         );
 
         if !self.is_finalize_mode.load(Ordering::SeqCst) {
+            // TODO: REMOVE
+            tracing::info!("RETURNING, NO LONGER IN FINALIZE MODE");
             return;
         }
         if let Some(mgr) = self.slipstream_plugin_manager.get() {
+            tracing::info!("GOT PLUGIN MANAGER");
             let staker_bytes = match staker.to_bytes_le() {
                 Ok(b) => b,
                 Err(e) => {
@@ -802,6 +805,8 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
                     return;
                 }
             };
+            // TODO: REMOVE
+            tracing::info!("ABOUT TO CALL MGR.NOTIFY_STAKING_REWARD()");
             mgr.read()
                 .unwrap()
                 .notify_staking_reward(&staker_bytes, &validator_bytes, reward, new_stake, block_height);

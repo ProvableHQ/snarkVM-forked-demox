@@ -63,11 +63,15 @@ pub trait SlipstreamPlugin: Any + Send + Sync + std::fmt::Debug {
 
     /// Returns `true` if the plugin is interested in general mapping update data.
     fn history_enabled(&self) -> bool {
+        // TODO: REMOVE
+        tracing::info!("INSIDE THE DEFAULT HISTORY_ENABLED METHOD");
         false
     }
 
     /// Returns `true` if the plugin is interested in staking reward data.
     fn history_staking_rewards_enabled(&self) -> bool {
+        // TODO: REMOVE
+        tracing::info!("INSIDE THE DEFAULT HISTORY_STAKING_REWARDS_ENABLED METHOD");
         false
     }
 }
