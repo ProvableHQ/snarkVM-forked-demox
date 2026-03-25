@@ -222,8 +222,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 //   - the argument bit size of futures does not exceed the maximum allowed size of u16::MAX.
                 //   - V3 deployments (amendments) are not allowed.
                 //   - the deployment has exactly one verifying key per function (no record verifying keys)
-                // If the `CONSENSUS_VERSION` is greater than or equal to `V15`, ensure that
-                //   - the closures in the program do not output Records, DynamicRecords or ExternalRecords.
                 if consensus_version < ConsensusVersion::V8 {
                     ensure!(
                         deployment.edition().is_zero(),
@@ -338,6 +336,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 //   - the program's mappings do not use non-existent structs.
                 // If the `CONSENSUS_VERSION` is greater than or equal to `V14`, then verify that:
                 //   - the deployment has one verifying key per function and one per record
+                // If the `CONSENSUS_VERSION` is greater than or equal to `V15`, ensure that
+                //   - the closures in the program do not output Records, DynamicRecords or ExternalRecords.
                 if consensus_version >= ConsensusVersion::V9 {
                     ensure!(
                         deployment.program_checksum().is_some(),

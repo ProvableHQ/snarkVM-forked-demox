@@ -459,7 +459,7 @@ fn process_transition<N: Network>(
                 };
                 ensure!(
                     !has_forbidden_output,
-                    "Closure '{}' outputs ExternalRecord or DynamicRecord, which is disallowed at V14+",
+                    "Closure '{}' outputs ExternalRecord or DynamicRecord, which is disallowed at V15+",
                     call.operator()
                 );
             }
