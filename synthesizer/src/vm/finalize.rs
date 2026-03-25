@@ -1425,14 +1425,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     // Compute the updated stakers, using the committee and block reward.
                     let next_stakers = staking_rewards(&current_stakers, &current_committee, *block_reward);
                     
-                    #[cfg(any(feature = "history-staking-rewards", feature = "slipstream-plugins"))]
+                    #[cfg(feature = "history-staking-rewards")]
                     {
                         let height = state.block_height();
                         for (curr_stake, (staker, (validator, new_stake))) in
                             current_stakers.values().map(|(_, current_stake)| current_stake).zip(&next_stakers)
                         {
                             let reward = new_stake - curr_stake;
-                            #[cfg(feature = "history-staking-rewards")]
                             store.staking_rewards_map().insert((*staker, height), (*validator, reward, *new_stake))?;
                             // Notify Slipstream plugins of the staking reward, if in canonical finalize mode.
                             #[cfg(feature = "slipstream-plugins")]
