@@ -152,7 +152,7 @@ impl<N: Network> Stack<N> {
                 }
                 CallStack::AuthorizeMocked(..) => (call_stack.pop()?, call_stack),
                 _ => return Err(anyhow!(
-                    "Illegal operation: call stack must be `Authorize`, `Evaluate`, `Execute` or `Mock` in `evaluate_function`."
+                    "Illegal operation: call stack must be `Authorize`, `Evaluate`, `Execute` or `AuthorizeMocked` in `evaluate_function`."
                 )
                 .into()),
                 
@@ -163,8 +163,6 @@ impl<N: Network> Stack<N> {
         if **request.network_id() != N::ID {
             return Err(anyhow!("Network ID mismatch. Expected {}, but found {}", N::ID, request.network_id()).into());
         }
-
-        // TODO (CwPK) check whether the signer is used later on and it can affect the size of the transitions; if so, perhaps patch it with the provided address
 
         // Retrieve the function, inputs, and transition view key.
         let function = self.get_function(request.function_name())?;
@@ -325,7 +323,7 @@ impl<N: Network> Stack<N> {
         )?;
         finish!(timer);
 
-        // If the circuit is in `Authorize` or `Mock` mode, then save the transition.
+        // If the circuit is in `Authorize` or `AuthorizeMocked` mode, then save the transition.
         match registers.call_stack_ref() {
             CallStack::Authorize(_, _, authorization) => {
                 // Construct the transition.
@@ -334,7 +332,7 @@ impl<N: Network> Stack<N> {
                 authorization.insert_transition(transition)?;
                 lap!(timer, "Save the transition");
             }
-            CallStack::AuthorizeMocked(_, _, _, authorization) => {
+            CallStack::AuthorizeMocked(_, _, authorization) => {
                 // Construct the transition.
                 let transition = Transition::from_unchecked(&request, &response, &function.output_types(), &output_registers)?;
                 // Add the transition to the authorization.

@@ -75,7 +75,7 @@ fn execution_cost_given_size<N: Network>(
     }
 }
 
-/// Returns the execution cost in microcredits for a given `Authorization.
+/// Returns the execution cost in microcredits for a given `Authorization`.
 pub fn execution_cost_for_authorization<N: Network>(
     process: &Process<N>,
     authorization: &Authorization<N>,
@@ -141,7 +141,7 @@ pub fn execution_cost_for_authorization<N: Network>(
     execution_cost_given_size(process, &reconstructed_execution, execution_size, consensus_version)
 }
 
-// TODO (CwPK) architecture, doc, version guard
+/// Returns the execution cost in microcredits for a call to the given function with the given inputs.
 pub fn execution_cost_for_call<A: Aleo, R: Rng + CryptoRng>(
     process: &Process<A::Network>,
     address: Address<A::Network>,

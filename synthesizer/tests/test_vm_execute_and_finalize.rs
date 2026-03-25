@@ -256,7 +256,6 @@ fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
                     execution_cost_for_authorization(&vm.process().read(), &authorization, consensus_version).unwrap();
                 assert_eq!(actual_cost, expected_cost_given_authorization);
 
-                // TODO (CwPK) remove if we're willing to regenerate expectations.
                 let mut cloned_rng = rng.clone();
 
                 let expected_cost_given_call = execution_cost_for_call::<CurrentAleo, _>(

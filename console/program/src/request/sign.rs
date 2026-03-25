@@ -192,14 +192,19 @@ impl<N: Network> Request<N> {
         })
     }
 
-    // TODO (CwPK) modify documentaiton of this function
-    pub fn sample(
+    /// Samples a `Request` with the given `signer`, `program_id`,
+    /// `function_name` and `inputs`. The fields `sk_tag`, `tvk`, `tcm`, `scm`,
+    /// `signature` and `input_ids` are random, but the size of the sampled
+    /// `Request` is the same as if it were correctly produced from the given
+    /// inputs and signed.
+    pub fn sample<R: Rng + CryptoRng>(
         signer: Address<N>,
         program_id: ProgramID<N>,
         function_name: Identifier<N>,
         inputs: impl ExactSizeIterator<Item = impl TryInto<Value<N>>>,
         input_types: &[ValueType<N>],
         is_dynamic: bool,
+        rng: &mut R,
     ) -> Result<Self> {
         // Ensure the number of inputs matches the number of input types.
         if input_types.len() != inputs.len() {
@@ -233,31 +238,31 @@ impl<N: Network> Request<N> {
 
             match input_type {
                 ValueType::Constant(..) => {
-                    input_ids.push(InputID::Constant(Field::zero()));
+                    input_ids.push(InputID::Constant(Field::rand(rng)));
                 }
                 ValueType::Public(..) => {
-                    input_ids.push(InputID::Public(Field::zero()));
+                    input_ids.push(InputID::Public(Field::rand(rng)));
                 }
                 ValueType::Private(..) => {
-                    input_ids.push(InputID::Private(Field::zero()));
+                    input_ids.push(InputID::Private(Field::rand(rng)));
                 }
-                ValueType::Record(record_name) => {
-                    input_ids.push(InputID::Record(Field::zero(), Group::zero(), Field::zero(), Field::zero(), Field::zero()));
+                ValueType::Record(..) => {
+                    input_ids.push(InputID::Record(Field::rand(rng), Group::rand(rng), Field::rand(rng), Field::rand(rng), Field::rand(rng)));
                 }
                 ValueType::ExternalRecord(..) => {
-                    input_ids.push(InputID::ExternalRecord(Field::zero()));
+                    input_ids.push(InputID::ExternalRecord(Field::rand(rng)));
                 }
                 ValueType::Future(..) => bail!("A future is not a valid input"),
                 ValueType::DynamicRecord => {
-                    input_ids.push(InputID::DynamicRecord(Field::zero()));
+                    input_ids.push(InputID::DynamicRecord(Field::rand(rng)));
                 }
                 ValueType::DynamicFuture => bail!("A dynamic future is not a valid input"),
             }
         }
 
-        let challenge = Scalar::zero();
-        let response = Scalar::zero();
-        let compute_key = ComputeKey::<N>::new_unchecked(Group::zero(), Group::zero(), Scalar::zero());
+        let challenge = Scalar::rand(rng);
+        let response = Scalar::rand(rng);
+        let compute_key = ComputeKey::<N>::new_unchecked(Group::rand(rng), Group::rand(rng), Scalar::rand(rng));
 
         Ok(Self {
             signer,
@@ -268,9 +273,9 @@ impl<N: Network> Request<N> {
             inputs: prepared_inputs,
             signature: Signature::from((challenge, response, compute_key)),
             sk_tag: Field::zero(),
-            tvk: Field::zero(),
-            tcm: Field::zero(),
-            scm: Field::zero(),
+            tvk: Field::rand(rng),
+            tcm: Field::rand(rng),
+            scm: Field::rand(rng),
             is_dynamic,
         })
     }

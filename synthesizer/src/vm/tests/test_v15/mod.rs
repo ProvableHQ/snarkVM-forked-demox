@@ -16,6 +16,9 @@
 // Tests for the record-existence check.
 mod record_existence;
 
+// Additional test for cost estimation without a private key.
+mod cost_for_call;
+
 use super::*;
 
 use crate::vm::test_helpers::{sample_vm_at_height, *};

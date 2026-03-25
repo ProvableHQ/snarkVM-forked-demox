@@ -426,8 +426,10 @@ impl<N: Network> Transition<N> {
         Self::new(program_id, function_name, inputs, outputs, tpk, tcm, scm)
     }
 
-    // TODO (CwPK)
-    /// Initializes a new transition from a request, response, and optional dynamic outputs.
+    /// Initializes a new transition from a request, response, and optional
+    /// dynamic outputs. It does not check correctness or consistency of the
+    /// provided values.
+    // TODO (CwPK) can this be simplified?
     pub fn from_unchecked(
         request: &Request<N>,
         response: &Response<N>,

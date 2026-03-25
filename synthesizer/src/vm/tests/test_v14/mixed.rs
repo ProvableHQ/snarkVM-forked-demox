@@ -18,14 +18,15 @@ use snarkvm_synthesizer_process::execution_cost_for_call;
 
 use super::*;
 
-// These tests mix translation, casting to `dynamic.record`, and `get.record.dynamic`.
+// These tests mix translation, casting to `dynamic.record`, `get.record.dynamic` and other functionality.
 
-// TODO (CwPK) fix this test; operation and values have changed
-
-// Tests that `execution_cost_for_authorization()` computes correct costs for transactions with inclusion and translation proofs.
-// Complements test cases in `synthesizer/tests/test_vm_execute_and_finalize.rs` which also verify cost estimation correctness.
+// Tests that `execution_cost_for_authorization()` and
+// `execution_cost_for_call()` compute correct costs for transactions with
+// inclusion and translation proofs. Complements test cases in
+// `synthesizer/tests/test_vm_execute_and_finalize.rs` which also verify cost
+// estimation correctness.
 #[test]
-fn test_execution_cost_for_authorization() {
+fn test_execution_cost_for_authorization_and_call() {
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
@@ -260,10 +261,6 @@ fn test_execution_cost_for_authorization() {
     // Checking the cost-estimation function computes the correct cost
     let execution = transaction.execution().unwrap();
 
-    let actual_cost = execution_cost(&vm.process().read(), execution, ConsensusVersion::V14).unwrap();
-
-    let authorization = Authorization::from_unchecked((vec![], execution.transitions().cloned().collect()));
-
     // The batch sizes involved in the cost computation are [1, 1, 1, 3, 2, 1, 1], where:
     // - the first 3 ones come from the three distinct transitions
     // - the next three comes from the single batch of three inclusion proofs, one for each record consumed.
@@ -274,24 +271,6 @@ fn test_execution_cost_for_authorization() {
     //   - as an external static record in check_tossed_coin
     // - the next 2 ones come from the (input) translations for accessory_metal.record and welding_metal.record
     // - the next one comes from the (output) translation for welded_chunk.record
-
-    let expected_cost_authorization =
-        execution_cost_for_authorization(&vm.process().read(), &authorization, ConsensusVersion::V14).unwrap();
-
-    
-    // TODO (CwPK) modify documentaiton of this test
-    let expected_cost_request = execution_cost_for_call::<CurrentAleo, _>(
-        &vm.process().read(),
-        caller_address,
-        *program_a.id(),
-        Identifier::<CurrentNetwork>::from_str("weld_dynamically").unwrap(),
-        dynamic_records.iter(),
-        ConsensusVersion::V14,
-        rng
-    ).unwrap();
-
-    assert_eq!(actual_cost, expected_cost_authorization);
-    assert_eq!(actual_cost, expected_cost_request);
 
     // Ensuring transaction verification passes
     add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&dynamic_records], &[transaction], rng);

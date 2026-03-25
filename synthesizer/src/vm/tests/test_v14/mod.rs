@@ -180,8 +180,9 @@ pub(crate) fn add_and_test(
     vm.add_next_block(&block).unwrap();
 }
 
-
-// TODO (CwPK) test cost estimation for requests
+// Adds the given transactions to a new block and asserts all of them were
+// accepted, additionally checking that the cost estimations based on the
+// Authorization and the call target an inputs are correct.
 pub(crate) fn add_and_test_with_costs(
     vm: &VM<CurrentNetwork, LedgerType>,
     caller_private_key: &PrivateKey<CurrentNetwork>,

@@ -138,8 +138,8 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                 authorization.push(request)?;
             };
 
-            // In Mock mode, we operate similarly to the Authorize mode but mock the request.
-            if let CallStack::AuthorizeMocked(requests, address, mocked_private_key, authorization) = &mut call_stack {
+            // In `AuthorizeMocked` mode, we operate similarly to the Authorize mode but mock the request.
+            if let CallStack::AuthorizeMocked(requests, address, authorization) = &mut call_stack {
                 // Set 'is_root'.
                 let is_root = false;
                 // Retrieve the program checksum, if the program has a constructor.
@@ -158,7 +158,6 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                 // Convert the caller's inputs to the callee's context.
                 let callee_inputs = convert_caller_inputs_to_callee_inputs(inputs, &input_types, substack)?;
 
-                // TODO (CwPK) change to references
                 // Mock the request.
                 let request = Request::sample(
                     *address,
@@ -167,6 +166,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                     callee_inputs.iter(),
                     &function.input_types(),
                     true,
+                    rng,
                 )?;
 
                 // Add the request to the requests.
@@ -649,8 +649,8 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         // Return the caller's request and response.
                         (callee_request_verification_inputs, caller_console_outputs)
                     }
-                    // In `Mock` mode, throw an error.
-                    CallStack::AuthorizeMocked(..) => return Err(anyhow!("Cannot 'execute' a function in 'mock' mode.").into()),
+                    // In `AuthorizeMocked` mode, throw an error.
+                    CallStack::AuthorizeMocked(..) => return Err(anyhow!("Cannot 'execute' a function in 'AuthorizeMocked' mode.").into()),
                 }
             };
             lap!(timer, "Computed the request and response");

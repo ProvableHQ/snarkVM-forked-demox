@@ -123,7 +123,7 @@ pub enum CallStack<N: Network> {
     /// Execute a function and create the circuit assignment.
     PackageRun(Vec<Request<N>>, PrivateKey<N>, Assignments<N>),
     /// Mock an evaluation for cost estimation.
-    AuthorizeMocked(Vec<Request<N>>, Address<N>, PrivateKey<N>, Authorization<N>),
+    AuthorizeMocked(Vec<Request<N>>, Address<N>, Authorization<N>),
 }
 
 // impl to_string for CallStack<N>
@@ -185,8 +185,8 @@ impl<N: Network> CallStack<N> {
             CallStack::PackageRun(requests, private_key, assignments) => {
                 CallStack::PackageRun(requests.clone(), *private_key, Arc::new(RwLock::new(assignments.read().clone())))
             }
-            CallStack::AuthorizeMocked(requests, address, mocked_private_key, authorization) => {
-                CallStack::AuthorizeMocked(requests.clone(), *address, *mocked_private_key, authorization.replicate())
+            CallStack::AuthorizeMocked(requests, address, authorization) => {
+                CallStack::AuthorizeMocked(requests.clone(), *address, authorization.replicate())
             }
         }
     }
