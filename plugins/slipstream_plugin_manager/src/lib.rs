@@ -13,6 +13,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#[cfg(target_arch = "wasm32")]
+compile_error!(
+    "snarkvm-slipstream-plugin-manager uses libloading for dynamic plugin \
+     loading, which is not supported on wasm32 targets. Do not enable the \
+     `history`, `history-staking-rewards`, or `slipstream-plugins` features \
+     when targeting wasm32."
+);
+
 pub mod slipstream_manager;
 pub mod slipstream_service;
 

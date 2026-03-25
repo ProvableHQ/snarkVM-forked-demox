@@ -167,7 +167,7 @@ impl SlipstreamPluginManager {
         &mut self,
         slipstream_plugin_config_file: impl AsRef<Path>,
     ) -> JsonRpcResult<String> {
-        let (mut new_plugin, new_lib, new_config_file) =
+        let (new_lib, mut new_plugin, new_config_file) =
             load_plugin_from_config(slipstream_plugin_config_file.as_ref())?;
 
         // Ensure no plugin with this name is already loaded.
@@ -208,7 +208,7 @@ impl SlipstreamPluginManager {
         self._drop_plugin(idx);
 
         // Load the new plugin.
-        let (mut new_plugin, new_lib, new_parsed_config_file) =
+        let (new_lib, mut new_plugin, new_parsed_config_file) =
             load_plugin_from_config(config_file.as_ref())
                 .map_err(|e| SlipstreamPluginManagerError::PluginLoadError(e.to_string()))?;
 
@@ -272,7 +272,7 @@ pub enum SlipstreamPluginManagerError {
     #[error("Cannot read the plugin config file: {0}")]
     CannotReadConfigFile(String),
 
-    #[error("The config file is not in a valid JSON format: {0}")]
+    #[error("The config file is not in a valid JSON/JSON5 format: {0}")]
     InvalidConfigFileFormat(String),
 
     #[error("Plugin library path is not specified in the config file")]
@@ -304,9 +304,9 @@ pub enum SlipstreamPluginManagerError {
 #[cfg(not(test))]
 pub(crate) fn load_plugin_from_config(
     slipstream_plugin_config_file: &Path,
-) -> Result<(LoadedSlipstreamPlugin, Library, &str), SlipstreamPluginManagerError> {
+) -> Result<(Library, LoadedSlipstreamPlugin, &str), SlipstreamPluginManagerError> {
     use std::{fs::File, io::Read, path::PathBuf};
-    type PluginConstructor = unsafe fn() -> *mut dyn SlipstreamPlugin;
+    type PluginConstructor = unsafe extern "C" fn() -> *mut dyn SlipstreamPlugin;
     use libloading::Symbol;
 
     let mut file = match File::open(slipstream_plugin_config_file) {
@@ -361,9 +361,14 @@ pub(crate) fn load_plugin_from_config(
             .get(b"_create_plugin")
             .map_err(|e| SlipstreamPluginManagerError::PluginLoadError(e.to_string()))?;
         let plugin_raw = constructor();
+        if plugin_raw.is_null() {
+            return Err(SlipstreamPluginManagerError::PluginLoadError(
+                "plugin constructor returned a null pointer".to_string(),
+            ));
+        }
         (Box::from_raw(plugin_raw), lib)
     };
-    Ok((LoadedSlipstreamPlugin::new(plugin, plugin_name), lib, config_file))
+    Ok((lib, LoadedSlipstreamPlugin::new(plugin, plugin_name), config_file))
 }
 
 #[cfg(test)]
@@ -376,7 +381,7 @@ const TESTPLUGIN2_CONFIG: &str = "TESTPLUGIN2_CONFIG";
 #[cfg(test)]
 pub(crate) fn load_plugin_from_config(
     slipstream_plugin_config_file: &Path,
-) -> Result<(LoadedSlipstreamPlugin, Library, &str), SlipstreamPluginManagerError> {
+) -> Result<(Library, LoadedSlipstreamPlugin, &str), SlipstreamPluginManagerError> {
     if slipstream_plugin_config_file.ends_with(TESTPLUGIN_CONFIG) {
         Ok(tests::dummy_plugin_and_library(tests::TestPlugin, TESTPLUGIN_CONFIG))
     } else if slipstream_plugin_config_file.ends_with(TESTPLUGIN2_CONFIG) {
@@ -405,12 +410,12 @@ mod tests {
     pub(super) fn dummy_plugin_and_library<P: SlipstreamPlugin>(
         plugin: P,
         config_path: &'static str,
-    ) -> (LoadedSlipstreamPlugin, Library, &'static str) {
+    ) -> (Library, LoadedSlipstreamPlugin, &'static str) {
         #[cfg(unix)]
         let library = libloading::os::unix::Library::this();
         #[cfg(windows)]
         let library = libloading::os::windows::Library::this().unwrap();
-        (LoadedSlipstreamPlugin::new(Box::new(plugin), None), Library::from(library), config_path)
+        (Library::from(library), LoadedSlipstreamPlugin::new(Box::new(plugin), None), config_path)
     }
 
     const DUMMY_NAME: &str = "dummy";

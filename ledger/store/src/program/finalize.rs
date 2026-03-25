@@ -804,9 +804,14 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
                     return;
                 }
             };
-            mgr.read()
-                .unwrap()
-                .notify_staking_reward(&staker_bytes, &validator_bytes, reward, new_stake, block_height);
+            match mgr.read() {
+                Ok(plugin_mgr) => {
+                    plugin_mgr.notify_staking_reward(&staker_bytes, &validator_bytes, reward, new_stake, block_height)
+                }
+                Err(e) => tracing::warn!(
+                    "Slipstream: plugin manager lock poisoned, skipping staking reward notification: {e}"
+                ),
+            }
         }
     }
 
@@ -955,7 +960,12 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for FinalizeStore<
             let height = 0u32;
             if let Some(mgr) = self.slipstream_plugin_manager.get() {
                 tracing::info!(target: "slipstream", "dispatching notify_mapping_update to plugin manager");
-                mgr.read().unwrap().notify_mapping_update(&pid, &mname, &k, &v, height);
+                match mgr.read() {
+                    Ok(plugin_mgr) => plugin_mgr.notify_mapping_update(&pid, &mname, &k, &v, height),
+                    Err(e) => tracing::warn!(
+                        "Slipstream: plugin manager lock poisoned, skipping mapping update notification: {e}"
+                    ),
+                }
             }
         }
         Ok(result)
@@ -1022,9 +1032,15 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
             #[cfg(all(not(feature = "history"), feature = "slipstream-plugins"))]
             let height = 0u32;
             if let Some(mgr) = self.slipstream_plugin_manager.get() {
-                let mgr_guard = mgr.read().unwrap();
-                for (k, v) in &serialized_entries {
-                    mgr_guard.notify_mapping_update(&pid, &mname, k, v, height);
+                match mgr.read() {
+                    Ok(plugin_mgr) => {
+                        for (k, v) in &serialized_entries {
+                            plugin_mgr.notify_mapping_update(&pid, &mname, k, v, height);
+                        }
+                    }
+                    Err(e) => tracing::warn!(
+                        "Slipstream: plugin manager lock poisoned, skipping mapping update notifications: {e}"
+                    ),
                 }
             }
         }

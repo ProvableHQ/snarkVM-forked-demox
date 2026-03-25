@@ -26,7 +26,7 @@ pub struct SlipstreamPluginService {
 impl SlipstreamPluginService {
     /// Initializes the service from a list of plugin config files.
     ///
-    /// Each config file must be a JSON file with a `libpath` field pointing to the
+    /// Each config file must be a JSON5 file with a `libpath` field pointing to the
     /// shared library that implements `SlipstreamPlugin`.
     pub fn new(config_files: &[PathBuf]) -> Result<Self, SlipstreamPluginServiceError> {
         let mut manager = SlipstreamPluginManager::new();
