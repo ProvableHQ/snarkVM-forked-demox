@@ -18,6 +18,8 @@ mod record_existence;
 
 // Tests on the input/output behaviour of closures and related functionality.
 mod closure_records;
+// Tests on the use of `commit_*_raw` instruction variants.
+mod commit_raw;
 
 use super::*;
 
