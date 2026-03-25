@@ -19,6 +19,7 @@
 /// creates the implementation of the plugin.
 use anyhow::Result;
 use std::any::Any;
+use tracing::{info, warn};
 
 pub trait SlipstreamPlugin: Any + Send + Sync + std::fmt::Debug {
     /// Returns the name of the plugin.

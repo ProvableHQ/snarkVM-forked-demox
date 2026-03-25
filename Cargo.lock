@@ -4002,6 +4002,7 @@ name = "snarkvm-slipstream-plugin-interface"
 version = "4.5.0"
 dependencies = [
  "anyhow",
+ "tracing",
 ]
 
 [[package]]
