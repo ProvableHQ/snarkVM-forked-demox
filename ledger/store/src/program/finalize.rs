@@ -18,7 +18,7 @@ use crate::{
     helpers::{Map, MapRead, NestedMap, NestedMapRead},
     program::{CommitteeStorage, CommitteeStore},
 };
-#[cfg(all(feature = "history-staking-rewards", feature = "slipstream-plugins"))]
+#[cfg(feature = "history-staking-rewards")]
 use console::types::Address;
 use console::{
     network::prelude::*,
@@ -34,12 +34,10 @@ use indexmap::IndexSet;
 #[cfg(feature = "history")]
 use std::{
     borrow::Cow,
-    sync::atomic::AtomicU32,
+    sync::atomic::{AtomicU32, Ordering},
 };
 #[cfg(feature = "slipstream-plugins")]
 use std::sync::{Arc, OnceLock, RwLock, atomic::AtomicBool};
-#[cfg(all(feature = "history", feature = "slipstream-plugins"))]
-use std::sync::atomic::Ordering;
 #[cfg(feature = "slipstream-plugins")]
 use snarkvm_slipstream_plugin_manager::SlipstreamPluginManager;
 #[cfg(all(feature = "history", feature = "slipstream-plugins"))]
