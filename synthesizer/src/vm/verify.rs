@@ -336,6 +336,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 //   - the program's mappings do not use non-existent structs.
                 // If the `CONSENSUS_VERSION` is greater than or equal to `V14`, then verify that:
                 //   - the deployment has one verifying key per function and one per record
+                // If the `CONSENSUS_VERSION` is greater than or equal to `V15`, ensure that
+                //   - the closures in the program do not output Records, DynamicRecords or ExternalRecords.
                 if consensus_version >= ConsensusVersion::V9 {
                     ensure!(
                         deployment.program_checksum().is_some(),
@@ -366,6 +368,24 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         deployment.verifying_keys().len() == expected,
                         "Invalid deployment transaction '{id}' - expected {num_functions} function and {num_records} record verifying keys after `ConsensusVersion::V14`"
                     );
+                }
+                if consensus_version >= ConsensusVersion::V15 {
+                    // At V15+, closures must not output Records, ExternalRecords or DynamicRecords.
+                    use console::program::RegisterType;
+                    for closure in deployment.program().closures().values() {
+                        for output in closure.outputs() {
+                            ensure!(
+                                !matches!(
+                                    output.register_type(),
+                                    RegisterType::Record(..)
+                                        | RegisterType::ExternalRecord(..)
+                                        | RegisterType::DynamicRecord
+                                ),
+                                "Invalid deployment transaction '{id}' - closure '{}' outputs a record type, which is not allowed at `ConsensusVersion::V15` or later",
+                                closure.name()
+                            );
+                        }
+                    }
                 }
 
                 // Determine if any of the array types exceed the maximum array elements.

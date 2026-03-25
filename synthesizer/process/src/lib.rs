@@ -69,11 +69,13 @@ use snarkvm_ledger_block::{Deployment, DeploymentVersion, Execution, Fee, Input,
 use snarkvm_ledger_store::{FinalizeStorage, FinalizeStore, atomic_batch_scope};
 use snarkvm_synthesizer_program::{
     Branch,
+    CastType,
     Command,
     FinalizeGlobalState,
     FinalizeOperation,
     Function,
     Instruction,
+    Operand,
     Program,
     StackTrait,
 };
@@ -81,12 +83,16 @@ use snarkvm_synthesizer_snark::{ProvingKey, UniversalSRS, VerifyingKey};
 use snarkvm_utilities::{defer, dev_println};
 
 use aleo_std::prelude::{finish, lap, timer};
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
+
 #[cfg(feature = "locktick")]
 use locktick::parking_lot::RwLock;
 #[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 // Note: a `Process` and all of its fields are meant to be completely stateless. They have no
 // notion of block height or consensus version.

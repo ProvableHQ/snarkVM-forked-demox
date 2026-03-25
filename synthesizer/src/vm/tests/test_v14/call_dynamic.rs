@@ -1998,6 +1998,8 @@ fn test_dynamic_record_double_spend_detection() {
     // Define the caller program that tests double-spend scenarios
     let caller_program_str = format!(
         r"
+        import {base_program_name}.aleo;
+
         program double_spend_test.aleo;
 
         // Calls consume_static twice with the same dynamic record
@@ -2013,6 +2015,9 @@ fn test_dynamic_record_double_spend_detection() {
             input r0 as dynamic.record;
             call.dynamic {base_program_field} {aleo_field} {consume_dynamic_field} with r0 (as dynamic.record);
             call.dynamic {base_program_field} {aleo_field} {consume_dynamic_field} with r0 (as dynamic.record);
+
+            // Needed to pass the record-existence check (r0 must materialize)
+            call.dynamic {base_program_field} {aleo_field} {consume_static_field} with r0 (as dynamic.record);
 
         constructor:
             assert.eq true true;

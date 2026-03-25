@@ -136,6 +136,9 @@ fn test_cast_simple() {
 
             output r3 as plant.record;
 
+        function consume_plant:
+            input r0 as plant.record;
+
         constructor:
             assert.eq true true;
         ";
@@ -189,6 +192,9 @@ fn test_cast_simple() {
             
             cast r0 into r1 as dynamic.record;
             get.record.dynamic r1.age_in_years into r2 as u16;
+
+            // Needed to pass the record-existence check (r0 must materialize)
+            call garden_center.aleo/consume_plant r0;
 
             output r2 as u16.public;
 
@@ -340,7 +346,7 @@ fn test_cast_simple() {
         .unwrap();
 
     let expected_output = Plaintext::from_str("0u16").unwrap();
-    match &transaction_get_plant_age.transitions().next().unwrap().outputs()[0] {
+    match &transaction_get_plant_age.transitions().nth(1).unwrap().outputs()[0] {
         Output::Public(_, Some(plaintext)) => {
             assert_eq!(*plaintext, expected_output);
         }
