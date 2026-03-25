@@ -667,9 +667,10 @@ pub struct FinalizeStore<N: Network, P: FinalizeStorage<N>> {
     #[cfg(feature = "slipstream-plugins")]
     is_finalize_mode: Arc<AtomicBool>,
     /// Optional plugin manager for streaming canonical mapping and staking updates.
-    /// Uses `OnceLock` so it can be installed from a shared reference after construction.
+    /// Wrapped in `Arc` so that all clones of `FinalizeStore` share the same cell; the inner
+    /// `OnceLock` ensures it can be installed from a shared reference after construction.
     #[cfg(feature = "slipstream-plugins")]
-    slipstream_plugin_manager: OnceLock<Arc<RwLock<SlipstreamPluginManager>>>,
+    slipstream_plugin_manager: Arc<OnceLock<Arc<RwLock<SlipstreamPluginManager>>>>,
 }
 
 impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
@@ -687,7 +688,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
             #[cfg(feature = "slipstream-plugins")]
             is_finalize_mode: Arc::new(AtomicBool::new(false)),
             #[cfg(feature = "slipstream-plugins")]
-            slipstream_plugin_manager: OnceLock::new(),
+            slipstream_plugin_manager: Arc::new(OnceLock::new()),
         })
     }
 
