@@ -43,7 +43,15 @@ impl SlipstreamPluginService {
 
     /// Unloads all plugins and shuts down the service.
     pub fn join(self) {
-        self.plugin_manager.write().unwrap().unload();
+        match self.plugin_manager.write() {
+            Ok(mut manager) => manager.unload(),
+            Err(e) => {
+                tracing::warn!(
+                    "Slipstream: plugin manager lock poisoned during shutdown, attempting recovery: {e}"
+                );
+                e.into_inner().unload();
+            }
+        }
     }
 }
 

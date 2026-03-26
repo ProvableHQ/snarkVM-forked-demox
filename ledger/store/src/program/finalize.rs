@@ -31,7 +31,6 @@ use aleo_std_storage::StorageMode;
 use anyhow::Result;
 use core::marker::PhantomData;
 use indexmap::IndexSet;
-#[cfg(feature = "history")]
 use std::{
     borrow::Cow,
     sync::atomic::{AtomicU32, Ordering},
@@ -935,17 +934,29 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for FinalizeStore<
         );
 
         #[cfg(all(feature = "history", feature = "slipstream-plugins"))]
-        let plugin_data =
-            if self.is_finalize_mode.load(Ordering::SeqCst) && self.slipstream_plugin_manager.get().is_some() {
-                Some((
-                    program_id.to_bytes_le()?,
-                    mapping_name.to_bytes_le()?,
-                    key.to_bytes_le()?,
-                    value.to_bytes_le()?,
-                ))
+        let plugin_data = if self.is_finalize_mode.load(Ordering::SeqCst) {
+            if let Some(mgr) = self.slipstream_plugin_manager.get() {
+                match mgr.read() {
+                    Ok(plugin_mgr) if plugin_mgr.history_mappings_enabled() => Some((
+                        program_id.to_bytes_le()?,
+                        mapping_name.to_bytes_le()?,
+                        key.to_bytes_le()?,
+                        value.to_bytes_le()?,
+                    )),
+                    Ok(_) => None,
+                    Err(e) => {
+                        tracing::warn!(
+                            "Slipstream: plugin manager lock poisoned, skipping mapping update serialization: {e}"
+                        );
+                        None
+                    }
+                }
             } else {
                 None
-            };
+            }
+        } else {
+            None
+        };
 
         let result = self.storage.update_key_value(program_id, mapping_name, key, value)?;
 
@@ -1009,16 +1020,30 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         // Serialize mapping identity and all entries before moving them into storage,
         // so they are available for plugin notification after the storage call.
         #[cfg(all(feature = "history", feature = "slipstream-plugins"))]
-        let plugin_data: SerializedMappingEntries =
-            if self.is_finalize_mode.load(Ordering::SeqCst) && self.slipstream_plugin_manager.get().is_some() {
-                let mut serialized_entries = Vec::with_capacity(entries.len());
-                for (key, value) in &entries {
-                    serialized_entries.push((key.to_bytes_le()?, value.to_bytes_le()?));
+        let plugin_data: SerializedMappingEntries = if self.is_finalize_mode.load(Ordering::SeqCst) {
+            if let Some(mgr) = self.slipstream_plugin_manager.get() {
+                match mgr.read() {
+                    Ok(plugin_mgr) if plugin_mgr.history_mappings_enabled() => {
+                        let mut serialized_entries = Vec::with_capacity(entries.len());
+                        for (key, value) in &entries {
+                            serialized_entries.push((key.to_bytes_le()?, value.to_bytes_le()?));
+                        }
+                        Some((program_id.to_bytes_le()?, mapping_name.to_bytes_le()?, serialized_entries))
+                    }
+                    Ok(_) => None,
+                    Err(e) => {
+                        tracing::warn!(
+                            "Slipstream: plugin manager lock poisoned, skipping mapping replace serialization: {e}"
+                        );
+                        None
+                    }
                 }
-                Some((program_id.to_bytes_le()?, mapping_name.to_bytes_le()?, serialized_entries))
             } else {
                 None
-            };
+            }
+        } else {
+            None
+        };
 
         let result = self.storage.replace_mapping(program_id, mapping_name, entries)?;
 
