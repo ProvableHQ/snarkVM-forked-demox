@@ -322,6 +322,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         "Invalid deployment transaction '{id}' - expected {num_functions} function verifying keys before `ConsensusVersion::V14`"
                     );
                 }
+                if consensus_version < ConsensusVersion::V15 {
+                    ensure!(
+                        !deployment.program().contains_v15_syntax(),
+                        "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V15`"
+                    );
+                }
 
                 // Checks required for current and future consensus versions (>= V9).
                 //

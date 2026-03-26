@@ -686,6 +686,30 @@ impl<N: Network> RegisterTypes<N> {
                 matches!(instruction, Instruction::CommitPED128(..)),
                 "Instruction '{instruction}' is not for opcode '{opcode}'."
             ),
+            "commit.bhp256.raw" => ensure!(
+                matches!(instruction, Instruction::CommitBHP256Raw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "commit.bhp512.raw" => ensure!(
+                matches!(instruction, Instruction::CommitBHP512Raw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "commit.bhp768.raw" => ensure!(
+                matches!(instruction, Instruction::CommitBHP768Raw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "commit.bhp1024.raw" => ensure!(
+                matches!(instruction, Instruction::CommitBHP1024Raw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "commit.ped64.raw" => ensure!(
+                matches!(instruction, Instruction::CommitPED64Raw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "commit.ped128.raw" => ensure!(
+                matches!(instruction, Instruction::CommitPED128Raw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
             _ => bail!("Instruction '{instruction}' is not for opcode '{opcode}'."),
         }
         Ok(())
