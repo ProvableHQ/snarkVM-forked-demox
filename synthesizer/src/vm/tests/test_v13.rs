@@ -16,7 +16,7 @@
 use super::*;
 
 use crate::vm::test_helpers::*;
-use console::network::ConsensusVersion;
+use console::{account::ViewKey, network::ConsensusVersion};
 use snarkvm_synthesizer_program::Program;
 use snarkvm_utilities::TestRng;
 
@@ -476,6 +476,7 @@ fn deploy_two_programs_and_execute_v13(
     program_one: &Program<CurrentNetwork>,
     program_two: &Program<CurrentNetwork>,
     execution_test: ExecutionTest,
+    mint_record: bool,
 ) {
     let rng = &mut TestRng::default();
 
@@ -505,7 +506,32 @@ fn deploy_two_programs_and_execute_v13(
     if consensus_version == ConsensusVersion::V13 {
         vm.add_next_block(&block).unwrap();
 
-        let ExecutionTest { program, function, inputs } = execution_test;
+        let ExecutionTest { program, function, mut inputs } = execution_test;
+
+        // If a record must be minted, we construct it from the received input value and replace the latter by the output Record.
+        if mint_record {
+            let mint_execution = vm
+                .execute(&caller_private_key, (program_one.id(), "mint_record"), inputs.into_iter(), None, 0, None, rng)
+                .unwrap();
+
+            let caller_view_key = ViewKey::try_from(&caller_private_key).unwrap();
+
+            let output_record = match mint_execution.transitions().next().unwrap().outputs().iter().next().unwrap() {
+                Output::Record(_, _, Some(record_ciphertext), _) => {
+                    record_ciphertext.decrypt(&caller_view_key).unwrap()
+                }
+                _ => panic!("Expected record output"),
+            };
+
+            assert_eq!(**output_record.owner(), Address::try_from(&caller_private_key).unwrap());
+
+            inputs = vec![Value::Record(output_record)];
+
+            let block = sample_next_block(&vm, &caller_private_key, &[mint_execution], rng).unwrap();
+            assert_eq!(block.transactions().num_accepted(), 1);
+            assert_eq!(block.aborted_transaction_ids().len(), 0);
+            vm.add_next_block(&block).unwrap()
+        }
 
         let execution =
             vm.execute(&caller_private_key, (program, function), inputs.into_iter(), None, 0, None, rng).unwrap();
@@ -585,11 +611,13 @@ function second:
 
     // Use V11 rather than V12 to make sure we still won't be on V13
     for consensus_version in [ConsensusVersion::V11, ConsensusVersion::V13] {
-        deploy_two_programs_and_execute_v13(consensus_version, &program_one, &program_two, ExecutionTest {
-            program: "test_two.aleo",
-            function: "second",
-            inputs: vec![],
-        });
+        deploy_two_programs_and_execute_v13(
+            consensus_version,
+            &program_one,
+            &program_two,
+            ExecutionTest { program: "test_two.aleo", function: "second", inputs: vec![] },
+            false,
+        );
     }
 }
 
@@ -639,11 +667,13 @@ constructor:
 
     // Use V11 rather than V12 to make sure we still won't be on V13
     for consensus_version in [ConsensusVersion::V11, ConsensusVersion::V13] {
-        deploy_two_programs_and_execute_v13(consensus_version, &program_one, &program_two, ExecutionTest {
-            program: "external_future.aleo",
-            function: "main",
-            inputs: vec![],
-        });
+        deploy_two_programs_and_execute_v13(
+            consensus_version,
+            &program_one,
+            &program_two,
+            ExecutionTest { program: "external_future.aleo", function: "main", inputs: vec![] },
+            false,
+        );
     }
 }
 
@@ -694,11 +724,13 @@ constructor:
 
     // Use V11 rather than V12 to make sure we still won't be on V13
     for consensus_version in [ConsensusVersion::V11, ConsensusVersion::V13] {
-        deploy_two_programs_and_execute_v13(consensus_version, &program_one, &program_two, ExecutionTest {
-            program: "external_future.aleo",
-            function: "main",
-            inputs: vec![],
-        });
+        deploy_two_programs_and_execute_v13(
+            consensus_version,
+            &program_one,
+            &program_two,
+            ExecutionTest { program: "external_future.aleo", function: "main", inputs: vec![] },
+            false,
+        );
     }
 }
 
@@ -747,11 +779,13 @@ constructor:
 
     // Use V11 rather than V12 to make sure we still won't be on V13
     for consensus_version in [ConsensusVersion::V11, ConsensusVersion::V13] {
-        deploy_two_programs_and_execute_v13(consensus_version, &program_one, &program_two, ExecutionTest {
-            program: "parent.aleo",
-            function: "omega_wrapper",
-            inputs: vec![],
-        });
+        deploy_two_programs_and_execute_v13(
+            consensus_version,
+            &program_one,
+            &program_two,
+            ExecutionTest { program: "parent.aleo", function: "omega_wrapper", inputs: vec![] },
+            false,
+        );
     }
 }
 
@@ -778,6 +812,14 @@ function wrapper:
     cast self.signer r0 into r1 as BooHoo.record;
     output r1 as BooHoo.record;
 
+function mint_record:
+    cast 1u32 2u32 into r0 as Woo;
+    cast self.signer r0 into r1 as BooHoo.record;
+    output r1 as BooHoo.record;
+
+function consume_record:
+    input r0 as BooHoo.record;
+
 constructor:
     assert.eq edition 0u16;
 ",
@@ -791,6 +833,7 @@ program parent.aleo;
 
 function omega_wrapper:
     input r0 as child.aleo/BooHoo.record;
+    call child.aleo/consume_record r0;
 
 constructor:
     assert.eq edition 0u16;
@@ -800,13 +843,13 @@ constructor:
 
     // Use V11 rather than V12 to make sure we still won't be on V13
     for consensus_version in [ConsensusVersion::V11, ConsensusVersion::V13] {
-        deploy_two_programs_and_execute_v13(consensus_version, &program_one, &program_two, ExecutionTest {
-            program: "parent.aleo",
-            function: "omega_wrapper",
-            inputs: vec![Value::from_str(
-                "{ owner: aleo1j2hfs6yru47h2nvsjdefwtw6nwaj0y4zcl02juyy29txm7nt6y9qln7uhp.private, woo: { a: 0u32.private, b: 0u32.private }, _nonce: 0group.public }"
-            ).unwrap()],
-        });
+        deploy_two_programs_and_execute_v13(
+            consensus_version,
+            &program_one,
+            &program_two,
+            ExecutionTest { program: "parent.aleo", function: "omega_wrapper", inputs: Vec::new() },
+            true,
+        );
     }
 }
 
@@ -830,6 +873,15 @@ function main:
     cast r0 r2 into r3 as R.record;
     output r3 as R.record;
 
+function mint_record:
+    cast 0u32 into r0 as Foo;
+    cast r0 r0 into r1 as [Foo; 2u32];
+    cast self.signer r1 into r2 as R.record;
+    output r2 as R.record;
+
+function consume_record:
+    input r0 as R.record;
+
 constructor:
     assert.eq edition 0u16;
 ",
@@ -843,6 +895,9 @@ program test.aleo;
 
 function main:
     input r0 as child.aleo/R.record;
+
+    call child.aleo/consume_record r0;
+    
     output r0 as child.aleo/R.record;
 
 constructor:
@@ -853,13 +908,13 @@ constructor:
 
     // Use V11 rather than V12 to make sure we still won't be on V13
     for consensus_version in [ConsensusVersion::V11, ConsensusVersion::V13] {
-        deploy_two_programs_and_execute_v13(consensus_version, &program_one, &program_two, ExecutionTest {
-            program: "test.aleo",
-            function: "main",
-            inputs: vec![Value::from_str(
-                "{ owner: aleo1j2hfs6yru47h2nvsjdefwtw6nwaj0y4zcl02juyy29txm7nt6y9qln7uhp.private, a: [ { x: 0u32.private } , { x: 0u32.private } ], _nonce: 0group.public }",
-            ).unwrap()],
-        });
+        deploy_two_programs_and_execute_v13(
+            consensus_version,
+            &program_one,
+            &program_two,
+            ExecutionTest { program: "test.aleo", function: "main", inputs: Vec::new() },
+            true,
+        );
     }
 }
 
@@ -921,11 +976,13 @@ constructor:
 
     // Use V11 rather than V12 to make sure we still won't be on V13
     for consensus_version in [ConsensusVersion::V11, ConsensusVersion::V13] {
-        deploy_two_programs_and_execute_v13(consensus_version, &program_one, &program_two, ExecutionTest {
-            program: "parent.aleo",
-            function: "relay",
-            inputs: vec![Value::from_str("0u64").unwrap()],
-        });
+        deploy_two_programs_and_execute_v13(
+            consensus_version,
+            &program_one,
+            &program_two,
+            ExecutionTest { program: "parent.aleo", function: "relay", inputs: vec![Value::from_str("0u64").unwrap()] },
+            false,
+        );
     }
 }
 
