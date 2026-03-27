@@ -776,7 +776,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         block_height: u32,
     ) {
 
-        tracing::info!(
+        tracing::debug!(
             target: "slipstream",
             "notify_staking_reward(): is_finalize_mode={} staker={staker} validator={validator} reward={reward}",
             self.is_finalize_mode.load(Ordering::SeqCst)
@@ -927,7 +927,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for FinalizeStore<
     ) -> Result<FinalizeOperation<N>> {
         // Serialize before moving, if a plugin notification may be needed.
         #[cfg(all(feature = "history", feature = "slipstream-plugins"))]
-        tracing::info!(
+        tracing::debug!(
             target: "slipstream",
             "update_key_value: is_finalize_mode={} program={program_id} mapping={mapping_name}",
             self.is_finalize_mode.load(Ordering::SeqCst)
@@ -968,7 +968,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for FinalizeStore<
             #[cfg(all(not(feature = "history"), feature = "slipstream-plugins"))]
             let height = 0u32;
             if let Some(mgr) = self.slipstream_plugin_manager.get() {
-                tracing::info!(target: "slipstream", "dispatching notify_mapping_update to plugin manager");
+                tracing::debug!(target: "slipstream", "dispatching notify_mapping_update to plugin manager");
                 match mgr.read() {
                     Ok(plugin_mgr) => plugin_mgr.notify_mapping_update(&pid, &mname, &k, &v, height),
                     Err(e) => tracing::warn!(
@@ -1011,7 +1011,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         entries: Vec<(Plaintext<N>, Value<N>)>,
     ) -> Result<FinalizeOperation<N>> {
         #[cfg(all(feature = "history", feature = "slipstream-plugins"))]
-        tracing::info!(
+        tracing::debug!(
             target: "slipstream",
             "replace_mapping: is_finalize_mode={} program={program_id} mapping={mapping_name}",
             self.is_finalize_mode.load(Ordering::SeqCst)
