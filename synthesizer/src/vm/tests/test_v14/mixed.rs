@@ -14,7 +14,6 @@
 // limitations under the License.
 
 use console::types::Scalar;
-use snarkvm_synthesizer_process::execution_cost_for_call;
 
 use super::*;
 
@@ -257,9 +256,6 @@ fn test_execution_cost_for_authorization_and_call() {
         expected_output,
         transaction.transitions().next().unwrap().outputs()
     );
-
-    // Checking the cost-estimation function computes the correct cost
-    let execution = transaction.execution().unwrap();
 
     // The batch sizes involved in the cost computation are [1, 1, 1, 3, 2, 1, 1], where:
     // - the first 3 ones come from the three distinct transitions

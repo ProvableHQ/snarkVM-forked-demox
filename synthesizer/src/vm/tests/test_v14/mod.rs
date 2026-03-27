@@ -185,7 +185,7 @@ pub(crate) fn add_and_test(
 // Authorization and the call target an inputs are correct.
 pub(crate) fn add_and_test_with_costs(
     vm: &VM<CurrentNetwork, LedgerType>,
-    caller_private_key: &PrivateKey<CurrentNetwork>,
+    next_block_private_key: &PrivateKey<CurrentNetwork>,
     caller_address: &Address<CurrentNetwork>,
     inputs: &[&[Value<CurrentNetwork>]],
     transactions: &[Transaction<CurrentNetwork>],
@@ -211,7 +211,7 @@ pub(crate) fn add_and_test_with_costs(
         })
         .collect();
     // Sample the next block.
-    let block = sample_next_block(vm, caller_private_key, &transactions, rng).unwrap();
+    let block = sample_next_block(vm, next_block_private_key, &transactions, rng).unwrap();
     // Assert all transactions were accepted.
     assert_eq!(block.transactions().num_accepted(), transactions.len());
     assert_eq!(block.transactions().num_rejected(), 0);
