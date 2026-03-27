@@ -3896,7 +3896,7 @@ dependencies = [
 
 [[package]]
 name = "snarkvm-synthesizer-error"
-version = "4.4.0"
+version = "4.6.0"
 dependencies = [
  "anyhow",
  "snarkvm-circuit-environment",

@@ -407,7 +407,7 @@ version = "=4.6.0"
 
 [workspace.dependencies.snarkvm-synthesizer-error]
 path = "synthesizer/error"
-version = "=4.4.0"
+version = "=4.6.0"
 
 [workspace.dependencies.snarkvm-synthesizer-process]
 path = "synthesizer/process"
