@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -53,7 +53,15 @@ pub mod test_helpers {
     /// Samples a rejected deploy.
     pub(crate) fn sample_rejected_deploy(version: u8, rng: &mut TestRng) -> ConfirmedTxType<CurrentNetwork> {
         // Sample the rejected deployment.
-        let rejected = snarkvm_ledger_test_helpers::sample_rejected_deployment(version, rng.r#gen(), rng.r#gen(), rng);
+        // Only V2 deployments can have translation keys.
+        let has_translation_keys = version >= 2 && rng.r#gen();
+        let rejected = snarkvm_ledger_test_helpers::sample_rejected_deployment(
+            version,
+            rng.r#gen(),
+            has_translation_keys,
+            rng.r#gen(),
+            rng,
+        );
         // Return the rejected deploy.
         ConfirmedTxType::RejectedDeploy(rng.r#gen(), rejected)
     }

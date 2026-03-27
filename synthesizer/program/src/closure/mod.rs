@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -86,6 +86,27 @@ impl<N: Network> ClosureCore<N> {
     /// Note that input and output types don't have to be checked if we are sure the broader function doesn't contain a string type.
     pub fn contains_string_type(&self) -> bool {
         self.instructions.iter().any(|instruction| instruction.contains_string_type())
+    }
+
+    /// Returns `true` if the closure contains an identifier type in its inputs, outputs, or instructions.
+    pub fn contains_identifier_type(&self) -> Result<bool> {
+        for input in &self.inputs {
+            if input.register_type().contains_identifier_type()? {
+                return Ok(true);
+            }
+        }
+        for output in &self.outputs {
+            if output.register_type().contains_identifier_type()? {
+                return Ok(true);
+            }
+        }
+        // Check instruction-level types (e.g., cast destination types).
+        for instruction in &self.instructions {
+            if instruction.contains_identifier_type()? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     /// Returns `true` if the closure contains an array type with a size that exceeds the given maximum.

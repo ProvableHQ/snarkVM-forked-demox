@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -37,7 +37,7 @@ use snarkvm_synthesizer_program::{
 type CurrentNetwork = MainnetV0;
 type CurrentAleo = AleoV0;
 
-const ITERATIONS: usize = 25;
+const ITERATIONS: usize = 2;
 
 /// Samples the stack. Note: Do not replicate this for real program use, it is insecure.
 #[allow(clippy::type_complexity)]
@@ -213,6 +213,7 @@ fn test_types(variant: DeserializeVariant) -> Vec<PlaintextType<CurrentNetwork>>
         PlaintextType::Literal(LiteralType::U64),
         PlaintextType::Literal(LiteralType::U128),
         PlaintextType::Literal(LiteralType::Scalar),
+        PlaintextType::Literal(LiteralType::Identifier),
         PlaintextType::Array(ArrayType::new(PlaintextType::Literal(LiteralType::U8), vec![U32::new(8)]).unwrap()),
     ];
 

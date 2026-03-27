@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -61,6 +61,13 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
             randomizing_assignments.push(circuit_assignments);
         }
 
+        if randomizing_assignments.len() != circuits_to_constraints.len() {
+            return Err(AHPError::AnyhowError(anyhow::anyhow!(
+                "[prover Init] Expected {} randomizing assignments, but {} were provided.",
+                circuits_to_constraints.len(),
+                randomizing_assignments.len()
+            )));
+        }
         let indices_and_assignments = circuits_to_constraints
             .iter()
             .zip_eq(randomizing_assignments.into_iter())

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -256,7 +256,7 @@ pub mod test_helpers {
         let tcm = Field::rand(rng);
 
         // Construct the transition path and transaction leaf.
-        let transition_leaf = TransitionLeaf::new_with_version(0, 3, commitment);
+        let transition_leaf = TransitionLeaf::new(0, 3, commitment);
         let transition_tree: TransitionTree<N> = N::merkle_tree_bhp(&[transition_leaf.to_bits_le()])?;
         let transition_root = *transition_tree.root();
         let transition_id = N::hash_bhp512(&(transition_root, tcm).to_bits_le())?;
@@ -324,7 +324,7 @@ pub mod test_helpers {
         let tcm = Field::rand(rng);
 
         // Construct the transition path and transaction leaf.
-        let transition_leaf = TransitionLeaf::new_with_version(0, 3, commitment);
+        let transition_leaf = TransitionLeaf::new(0, 3, commitment);
         let transition_tree: TransitionTree<N> = N::merkle_tree_bhp(&[transition_leaf.to_bits_le()])?;
         let transition_root = *transition_tree.root();
         let transition_id = N::hash_bhp512(&(transition_root, tcm).to_bits_le())?;

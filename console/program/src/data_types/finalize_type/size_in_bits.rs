@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Identifier, StructType};
+use crate::{DynamicFuture, Identifier, StructType};
 
 use super::*;
 
@@ -36,7 +36,7 @@ impl<N: Network> FinalizeType<N> {
 
     /// A helper function to determine the number of bits of a plaintext type, while tracking the depth of the data.
     /// Note. The plaintext variant is assumed to be an argument of a `Future` and thus does not have a "raw" serialization.
-    fn size_in_bits_internal<F0, F1, F2>(
+    pub fn size_in_bits_internal<F0, F1, F2>(
         &self,
         get_struct: &F0,
         get_external_struct: &F1,
@@ -89,26 +89,33 @@ impl<N: Network> FinalizeType<N> {
                     // Account for the argument variant bit.
                     size = size.checked_add(1).ok_or(anyhow!("`size_in_bits` overflowed"))?;
 
-                    // Account for the size of the argument bits.
-                    size = size.checked_add(16).ok_or(anyhow!("`size_in_bits` overflowed"))?;
+                    // Calculate argument bits size.
+                    let argument_size_in_bits =
+                        argument.size_in_bits_internal(get_struct, get_external_struct, get_future, depth + 1)?;
+
+                    // Account for the size of the argument bits
+                    match argument_size_in_bits <= u16::MAX as usize {
+                        true => {
+                            // Account for the size of the argument bits (u16).
+                            size = size.checked_add(16).ok_or(anyhow!("`size_in_bits` overflowed"))?;
+                        }
+                        false => {
+                            // Account for the size of the argument bits (u32).
+                            size = size.checked_add(32).ok_or(anyhow!("`size_in_bits` overflowed"))?;
+                        }
+                    }
 
                     // Account for the argument bits.
-                    size = size
-                        .checked_add(argument.size_in_bits_internal(
-                            get_struct,
-                            get_external_struct,
-                            get_future,
-                            depth + 1,
-                        )?)
-                        .ok_or(anyhow!("`size_in_bits` overflowed"))?;
+                    size = size.checked_add(argument_size_in_bits).ok_or(anyhow!("`size_in_bits` overflowed"))?;
                 }
 
                 Ok(size)
             }
+            Self::DynamicFuture => DynamicFuture::<N>::size_in_bits(),
         }
     }
 
-    /// Returns the number of raw bits of a finlaize type.
+    /// Returns the number of raw bits of a finalize type.
     pub fn future_size_in_bits_raw<F0, F1, F2>(
         locator: &Locator<N>,
         get_struct: &F0,

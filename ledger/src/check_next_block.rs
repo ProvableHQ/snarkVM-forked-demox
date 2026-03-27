@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -49,6 +49,8 @@ pub enum CheckBlockError<N: Network> {
     BlockAlreadyExists { hash: N::BlockHash },
     #[error("Block has invalid height. Expected {expected}, but got {actual}")]
     InvalidHeight { expected: u32, actual: u32 },
+    #[error("Block has invalid round. Was {new}, but must be greater than previous round ({previous})")]
+    InvalidRound { new: u64, previous: u64 },
     #[error("Block has invalid hash")]
     InvalidHash,
     /// An error related to the given prefix of pending blocks.
@@ -148,7 +150,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         self.check_block_subdag_quorum(block)?;
 
         // Determine if the block subdag is correctly constructed and is not a combination of multiple subdags.
-        self.check_block_subdag_atomicity(block)?;
+        self.check_block_subdag_atomicity(block, &latest_block)?;
 
         // Ensure that all leaves of the subdag point to valid batches in other subdags/blocks.
         self.check_block_subdag_leaves(block, prefix)?;
@@ -209,6 +211,11 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             return Err(CheckBlockError::InvalidHeight { expected: latest_block.height() + 1, actual: block.height() });
         }
 
+        // Also ensure the round is valid, otherwise speculation on transactions will fail with a cryptic error.
+        if block.round() <= latest_block.round() {
+            return Err(CheckBlockError::InvalidRound { new: block.round(), previous: latest_block.round() });
+        }
+
         // Ensure the solutions do not already exist.
         for solution_id in block.solutions().solution_ids() {
             if self.contains_solution_id(solution_id)? {
@@ -254,6 +261,12 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
                 .ok_or(anyhow!("Failed to fetch committee lookback for round {penultimate_round}"))?
         };
 
+        // Get the latest epoch hash.
+        let latest_epoch_hash = match self.current_epoch_hash.read().as_ref() {
+            Some(epoch_hash) => *epoch_hash,
+            None => self.get_epoch_hash(latest_block.height())?,
+        };
+
         // Ensure the block is correct.
         let (expected_existing_solution_ids, expected_existing_transaction_ids) = block
             .verify(
@@ -262,7 +275,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
                 &previous_committee_lookback,
                 &committee_lookback,
                 self.puzzle(),
-                self.latest_epoch_hash()?,
+                latest_epoch_hash,
                 OffsetDateTime::now_utc().unix_timestamp(),
                 ratified_finalize_operations,
             )
@@ -408,7 +421,9 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     /// Checks that the block subdag can not be split into multiple valid subdags.
     ///
     /// Called by [`Self::check_block_subdag`]
-    fn check_block_subdag_atomicity(&self, block: &Block<N>) -> Result<()> {
+    fn check_block_subdag_atomicity(&self, block: &Block<N>, latest_block: &Block<N>) -> Result<()> {
+        let latest_round = latest_block.round();
+
         // Returns `true` if there is a path from the previous certificate to the current certificate.
         fn is_linked<N: Network>(
             subdag: &Subdag<N>,
@@ -437,8 +452,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         };
 
         // Iterate over the rounds to find possible leader certificates.
-        for round in (self.latest_round().saturating_add(2)..=subdag.anchor_round().saturating_sub(2)).rev().step_by(2)
-        {
+        for round in (latest_round.saturating_add(2)..=subdag.anchor_round().saturating_sub(2)).rev().step_by(2) {
             // Retrieve the previous committee lookback.
             let previous_committee_lookback = self
                 .get_committee_lookback_for_round(round)?

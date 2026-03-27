@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -62,6 +62,12 @@ impl<N: Network> Mapping<N> {
     /// Returns `true` if the mapping contains a string type.
     pub fn contains_string_type(&self) -> bool {
         self.key.plaintext_type().contains_string_type() || self.value.plaintext_type().contains_string_type()
+    }
+
+    /// Returns `true` if the mapping contains an identifier type.
+    pub fn contains_identifier_type(&self) -> Result<bool> {
+        Ok(self.key.plaintext_type().contains_identifier_type()?
+            || self.value.plaintext_type().contains_identifier_type()?)
     }
 
     /// Returns `true` if the mapping contains an array type with a size that exceeds the given maximum.
