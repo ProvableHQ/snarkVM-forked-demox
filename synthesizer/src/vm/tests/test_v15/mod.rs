@@ -16,6 +16,9 @@
 // Tests for the record-existence check.
 mod record_existence;
 
+// Tests on the input/output behaviour of closures and related functionality.
+mod closure_records;
+
 // Additional test for cost estimation without a private key.
 mod cost_for_call;
 

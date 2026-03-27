@@ -25,6 +25,8 @@ executors:
   rust-docker:
     docker:
       - image: cimg/rust:1.88.0 # Attention - Change the MSRV in Cargo.toml and rust-toolchain as well
+    environment:
+      RUSTFLAGS: "" # override the config.toml flags
 
 commands:
   check_windows:
@@ -1181,6 +1183,7 @@ jobs:
       size: xlarge
     environment:
       CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+      RUSTFLAGS: "" # override the config.toml flags
     parameters:
       workspace_member:
         type: string

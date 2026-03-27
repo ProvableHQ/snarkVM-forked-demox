@@ -15,8 +15,6 @@
 
 use super::*;
 
-// TODO fix
-
 fn test_translation(
     caller_private_key: &PrivateKey<CurrentNetwork>,
     // Program and function to call

@@ -39,7 +39,7 @@ use snarkvm_utilities::ExecutionPool;
 
 use anyhow::{Result, ensure};
 use itertools::Itertools;
-use rand::RngCore;
+use rand::Rng;
 use std::collections::BTreeMap;
 
 struct LinevalInstance<F: PrimeField> {
@@ -66,7 +66,7 @@ impl<F: PrimeField, SM: SNARKMode> AHPForR1CS<F, SM> {
     }
 
     /// Output the third round message and the next state.
-    pub fn prover_third_round<'a, R: RngCore>(
+    pub fn prover_third_round<'a, R: Rng>(
         verifier_first_message: &verifier::FirstMessage<F>,
         verifier_second_message: &verifier::SecondMessage<F>,
         verifier_prepare_third_message: &Option<verifier::PrepareThirdMessage<F>>,

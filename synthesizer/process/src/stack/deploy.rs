@@ -225,7 +225,7 @@ impl<N: Network> Stack<N> {
         }
 
         // Verify the certificates.
-        let rngs = (0..call_stacks.len()).map(|_| StdRng::from_seed(seeded_rng.r#gen())).collect::<Vec<_>>();
+        let rngs = (0..call_stacks.len()).map(|_| StdRng::from_seed(seeded_rng.random())).collect::<Vec<_>>();
         cfg_into_iter!(call_stacks).zip_eq(deployment.function_verifying_keys()).zip_eq(rngs).try_for_each(
             |(((function_name, call_stack, assignments), (_, (verifying_key, certificate))), mut rng)| {
                 // Synthesize the circuit.
@@ -267,8 +267,8 @@ impl<N: Network> Stack<N> {
                     let translation_index: u16 = Uniform::rand(rng);
                     let tvk = Uniform::rand(rng);
                     let record_register_index = Uniform::rand(rng);
-                    let record_view_key: Option<Field<N>> = Uniform::rand(rng);
-                    let gamma: Option<Group<N>> = Uniform::rand(rng);
+                    let record_view_key: Option<Field<N>> = UniformExt::rand_option(rng);
+                    let gamma: Option<Group<N>> = UniformExt::rand_option(rng);
                     let id_dynamic = compute_console_dynamic_or_external_record_id(
                         function_id,
                         record_dynamic.to_fields()?,

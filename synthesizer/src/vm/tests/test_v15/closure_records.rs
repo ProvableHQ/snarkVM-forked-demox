@@ -15,16 +15,14 @@
 
 use super::*;
 
-use super::add_and_test;
-
-/// Advances the VM to V14 consensus height by adding empty blocks.
-fn advance_to_v14(
+/// Advances the VM to V15 consensus height by adding empty blocks.
+fn advance_to_v15(
     vm: &VM<CurrentNetwork, LedgerType>,
     caller_private_key: &PrivateKey<CurrentNetwork>,
     rng: &mut TestRng,
 ) -> Result<()> {
-    let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14)?;
-    for _ in vm.block_store().current_block_height()..v14_height {
+    let v15_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?;
+    for _ in vm.block_store().current_block_height()..v15_height {
         let block = sample_next_block(vm, caller_private_key, &[], rng)?;
         vm.add_next_block(&block)?;
     }
@@ -77,8 +75,8 @@ fn test_closure_record_input() -> Result<()> {
         ",
     )?;
 
-    // Initialize the VM at V14.
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14)?, rng);
+    // Initialize the VM at V15.
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?, rng);
 
     // Deploy the program.
     let transaction = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
@@ -195,8 +193,8 @@ fn test_closure_external_record_input() -> Result<()> {
         ",
     )?;
 
-    // Initialize the VM at V14.
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14)?, rng);
+    // Initialize the VM at V15.
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?, rng);
 
     // Deploy the parent program.
     let transaction = vm.deploy(&caller_private_key, &parent_program, None, 0, None, rng)?;
@@ -248,9 +246,9 @@ fn test_closure_external_record_input() -> Result<()> {
     Ok(())
 }
 
-// Tests that a closure outputting an ExternalRecord is rejected at V14+ deployment.
+// Tests that a closure outputting an ExternalRecord is rejected at V15+ deployment.
 // The program parses successfully, but `verify_deployment` (called during block production)
-// rejects it at V14+ because closures cannot output ExternalRecord or DynamicRecord types.
+// rejects it at V15+ because closures cannot output ExternalRecord or DynamicRecord types.
 #[test]
 fn test_closure_external_record_output() -> Result<()> {
     let rng = &mut TestRng::default();
@@ -293,7 +291,7 @@ fn test_closure_external_record_output() -> Result<()> {
         ",
     )?;
 
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14)?, rng);
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?, rng);
 
     let tx = vm.deploy(&caller_private_key, &parent_program, None, 0, None, rng)?;
     add_and_test(&vm, &caller_private_key, &[tx], rng);
@@ -301,7 +299,7 @@ fn test_closure_external_record_output() -> Result<()> {
     // The deployment transaction is created successfully, but rejected during block production.
     let tx = vm.deploy(&caller_private_key, &child_program, None, 0, None, rng)?;
     let block = sample_next_block(&vm, &caller_private_key, &[tx], rng)?;
-    assert_eq!(block.transactions().num_accepted(), 0, "ExternalRecord closure output should be rejected at V14+");
+    assert_eq!(block.transactions().num_accepted(), 0, "ExternalRecord closure output should be rejected at V15+");
     assert_eq!(block.aborted_transaction_ids().len(), 1);
 
     Ok(())
@@ -347,8 +345,8 @@ fn test_closure_dynamic_record_input() -> Result<()> {
         ",
     )?;
 
-    // Initialize the VM at V14.
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14)?, rng);
+    // Initialize the VM at V15.
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?, rng);
 
     // Deploy the program.
     let transaction = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
@@ -434,7 +432,7 @@ fn test_closure_cannot_contain_call() {
     )
     .expect("program should parse");
 
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
     let result = vm.deploy(&caller_private_key, &program, None, 0, None, rng);
 
     assert!(result.is_err(), "A closure containing a `call` instruction should be rejected at deployment");
@@ -496,7 +494,7 @@ fn test_external_record_cast_to_dynamic_then_closure_fails_existence_check() -> 
         ",
     )?;
 
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14)?, rng);
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?, rng);
 
     let tx = vm.deploy(&caller_private_key, &parent_program, None, 0, None, rng)?;
     add_and_test(&vm, &caller_private_key, &[tx], rng);
@@ -540,17 +538,17 @@ fn test_external_record_cast_to_dynamic_then_closure_fails_existence_check() -> 
     Ok(())
 }
 
-// Tests that a pre-V14 program whose closure accepts an ExternalRecord as input (but does NOT
-// output it) is rejected at V14+ by the record-existence check. The ExternalRecord creates an
+// Tests that a pre-V15 program whose closure accepts an ExternalRecord as input (but does NOT
+// output it) is rejected at V15+ by the record-existence check. The ExternalRecord creates an
 // unresolved family because closures cannot provide existence verification.
 #[test]
-fn test_pre_v14_closure_external_record_input_only_rejected_at_v14() -> Result<()> {
+fn test_pre_v15_closure_external_record_input_only_rejected_at_v15() -> Result<()> {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
     let caller_address = Address::try_from(&caller_private_key)?;
     let caller_view_key = ViewKey::try_from(&caller_private_key)?;
 
-    // Start at V9 (height 12), before the V14 closure-output restriction (height 17).
+    // Start at V9 (height 12), before the V15 closure-output restriction (height 18).
     let vm = sample_vm_at_height(12, rng);
 
     // Parent defines the record.
@@ -596,7 +594,7 @@ fn test_pre_v14_closure_external_record_input_only_rejected_at_v14() -> Result<(
         ",
     )?;
 
-    // Deploy both programs before V14. The deployments must be accepted.
+    // Deploy both programs before V15. The deployments must be accepted.
     let tx = vm.deploy(&caller_private_key, &parent_program, None, 0, None, rng)?;
     add_and_test(&vm, &caller_private_key, &[tx], rng);
 
@@ -616,8 +614,8 @@ fn test_pre_v14_closure_external_record_input_only_rejected_at_v14() -> Result<(
     let gem_record = decrypt_first_record(&mint_tx, &caller_view_key);
     add_and_test(&vm, &caller_private_key, &[mint_tx], rng);
 
-    // Advance to V14.
-    advance_to_v14(&vm, &caller_private_key, rng)?;
+    // Advance to V15.
+    advance_to_v15(&vm, &caller_private_key, rng)?;
 
     // Execute the function. The record-existence check rejects the execution because the
     // ExternalRecord input creates an unresolved family (closures cannot verify existence).
@@ -631,28 +629,28 @@ fn test_pre_v14_closure_external_record_input_only_rejected_at_v14() -> Result<(
         rng,
     );
 
-    assert!(result.is_err(), "ExternalRecord used only in closure should fail existence check at V14+");
+    assert!(result.is_err(), "ExternalRecord used only in closure should fail existence check at V15+");
 
     Ok(())
 }
 
-// Tests that executing a pre-V14 program whose closure outputs ExternalRecord is rejected at V14+.
+// Tests that executing a pre-V15 program whose closure outputs ExternalRecord is rejected at V15+.
 // This covers the runtime `has_forbidden_output` check, which is the only code path exercising
 // that check — deployment-time rejection prevents new programs from reaching execution.
 #[test]
-fn test_pre_v14_closure_external_record_output_rejected_at_v14_runtime() -> Result<()> {
+fn test_pre_v15_closure_external_record_output_rejected_at_v15_runtime() -> Result<()> {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
     let caller_address = Address::try_from(&caller_private_key)?;
     let caller_view_key = ViewKey::try_from(&caller_private_key)?;
 
-    // Start at V9 (height 12), before the V14 closure-output restriction (height 17).
+    // Start at V9 (height 12), before the V15 closure-output restriction (height 18).
     let vm = sample_vm_at_height(12, rng);
 
     // Parent defines the record.
     let parent_program = Program::from_str(
         r"
-        program pre_v14_ext_out_parent.aleo;
+        program pre_v15_ext_out_parent.aleo;
 
         record widget:
             owner as address.private;
@@ -670,29 +668,29 @@ fn test_pre_v14_closure_external_record_output_rejected_at_v14_runtime() -> Resu
     )?;
 
     // Child has a closure that passes an ExternalRecord through as an output.
-    // This is allowed at pre-V14 but forbidden at V14+.
+    // This is allowed at pre-V15 but forbidden at V15+.
     let child_program = Program::from_str(
         r"
-        import pre_v14_ext_out_parent.aleo;
+        import pre_v15_ext_out_parent.aleo;
 
-        program pre_v14_ext_out_child.aleo;
+        program pre_v15_ext_out_child.aleo;
 
         closure passthrough_widget:
-            input r0 as pre_v14_ext_out_parent.aleo/widget.record;
+            input r0 as pre_v15_ext_out_parent.aleo/widget.record;
             assert.eq true true;
-            output r0 as pre_v14_ext_out_parent.aleo/widget.record;
+            output r0 as pre_v15_ext_out_parent.aleo/widget.record;
 
         function use_closure:
-            input r0 as pre_v14_ext_out_parent.aleo/widget.record;
+            input r0 as pre_v15_ext_out_parent.aleo/widget.record;
             call passthrough_widget r0 into r1;
-            output r1 as pre_v14_ext_out_parent.aleo/widget.record;
+            output r1 as pre_v15_ext_out_parent.aleo/widget.record;
 
         constructor:
             assert.eq true true;
         ",
     )?;
 
-    // Deploy both programs before V14. Both deployments must be accepted.
+    // Deploy both programs before V15. Both deployments must be accepted.
     let tx = vm.deploy(&caller_private_key, &parent_program, None, 0, None, rng)?;
     add_and_test(&vm, &caller_private_key, &[tx], rng);
 
@@ -702,7 +700,7 @@ fn test_pre_v14_closure_external_record_output_rejected_at_v14_runtime() -> Resu
     // Mint a widget to use as input.
     let tx = vm.execute(
         &caller_private_key,
-        ("pre_v14_ext_out_parent.aleo", "mint_widget"),
+        ("pre_v15_ext_out_parent.aleo", "mint_widget"),
         [Value::from_str(&caller_address.to_string())?, Value::from_str("42u64")?].into_iter(),
         None,
         0,
@@ -712,14 +710,14 @@ fn test_pre_v14_closure_external_record_output_rejected_at_v14_runtime() -> Resu
     let widget_record = decrypt_first_record(&tx, &caller_view_key);
     add_and_test(&vm, &caller_private_key, &[tx], rng);
 
-    // Advance to V14 (height 17) by adding empty blocks.
-    advance_to_v14(&vm, &caller_private_key, rng)?;
+    // Advance to V15 (height 18) by adding empty blocks.
+    advance_to_v15(&vm, &caller_private_key, rng)?;
 
-    // At V14+, executing `use_closure` must fail: the runtime `has_forbidden_output` check
+    // At V15+, executing `use_closure` must fail: the runtime `has_forbidden_output` check
     // detects that `passthrough_widget` outputs ExternalRecord and rejects the execution.
     let result = vm.execute(
         &caller_private_key,
-        ("pre_v14_ext_out_child.aleo", "use_closure"),
+        ("pre_v15_ext_out_child.aleo", "use_closure"),
         [Value::<CurrentNetwork>::Record(widget_record)].into_iter(),
         None,
         0,
@@ -727,7 +725,7 @@ fn test_pre_v14_closure_external_record_output_rejected_at_v14_runtime() -> Resu
         rng,
     );
 
-    assert!(result.is_err(), "Execution must fail: pre-V14 closure outputting ExternalRecord is disallowed at V14+");
+    assert!(result.is_err(), "Execution must fail: pre-V15 closure outputting ExternalRecord is disallowed at V15+");
 
     Ok(())
 }
@@ -736,13 +734,13 @@ fn test_pre_v14_closure_external_record_output_rejected_at_v14_runtime() -> Resu
 // without — execution is rejected. Verifies that the check is per-closure and not accidentally
 // bypassed when benign closures are present.
 #[test]
-fn test_mixed_closures_forbidden_output_rejected_at_v14_runtime() -> Result<()> {
+fn test_mixed_closures_forbidden_output_rejected_at_v15_runtime() -> Result<()> {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
     let caller_address = Address::try_from(&caller_private_key)?;
     let caller_view_key = ViewKey::try_from(&caller_private_key)?;
 
-    // Start at V9 (height 12), before the V14 closure-output restriction (height 17).
+    // Start at V9 (height 12), before the V15 closure-output restriction (height 18).
     let vm = sample_vm_at_height(12, rng);
 
     let parent_program = Program::from_str(
@@ -793,7 +791,7 @@ fn test_mixed_closures_forbidden_output_rejected_at_v14_runtime() -> Result<()> 
         ",
     )?;
 
-    // Deploy both programs before V14. Both deployments must be accepted.
+    // Deploy both programs before V15. Both deployments must be accepted.
     let tx = vm.deploy(&caller_private_key, &parent_program, None, 0, None, rng)?;
     add_and_test(&vm, &caller_private_key, &[tx], rng);
 
@@ -813,10 +811,10 @@ fn test_mixed_closures_forbidden_output_rejected_at_v14_runtime() -> Result<()> 
     let token_record = decrypt_first_record(&tx, &caller_view_key);
     add_and_test(&vm, &caller_private_key, &[tx], rng);
 
-    // Advance to V14.
-    advance_to_v14(&vm, &caller_private_key, rng)?;
+    // Advance to V15.
+    advance_to_v15(&vm, &caller_private_key, rng)?;
 
-    // At V14+, the function calls both a safe closure and a forbidden one. Execution must be
+    // At V15+, the function calls both a safe closure and a forbidden one. Execution must be
     // rejected because `passthrough` outputs ExternalRecord.
     let result = vm.execute(
         &caller_private_key,
@@ -833,18 +831,18 @@ fn test_mixed_closures_forbidden_output_rejected_at_v14_runtime() -> Result<()> 
     Ok(())
 }
 
-// Tests that executing a pre-V14 cross-program closure call (`CallOperator::Locator`) whose
-// closure outputs ExternalRecord is rejected at V14+ runtime. This covers the Locator branch of
+// Tests that executing a pre-V15 cross-program closure call (`CallOperator::Locator`) whose
+// closure outputs ExternalRecord is rejected at V15+ runtime. This covers the Locator branch of
 // `has_forbidden_output`, where the closure lives in a different program and is referenced by
 // `call other_program.aleo/closure_name` syntax.
 #[test]
-fn test_pre_v14_cross_program_closure_forbidden_output_rejected_at_v14_runtime() -> Result<()> {
+fn test_pre_v15_cross_program_closure_forbidden_output_rejected_at_v15_runtime() -> Result<()> {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
     let caller_address = Address::try_from(&caller_private_key)?;
     let caller_view_key = ViewKey::try_from(&caller_private_key)?;
 
-    // Start at V9 (height 12), before the V14 closure-output restriction (height 17).
+    // Start at V9 (height 12), before the V15 closure-output restriction (height 18).
     let vm = sample_vm_at_height(12, rng);
 
     // Parent program defines the record.
@@ -868,7 +866,7 @@ fn test_pre_v14_cross_program_closure_forbidden_output_rejected_at_v14_runtime()
     )?;
 
     // Lib program imports parent and defines a closure that passes an ExternalRecord through as
-    // an output. This is allowed at pre-V14 but forbidden at V14+. A dummy function is required
+    // an output. This is allowed at pre-V15 but forbidden at V15+. A dummy function is required
     // because programs must have at least one function.
     let lib_program = Program::from_str(
         r"
@@ -909,7 +907,7 @@ fn test_pre_v14_cross_program_closure_forbidden_output_rejected_at_v14_runtime()
         ",
     )?;
 
-    // Deploy all three programs before V14. All deployments must be accepted.
+    // Deploy all three programs before V15. All deployments must be accepted.
     let tx = vm.deploy(&caller_private_key, &parent_program, None, 0, None, rng)?;
     add_and_test(&vm, &caller_private_key, &[tx], rng);
 
@@ -932,10 +930,10 @@ fn test_pre_v14_cross_program_closure_forbidden_output_rejected_at_v14_runtime()
     let widget_record = decrypt_first_record(&tx, &caller_view_key);
     add_and_test(&vm, &caller_private_key, &[tx], rng);
 
-    // Advance to V14 (height 17) by adding empty blocks.
-    advance_to_v14(&vm, &caller_private_key, rng)?;
+    // Advance to V15 (height 18) by adding empty blocks.
+    advance_to_v15(&vm, &caller_private_key, rng)?;
 
-    // At V14+, executing `use_external_closure` must fail: the runtime `has_forbidden_output`
+    // At V15+, executing `use_external_closure` must fail: the runtime `has_forbidden_output`
     // check (Locator branch) detects that `locator_lib.aleo/passthrough_widget` outputs
     // ExternalRecord and rejects the execution.
     let result = vm.execute(
@@ -950,22 +948,22 @@ fn test_pre_v14_cross_program_closure_forbidden_output_rejected_at_v14_runtime()
 
     assert!(
         result.is_err(),
-        "Execution must fail: pre-V14 cross-program closure (Locator) outputting ExternalRecord is disallowed at V14+"
+        "Execution must fail: pre-V15 cross-program closure (Locator) outputting ExternalRecord is disallowed at V15+"
     );
 
     Ok(())
 }
 
-// Tests that a closure outputting a DynamicRecord is rejected at V14+ deployment.
+// Tests that a closure outputting a DynamicRecord is rejected at V15+ deployment.
 // The program parses successfully, but `verify_deployment` (called during block production)
-// rejects it at V14+ because closures cannot output ExternalRecord or DynamicRecord types.
+// rejects it at V15+ because closures cannot output ExternalRecord or DynamicRecord types.
 #[test]
 fn test_closure_dynamic_record_output() -> Result<()> {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
 
     // A program whose closure casts a record to DynamicRecord and outputs it. This is
-    // rejected at V14+ because `ensure_records_exist` assumes closures cannot extend
+    // rejected at V15+ because `ensure_records_exist` assumes closures cannot extend
     // record families.
     let program = Program::from_str(
         r"
@@ -990,34 +988,34 @@ fn test_closure_dynamic_record_output() -> Result<()> {
     )?;
 
     // The deployment transaction is created successfully, but rejected during block production.
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14)?, rng);
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?, rng);
     let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
     let block = sample_next_block(&vm, &caller_private_key, &[tx], rng)?;
-    assert_eq!(block.transactions().num_accepted(), 0, "DynamicRecord closure output should be rejected at V14+");
+    assert_eq!(block.transactions().num_accepted(), 0, "DynamicRecord closure output should be rejected at V15+");
     assert_eq!(block.aborted_transaction_ids().len(), 1);
 
     Ok(())
 }
 
-// Tests that a pre-V14 program whose closure outputs ExternalRecord executes successfully
-// *before* V14. This is the backward-compatibility counterpart to
-// `test_pre_v14_closure_external_record_output_rejected_at_v14_runtime`: both deploy at pre-V14,
-// but this test executes before V14 (where the restriction does not apply) and confirms the
+// Tests that a pre-V15 program whose closure outputs ExternalRecord executes successfully
+// *before* V15. This is the backward-compatibility counterpart to
+// `test_pre_v15_closure_external_record_output_rejected_at_v15_runtime`: both deploy at pre-V15,
+// but this test executes before V15 (where the restriction does not apply) and confirms the
 // output is accepted.
 #[test]
-fn test_pre_v14_closure_external_record_output_works_before_v14() -> Result<()> {
+fn test_pre_v15_closure_external_record_output_works_before_v15() -> Result<()> {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
     let caller_address = Address::try_from(&caller_private_key)?;
     let caller_view_key = ViewKey::try_from(&caller_private_key)?;
 
-    // Start at V9 (height 12), before the V14 closure-output restriction (height 17).
+    // Start at V9 (height 12), before the V15 closure-output restriction (height 18).
     let vm = sample_vm_at_height(12, rng);
 
     // Parent defines the record.
     let parent_program = Program::from_str(
         r"
-        program pre_v14_ok_parent.aleo;
+        program pre_v15_ok_parent.aleo;
 
         record widget:
             owner as address.private;
@@ -1037,26 +1035,26 @@ fn test_pre_v14_closure_external_record_output_works_before_v14() -> Result<()> 
     // Child has a closure that passes an ExternalRecord through as an output.
     let child_program = Program::from_str(
         r"
-        import pre_v14_ok_parent.aleo;
+        import pre_v15_ok_parent.aleo;
 
-        program pre_v14_ok_child.aleo;
+        program pre_v15_ok_child.aleo;
 
         closure passthrough_widget:
-            input r0 as pre_v14_ok_parent.aleo/widget.record;
+            input r0 as pre_v15_ok_parent.aleo/widget.record;
             assert.eq true true;
-            output r0 as pre_v14_ok_parent.aleo/widget.record;
+            output r0 as pre_v15_ok_parent.aleo/widget.record;
 
         function use_closure:
-            input r0 as pre_v14_ok_parent.aleo/widget.record;
+            input r0 as pre_v15_ok_parent.aleo/widget.record;
             call passthrough_widget r0 into r1;
-            output r1 as pre_v14_ok_parent.aleo/widget.record;
+            output r1 as pre_v15_ok_parent.aleo/widget.record;
 
         constructor:
             assert.eq true true;
         ",
     )?;
 
-    // Deploy both programs before V14.
+    // Deploy both programs before V15.
     let tx = vm.deploy(&caller_private_key, &parent_program, None, 0, None, rng)?;
     add_and_test(&vm, &caller_private_key, &[tx], rng);
 
@@ -1066,7 +1064,7 @@ fn test_pre_v14_closure_external_record_output_works_before_v14() -> Result<()> 
     // Mint a widget.
     let tx = vm.execute(
         &caller_private_key,
-        ("pre_v14_ok_parent.aleo", "mint_widget"),
+        ("pre_v15_ok_parent.aleo", "mint_widget"),
         [Value::from_str(&caller_address.to_string())?, Value::from_str("42u64")?].into_iter(),
         None,
         0,
@@ -1076,10 +1074,10 @@ fn test_pre_v14_closure_external_record_output_works_before_v14() -> Result<()> 
     let widget_record = decrypt_first_record(&tx, &caller_view_key);
     add_and_test(&vm, &caller_private_key, &[tx], rng);
 
-    // Execute at pre-V14. The closure outputs ExternalRecord, which must be accepted.
+    // Execute at pre-V15. The closure outputs ExternalRecord, which must be accepted.
     let transaction = vm.execute(
         &caller_private_key,
-        ("pre_v14_ok_child.aleo", "use_closure"),
+        ("pre_v15_ok_child.aleo", "use_closure"),
         [Value::<CurrentNetwork>::Record(widget_record)].into_iter(),
         None,
         0,
@@ -1092,11 +1090,11 @@ fn test_pre_v14_closure_external_record_output_works_before_v14() -> Result<()> 
     Ok(())
 }
 
-// Tests that deploying a program at V14+ with mixed closures — one safe (outputs scalar) and one
+// Tests that deploying a program at V15+ with mixed closures — one safe (outputs scalar) and one
 // forbidden (outputs ExternalRecord) — is rejected. Ensures the deploy-time check iterates all
 // closures and does not short-circuit after the first safe one.
 #[test]
-fn test_mixed_closures_deploy_rejected_at_v14() -> Result<()> {
+fn test_mixed_closures_deploy_rejected_at_v15() -> Result<()> {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
 
@@ -1144,7 +1142,7 @@ fn test_mixed_closures_deploy_rejected_at_v14() -> Result<()> {
         ",
     )?;
 
-    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14)?, rng);
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?, rng);
 
     // Deploy the parent program.
     let tx = vm.deploy(&caller_private_key, &parent_program, None, 0, None, rng)?;
@@ -1157,7 +1155,7 @@ fn test_mixed_closures_deploy_rejected_at_v14() -> Result<()> {
     assert_eq!(
         block.transactions().num_accepted(),
         0,
-        "Mixed closures with one forbidden output should be rejected at V14+"
+        "Mixed closures with one forbidden output should be rejected at V15+"
     );
     assert_eq!(block.aborted_transaction_ids().len(), 1);
 
