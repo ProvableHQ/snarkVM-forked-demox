@@ -18,7 +18,7 @@ use tokio::sync::oneshot::Sender as OneShotSender;
 
 use libloading::Library;
 use std::ops::{Deref, DerefMut};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tracing::{info, warn};
 
 /// A type alias for the result of plugin manager operations.
@@ -62,11 +62,14 @@ impl DerefMut for LoadedSlipstreamPlugin {
 pub struct SlipstreamPluginManager {
     pub plugins: Vec<LoadedSlipstreamPlugin>,
     libs: Vec<Library>,
+    /// Resolved, absolute paths to the loaded `.so` files, parallel to `plugins` / `libs`.
+    /// Used to detect duplicate loads before calling `dlopen`, preventing unsafe double-loading.
+    libpaths: Vec<PathBuf>,
 }
 
 impl SlipstreamPluginManager {
     pub fn new() -> Self {
-        SlipstreamPluginManager { plugins: Vec::default(), libs: Vec::default() }
+        SlipstreamPluginManager { plugins: Vec::default(), libs: Vec::default(), libpaths: Vec::default() }
     }
 
     /// Unload all plugins and loaded plugin libraries, making sure to fire
@@ -80,6 +83,8 @@ impl SlipstreamPluginManager {
         for lib in self.libs.drain(..) {
             drop(lib);
         }
+
+        self.libpaths.clear();
     }
 
     /// Check which plugins are interested in regular mapping data.
@@ -167,10 +172,24 @@ impl SlipstreamPluginManager {
         &mut self,
         slipstream_plugin_config_file: impl AsRef<Path>,
     ) -> JsonRpcResult<String> {
+        // Resolve the library path from the config before calling dlopen.
+        // This lets us detect duplicates without loading the library a second time, which is
+        // unsafe: a second dlopen on an already-loaded .so can trigger re-execution of Rust
+        // .init_array startup code, corrupting global state in the running plugin instance.
+        let resolved_libpath =
+            resolve_libpath_from_config(slipstream_plugin_config_file.as_ref())?;
+
+        // Check for duplicate library path first (catches same .so before dlopen).
+        if let Some(idx) = self.libpaths.iter().position(|p| p == &resolved_libpath) {
+            return Err(SlipstreamPluginManagerError::PluginAlreadyLoaded(
+                self.plugins[idx].name().to_string(),
+            ));
+        }
+
         let (new_lib, mut new_plugin, new_config_file) =
             load_plugin_from_config(slipstream_plugin_config_file.as_ref())?;
 
-        // Ensure no plugin with this name is already loaded.
+        // Also guard against a different .so that happens to expose the same plugin name.
         if self.plugins.iter().any(|plugin| plugin.name().eq(new_plugin.name())) {
             return Err(SlipstreamPluginManagerError::PluginAlreadyLoaded(
                 new_plugin.name().to_string(),
@@ -184,6 +203,7 @@ impl SlipstreamPluginManager {
         let name = new_plugin.name().to_string();
         self.plugins.push(new_plugin);
         self.libs.push(new_lib);
+        self.libpaths.push(resolved_libpath);
 
         Ok(name)
     }
@@ -204,6 +224,10 @@ impl SlipstreamPluginManager {
             return Err(SlipstreamPluginManagerError::PluginNotLoaded(name.to_string()));
         };
 
+        // Resolve the new library path before unloading, so we can track it after reload.
+        let new_resolved_libpath = resolve_libpath_from_config(config_file.as_ref())
+            .map_err(|e| SlipstreamPluginManagerError::PluginLoadError(e.to_string()))?;
+
         // Unload the current plugin first.
         self._drop_plugin(idx);
 
@@ -212,7 +236,7 @@ impl SlipstreamPluginManager {
             load_plugin_from_config(config_file.as_ref())
                 .map_err(|e| SlipstreamPluginManagerError::PluginLoadError(e.to_string()))?;
 
-        // Ensure no plugin with this name is already loaded.
+        // Ensure no other plugin with this name is already loaded.
         if self.plugins.iter().any(|plugin| plugin.name().eq(new_plugin.name())) {
             return Err(SlipstreamPluginManagerError::PluginAlreadyLoaded(
                 new_plugin.name().to_string(),
@@ -226,6 +250,7 @@ impl SlipstreamPluginManager {
 
         self.plugins.push(new_plugin);
         self.libs.push(new_lib);
+        self.libpaths.push(new_resolved_libpath);
 
         Ok(())
     }
@@ -233,6 +258,7 @@ impl SlipstreamPluginManager {
     fn _drop_plugin(&mut self, idx: usize) {
         let current_lib = self.libs.remove(idx);
         let mut current_plugin = self.plugins.remove(idx);
+        self.libpaths.remove(idx);
         let name = current_plugin.name().to_string();
         current_plugin.on_unload();
         // The plugin must be dropped before the library to avoid a crash.
@@ -292,6 +318,47 @@ pub enum SlipstreamPluginManagerError {
 
     #[error("The SlipstreamPlugin on_load method failed (error: {0})")]
     PluginStartError(String),
+}
+
+/// Parses a plugin config file and returns the resolved, absolute path to the `.so`.
+///
+/// Does NOT open or load the library — safe to call for duplicate detection before `dlopen`.
+pub(crate) fn resolve_libpath_from_config(
+    slipstream_plugin_config_file: &Path,
+) -> Result<PathBuf, SlipstreamPluginManagerError> {
+    use std::{fs::File, io::Read};
+
+    let mut file = File::open(slipstream_plugin_config_file).map_err(|e| {
+        SlipstreamPluginManagerError::CannotOpenConfigFile(format!(
+            "Failed to open the plugin config file {slipstream_plugin_config_file:?}, error: {e:?}"
+        ))
+    })?;
+
+    let mut contents = String::new();
+    file.read_to_string(&mut contents).map_err(|e| {
+        SlipstreamPluginManagerError::CannotReadConfigFile(format!(
+            "Failed to read the plugin config file {slipstream_plugin_config_file:?}, error: {e:?}"
+        ))
+    })?;
+
+    let result: serde_json::Value = json5::from_str(&contents).map_err(|e| {
+        SlipstreamPluginManagerError::InvalidConfigFileFormat(format!(
+            "The config file {slipstream_plugin_config_file:?} is not in a valid Json5 format, error: {e:?}"
+        ))
+    })?;
+
+    let libpath_str = result["libpath"].as_str().ok_or(SlipstreamPluginManagerError::LibPathNotSet)?;
+    let mut libpath = PathBuf::from(libpath_str);
+    if libpath.is_relative() {
+        let config_dir = slipstream_plugin_config_file.parent().ok_or_else(|| {
+            SlipstreamPluginManagerError::CannotOpenConfigFile(format!(
+                "Failed to resolve parent of {slipstream_plugin_config_file:?}",
+            ))
+        })?;
+        libpath = config_dir.join(libpath);
+    }
+
+    Ok(libpath)
 }
 
 /// # Safety
@@ -376,6 +443,15 @@ const TESTPLUGIN_CONFIG: &str = "TESTPLUGIN_CONFIG";
 #[cfg(test)]
 const TESTPLUGIN2_CONFIG: &str = "TESTPLUGIN2_CONFIG";
 
+// In tests resolve_libpath_from_config returns the config path itself as a stand-in for
+// the .so path.  This is sufficient for duplicate detection without real file I/O.
+#[cfg(test)]
+pub(crate) fn resolve_libpath_from_config(
+    slipstream_plugin_config_file: &Path,
+) -> Result<PathBuf, SlipstreamPluginManagerError> {
+    Ok(slipstream_plugin_config_file.to_path_buf())
+}
+
 // This is mocked for tests to avoid having to do IO with a dynamically linked library
 // across different architectures at test time.
 #[cfg(test)]
@@ -454,11 +530,10 @@ mod tests {
             format!("The plugin '{DUMMY_NAME}' is not loaded")
         );
 
-        // Mock having loaded plugin (TestPlugin).
-        let (mut plugin, lib, config) = dummy_plugin_and_library(TestPlugin, DUMMY_CONFIG);
-        plugin.on_load(config, false).unwrap();
-        plugin_manager_lock.plugins.push(plugin);
-        plugin_manager_lock.libs.push(lib);
+        // Load TestPlugin via the normal path so libpaths is kept in sync.
+        // (TESTPLUGIN_CONFIG is accepted by the test mock of load_plugin_from_config.)
+        let load_result = plugin_manager_lock.load_plugin(TESTPLUGIN_CONFIG);
+        assert!(load_result.is_ok());
         assert_eq!(plugin_manager_lock.plugins[0].name(), DUMMY_NAME);
 
         // Try wrong name (same error).
