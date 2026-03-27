@@ -74,7 +74,12 @@ use console::{
     network::ConsensusVersion,
     program::{DynamicRecord, Entry, Identifier, Value},
 };
-use snarkvm_synthesizer_process::{deployment_cost, execution_cost, execution_cost_for_authorization, execution_cost_for_call};
+use snarkvm_synthesizer_process::{
+    deployment_cost,
+    execution_cost,
+    execution_cost_for_authorization,
+    execution_cost_for_call,
+};
 use snarkvm_synthesizer_program::Program;
 use snarkvm_utilities::TestRng;
 
@@ -219,7 +224,8 @@ pub(crate) fn add_and_test_with_costs(
         if let Some(execution) = transaction.execution() {
             let actual_cost = execution_cost(&vm.process().read(), execution, ConsensusVersion::V14).unwrap();
             let authorization = Authorization::from_unchecked((vec![], execution.transitions().cloned().collect()));
-            let estimated_cost_authorization = execution_cost_for_authorization(&vm.process().read(), &authorization, ConsensusVersion::V14).unwrap();
+            let estimated_cost_authorization =
+                execution_cost_for_authorization(&vm.process().read(), &authorization, ConsensusVersion::V14).unwrap();
             assert_eq!(actual_cost, estimated_cost_authorization);
 
             let root_transition = execution.transitions().last().unwrap();
@@ -231,10 +237,9 @@ pub(crate) fn add_and_test_with_costs(
                 inputs.iter(),
                 ConsensusVersion::V14,
                 rng,
-            ).unwrap();
+            )
+            .unwrap();
             assert_eq!(actual_cost, estimated_cost_request);
-            // TODO (CwPK) remove
-            println!(" * cost estimation OK")
         }
     }
     // Add the next block to the VM.

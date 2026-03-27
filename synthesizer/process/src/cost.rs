@@ -19,7 +19,9 @@ use crate::{Authorization, FinalizeTypes, Process, Stack, StackRef, StackTrait};
 
 use circuit::Aleo;
 use console::{
-    prelude::*, program::{FinalizeType, Identifier, LiteralType, PlaintextType, ProgramID, Value}, types::Address
+    prelude::*,
+    program::{FinalizeType, Identifier, LiteralType, PlaintextType, ProgramID, Value},
+    types::Address,
 };
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use snarkvm_ledger_block::{Deployment, Execution, Transaction};
@@ -151,8 +153,11 @@ pub fn execution_cost_for_call<A: Aleo, R: Rng + CryptoRng>(
     consensus_version: ConsensusVersion,
     rng: &mut R,
 ) -> Result<(MinimumCost, ExecuteCostDetails)> {
-    
     let stack = process.get_stack(program_id).unwrap();
+
+    // Follow the evaluation flow for the given call, using correct input/output values and calls and mocking
+    // only the fields which cannot be computed (essentially: values depending on the private key, such as
+    // the signature)
     let authorization = stack.sample_authorization::<A, R>(address, program_id, function_name, inputs, rng)?;
 
     execution_cost_for_authorization(process, &authorization, consensus_version)

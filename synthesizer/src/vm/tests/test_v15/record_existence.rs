@@ -522,15 +522,7 @@ fn test_existence_check() {
     let inputs = [Value::from_str("3u16").unwrap(), Value::from_str("4u16").unwrap()];
 
     let tx_base_function_2_2 = vm
-        .execute(
-            &caller_private_key,
-            ("frontier.aleo", "mint_and_read_then_output"),
-            inputs.iter(),
-            None,
-            0,
-            None,
-            rng,
-        )
+        .execute(&caller_private_key, ("frontier.aleo", "mint_and_read_then_output"), inputs.iter(), None, 0, None, rng)
         .unwrap();
 
     add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&inputs], &[tx_base_function_2_2], rng);
@@ -601,17 +593,8 @@ fn test_existence_check() {
 
     let inputs = [Value::from_str("4u8").unwrap(), Value::from_str("true").unwrap()];
 
-    let mint_planet_4_tx = vm
-        .execute(
-            &caller_private_key,
-            ("base.aleo", "mint_rover"),
-            inputs.iter(),
-            None,
-            0,
-            None,
-            rng,
-        )
-        .unwrap();
+    let mint_planet_4_tx =
+        vm.execute(&caller_private_key, ("base.aleo", "mint_rover"), inputs.iter(), None, 0, None, rng).unwrap();
 
     add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&inputs], &[mint_planet_4_tx.clone()], rng);
 
@@ -624,15 +607,7 @@ fn test_existence_check() {
     let inputs = [Value::<CurrentNetwork>::Record(mint_planet_4_record)];
 
     let check_decommission_same_tx = vm
-        .execute(
-            &caller_private_key,
-            ("extension.aleo", "check_decommission_same"),
-            inputs.iter(),
-            None,
-            0,
-            None,
-            rng,
-        )
+        .execute(&caller_private_key, ("extension.aleo", "check_decommission_same"), inputs.iter(), None, 0, None, rng)
         .unwrap();
 
     add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&inputs], &[check_decommission_same_tx], rng);
@@ -714,15 +689,7 @@ fn test_existence_check() {
     ];
 
     let mint_own_and_decom_4_2_tx = vm
-        .execute(
-            &caller_private_key,
-            ("extension.aleo", "mint_own_and_decom_int"),
-            inputs.iter(),
-            None,
-            0,
-            None,
-            rng,
-        )
+        .execute(&caller_private_key, ("extension.aleo", "mint_own_and_decom_int"), inputs.iter(), None, 0, None, rng)
         .unwrap();
 
     add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&inputs], &[mint_own_and_decom_4_2_tx], rng);
@@ -744,15 +711,7 @@ fn test_existence_check() {
     ];
 
     let mint_own_and_decom_4_3_tx = vm
-        .execute(
-            &caller_private_key,
-            ("extension.aleo", "mint_own_and_decom_int"),
-            inputs.iter(),
-            None,
-            0,
-            None,
-            rng,
-        )
+        .execute(&caller_private_key, ("extension.aleo", "mint_own_and_decom_int"), inputs.iter(), None, 0, None, rng)
         .unwrap();
 
     add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&inputs], &[mint_own_and_decom_4_3_tx], rng);
@@ -828,15 +787,7 @@ fn test_existence_check() {
     let inputs = [Value::<CurrentNetwork>::Record(map_record.clone()), Value::from_str("true").unwrap()];
 
     let growing_family_tx = vm
-        .execute(
-            &caller_private_key,
-            ("remapper.aleo", "growing_family"),
-            inputs.iter(),
-            None,
-            0,
-            None,
-            rng,
-        )
+        .execute(&caller_private_key, ("remapper.aleo", "growing_family"), inputs.iter(), None, 0, None, rng)
         .unwrap();
 
     add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&inputs], &[growing_family_tx], rng);
@@ -901,15 +852,7 @@ fn test_existence_check() {
     ];
 
     let consume_external_map_tx = vm
-        .execute(
-            &caller_private_key,
-            ("remapper.aleo", "consume_external_map"),
-            inputs.iter(),
-            None,
-            0,
-            None,
-            rng,
-        )
+        .execute(&caller_private_key, ("remapper.aleo", "consume_external_map"), inputs.iter(), None, 0, None, rng)
         .unwrap();
 
     add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&inputs], &[consume_external_map_tx], rng);
@@ -937,7 +880,14 @@ fn test_existence_check() {
         )
         .unwrap();
 
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&inputs], &[convert_dynamic_and_consume_tx], rng);
+    add_and_test_with_costs(
+        &vm,
+        &caller_private_key,
+        &caller_address,
+        &[&inputs],
+        &[convert_dynamic_and_consume_tx],
+        rng,
+    );
 
     // Case 7.3) ExternalRecord is cast to DynamicRecord, translated to an
     // ExternalRecord via a function call and then consumed by a callee

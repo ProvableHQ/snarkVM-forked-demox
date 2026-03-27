@@ -130,12 +130,14 @@ impl<N: Network> Stack<N> {
         Ok(authorization)
     }
 
-    /// Produces a mock authorization for a call to the given function on the
-    /// supplied inputs using the provided caller address. The resulting
-    /// authorization has the same size as the one which would be produced (and
-    /// signed) using the private key corresponding to that address, but many of
-    /// its values (such as the input IDs in the Requests) may not be correct.
-    /// This method does not check for circuit satisfiability of the requests.
+    /// Produces a mocked `Authorization` for a call to the given function on
+    /// the supplied inputs using the provided caller address. The resulting
+    /// `Authorization` has the same size as the one which would be produced
+    /// (and signed) using the private key corresponding to that address and can
+    /// therefore be used to compute the cost of the associated `Execution`, but
+    /// many of its values (such as the input IDs in the `Request`s) may not be
+    /// correct. This method does not check circuit satisfiability or `Request`
+    /// validity.
     #[inline]
     pub fn sample_authorization<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
         &self,
@@ -153,8 +155,6 @@ impl<N: Network> Stack<N> {
 
         // Get the program ID.
         let program_id = *self.program.id();
-        // Prepare the function name.
-        let function_name = function_name.try_into().map_err(|_| anyhow!("Invalid function name"))?;
         // Retrieve the input types.
         let input_types = self.get_function(&function_name)?.input_types();
         lap!(timer, "Retrieve the input types");
@@ -165,15 +165,7 @@ impl<N: Network> Stack<N> {
         let root_tvk = None;
 
         // Compute the mock request.
-        let mocked_request = Request::sample(
-            address,
-            program_id,
-            function_name,
-            inputs,
-            &input_types,
-            false,
-            rng,
-        )?;
+        let mocked_request = Request::sample(address, program_id, function_name, inputs, &input_types, false, rng)?;
 
         lap!(timer, "Compute the mocked request");
         // Initialize the authorization.

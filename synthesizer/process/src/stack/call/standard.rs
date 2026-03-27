@@ -118,7 +118,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                 CallStack::AuthorizeMocked(requests, address, authorization) => {
                     // Set 'is_root'.
                     let is_root = false;
-                    
+
                     // Compute the mocked request.
                     let request = Request::sample(
                         *address,
@@ -136,7 +136,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                 }
                 _ => {}
             };
-            
+
             // Set the (console) caller.
             let console_caller = Some(*stack.program_id());
             // Evaluate the function.

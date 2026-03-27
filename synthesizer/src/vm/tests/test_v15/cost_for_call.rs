@@ -19,7 +19,7 @@
 
 use super::*;
 
-/// Reads the public credits balance for the given address string.
+/// Reads the public credits balance for the given address.
 fn get_public_balance(vm: &VM<CurrentNetwork, LedgerType>, address: &str) -> u64 {
     match vm
         .finalize_store()
@@ -35,6 +35,10 @@ fn get_public_balance(vm: &VM<CurrentNetwork, LedgerType>, address: &str) -> u64
     }
 }
 
+// Tests that the function `execution_cost_for_call` returns the correct cost
+// even in functions that depend on the signer. This test complements test cases
+// in `synthesizer/tests/test_vm_execute_and_finalize.rs` and
+// `test_v15/cost_for_call.rs` which also verify cost estimation correctness.
 #[test]
 fn test_cost_for_call_depending_on_signer() {
     let rng = &mut TestRng::default();
@@ -48,6 +52,12 @@ fn test_cost_for_call_depending_on_signer() {
     let two_field = Identifier::<CurrentNetwork>::from_str("two").unwrap().to_field().unwrap();
     let three_field = Identifier::<CurrentNetwork>::from_str("three").unwrap().to_field().unwrap();
 
+    // This program has substantially different behaviours (input/output types
+    // and visibility, call graph depth, etc.) depending on the residue of the
+    // (x coordinate regarded as an integer) of the caller address modulo 4.
+    // Furthermore, the finalize scope also depends on the signer in the form of
+    // calls to `transfer_public` with an amount that also depends on the same
+    // modulo-4 residue.
     let program = Program::<CurrentNetwork>::from_str(&format!(
         r"
         import credits.aleo;
@@ -189,11 +199,8 @@ fn test_cost_for_call_depending_on_signer() {
         .execute(
             &genesis_private_key,
             ("credits.aleo", "transfer_public"),
-            vec![
-                Value::from_str(&program_address.to_string()).unwrap(),
-                Value::from_str("10000u64").unwrap(),
-            ]
-            .into_iter(),
+            vec![Value::from_str(&program_address.to_string()).unwrap(), Value::from_str("10000u64").unwrap()]
+                .into_iter(),
             None,
             0,
             None,
@@ -209,7 +216,6 @@ fn test_cost_for_call_depending_on_signer() {
     let mut num_tested_addresses = 0;
 
     while num_tested_addresses < 10 || tested_modular_residues.iter().any(|&residue| !residue) {
-
         let caller_pk = PrivateKey::new(rng).unwrap();
         let caller_address: Address<CurrentNetwork> = Address::try_from(&caller_pk).unwrap();
 
@@ -217,23 +223,19 @@ fn test_cost_for_call_depending_on_signer() {
         let modulo_4_residue = {
             let x_coord: Field<CurrentNetwork> = caller_address.to_field().unwrap();
             let bits_le = x_coord.to_bits_le();
-            (if bits_le[0] {1} else {0}) + (if bits_le[1] {2} else {0})
+            (if bits_le[0] { 1 } else { 0 }) + (if bits_le[1] { 2 } else { 0 })
         };
 
-        tested_modular_residues[modulo_4_residue as usize] = true;
+        tested_modular_residues[usize::try_from(modulo_4_residue).unwrap()] = true;
         num_tested_addresses += 1;
-
 
         // Fund the caller with enough credits for the execution fee.
         let fund_tx = vm
             .execute(
                 &genesis_private_key,
                 ("credits.aleo", "transfer_public"),
-                vec![
-                    Value::from_str(&caller_address.to_string()).unwrap(),
-                    Value::from_str("1000000u64").unwrap(),
-                ]
-                .into_iter(),
+                vec![Value::from_str(&caller_address.to_string()).unwrap(), Value::from_str("1000000u64").unwrap()]
+                    .into_iter(),
                 None,
                 0,
                 None,

@@ -288,7 +288,14 @@ fn test_translation(
         .unwrap();
 
     println!("Verifying transaction...");
-    add_and_test_with_costs(&vm, caller_private_key, &caller_address, &[&computed_input_values], &[transaction.clone()], rng);
+    add_and_test_with_costs(
+        &vm,
+        caller_private_key,
+        &caller_address,
+        &[&computed_input_values],
+        &[transaction.clone()],
+        rng,
+    );
 
     if let Some(expected_public_outputs) = expected_public_outputs {
         println!("Asserting output correctness on {} expected public outputs...", expected_public_outputs.len());
@@ -949,7 +956,14 @@ fn test_translation_traversal_consistency() {
     let (transaction_mint_b_1, dynamic_record_b_1) = mint_record("mint_b");
     let (transaction_mint_b_2, dynamic_record_b_2) = mint_record("mint_b");
 
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&[], &[], &[]], &[transaction_mint_a, transaction_mint_b_1, transaction_mint_b_2], rng);
+    add_and_test_with_costs(
+        &vm,
+        &caller_private_key,
+        &caller_address,
+        &[&[], &[], &[]],
+        &[transaction_mint_a, transaction_mint_b_1, transaction_mint_b_2],
+        rng,
+    );
 
     let inputs = vec![
         Value::DynamicRecord(dynamic_record_a),
@@ -958,15 +972,7 @@ fn test_translation_traversal_consistency() {
     ];
 
     let transaction = vm
-        .execute(
-            &caller_private_key,
-            ("quotes.aleo", "quadruple_caller"),
-            inputs.iter(),
-            None,
-            0,
-            None,
-            rng,
-        )
+        .execute(&caller_private_key, ("quotes.aleo", "quadruple_caller"), inputs.iter(), None, 0, None, rng)
         .unwrap();
 
     // This indeed results of three batches for translation proving/verification:
@@ -1586,15 +1592,7 @@ fn test_translation_max_entries_record() {
     let inputs = vec![Value::DynamicRecord(dynamic_record)];
 
     let consume_tx = vm
-        .execute(
-            &caller_private_key,
-            ("max_entries.aleo", "dynamic_consume_max"),
-            inputs.iter(),
-            None,
-            0,
-            None,
-            rng,
-        )
+        .execute(&caller_private_key, ("max_entries.aleo", "dynamic_consume_max"), inputs.iter(), None, 0, None, rng)
         .unwrap();
 
     // Verify the transaction succeeds (sum of 0+1+2+...+31 = 496)

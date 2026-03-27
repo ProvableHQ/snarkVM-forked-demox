@@ -250,7 +250,7 @@ fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
             // Test cost computation given the Authorization and the request
             if consensus_version >= ConsensusVersion::V4 {
                 let actual_cost = execution_cost(&vm.process().read(), execution, consensus_version).unwrap();
-                
+
                 let authorization = Authorization::from_unchecked((vec![], execution.transitions().cloned().collect()));
                 let expected_cost_given_authorization =
                     execution_cost_for_authorization(&vm.process().read(), &authorization, consensus_version).unwrap();
@@ -266,11 +266,10 @@ fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
                     inputs.iter(),
                     consensus_version,
                     &mut cloned_rng,
-                ).unwrap();
+                )
+                .unwrap();
 
                 assert_eq!(actual_cost, expected_cost_given_call);
-                // TODO (CwPK) remove
-                println!(" * in _finalize: cost estimation OK")
             }
 
             // Attempt to verify the transaction.

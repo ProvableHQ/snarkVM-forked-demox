@@ -155,7 +155,6 @@ impl<N: Network> Stack<N> {
                     "Illegal operation: call stack must be `Authorize`, `Evaluate`, `Execute` or `AuthorizeMocked` in `evaluate_function`."
                 )
                 .into()),
-                
             };
         lap!(timer, "Retrieve the next request");
 
@@ -195,11 +194,13 @@ impl<N: Network> Stack<N> {
         lap!(timer, "Perform input checks");
 
         // Ensure the request is well-formed (unless it has been mocked).
-        if !matches!(call_stack, CallStack::AuthorizeMocked(..)) && !request.verify(&function.input_types(), is_root, program_checksum) {
+        if !matches!(call_stack, CallStack::AuthorizeMocked(..))
+            && !request.verify(&function.input_types(), is_root, program_checksum)
+        {
             return Err(anyhow!("[Evaluate] Request is invalid").into());
         }
         lap!(timer, "Verify the request");
-        
+
         // Initialize the registers.
         let mut registers = Registers::<N, A>::new(call_stack, self.get_register_types(function.name())?.clone());
         // Set the transition signer.
@@ -333,11 +334,12 @@ impl<N: Network> Stack<N> {
                 lap!(timer, "Save the transition");
             }
             CallStack::AuthorizeMocked(_, _, authorization) => {
-                // Construct the transition.
-                let transition = Transition::from_unchecked(&request, &response, &function.output_types(), &output_registers)?;
+                // Construct the transition without checking correctness of input IDs.
+                let transition =
+                    Transition::from_unchecked(&request, &response, &function.output_types(), &output_registers)?;
                 // Add the transition to the authorization.
                 authorization.insert_transition(transition)?;
-                lap!(timer, "Save the transition");
+                lap!(timer, "Save the mocked transition");
             }
             _ => {}
         }

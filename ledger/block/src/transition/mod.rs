@@ -428,8 +428,8 @@ impl<N: Network> Transition<N> {
 
     /// Initializes a new transition from a request, response, and optional
     /// dynamic outputs. It does not check correctness or consistency of the
-    /// provided values.
-    // TODO (CwPK) can this be simplified?
+    /// provided values and should only be used for cost-estimation or testing
+    /// purposes.
     pub fn from_unchecked(
         request: &Request<N>,
         response: &Response<N>,
@@ -444,7 +444,7 @@ impl<N: Network> Transition<N> {
         // Compute the function ID based on the whether the request and response are dynamic.
         let function_id = compute_function_id(&network_id, &program_id, &function_name)?;
 
-        // A helper function to construct and verify the inputs.
+        // A helper function to construct inputs without verifying any of their fields.
         // If caller_input_ids is provided (for dynamic calls), it's used to determine if
         // the caller sees a dynamic record while the callee sees a static one.
         let construct_inputs = |input_ids: &[InputID<N>],
@@ -479,7 +479,6 @@ impl<N: Network> Transition<N> {
                         (InputID::Constant(input_hash), Value::Plaintext(plaintext)) => {
                             // Construct the constant input.
                             Ok(Input::Constant(*input_hash, Some(plaintext.clone())))
-
                         }
                         (InputID::Public(input_hash), Value::Plaintext(plaintext)) => {
                             // Construct the public input.

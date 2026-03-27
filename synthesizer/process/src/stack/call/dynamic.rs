@@ -13,8 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use circuit::private_key;
-
 use super::*;
 
 impl<N: Network> CallTrait<N> for CallDynamic<N> {
@@ -142,11 +140,6 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
             if let CallStack::AuthorizeMocked(requests, address, authorization) = &mut call_stack {
                 // Set 'is_root'.
                 let is_root = false;
-                // Retrieve the program checksum, if the program has a constructor.
-                let program_checksum = match substack.program().contains_constructor() {
-                    true => Some(substack.program_checksum_as_field()?),
-                    false => None,
-                };
 
                 // Get the input types of the callee.
                 let input_types = substack.program().get_function_ref(function_name)?.input_types();
@@ -165,7 +158,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                     *function.name(),
                     callee_inputs.iter(),
                     &function.input_types(),
-                    true,
+                    is_root,
                     rng,
                 )?;
 
@@ -355,7 +348,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
 
                         // Return the request verification inputs and response.
                         (request_verification_inputs, caller_response_outputs)
-                    },
+                    }
                     // In `Synthesize` or `CheckDeployment` mode, we use dummy inputs and outputs to avoid building a full sub-circuit.
                     CallStack::Synthesize(_, private_key, ..) | CallStack::CheckDeployment(_, private_key, ..) => {
                         // Note that it does not matter what program ID we use here, since we are only synthesizing dummy outputs.
@@ -650,7 +643,9 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         (callee_request_verification_inputs, caller_console_outputs)
                     }
                     // In `AuthorizeMocked` mode, throw an error.
-                    CallStack::AuthorizeMocked(..) => return Err(anyhow!("Cannot 'execute' a function in 'AuthorizeMocked' mode.").into()),
+                    CallStack::AuthorizeMocked(..) => {
+                        return Err(anyhow!("Cannot 'execute' a function in 'AuthorizeMocked' mode.").into());
+                    }
                 }
             };
             lap!(timer, "Computed the request and response");

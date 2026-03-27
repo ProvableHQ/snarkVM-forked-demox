@@ -22,8 +22,8 @@ use super::*;
 // Tests that `execution_cost_for_authorization()` and
 // `execution_cost_for_call()` compute correct costs for transactions with
 // inclusion and translation proofs. Complements test cases in
-// `synthesizer/tests/test_vm_execute_and_finalize.rs` which also verify cost
-// estimation correctness.
+// `synthesizer/tests/test_vm_execute_and_finalize.rs` and
+// `test_v15/cost_for_call.rs` which also verify cost estimation correctness.
 #[test]
 fn test_execution_cost_for_authorization_and_call() {
     let rng = &mut TestRng::default();
@@ -43,8 +43,6 @@ fn test_execution_cost_for_authorization_and_call() {
     let network_field = Identifier::<CurrentNetwork>::from_str(network_str).unwrap().to_field().unwrap();
     let weld_function_id = Identifier::<CurrentNetwork>::from_str(weld_function_str).unwrap();
     let weld_function_field = weld_function_id.to_field().unwrap();
-    let consume_base_metal_field =
-        Identifier::<CurrentNetwork>::from_str("consume_base_metal").unwrap().to_field().unwrap();
 
     let program_a_source = format!(
         r"
@@ -134,12 +132,7 @@ fn test_execution_cost_for_authorization_and_call() {
 
             get.record.dynamic r3.grams into r4 as u32;
 
-            call.dynamic {program_a_field} {network_field} {consume_base_metal_field}
-                with r1 (as dynamic.record);
-
-            get.record.dynamic r4.grams into r5 as u32;
-
-            output r5 as u32.public;
+            output r4 as u32.public;
 
         function consume_base_metal:
             input r0 as base_metal.record;
@@ -180,19 +173,24 @@ fn test_execution_cost_for_authorization_and_call() {
     let transaction_deploy_b = vm.deploy(&caller_private_key, &program_b, None, 0, None, rng).unwrap();
     add_and_test(&vm, &caller_private_key, &[transaction_deploy_b], rng);
 
-    let record_names = [
-        "base_metal",
-        "accessory_metal",
-        "welding_metal",
-    ];
+    let record_names = ["base_metal", "accessory_metal", "welding_metal"];
 
     let entry_values = vec![
-        vec![&caller_address_str, "183u16", "999u32", "true"].iter().map(|value| Value::from_str(value).unwrap()).collect_vec(),
-        vec![&caller_address_str, "82u16", "27u32", "0group"].iter().map(|value| Value::from_str(value).unwrap()).collect_vec(),
-        vec![&caller_address_str, "183u16", "82u16"].iter().map(|value| Value::from_str(value).unwrap()).collect_vec(),
+        [&caller_address_str, "183u16", "999u32", "true"]
+            .iter()
+            .map(|value| Value::from_str(value).unwrap())
+            .collect_vec(),
+        [&caller_address_str, "82u16", "27u32", "0group"]
+            .iter()
+            .map(|value| Value::from_str(value).unwrap())
+            .collect_vec(),
+        [&caller_address_str, "183u16", "82u16"].iter().map(|value| Value::from_str(value).unwrap()).collect_vec(),
     ];
 
-    let transactions_and_records = record_names.into_iter().zip(entry_values.clone().into_iter()).map(|(record_name, entry_values)| {
+    let transactions_and_records = record_names
+        .into_iter()
+        .zip(entry_values.clone())
+        .map(|(record_name, entry_values)| {
             let function_name = format!("mint_{record_name}");
 
             println!("Calling {program_a_str}.aleo/{function_name}...");
@@ -236,22 +234,14 @@ fn test_execution_cost_for_authorization_and_call() {
     let count_before_weld_dynamically = vm.transition_store().records().count();
 
     let transaction = vm
-        .execute(
-            &caller_private_key,
-            ("welder.aleo", "weld_dynamically"),
-            dynamic_records.iter(),
-            None,
-            0,
-            None,
-            rng,
-        )
+        .execute(&caller_private_key, ("welder.aleo", "weld_dynamically"), dynamic_records.iter(), None, 0, None, rng)
         .unwrap();
 
     let expected_output = Plaintext::<CurrentNetwork>::from_str("1026u32").unwrap();
 
     assert!(
-        // The root transition is at index 3.
-        matches!(transaction.transitions().nth(3).unwrap().outputs(), [Output::Public(_, Some(plaintext))] if *plaintext == expected_output),
+        // The root transition is at index 1.
+        matches!(transaction.transitions().nth(1).unwrap().outputs(), [Output::Public(_, Some(plaintext))] if *plaintext == expected_output),
         "Expected output: {:?}, got: {:?}",
         expected_output,
         transaction.transitions().next().unwrap().outputs()
@@ -452,32 +442,23 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
     let inputs_1 = [Value::from_str(&format!("{client_1_address}")).unwrap(), Value::from_str("1000000u64").unwrap()];
 
     let transaction_funding_1 = vm
-        .execute(
-            &factory_private_key,
-            ("credits.aleo", "transfer_public"),
-            inputs_1.iter(),
-            None,
-            0,
-            None,
-            rng,
-        )
+        .execute(&factory_private_key, ("credits.aleo", "transfer_public"), inputs_1.iter(), None, 0, None, rng)
         .unwrap();
 
     let inputs_2 = [Value::from_str(&format!("{client_2_address}")).unwrap(), Value::from_str("1000000u64").unwrap()];
 
     let transaction_funding_2 = vm
-        .execute(
-            &factory_private_key,
-            ("credits.aleo", "transfer_public"),
-            inputs_2.iter(),
-            None,
-            0,
-            None,
-            rng,
-        )
+        .execute(&factory_private_key, ("credits.aleo", "transfer_public"), inputs_2.iter(), None, 0, None, rng)
         .unwrap();
 
-    add_and_test_with_costs(&vm, &factory_private_key, &factory_address, &[&inputs_1, &inputs_2], &[transaction_funding_1, transaction_funding_2], rng);
+    add_and_test_with_costs(
+        &vm,
+        &factory_private_key,
+        &factory_address,
+        &[&inputs_1, &inputs_2],
+        &[transaction_funding_1, transaction_funding_2],
+        rng,
+    );
 
     // ************************** Case 1: Toy decomissioning **************************
 
@@ -493,15 +474,7 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
     println!("Executing {program_b_name}.aleo/manufacture_toy...");
 
     let transaction_mint_toy_1 = vm
-        .execute(
-            &client_1_private_key,
-            ("factory.aleo", "manufacture_toy"),
-            toy_1_inputs.iter(),
-            None,
-            0,
-            None,
-            rng,
-        )
+        .execute(&client_1_private_key, ("factory.aleo", "manufacture_toy"), toy_1_inputs.iter(), None, 0, None, rng)
         .unwrap();
 
     let toy_1_record = match &transaction_mint_toy_1.transitions().next().unwrap().outputs()[0] {
@@ -511,7 +484,14 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
         _ => panic!("Expected output record is not a record"),
     };
 
-    add_and_test_with_costs(&vm, &client_1_private_key, &client_1_address, &[&toy_1_inputs], &[transaction_mint_toy_1], rng);
+    add_and_test_with_costs(
+        &vm,
+        &client_1_private_key,
+        &client_1_address,
+        &[&toy_1_inputs],
+        &[transaction_mint_toy_1],
+        rng,
+    );
 
     // Computing the signature
     let toy_1_signature = toy_1_id + *client_1_view_key;
@@ -535,7 +515,14 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
         )
         .unwrap();
 
-    add_and_test_with_costs(&vm, &client_1_private_key, &client_1_address, &[&decomission_toy_inputs], &[transaction_decomission_toy_1], rng);
+    add_and_test_with_costs(
+        &vm,
+        &client_1_private_key,
+        &client_1_address,
+        &[&decomission_toy_inputs],
+        &[transaction_decomission_toy_1],
+        rng,
+    );
 
     // Check exactly one record has been consumed (despite the cast to dynamic +
     // dynamic call)
@@ -581,7 +568,14 @@ fn test_translation_get_dynamic_cast_to_dynamic() {
 
     assert_eq!(unpainted_entry_1, &Plaintext::from_str("false").unwrap());
 
-    add_and_test_with_costs(&vm, &client_1_private_key, &client_1_address, &[&ladder_1_inputs], &[transaction_mint_ladder_1], rng);
+    add_and_test_with_costs(
+        &vm,
+        &client_1_private_key,
+        &client_1_address,
+        &[&ladder_1_inputs],
+        &[transaction_mint_ladder_1],
+        rng,
+    );
 
     println!("Executing {program_b_name}.aleo/paint_ladder...");
 

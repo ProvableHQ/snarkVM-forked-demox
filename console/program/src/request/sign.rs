@@ -247,7 +247,13 @@ impl<N: Network> Request<N> {
                     input_ids.push(InputID::Private(Field::rand(rng)));
                 }
                 ValueType::Record(..) => {
-                    input_ids.push(InputID::Record(Field::rand(rng), Group::rand(rng), Field::rand(rng), Field::rand(rng), Field::rand(rng)));
+                    input_ids.push(InputID::Record(
+                        Field::rand(rng),
+                        Group::rand(rng),
+                        Field::rand(rng),
+                        Field::rand(rng),
+                        Field::rand(rng),
+                    ));
                 }
                 ValueType::ExternalRecord(..) => {
                     input_ids.push(InputID::ExternalRecord(Field::rand(rng)));
