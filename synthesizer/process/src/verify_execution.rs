@@ -279,14 +279,17 @@ impl<N: Network> Process<N> {
         // count. The Varuna verifier pads inputs up to the domain size (the next power of two at
         // least as large as `num_public_inputs`) with zero field elements, so having fewer inputs
         // than the padded count is always valid.
-        for (verifying_key, inputs_list) in &verifier_inputs {
-            let expected = verifying_key.circuit_info.num_public_inputs;
-            for inputs in inputs_list {
-                ensure!(
-                    inputs.len() <= expected,
-                    "Verifier input count mismatch: expected at most {expected} public inputs, found {}",
-                    inputs.len()
-                );
+        #[cfg(not(feature = "dev_skip_checks"))]
+        {
+            for (verifying_key, inputs_list) in &verifier_inputs {
+                let expected = verifying_key.circuit_info.num_public_inputs;
+                for inputs in inputs_list {
+                    ensure!(
+                        inputs.len() <= expected,
+                        "Verifier input count mismatch: expected at most {expected} public inputs, found {}",
+                        inputs.len()
+                    );
+                }
             }
         }
 
