@@ -28,7 +28,7 @@ default = [ ]
 serial = [ "snarkvm-console/serial" ]
 wasm = [ "snarkvm-console/wasm" ]
 metrics = [ "dep:snarkvm-metrics" ]
-prop-tests = [ "rand", "rand_chacha", "test-strategy", "anyhow" ]
+prop-tests = [ "dep:rand", "dep:rand_chacha", "test-strategy", "dep:anyhow", "dep:proptest" ]
 test-helpers = [ "prop-tests", "rand_distr" ]
 
 [dependencies.snarkvm-console]
@@ -54,9 +54,9 @@ features = [ "preserve_order" ]
 workspace = true
 optional = true
 
-# [dependencies.proptest]
-# version = "1.10.0" restore after a release with rand 0.10
-# optional = true
+[dependencies.proptest]
+version = "1.11"
+optional = true
 
 [dependencies.rand]
 workspace = true

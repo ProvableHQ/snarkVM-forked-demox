@@ -23,8 +23,8 @@ mod serialize;
 mod string;
 mod to_id;
 
-// #[cfg(any(test, feature = "prop-tests"))]
-// pub mod prop_tests;
+#[cfg(any(test, feature = "prop-tests"))]
+pub mod prop_tests;
 
 use console::{
     prelude::*,
