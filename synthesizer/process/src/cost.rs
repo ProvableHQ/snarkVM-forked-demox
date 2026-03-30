@@ -564,6 +564,24 @@ pub fn cost_per_command<N: Network>(
         Command::Instruction(Instruction::CommitPED128(commit)) => {
             cost_in_size(stack, finalize_types, commit.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
+        Command::Instruction(Instruction::CommitBHP256Raw(commit)) => {
+            cost_in_size(stack, finalize_types, commit.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
+        }
+        Command::Instruction(Instruction::CommitBHP512Raw(commit)) => {
+            cost_in_size(stack, finalize_types, commit.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
+        }
+        Command::Instruction(Instruction::CommitBHP768Raw(commit)) => {
+            cost_in_size(stack, finalize_types, commit.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
+        }
+        Command::Instruction(Instruction::CommitBHP1024Raw(commit)) => {
+            cost_in_size(stack, finalize_types, commit.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
+        }
+        Command::Instruction(Instruction::CommitPED64Raw(commit)) => {
+            cost_in_size(stack, finalize_types, commit.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+        }
+        Command::Instruction(Instruction::CommitPED128Raw(commit)) => {
+            cost_in_size(stack, finalize_types, commit.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+        }
         Command::Instruction(Instruction::DeserializeBits(deserialize)) => {
             Ok(plaintext_size_in_bytes(stack, &PlaintextType::Array(deserialize.operand_type().clone()))?
                 .saturating_mul(CAST_PER_BYTE_COST)
