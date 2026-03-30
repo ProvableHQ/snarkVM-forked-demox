@@ -73,6 +73,9 @@ fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
         Some(randomness) => TestRng::fixed(randomness),
     };
 
+    // RNG used only in `execution_cost_for_call`
+    let cost_rng = &mut TestRng::default();
+
     // Initialize a private key.
     let genesis_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
 
@@ -263,7 +266,7 @@ fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
                     function_name,
                     inputs.iter(),
                     consensus_version,
-                    rng,
+                    cost_rng,
                 )
                 .unwrap();
 
