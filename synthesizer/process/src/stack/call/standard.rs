@@ -117,9 +117,6 @@ impl<N: Network> CallTrait<N> for Call<N> {
 
             // In AuthorizeMocked mode, we need to compute the mocked request and push it onto the call stack.
             if let CallStack::AuthorizeMocked(requests, address, authorization) = &mut call_stack {
-                // Set 'is_root'.
-                let is_root = false;
-
                 // Compute the mocked request.
                 let request = Request::sample(
                     *address,
@@ -127,7 +124,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                     *function.name(),
                     inputs.iter(),
                     &function.input_types(),
-                    is_root,
+                    false,
                     rng,
                 )?;
                 // Add the request to the requests.

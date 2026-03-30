@@ -136,11 +136,8 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                 authorization.push(request)?;
             };
 
-            // In `AuthorizeMocked` mode, we operate similarly to the Authorize mode but mock the request.
+            // In AuthorizeMocked mode, we operate similarly to the Authorize mode but mock the request.
             if let CallStack::AuthorizeMocked(requests, address, authorization) = &mut call_stack {
-                // Set 'is_root'.
-                let is_root = false;
-
                 // Get the input types of the callee.
                 let input_types = substack.program().get_function_ref(function_name)?.input_types();
                 // Ensure the number of inputs matches the number of input types.
@@ -158,7 +155,7 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                     *function.name(),
                     callee_inputs.iter(),
                     &function.input_types(),
-                    is_root,
+                    true,
                     rng,
                 )?;
 
