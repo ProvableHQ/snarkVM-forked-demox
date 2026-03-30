@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,6 +18,7 @@ use console::{
     network::prelude::*,
     program::{Register, RegisterType},
 };
+use snarkvm_synthesizer_error::*;
 
 /// Asserts two operands are equal to each other.
 pub type AssertEq<N> = AssertInstruction<N, { Variant::AssertEq as u8 }>;
@@ -80,10 +81,19 @@ impl<N: Network, const VARIANT: u8> AssertInstruction<N, VARIANT> {
 
 impl<N: Network, const VARIANT: u8> AssertInstruction<N, VARIANT> {
     /// Evaluates the instruction.
-    pub fn evaluate(&self, stack: &impl StackTrait<N>, registers: &mut impl RegistersTrait<N>) -> Result<()> {
+    pub fn evaluate(
+        &self,
+        stack: &impl StackTrait<N>,
+        registers: &mut impl RegistersTrait<N>,
+    ) -> Result<(), EvalError> {
         // Ensure the number of operands is correct.
         if self.operands.len() != 2 {
-            bail!("Instruction '{}' expects 2 operands, found {} operands", Self::opcode(), self.operands.len())
+            return Err(anyhow!(
+                "Instruction '{}' expects 2 operands, found {} operands",
+                Self::opcode(),
+                self.operands.len()
+            )
+            .into());
         }
 
         // Retrieve the inputs.
@@ -94,15 +104,15 @@ impl<N: Network, const VARIANT: u8> AssertInstruction<N, VARIANT> {
         match VARIANT {
             0 => {
                 if input_a != input_b {
-                    bail!("'{}' failed: '{input_a}' is not equal to '{input_b}' (should be equal)", Self::opcode())
+                    return Err(AssertError::Eq { lhs: format!("{input_a}"), rhs: format!("{input_b}") }.into());
                 }
             }
             1 => {
                 if input_a == input_b {
-                    bail!("'{}' failed: '{input_a}' is equal to '{input_b}' (should not be equal)", Self::opcode())
+                    return Err(AssertError::Neq { lhs: format!("{input_a}"), rhs: format!("{input_b}") }.into());
                 }
             }
-            _ => bail!("Invalid 'assert' variant: {VARIANT}"),
+            _ => return Err(AssertError::Invalid { variant: VARIANT }.into()),
         }
         Ok(())
     }
@@ -112,10 +122,15 @@ impl<N: Network, const VARIANT: u8> AssertInstruction<N, VARIANT> {
         &self,
         stack: &impl StackTrait<N>,
         registers: &mut impl RegistersCircuit<N, A>,
-    ) -> Result<()> {
+    ) -> Result<(), ExecError> {
         // Ensure the number of operands is correct.
         if self.operands.len() != 2 {
-            bail!("Instruction '{}' expects 2 operands, found {} operands", Self::opcode(), self.operands.len())
+            return Err(anyhow!(
+                "Instruction '{}' expects 2 operands, found {} operands",
+                Self::opcode(),
+                self.operands.len()
+            )
+            .into());
         }
 
         // Retrieve the inputs.
@@ -124,17 +139,22 @@ impl<N: Network, const VARIANT: u8> AssertInstruction<N, VARIANT> {
 
         // Assert the inputs.
         match VARIANT {
-            0 => A::assert(input_a.is_equal(&input_b)),
-            1 => A::assert(input_a.is_not_equal(&input_b)),
-            _ => bail!("Invalid 'assert' variant: {VARIANT}"),
+            0 => A::assert(input_a.is_equal(&input_b))?,
+            1 => A::assert(input_a.is_not_equal(&input_b))?,
+            _ => return Err(anyhow!("Invalid 'assert' variant: {VARIANT}").into()),
         }
         Ok(())
     }
 
     /// Finalizes the instruction.
     #[inline]
-    pub fn finalize(&self, stack: &impl StackTrait<N>, registers: &mut impl RegistersTrait<N>) -> Result<()> {
-        self.evaluate(stack, registers)
+    pub fn finalize(
+        &self,
+        stack: &impl StackTrait<N>,
+        registers: &mut impl RegistersTrait<N>,
+    ) -> Result<(), FinalizeError> {
+        self.evaluate(stack, registers)?;
+        Ok(())
     }
 
     /// Returns the output type from the given program and input types.

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,6 +32,7 @@ pub struct FinalizeRegisters<N: Network> {
     /// The transition ID for the finalize scope.
     transition_id: N::TransitionID,
     /// The function name for the finalize scope.
+    /// This is set to the program ID for constructors.
     function_name: Identifier<N>,
     /// The mapping of all registers to their defined types.
     finalize_types: FinalizeTypes<N>,

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -69,7 +69,8 @@ fn check_operand_type_is_valid(variant: u8, operand_type: &PlaintextType<impl Ne
             | LiteralType::U32
             | LiteralType::U64
             | LiteralType::U128
-            | LiteralType::Scalar => Ok(()),
+            | LiteralType::Scalar
+            | LiteralType::Identifier => Ok(()),
             _ => bail!("Invalid literal type '{literal_type}' for 'serialize' instruction"),
         }
     }
@@ -486,13 +487,14 @@ mod tests {
             PlaintextType::Literal(LiteralType::U64),
             PlaintextType::Literal(LiteralType::U128),
             PlaintextType::Literal(LiteralType::Scalar),
+            PlaintextType::Literal(LiteralType::Identifier),
         ]
     }
 
     /// Randomly sample a destination type.
     fn sample_destination_type<N: Network, const VARIANT: u8>(rng: &mut TestRng) -> ArrayType<N> {
-        // Generate a random array length between 1 and N::MAX_ARRAY_ELEMENTS.
-        let array_length = 1 + (u32::rand(rng) % u32::try_from(N::MAX_ARRAY_ELEMENTS).unwrap());
+        // Generate a random array length between 1 and N::LATEST_MAX_ARRAY_ELEMENTS().
+        let array_length = 1 + (u32::rand(rng) % u32::try_from(N::LATEST_MAX_ARRAY_ELEMENTS()).unwrap());
         match VARIANT {
             0 | 1 => {
                 ArrayType::new(PlaintextType::Literal(LiteralType::Boolean), vec![U32::new(array_length)]).unwrap()

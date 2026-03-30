@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -53,6 +53,7 @@ use console::{
     },
     program::{Register, RegisterType},
 };
+use snarkvm_synthesizer_error::*;
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub enum Instruction<N: Network> {
@@ -74,6 +75,8 @@ pub enum Instruction<N: Network> {
     Async(Async<N>),
     /// Calls a closure or function on the operands.
     Call(Call<N>),
+    /// Dynamically calls a function on the operands.
+    CallDynamic(CallDynamic<N>),
     /// Casts the operands into the declared type.
     Cast(Cast<N>),
     /// Casts the operands into the declared type, with lossy truncation if applicable.
@@ -140,6 +143,8 @@ pub enum Instruction<N: Network> {
     ECDSAVerifySha3_512Raw(ECDSAVerifySha3_512Raw<N>),
     /// Computes whether `signature` is valid for the given Ethereum `address` and `message` using ECDSA with SHA3-512 and raw inputs.
     ECDSAVerifySha3_512Eth(ECDSAVerifySha3_512Eth<N>),
+    /// Gets a dynamic record entry.
+    GetRecordDynamic(GetRecordDynamic<N>),
     /// Computes whether `first` is greater than `second` as a boolean, storing the outcome in `destination`.
     GreaterThan(GreaterThan<N>),
     /// Computes whether `first` is greater than or equal to `second` as a boolean, storing the outcome in `destination`.
@@ -282,6 +287,10 @@ pub enum Instruction<N: Network> {
     ShrWrapped(ShrWrapped<N>),
     /// Computes whether `signature` is valid for the given `address` and `message`.
     SignVerify(SignVerify<N>),
+    /// Computes whether `proof` is valid for the given `verifying_key` and `public inputs`.
+    SnarkVerify(SnarkVerify<N>),
+    /// Computes whether a `batch_proof` is valid for the given `verifying_keys` and `public inputs`.
+    SnarkVerifyBatch(SnarkVerifyBatch<N>),
     /// Squares 'first', storing the outcome in `destination`.
     Square(Square<N>),
     /// Compute the square root of 'first', storing the outcome in `destination`.
@@ -447,6 +456,12 @@ macro_rules! instruction {
             SerializeBits,
             SerializeBitsRaw,
 
+            // New opcodes added in `ConsensusVersion::V14`
+            CallDynamic,
+            GetRecordDynamic,
+            SnarkVerify,
+            SnarkVerifyBatch,
+
             // New opcodes should be added here, with a comment on which consensus version they were added in.
         }}
     };
@@ -558,25 +573,39 @@ impl<N: Network> Instruction<N> {
     }
 
     /// Evaluates the instruction.
+    // Temporary until all instruction evaluate methods return EvalError (#2941, #3055).
+    #[allow(clippy::useless_conversion)]
     #[inline]
-    pub fn evaluate(&self, stack: &impl StackTrait<N>, registers: &mut impl RegistersSigner<N>) -> Result<()> {
-        instruction!(self, |instruction| instruction.evaluate(stack, registers))
+    pub fn evaluate(
+        &self,
+        stack: &impl StackTrait<N>,
+        registers: &mut impl RegistersSigner<N>,
+    ) -> Result<(), EvalError> {
+        instruction!(self, |instruction| instruction.evaluate(stack, registers).map_err(Into::into))
     }
 
     /// Executes the instruction.
+    // Temporary until all instruction execute methods return ExecError (#2941, #3055).
+    #[allow(clippy::useless_conversion)]
     #[inline]
     pub fn execute<A: circuit::Aleo<Network = N>>(
         &self,
         stack: &impl StackTrait<N>,
         registers: &mut impl RegistersCircuit<N, A>,
-    ) -> Result<()> {
-        instruction!(self, |instruction| instruction.execute::<A>(stack, registers))
+    ) -> Result<(), ExecError> {
+        instruction!(self, |instruction| instruction.execute::<A>(stack, registers).map_err(Into::into))
     }
 
     /// Finalizes the instruction.
+    // Temporary until all instruction finalize methods return FinalizeError (#2941, #3055).
+    #[allow(clippy::useless_conversion)]
     #[inline]
-    pub fn finalize(&self, stack: &impl StackTrait<N>, registers: &mut impl RegistersTrait<N>) -> Result<()> {
-        instruction!(self, |instruction| instruction.finalize(stack, registers))
+    pub fn finalize(
+        &self,
+        stack: &impl StackTrait<N>,
+        registers: &mut impl RegistersTrait<N>,
+    ) -> Result<(), FinalizeError> {
+        instruction!(self, |instruction| instruction.finalize(stack, registers).map_err(Into::into))
     }
 
     /// Returns the output type from the given input types.
@@ -597,6 +626,20 @@ impl<N: Network> Instruction<N> {
     /// Returns `true` if the instruction contains a literal string type.
     pub fn contains_string_type(&self) -> bool {
         self.operands().iter().any(|operand| operand.contains_string_type())
+    }
+
+    /// Returns `true` if the instruction contains an identifier type in its type declarations.
+    /// Checks cast destination types and serialize/deserialize operand/destination types.
+    pub fn contains_identifier_type(&self) -> Result<bool> {
+        match self {
+            Self::Cast(instruction) => instruction.cast_type().contains_identifier_type(),
+            Self::CastLossy(instruction) => instruction.cast_type().contains_identifier_type(),
+            Self::SerializeBits(instruction) => instruction.operand_type().contains_identifier_type(),
+            Self::SerializeBitsRaw(instruction) => instruction.operand_type().contains_identifier_type(),
+            Self::DeserializeBits(instruction) => instruction.destination_type().contains_identifier_type(),
+            Self::DeserializeBitsRaw(instruction) => instruction.destination_type().contains_identifier_type(),
+            _ => Ok(false),
+        }
     }
 
     /// Returns `true` if the instruction contains an array type with a size that exceeds the given maximum.
@@ -642,7 +685,7 @@ mod tests {
         // Sanity check the number of instructions is unchanged.
         // Note that the number of opcodes **MUST NOT** exceed u16::MAX.
         assert_eq!(
-            119,
+            123,
             Instruction::<CurrentNetwork>::OPCODES.len(),
             "Update me if the number of instructions changes."
         );

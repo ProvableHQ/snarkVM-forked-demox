@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,6 +31,9 @@ pub use snarkvm_ledger_store as store;
 
 #[cfg(any(test, feature = "test-helpers"))]
 pub mod test_helpers;
+
+mod error;
+pub use error::*;
 
 mod helpers;
 pub use helpers::*;
@@ -130,8 +133,10 @@ pub struct InnerLedger<N: Network, C: ConsensusStorage<N>> {
     vm: VM<N, C>,
     /// The genesis block.
     genesis_block: Block<N>,
+
     /// The current epoch hash.
     current_epoch_hash: RwLock<Option<N::BlockHash>>,
+
     /// The committee resulting from all the on-chain staking activity.
     ///
     /// This includes any bonding and unbonding transactions in the latest block.
@@ -151,9 +156,10 @@ pub struct InnerLedger<N: Network, C: ConsensusStorage<N>> {
 
     /// The latest block that was added to the ledger.
     ///
-    /// This lock is also used as a way to prevent concurrent updates to the ledger, and to ensure that
-    /// the ledger does not advance while certain check happen.
+    /// This lock is also to ensure *atomicity* of calls to `[Ledger::advance`], i.e., to guarantee that
+    /// there cannot be multiple concurrent ledger advancements and that ledger state cannot be read while advancement happens.
     current_block: RwLock<Block<N>>,
+
     /// The recent committees of interest paired with their applicable rounds.
     ///
     /// Each entry consisting of a round `R` and a committee `C`,
@@ -477,17 +483,19 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         priority_fee_in_microcredits: u64,
         query: Option<&dyn QueryTrait<N>>,
         rng: &mut R,
-    ) -> Result<Transaction<N>> {
+    ) -> Result<Transaction<N>, CreateDeployError> {
         // Fetch the unspent records.
         let records = self.find_unspent_credits_records(&ViewKey::try_from(private_key)?)?;
-        ensure!(!records.len().is_zero(), "The Aleo account has no records to spend.");
+        if records.len().is_zero() {
+            return Err(anyhow!("The Aleo account has no records to spend.").into());
+        }
         let mut records = records.values();
 
         // Prepare the fee record.
         let fee_record = Some(records.next().unwrap().clone());
 
         // Create a new deploy transaction.
-        self.vm.deploy(private_key, program, fee_record, priority_fee_in_microcredits, query, rng)
+        Ok(self.vm.deploy(private_key, program, fee_record, priority_fee_in_microcredits, query, rng)?)
     }
 
     /// Creates a transfer transaction.
@@ -501,10 +509,12 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         priority_fee_in_microcredits: u64,
         query: Option<&dyn QueryTrait<N>>,
         rng: &mut R,
-    ) -> Result<Transaction<N>> {
+    ) -> Result<Transaction<N>, CreateTransferError> {
         // Fetch the unspent records.
         let records = self.find_unspent_credits_records(&ViewKey::try_from(private_key)?)?;
-        ensure!(records.len() >= 2, "The Aleo account does not have enough records to spend.");
+        if records.len() < 2 {
+            return Err(anyhow!("The Aleo account does not have enough records to spend.").into());
+        }
         let mut records = records.values();
 
         // Prepare the inputs.
@@ -518,7 +528,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         let fee_record = Some(records.next().unwrap().clone());
 
         // Create a new execute transaction.
-        self.vm.execute(
+        Ok(self.vm.execute(
             private_key,
             ("credits.aleo", "transfer_private"),
             inputs.iter(),
@@ -526,7 +536,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             priority_fee_in_microcredits,
             query,
             rng,
-        )
+        )?)
     }
 }
 

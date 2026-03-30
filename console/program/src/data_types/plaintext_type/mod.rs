@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -123,6 +123,17 @@ impl<N: Network> PlaintextType<N> {
             Self::Literal(LiteralType::String) => true,
             Self::Array(array_type) => array_type.contains_string_type(),
             _ => false, // Structs are checked in their definition.
+        }
+    }
+
+    /// Returns `true` if the `PlaintextType` contains an identifier type.
+    pub fn contains_identifier_type(&self) -> Result<bool> {
+        match self {
+            Self::Literal(LiteralType::Identifier) => Ok(true),
+            Self::Literal(_) => Ok(false),
+            Self::Array(array_type) => array_type.contains_identifier_type(),
+            // Structs are checked in their definition.
+            Self::Struct(_) | Self::ExternalStruct(_) => Ok(false),
         }
     }
 

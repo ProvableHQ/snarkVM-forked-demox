@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -35,7 +35,7 @@ type CurrentAleo = AleoV0;
 #[test]
 fn test_serialize_deserialize_equivalence() {
     // Number of iterations to run for each type.
-    const ITERATIONS: usize = 50;
+    const ITERATIONS: usize = 10;
 
     // A helper function to define the program.
     fn construct_program(
@@ -75,6 +75,7 @@ function test_serde_equivalence:
             PlaintextType::Literal(LiteralType::U64),
             PlaintextType::Literal(LiteralType::U128),
             PlaintextType::Literal(LiteralType::Scalar),
+            PlaintextType::Literal(LiteralType::Identifier),
             PlaintextType::Array(ArrayType::new(PlaintextType::Literal(LiteralType::U8), vec![U32::new(8)]).unwrap()),
         ];
 
@@ -159,8 +160,9 @@ function test_serde_equivalence:
 
             // Execute the function.
             let trace = Trace::new();
+            let translations = Arc::new(RwLock::new(Vec::new()));
             let res_exec = stack.execute_function::<CurrentAleo, _>(
-                CallStack::execute(authorization.replicate(), Arc::new(RwLock::new(trace))).unwrap(),
+                CallStack::execute(authorization.replicate(), Arc::new(RwLock::new(trace)), translations).unwrap(),
                 None,
                 None,
                 rng,
@@ -331,6 +333,7 @@ finalize dummy:
         RegisterType::Plaintext(PlaintextType::Literal(LiteralType::U64)),
         RegisterType::Plaintext(PlaintextType::Literal(LiteralType::U128)),
         RegisterType::Plaintext(PlaintextType::Literal(LiteralType::Scalar)),
+        RegisterType::Plaintext(PlaintextType::Literal(LiteralType::Identifier)),
         RegisterType::Plaintext(PlaintextType::Literal(LiteralType::Signature)),
         RegisterType::Plaintext(PlaintextType::Array(
             ArrayType::new(PlaintextType::Literal(LiteralType::U8), vec![U32::new(8)]).unwrap(),

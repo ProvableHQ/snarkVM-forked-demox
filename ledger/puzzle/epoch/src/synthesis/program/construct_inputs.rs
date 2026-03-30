@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -55,7 +55,8 @@ impl<N: Network> EpochProgram<N> {
                 | LiteralType::U128
                 | LiteralType::Scalar
                 | LiteralType::Signature
-                | LiteralType::String => {
+                | LiteralType::String
+                | LiteralType::Identifier => {
                     unreachable!("Invalid input literal type, malformed program");
                 }
             };

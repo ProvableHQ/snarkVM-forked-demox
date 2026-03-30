@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Provable Inc.
+// Copyright (c) 2019-2026 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,6 +15,8 @@
 
 use super::*;
 use console::program::FinalizeType;
+
+use std::sync::OnceLock;
 
 impl<N: Network> RegistersTrait<N> for FinalizeRegisters<N> {
     /// Loads the value of a given operand from the registers.
@@ -52,6 +54,28 @@ impl<N: Network> RegistersTrait<N> for FinalizeRegisters<N> {
             Operand::NetworkID => {
                 return Ok(Value::Plaintext(Plaintext::from(Literal::U16(U16::new(N::ID)))));
             }
+            // If the operand is the Aleo generator, retrieve the Aleo generator.
+            Operand::AleoGenerator => {
+                return N::g_powers()
+                    .first()
+                    .map(|element| Value::Plaintext(Plaintext::from(Literal::Group(*element))))
+                    .ok_or_else(|| anyhow!("Failed to retrieve the Aleo generator."));
+            }
+            // If the operand is the generator powers, retrieve the generator powers or the indexed group.
+            Operand::AleoGeneratorPowers(index) => match index {
+                None => {
+                    return Ok(Value::Plaintext(Plaintext::Array(
+                        N::g_powers().iter().map(|element| Plaintext::from(Literal::Group(*element))).collect(),
+                        OnceLock::new(),
+                    )));
+                }
+                Some(index) => {
+                    return N::g_powers()
+                        .get(**index as usize)
+                        .map(|element| Value::Plaintext(Plaintext::from(Literal::Group(*element))))
+                        .ok_or_else(|| anyhow!("Index {index} out of bounds for Aleo generator"));
+                }
+            },
             // If the operand is the checksum, load the checksum.
             Operand::Checksum(program_id) => {
                 let checksum = match program_id {
@@ -103,6 +127,7 @@ impl<N: Network> RegistersTrait<N> for FinalizeRegisters<N> {
             }
             // Ensure the future value matches the register type.
             (Ok(FinalizeType::Future(locator)), Value::Future(future)) => stack.matches_future(future, &locator)?,
+            (Ok(FinalizeType::DynamicFuture), Value::DynamicFuture(_)) => {}
             // Ensure the load is valid in a finalize context.
             (Ok(finalize_type), stack_value) => bail!(
                 "Attempted to load a '{stack_value}' value from a register '{register}' of type '{finalize_type}' in a finalize scope",
@@ -151,6 +176,7 @@ impl<N: Network> RegistersTrait<N> for FinalizeRegisters<N> {
                     (Ok(FinalizeType::Future(locator)), Value::Future(future)) => {
                         stack.matches_future(future, &locator)?
                     }
+                    (Ok(FinalizeType::DynamicFuture), Value::DynamicFuture(_)) => {}
                     // Ensure the store is valid in a finalize context.
                     (Ok(finalize_type), stack_value) => bail!(
                         "Attempted to store a '{stack_value}' value in a register '{register}' of type '{finalize_type}' in a finalize scope",
