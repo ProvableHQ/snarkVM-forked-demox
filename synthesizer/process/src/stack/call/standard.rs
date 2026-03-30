@@ -83,59 +83,58 @@ impl<N: Network> CallTrait<N> for Call<N> {
             // Get the call stack.
             let mut call_stack = registers.call_stack();
 
-            // In Authorize (resp. AuthorizeMocked) mode, we need to compute the new request (resp. mocked request) and push it onto the call stack.
-            match &mut call_stack {
-                CallStack::Authorize(requests, private_key, authorization) => {
-                    // Set 'is_root'.
-                    let is_root = false;
-                    // Ensure that we have a private key to sign the new request.
-                    let Some(private_key) = private_key else {
-                        return Err(anyhow!("Cannot authorize a new function call without a private key.").into());
-                    };
-                    // Retrieve the program checksum, if the program has a constructor.
-                    let program_checksum = match substack.program().contains_constructor() {
-                        true => Some(substack.program_checksum_as_field()?),
-                        false => None,
-                    };
-                    // Compute the request.
-                    let request = Request::sign(
-                        private_key,
-                        *substack.program_id(),
-                        *function.name(),
-                        inputs.iter(),
-                        &function.input_types(),
-                        root_tvk,
-                        is_root,
-                        program_checksum,
-                        false,
-                        rng,
-                    )?;
-                    // Add the request to the requests.
-                    requests.push(request.clone());
-                    // Add the request to the authorization.
-                    authorization.push(request.clone())?;
-                }
-                CallStack::AuthorizeMocked(requests, address, authorization) => {
-                    // Set 'is_root'.
-                    let is_root = false;
+            // In Authorize mode, we need to compute the new request and push it onto the call stack.
+            if let CallStack::Authorize(requests, private_key, authorization) = &mut call_stack {
+                // Set 'is_root'.
+                let is_root = false;
+                // Ensure that we have a private key to sign the new request.
+                let Some(private_key) = private_key else {
+                    return Err(anyhow!("Cannot authorize a new function call without a private key.").into());
+                };
+                // Retrieve the program checksum, if the program has a constructor.
+                let program_checksum = match substack.program().contains_constructor() {
+                    true => Some(substack.program_checksum_as_field()?),
+                    false => None,
+                };
+                // Compute the request.
+                let request = Request::sign(
+                    private_key,
+                    *substack.program_id(),
+                    *function.name(),
+                    inputs.iter(),
+                    &function.input_types(),
+                    root_tvk,
+                    is_root,
+                    program_checksum,
+                    false,
+                    rng,
+                )?;
+                // Add the request to the requests.
+                requests.push(request.clone());
+                // Add the request to the authorization.
+                authorization.push(request.clone())?;
+            }
 
-                    // Compute the mocked request.
-                    let request = Request::sample(
-                        *address,
-                        *substack.program_id(),
-                        *function.name(),
-                        inputs.iter(),
-                        &function.input_types(),
-                        is_root,
-                        rng,
-                    )?;
-                    // Add the request to the requests.
-                    requests.push(request.clone());
-                    // Add the request to the authorization.
-                    authorization.push(request.clone())?;
-                }
-                _ => {}
-            };
+            // In AuthorizeMocked mode, we need to compute the mocked request and push it onto the call stack.
+            if let CallStack::AuthorizeMocked(requests, address, authorization) = &mut call_stack {
+                // Set 'is_root'.
+                let is_root = false;
+
+                // Compute the mocked request.
+                let request = Request::sample(
+                    *address,
+                    *substack.program_id(),
+                    *function.name(),
+                    inputs.iter(),
+                    &function.input_types(),
+                    is_root,
+                    rng,
+                )?;
+                // Add the request to the requests.
+                requests.push(request.clone());
+                // Add the request to the authorization.
+                authorization.push(request.clone())?;
+            }
 
             // Set the (console) caller.
             let console_caller = Some(*stack.program_id());
@@ -305,6 +304,10 @@ impl<N: Network> CallTrait<N> for Call<N> {
 
                         // Return the request and response.
                         (request, response)
+                    }
+                    // If the circuit is in authorize mocked mode, throw an error.
+                    CallStack::AuthorizeMocked(..) => {
+                        return Err(anyhow!("Cannot 'execute' a function in 'authorize mocked' mode.").into());
                     }
                     // If the proving key is missing, build real sub-circuit.
                     CallStack::Synthesize(_, private_key, ..) if pk_missing => {
@@ -478,10 +481,6 @@ impl<N: Network> CallTrait<N> for Call<N> {
                         }
                         // Return the request and response.
                         (request, response)
-                    }
-                    // If the circuit is in authorize mocked mode, throw an error.
-                    CallStack::AuthorizeMocked(..) => {
-                        return Err(anyhow!("Cannot 'execute' a function in 'authorize mocked' mode.").into());
                     }
                 }
             };

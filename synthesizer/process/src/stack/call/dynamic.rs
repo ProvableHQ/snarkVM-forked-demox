@@ -349,6 +349,10 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                         // Return the request verification inputs and response.
                         (request_verification_inputs, caller_response_outputs)
                     }
+                    // In `AuthorizeMocked` mode, throw an error.
+                    CallStack::AuthorizeMocked(..) => {
+                        return Err(anyhow!("Cannot 'execute' a function in 'AuthorizeMocked' mode.").into());
+                    }
                     // In `Synthesize` or `CheckDeployment` mode, we use dummy inputs and outputs to avoid building a full sub-circuit.
                     CallStack::Synthesize(_, private_key, ..) | CallStack::CheckDeployment(_, private_key, ..) => {
                         // Note that it does not matter what program ID we use here, since we are only synthesizing dummy outputs.
@@ -641,10 +645,6 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
 
                         // Return the caller's request and response.
                         (callee_request_verification_inputs, caller_console_outputs)
-                    }
-                    // In `AuthorizeMocked` mode, throw an error.
-                    CallStack::AuthorizeMocked(..) => {
-                        return Err(anyhow!("Cannot 'execute' a function in 'AuthorizeMocked' mode.").into());
                     }
                 }
             };

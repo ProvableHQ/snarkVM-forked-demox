@@ -139,6 +139,7 @@ impl<N: Network> Stack<N> {
         let (request, call_stack) =
             match &mut call_stack {
                 CallStack::Authorize(..) => (call_stack.pop()?, call_stack),
+                CallStack::AuthorizeMocked(..) => (call_stack.pop()?, call_stack),
                 CallStack::Evaluate(authorization) => (authorization.next()?, call_stack),
                 // If the evaluation is performed in the `Execute` mode, create a new `Evaluate` mode.
                 // This is done to ensure that evaluation during execution is performed consistently.
@@ -150,7 +151,6 @@ impl<N: Network> Stack<N> {
                     let call_stack = CallStack::Evaluate(authorization);
                     (request, call_stack)
                 }
-                CallStack::AuthorizeMocked(..) => (call_stack.pop()?, call_stack),
                 _ => return Err(anyhow!(
                     "Illegal operation: call stack must be `Authorize`, `Evaluate`, `Execute` or `AuthorizeMocked` in `evaluate_function`."
                 )
@@ -325,23 +325,20 @@ impl<N: Network> Stack<N> {
         finish!(timer);
 
         // If the circuit is in `Authorize` or `AuthorizeMocked` mode, then save the transition.
-        match registers.call_stack_ref() {
-            CallStack::Authorize(_, _, authorization) => {
-                // Construct the transition.
-                let transition = Transition::from(&request, &response, &function.output_types(), &output_registers)?;
-                // Add the transition to the authorization.
-                authorization.insert_transition(transition)?;
-                lap!(timer, "Save the transition");
-            }
-            CallStack::AuthorizeMocked(_, _, authorization) => {
-                // Construct the transition without checking correctness of input IDs.
-                let transition =
-                    Transition::from_unchecked(&request, &response, &function.output_types(), &output_registers)?;
-                // Add the transition to the authorization.
-                authorization.insert_transition(transition)?;
-                lap!(timer, "Save the mocked transition");
-            }
-            _ => {}
+        if let CallStack::Authorize(_, _, authorization) = registers.call_stack_ref() {
+            // Construct the transition.
+            let transition = Transition::from(&request, &response, &function.output_types(), &output_registers)?;
+            // Add the transition to the authorization.
+            authorization.insert_transition(transition)?;
+            lap!(timer, "Save the transition");
+        }
+        if let CallStack::AuthorizeMocked(_, _, authorization) = registers.call_stack_ref() {
+            // Construct the transition without checking correctness of input IDs.
+            let transition =
+                Transition::from_unchecked(&request, &response, &function.output_types(), &output_registers)?;
+            // Add the transition to the authorization.
+            authorization.insert_transition(transition)?;
+            lap!(timer, "Save the mocked transition");
         }
 
         Ok(response)

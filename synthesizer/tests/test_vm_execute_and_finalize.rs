@@ -256,8 +256,6 @@ fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
                     execution_cost_for_authorization(&vm.process().read(), &authorization, consensus_version).unwrap();
                 assert_eq!(actual_cost, expected_cost_given_authorization);
 
-                let mut cloned_rng = rng.clone();
-
                 let expected_cost_given_call = execution_cost_for_call::<CurrentAleo, _>(
                     &vm.process().read(),
                     address,
@@ -265,7 +263,7 @@ fn run_test(test: &ProgramTest) -> serde_yaml::Mapping {
                     function_name,
                     inputs.iter(),
                     consensus_version,
-                    &mut cloned_rng,
+                    rng,
                 )
                 .unwrap();
 

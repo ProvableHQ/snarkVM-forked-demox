@@ -268,7 +268,11 @@ impl<N: Network> Request<N> {
 
         let challenge = Scalar::rand(rng);
         let response = Scalar::rand(rng);
-        let compute_key = ComputeKey::<N>::new_unchecked(Group::rand(rng), Group::rand(rng), Scalar::rand(rng));
+
+        let compute_key = {
+            let private_key = PrivateKey::<N>::new(rng)?;
+            ComputeKey::<N>::try_from(private_key)?
+        };
 
         Ok(Self {
             signer,
