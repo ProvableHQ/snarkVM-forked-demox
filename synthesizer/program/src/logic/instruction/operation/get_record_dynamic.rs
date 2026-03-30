@@ -38,7 +38,6 @@ use console::{
 };
 
 use indexmap::IndexMap;
-use rand::thread_rng;
 
 type CircuitLH<A> = circuit::Poseidon8<A>;
 type CircuitPH<A> = circuit::Poseidon2<A>;
@@ -385,7 +384,7 @@ impl<N: Network> GetRecordDynamic<N> {
             None => {
                 // Sample an arbitrary value for the entry, consistent with the specified type.
                 let value = {
-                    let rng = &mut thread_rng();
+                    let rng = &mut rand::rng();
                     let address = Address::<N>::rand(rng);
                     stack.sample_value(&address, &RegisterType::Plaintext(plaintext_type.clone()), rng)?
                 };

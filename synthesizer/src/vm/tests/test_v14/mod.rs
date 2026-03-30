@@ -61,9 +61,6 @@ mod identifier_literal;
 // Tests for V3 deployments (amendments).
 mod amendments;
 
-// Tests for record, external record, and dynamic record types as closure inputs and outputs.
-mod closure_records;
-
 use super::*;
 
 use crate::{

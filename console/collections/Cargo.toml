@@ -52,5 +52,6 @@ workspace = true
 
 [features]
 serial = [ ]
+test-utils = [ ]
 locktick = [ "dep:locktick" ]
 timer = [ "aleo-std/timer" ]

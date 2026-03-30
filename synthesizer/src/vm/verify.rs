@@ -53,7 +53,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Verify the transactions in batches.
         for transactions in deployments_for_verification.chain(executions_for_verification) {
             // Ensure each transaction is well-formed and unique.
-            let rngs = (0..transactions.len()).map(|_| StdRng::from_seed(rng.r#gen())).collect::<Vec<_>>();
+            let rngs = (0..transactions.len()).map(|_| StdRng::from_seed(rng.random())).collect::<Vec<_>>();
             cfg_iter!(transactions).zip(rngs).try_for_each(|((transaction, rejected_id), mut rng)| {
                 self.check_transaction(transaction, *rejected_id, &mut rng)
                     .map_err(|e| anyhow!("Invalid transaction found in the transactions list: {e}"))
@@ -322,6 +322,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         "Invalid deployment transaction '{id}' - expected {num_functions} function verifying keys before `ConsensusVersion::V14`"
                     );
                 }
+                if consensus_version < ConsensusVersion::V15 {
+                    ensure!(
+                        !deployment.program().contains_v15_syntax(),
+                        "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V15`"
+                    );
+                }
 
                 // Checks required for current and future consensus versions (>= V9).
                 //
@@ -336,6 +342,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 //   - the program's mappings do not use non-existent structs.
                 // If the `CONSENSUS_VERSION` is greater than or equal to `V14`, then verify that:
                 //   - the deployment has one verifying key per function and one per record
+                // If the `CONSENSUS_VERSION` is greater than or equal to `V15`, ensure that
+                //   - the closures in the program do not output Records, DynamicRecords or ExternalRecords.
                 if consensus_version >= ConsensusVersion::V9 {
                     ensure!(
                         deployment.program_checksum().is_some(),
@@ -366,6 +374,24 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         deployment.verifying_keys().len() == expected,
                         "Invalid deployment transaction '{id}' - expected {num_functions} function and {num_records} record verifying keys after `ConsensusVersion::V14`"
                     );
+                }
+                if consensus_version >= ConsensusVersion::V15 {
+                    // At V15+, closures must not output Records, ExternalRecords or DynamicRecords.
+                    use console::program::RegisterType;
+                    for closure in deployment.program().closures().values() {
+                        for output in closure.outputs() {
+                            ensure!(
+                                !matches!(
+                                    output.register_type(),
+                                    RegisterType::Record(..)
+                                        | RegisterType::ExternalRecord(..)
+                                        | RegisterType::DynamicRecord
+                                ),
+                                "Invalid deployment transaction '{id}' - closure '{}' outputs a record type, which is not allowed at `ConsensusVersion::V15` or later",
+                                closure.name()
+                            );
+                        }
+                    }
                 }
 
                 // Determine if any of the array types exceed the maximum array elements.
@@ -924,6 +950,9 @@ mod tests {
     use snarkvm_ledger_block::{Block, Header, Metadata, Transaction, Transition};
     #[cfg(feature = "test")]
     use snarkvm_utilities::bytes_from_bits_le;
+
+    #[cfg(feature = "test")]
+    use k256::elliptic_curve::Generate;
 
     type CurrentNetwork = test_helpers::CurrentNetwork;
 
@@ -1625,10 +1654,10 @@ function compute:
         vm.add_next_block(&next_block).unwrap();
 
         // Execute the program and ensure that the signature verifies.
-        let ecdsa_signing_key = k256::ecdsa::SigningKey::random(rng);
+        let ecdsa_signing_key = k256::ecdsa::SigningKey::generate_from_rng(rng);
         let ecdsa_verifying_key = k256::ecdsa::VerifyingKey::from(&ecdsa_signing_key);
         let ethereum_address = ECDSASignature::ethereum_address_from_public_key(&ecdsa_verifying_key).unwrap();
-        let message: [u8; 100] = (0..100).map(|_| rng.r#gen::<u8>()).collect::<Vec<u8>>().try_into().unwrap();
+        let message: [u8; 100] = (0..100).map(|_| rng.random::<u8>()).collect::<Vec<u8>>().try_into().unwrap();
         let hasher = Keccak256::default();
         let signature = ECDSASignature::sign(&ecdsa_signing_key, &hasher, &message.to_bits_le()).unwrap();
         let signature_bytes = signature.to_bytes_le().unwrap();
@@ -1668,7 +1697,7 @@ function compute:
         let valid_tx_id_2 = digest_verification_transaction.id();
 
         // Construct an invalid execution transaction by mutating the message.
-        let invalid_message: [u8; 100] = (0..100).map(|_| rng.r#gen::<u8>()).collect::<Vec<u8>>().try_into().unwrap();
+        let invalid_message: [u8; 100] = (0..100).map(|_| rng.random::<u8>()).collect::<Vec<u8>>().try_into().unwrap();
         let invalid_message: [U8<CurrentNetwork>; 100] =
             invalid_message.into_iter().map(U8::new).collect::<Vec<U8<CurrentNetwork>>>().try_into().unwrap();
 

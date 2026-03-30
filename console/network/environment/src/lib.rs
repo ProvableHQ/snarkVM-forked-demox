@@ -74,6 +74,7 @@ pub mod prelude {
         ToBytes,
         ToBytesSerializer,
         Uniform,
+        UniformExt,
         cfg_chunks,
         cfg_chunks_mut,
         cfg_find,
@@ -148,8 +149,8 @@ pub mod prelude {
     pub use num_traits::{AsPrimitive, One, Pow, Zero};
     pub use rand::{
         CryptoRng,
-        Rng,
-        distributions::{Alphanumeric, Distribution, Standard},
+        RngExt as Rng,
+        distr::{Alphanumeric, Distribution, StandardUniform},
     };
     pub use serde::{
         Deserialize,

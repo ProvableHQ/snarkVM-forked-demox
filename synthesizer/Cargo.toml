@@ -174,9 +174,7 @@ workspace = true
 workspace = true
 
 [dev-dependencies.k256]
-version = "0.13"
-features = [ "digest", "ecdsa" ]
-default-features = false
+workspace = true
 
 [dev-dependencies.snarkvm-console]
 workspace = true

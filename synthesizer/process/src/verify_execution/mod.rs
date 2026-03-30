@@ -15,6 +15,8 @@
 
 use super::*;
 
+mod ensure_records_exist;
+
 impl<N: Network> Process<N> {
     /// Verifies the given execution is valid.
     /// Note: This does *not* check that the global state root exists in the ledger.
@@ -68,6 +70,14 @@ impl<N: Network> Process<N> {
 
         // Construct the call graph of the execution.
         let call_graph = self.construct_call_graph(execution.transitions())?;
+
+        // From ConsensusVersion::V15 onwards, ensure that, for each non-closure
+        // function in the execution, all DynamicRecords and ExternalRecords
+        // received as inputs or from callees exist on the ledger at the end of
+        // the execution (whether spent or not).
+        if consensus_version >= ConsensusVersion::V15 {
+            self.ensure_records_exist(execution.transitions(), &call_graph)?;
+        }
 
         // Construct the reverse call graph of the execution.
         // Note: This is a mapping of the child transition ID to the parent transition ID.

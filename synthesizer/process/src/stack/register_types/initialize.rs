@@ -45,10 +45,10 @@ impl<N: Network> RegisterTypes<N> {
         // Step 3. Check the outputs are well-formed.
         for output in closure.outputs() {
             // Ensure the closure output register is not a static record.
-            // Dynamic records are allowed as closure outputs.
+            // ExternalRecord and DynamicRecord are disallowed at V15+ deployment time (see `VM::check_transaction`).
             ensure!(
                 !matches!(output.register_type(), RegisterType::Record(..)),
-                "Closure outputs do not support static records"
+                "Closure outputs do not support records"
             );
 
             // Check the output operand type.
@@ -684,6 +684,30 @@ impl<N: Network> RegisterTypes<N> {
             ),
             "commit.ped128" => ensure!(
                 matches!(instruction, Instruction::CommitPED128(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "commit.bhp256.raw" => ensure!(
+                matches!(instruction, Instruction::CommitBHP256Raw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "commit.bhp512.raw" => ensure!(
+                matches!(instruction, Instruction::CommitBHP512Raw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "commit.bhp768.raw" => ensure!(
+                matches!(instruction, Instruction::CommitBHP768Raw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "commit.bhp1024.raw" => ensure!(
+                matches!(instruction, Instruction::CommitBHP1024Raw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "commit.ped64.raw" => ensure!(
+                matches!(instruction, Instruction::CommitPED64Raw(..)),
+                "Instruction '{instruction}' is not for opcode '{opcode}'."
+            ),
+            "commit.ped128.raw" => ensure!(
+                matches!(instruction, Instruction::CommitPED128Raw(..)),
                 "Instruction '{instruction}' is not for opcode '{opcode}'."
             ),
             _ => bail!("Instruction '{instruction}' is not for opcode '{opcode}'."),
