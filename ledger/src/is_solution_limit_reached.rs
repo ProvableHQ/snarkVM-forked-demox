@@ -127,9 +127,6 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     }
 
     /// Returns `true` if the given prover address has reached their solution limit for the current epoch.
-    ///
-    /// # Locking
-    /// This function may deadlock if called while holding a write lock to the current block.
     pub fn is_solution_limit_reached(&self, prover_address: &Address<N>, additional_solutions_in_block: u64) -> bool {
         self.is_solution_limit_reached_at_timestamp(
             prover_address,

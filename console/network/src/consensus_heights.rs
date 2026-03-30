@@ -119,7 +119,7 @@ pub const CANARY_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CON
     (ConsensusVersion::V11, 9_510_000),
     (ConsensusVersion::V12, 10_030_000),
     (ConsensusVersion::V13, 10_881_000),
-    (ConsensusVersion::V14, u32::MAX),
+    (ConsensusVersion::V14, 11_960_000),
     (ConsensusVersion::V15, u32::MAX),
 ];
 
@@ -138,7 +138,7 @@ pub const MAINNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V11, 12_870_000),
     (ConsensusVersion::V12, 13_815_000),
     (ConsensusVersion::V13, 16_850_000),
-    (ConsensusVersion::V14, u32::MAX),
+    (ConsensusVersion::V14, 17_700_000),
     (ConsensusVersion::V15, u32::MAX),
 ];
 
@@ -157,7 +157,7 @@ pub const TESTNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V11, 11_952_000),
     (ConsensusVersion::V12, 12_669_000),
     (ConsensusVersion::V13, 14_906_000),
-    (ConsensusVersion::V14, u32::MAX),
+    (ConsensusVersion::V14, 15_370_000),
     (ConsensusVersion::V15, u32::MAX),
 ];
 
