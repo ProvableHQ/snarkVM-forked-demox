@@ -776,12 +776,6 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         block_height: u32,
     ) {
 
-        tracing::debug!(
-            target: "slipstream",
-            "notify_staking_reward(): is_finalize_mode={} staker={staker} validator={validator} reward={reward}",
-            self.is_finalize_mode.load(Ordering::SeqCst)
-        );
-
         if !self.is_finalize_mode.load(Ordering::SeqCst) {
             return;
         }
@@ -927,13 +921,6 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for FinalizeStore<
     ) -> Result<FinalizeOperation<N>> {
         // Serialize before moving, if a plugin notification may be needed.
         #[cfg(all(feature = "history", feature = "slipstream-plugins"))]
-        tracing::debug!(
-            target: "slipstream",
-            "update_key_value: is_finalize_mode={} program={program_id} mapping={mapping_name}",
-            self.is_finalize_mode.load(Ordering::SeqCst)
-        );
-
-        #[cfg(all(feature = "history", feature = "slipstream-plugins"))]
         let plugin_data = if self.is_finalize_mode.load(Ordering::SeqCst) {
             if let Some(mgr) = self.slipstream_plugin_manager.get() {
                 match mgr.read() {
@@ -968,7 +955,6 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for FinalizeStore<
             #[cfg(all(not(feature = "history"), feature = "slipstream-plugins"))]
             let height = 0u32;
             if let Some(mgr) = self.slipstream_plugin_manager.get() {
-                tracing::debug!(target: "slipstream", "dispatching notify_mapping_update to plugin manager");
                 match mgr.read() {
                     Ok(plugin_mgr) => plugin_mgr.notify_mapping_update(&pid, &mname, &k, &v, height),
                     Err(e) => tracing::warn!(
@@ -1010,12 +996,6 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         mapping_name: Identifier<N>,
         entries: Vec<(Plaintext<N>, Value<N>)>,
     ) -> Result<FinalizeOperation<N>> {
-        #[cfg(all(feature = "history", feature = "slipstream-plugins"))]
-        tracing::debug!(
-            target: "slipstream",
-            "replace_mapping: is_finalize_mode={} program={program_id} mapping={mapping_name}",
-            self.is_finalize_mode.load(Ordering::SeqCst)
-        );
 
         // Serialize mapping identity and all entries before moving them into storage,
         // so they are available for plugin notification after the storage call.

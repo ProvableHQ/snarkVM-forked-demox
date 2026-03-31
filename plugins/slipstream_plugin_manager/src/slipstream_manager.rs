@@ -117,11 +117,6 @@ impl SlipstreamPluginManager {
         value: &[u8],
         block_height: u32,
     ) {
-        tracing::debug!(
-            target: "slipstream",
-            "notify_mapping_update called: block_height={block_height} plugins={}",
-            self.plugins.len()
-        );
         for plugin in &self.plugins {
             if plugin.history_enabled() && let Err(e) =
                     plugin.notify_mapping_update(program_id, mapping_name, key, value, block_height)
@@ -141,11 +136,6 @@ impl SlipstreamPluginManager {
         new_stake: u64,
         block_height: u32,
     ) {
-        tracing::debug!(
-            target: "slipstream",
-            "notify_staking_reward called: block_height={block_height} reward={reward} new_stake={new_stake} plugins={}",
-            self.plugins.len()
-        );
         for plugin in &self.plugins {
             if plugin.history_staking_rewards_enabled() && let Err(e) =
                     plugin.notify_staking_reward(staker, validator, reward, new_stake, block_height)
