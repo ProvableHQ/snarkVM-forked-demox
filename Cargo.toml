@@ -395,11 +395,11 @@ version = "=4.6.0"
 
 [workspace.dependencies.snarkvm-slipstream-plugin-interface]
 path = "plugins/slipstream_plugin_interface"
-version = "=4.5.0"
+version = "=4.6.0"
 
 [workspace.dependencies.snarkvm-slipstream-plugin-manager]
 path = "plugins/slipstream_plugin_manager"
-version = "=4.5.0"
+version = "=4.6.0"
 
 [workspace.dependencies.snarkvm-ledger-test-helpers]
 path = "ledger/test-helpers"
