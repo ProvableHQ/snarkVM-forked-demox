@@ -225,7 +225,6 @@ impl SlipstreamPluginManager {
         let current_lib = self.libs.remove(idx);
         let mut current_plugin = self.plugins.remove(idx);
         self.libpaths.remove(idx);
-        let name = current_plugin.name().to_string();
         current_plugin.on_unload();
         // The plugin must be dropped before the library to avoid a crash.
         drop(current_plugin);
@@ -281,6 +280,7 @@ pub enum SlipstreamPluginManagerError {
 /// Parses a plugin config file and returns the resolved, absolute path to the `.so`.
 ///
 /// Does NOT open or load the library — safe to call for duplicate detection before `dlopen`.
+#[cfg(not(test))]
 pub(crate) fn resolve_libpath_from_config(
     slipstream_plugin_config_file: &Path,
 ) -> Result<PathBuf, SlipstreamPluginManagerError> {
@@ -331,6 +331,9 @@ pub(crate) fn load_plugin_from_config(
     slipstream_plugin_config_file: &Path,
 ) -> Result<(Library, LoadedSlipstreamPlugin, &str), SlipstreamPluginManagerError> {
     use std::{fs::File, io::Read, path::PathBuf};
+    // Trait objects have no C equivalent; the suppression is intentional — the plugin ABI
+    // uses raw pointers and the caller takes ownership immediately via Box::from_raw.
+    #[allow(improper_ctypes_definitions)]
     type PluginConstructor = unsafe extern "C" fn() -> *mut dyn SlipstreamPlugin;
     use libloading::Symbol;
 
@@ -453,7 +456,6 @@ mod tests {
     }
 
     const DUMMY_NAME: &str = "dummy";
-    pub(super) const DUMMY_CONFIG: &str = "dummy_config";
     const ANOTHER_DUMMY_NAME: &str = "another_dummy";
 
     #[derive(Clone, Copy, Debug)]
@@ -481,12 +483,12 @@ mod tests {
         let mut plugin_manager_lock = plugin_manager.write().unwrap();
 
         // Load two plugins.
-        let (mut plugin, lib, config) = dummy_plugin_and_library(TestPlugin, TESTPLUGIN_CONFIG);
+        let (lib, mut plugin, config) = dummy_plugin_and_library(TestPlugin, TESTPLUGIN_CONFIG);
         plugin.on_load(config, false).unwrap();
         plugin_manager_lock.plugins.push(plugin);
         plugin_manager_lock.libs.push(lib);
 
-        let (mut plugin, lib, config) = dummy_plugin_and_library(TestPlugin2, TESTPLUGIN2_CONFIG);
+        let (lib, mut plugin, config) = dummy_plugin_and_library(TestPlugin2, TESTPLUGIN2_CONFIG);
         plugin.on_load(config, false).unwrap();
         plugin_manager_lock.plugins.push(plugin);
         plugin_manager_lock.libs.push(lib);
