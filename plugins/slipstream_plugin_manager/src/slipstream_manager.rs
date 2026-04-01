@@ -160,18 +160,12 @@ impl SlipstreamPluginManager {
         &mut self,
         slipstream_plugin_config_file: impl AsRef<Path>,
     ) -> JsonRpcResult<String> {
-
-        // TODO: REMOVE
-        info!("INSIDE LOAD_PLUGIN()!!!");
         // Resolve the library path from the config before calling dlopen.
         // This lets us detect duplicates without loading the library a second time, which is
         // unsafe: a second dlopen on an already-loaded .so can trigger re-execution of Rust
         // .init_array startup code, corrupting global state in the running plugin instance.
         let resolved_libpath =
             resolve_libpath_from_config(slipstream_plugin_config_file.as_ref())?;
-
-        // TODO: REMOVE
-        info!("INSIDE LOAD_PLUGIN(), GOT NEW LIBPATH");
 
         // Check for duplicate library path first (catches same .so before dlopen).
         if let Some(idx) = self.libpaths.iter().position(|p| p == &resolved_libpath) {
@@ -190,27 +184,23 @@ impl SlipstreamPluginManager {
             ));
         }
 
-        // TODO: REMOVE
-        info!("INSIDE LOAD_PLUGIN(), PLUGIN NOT ALREADY LOADED!!!");
-
         // Call on_load and push plugin.
         new_plugin
             .on_load(new_config_file, false)
             .map_err(|e| SlipstreamPluginManagerError::PluginStartError(e.to_string()))?;
         let name = new_plugin.name().to_string();
 
-        // TODO: REMOVE
-        info!("Loaded new plugin: {}", name);
         self.plugins.push(new_plugin);
         self.libs.push(new_lib);
         self.libpaths.push(resolved_libpath);
+
+        info!("Loaded plugin: {}", name);
 
         Ok(name)
     }
 
     /// Unloads the plugin with the given name.
     pub fn unload_plugin(&mut self, name: &str) -> JsonRpcResult<()> {
-        info!("Inside unload_plugin()!");
         let Some(idx) = self.plugins.iter().position(|plugin| plugin.name().eq(name)) else {
             return Err(SlipstreamPluginManagerError::PluginNotLoaded(name.to_string()));
         };
@@ -220,84 +210,31 @@ impl SlipstreamPluginManager {
     }
 
     /// Reloads the plugin with the given name from the given config file.
-    pub fn reload_plugin(&mut self, name: &str, config_file: &str) -> JsonRpcResult<()> {
-        let Some(idx) = self.plugins.iter().position(|plugin| plugin.name().eq(name)) else {
-            return Err(SlipstreamPluginManagerError::PluginNotLoaded(name.to_string()));
-        };
-        
-        info!("Inside reload_plugin() with name {} and config file {}", name, config_file);
-
-        // Resolve the new library path before unloading, so we can track it after reload.
-        let new_resolved_libpath = resolve_libpath_from_config(config_file.as_ref())
-            .map_err(|e| SlipstreamPluginManagerError::PluginLoadError(e.to_string()))?;
-        info!("INSIDE RELOAD_PLUGIN(), ABOUT TO DROP PLUGIN");
-
-        // Unload the current plugin first.
-        self._drop_plugin(idx);
-
-        info!("INSIDE RELOAD_PLUGIN(), DROPPED PLUGIN");
-
-        // Load the new plugin.
-        let (new_lib, mut new_plugin, new_parsed_config_file) =
-            load_plugin_from_config(config_file.as_ref())
-                .map_err(|e| SlipstreamPluginManagerError::PluginLoadError(e.to_string()))?;
-
-        info!("INSIDE RELOAD_PLUGIN(), LOADED PLUGIN");
-
-        // Ensure no other plugin with this name is already loaded.
-        if self.plugins.iter().any(|plugin| plugin.name().eq(new_plugin.name())) {
-            return Err(SlipstreamPluginManagerError::PluginAlreadyLoaded(
-                new_plugin.name().to_string(),
-            ));
-        }
-
-        info!("INSIDE RELOAD_PLUGIN(), PLUGIN NOT ALREADY LOADED");
-
-        // Attempt to call on_load with new plugin.
-        new_plugin
-            .on_load(new_parsed_config_file, true)
-            .map_err(|e| SlipstreamPluginManagerError::PluginStartError(e.to_string()))?;
-
-        info!("INSIDE RELOAD_PLUGIN(), GOT NEW PLUGIN");
-
-        self.plugins.push(new_plugin);
-        self.libs.push(new_lib);
-        self.libpaths.push(new_resolved_libpath);
-
-        info!("INSIDE RELOAD_PLUGIN(), PUSHED TO PLUGINS, LIBs, LIBPATHS");
-
-        Ok(())
+    ///
+    /// # Note
+    ///
+    /// This function is not currently exposed. It was disabled due to SIGSEGV issues
+    /// and is a good next step to implement safely. Use `unload_plugin` + `load_plugin`
+    /// as a workaround in the meantime OR just stop the snarkos service and restart it with
+    /// the updated plugin config(s)
+    pub fn reload_plugin(&mut self, _name: &str, _config_file: &str) -> JsonRpcResult<()> {
+        Err(SlipstreamPluginManagerError::PluginLoadError("Plugin reload is not currently implemented.".to_string()))
     }
 
     fn _drop_plugin(&mut self, idx: usize) {
-        info!("Inside _drop_plugin() with index {}!", idx);
         let current_lib = self.libs.remove(idx);
-        info!("Removed library in drop_plugin()!");
         let mut current_plugin = self.plugins.remove(idx);
-        info!("Removed current_plugin in drop_plugin()!");
         self.libpaths.remove(idx);
-        info!("Removed idx/plugin from libpaths in drop_plugin()!");
         let name = current_plugin.name().to_string();
-        info!("Plugin removed: {}", name);
         current_plugin.on_unload();
-        info!("On_unload() called for plugin {}", name);
         // The plugin must be dropped before the library to avoid a crash.
         drop(current_plugin);
-        info!("Dropped current plugin!!!!!!!");
         drop(current_lib);
-        info!("FULLY Unloaded plugin {name} at idx {idx}");
     }
 }
 
-// NOTE: TODO: NOT SURE IF IT MAKES SENSE TO HAVE PLUGINS SPECIFY SINCE
-// UNLIKE SOLANA, THIS CAN BE USED ON ANY CLIENT NODE, NOT JUST A VALIDATOR? CAN DISCUSS
 #[derive(Debug)]
 pub enum SlipstreamPluginManagerRequest {
-    ReloadPlugin {
-        name: String,
-        config_file: String,
-        response_sender: OneShotSender<JsonRpcResult<()>>,
-    },
     UnloadPlugin {
         name: String,
         response_sender: OneShotSender<JsonRpcResult<()>>,
@@ -535,46 +472,6 @@ mod tests {
         fn name(&self) -> &'static str {
             ANOTHER_DUMMY_NAME
         }
-    }
-
-    #[test]
-    fn test_slipstream_reload() {
-        // Initialize empty manager.
-        let plugin_manager = Arc::new(RwLock::new(SlipstreamPluginManager::new()));
-
-        // No plugins are loaded, this should fail.
-        let mut plugin_manager_lock = plugin_manager.write().unwrap();
-        let reload_result = plugin_manager_lock.reload_plugin(DUMMY_NAME, DUMMY_CONFIG);
-        assert!(reload_result.is_err());
-        assert_eq!(
-            reload_result.unwrap_err().to_string(),
-            format!("The plugin '{DUMMY_NAME}' is not loaded")
-        );
-
-        // Load TestPlugin via the normal path so libpaths is kept in sync.
-        // (TESTPLUGIN_CONFIG is accepted by the test mock of load_plugin_from_config.)
-        let load_result = plugin_manager_lock.load_plugin(TESTPLUGIN_CONFIG);
-        assert!(load_result.is_ok());
-        assert_eq!(plugin_manager_lock.plugins[0].name(), DUMMY_NAME);
-
-        // Try wrong name (same error).
-        const WRONG_NAME: &str = "wrong_name";
-        let reload_result = plugin_manager_lock.reload_plugin(WRONG_NAME, DUMMY_CONFIG);
-        assert!(reload_result.is_err());
-        assert_eq!(
-            reload_result.unwrap_err().to_string(),
-            format!("The plugin '{WRONG_NAME}' is not loaded")
-        );
-
-        // Now try a (dummy) reload, replacing TestPlugin with TestPlugin2.
-        let reload_result = plugin_manager_lock.reload_plugin(DUMMY_NAME, TESTPLUGIN2_CONFIG);
-        assert!(reload_result.is_ok());
-
-        // The plugin is now replaced with ANOTHER_DUMMY_NAME.
-        let plugins = plugin_manager_lock.list_plugins().unwrap();
-        assert!(plugins.iter().any(|name| name.eq(ANOTHER_DUMMY_NAME)));
-        // DUMMY_NAME should no longer be present.
-        assert!(!plugins.iter().any(|name| name.eq(DUMMY_NAME)));
     }
 
     #[test]
