@@ -160,12 +160,18 @@ impl SlipstreamPluginManager {
         &mut self,
         slipstream_plugin_config_file: impl AsRef<Path>,
     ) -> JsonRpcResult<String> {
+
+        // TODO: REMOVE
+        info!("INSIDE LOAD_PLUGIN()!!!");
         // Resolve the library path from the config before calling dlopen.
         // This lets us detect duplicates without loading the library a second time, which is
         // unsafe: a second dlopen on an already-loaded .so can trigger re-execution of Rust
         // .init_array startup code, corrupting global state in the running plugin instance.
         let resolved_libpath =
             resolve_libpath_from_config(slipstream_plugin_config_file.as_ref())?;
+
+        // TODO: REMOVE
+        info!("INSIDE LOAD_PLUGIN(), GOT NEW LIBPATH");
 
         // Check for duplicate library path first (catches same .so before dlopen).
         if let Some(idx) = self.libpaths.iter().position(|p| p == &resolved_libpath) {
@@ -184,11 +190,17 @@ impl SlipstreamPluginManager {
             ));
         }
 
+        // TODO: REMOVE
+        info!("INSIDE LOAD_PLUGIN(), PLUGIN NOT ALREADY LOADED!!!");
+
         // Call on_load and push plugin.
         new_plugin
             .on_load(new_config_file, false)
             .map_err(|e| SlipstreamPluginManagerError::PluginStartError(e.to_string()))?;
         let name = new_plugin.name().to_string();
+
+        // TODO: REMOVE
+        info!("Loaded new plugin: {}", name);
         self.plugins.push(new_plugin);
         self.libs.push(new_lib);
         self.libpaths.push(resolved_libpath);
@@ -198,6 +210,7 @@ impl SlipstreamPluginManager {
 
     /// Unloads the plugin with the given name.
     pub fn unload_plugin(&mut self, name: &str) -> JsonRpcResult<()> {
+        info!("Inside unload_plugin()!");
         let Some(idx) = self.plugins.iter().position(|plugin| plugin.name().eq(name)) else {
             return Err(SlipstreamPluginManagerError::PluginNotLoaded(name.to_string()));
         };
@@ -211,18 +224,25 @@ impl SlipstreamPluginManager {
         let Some(idx) = self.plugins.iter().position(|plugin| plugin.name().eq(name)) else {
             return Err(SlipstreamPluginManagerError::PluginNotLoaded(name.to_string()));
         };
+        
+        info!("Inside reload_plugin() with name {} and config file {}", name, config_file);
 
         // Resolve the new library path before unloading, so we can track it after reload.
         let new_resolved_libpath = resolve_libpath_from_config(config_file.as_ref())
             .map_err(|e| SlipstreamPluginManagerError::PluginLoadError(e.to_string()))?;
+        info!("INSIDE RELOAD_PLUGIN(), ABOUT TO DROP PLUGIN");
 
         // Unload the current plugin first.
         self._drop_plugin(idx);
+
+        info!("INSIDE RELOAD_PLUGIN(), DROPPED PLUGIN");
 
         // Load the new plugin.
         let (new_lib, mut new_plugin, new_parsed_config_file) =
             load_plugin_from_config(config_file.as_ref())
                 .map_err(|e| SlipstreamPluginManagerError::PluginLoadError(e.to_string()))?;
+
+        info!("INSIDE RELOAD_PLUGIN(), LOADED PLUGIN");
 
         // Ensure no other plugin with this name is already loaded.
         if self.plugins.iter().any(|plugin| plugin.name().eq(new_plugin.name())) {
@@ -231,28 +251,41 @@ impl SlipstreamPluginManager {
             ));
         }
 
+        info!("INSIDE RELOAD_PLUGIN(), PLUGIN NOT ALREADY LOADED");
+
         // Attempt to call on_load with new plugin.
         new_plugin
             .on_load(new_parsed_config_file, true)
             .map_err(|e| SlipstreamPluginManagerError::PluginStartError(e.to_string()))?;
 
+        info!("INSIDE RELOAD_PLUGIN(), GOT NEW PLUGIN");
+
         self.plugins.push(new_plugin);
         self.libs.push(new_lib);
         self.libpaths.push(new_resolved_libpath);
+
+        info!("INSIDE RELOAD_PLUGIN(), PUSHED TO PLUGINS, LIBs, LIBPATHS");
 
         Ok(())
     }
 
     fn _drop_plugin(&mut self, idx: usize) {
+        info!("Inside _drop_plugin() with index {}!", idx);
         let current_lib = self.libs.remove(idx);
+        info!("Removed library in drop_plugin()!");
         let mut current_plugin = self.plugins.remove(idx);
+        info!("Removed current_plugin in drop_plugin()!");
         self.libpaths.remove(idx);
+        info!("Removed idx/plugin from libpaths in drop_plugin()!");
         let name = current_plugin.name().to_string();
+        info!("Plugin removed: {}", name);
         current_plugin.on_unload();
+        info!("On_unload() called for plugin {}", name);
         // The plugin must be dropped before the library to avoid a crash.
         drop(current_plugin);
+        info!("Dropped current plugin!!!!!!!");
         drop(current_lib);
-        info!("Unloaded plugin {name} at idx {idx}");
+        info!("FULLY Unloaded plugin {name} at idx {idx}");
     }
 }
 
