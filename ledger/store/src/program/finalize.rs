@@ -35,6 +35,7 @@ use indexmap::IndexSet;
 use snarkvm_slipstream_plugin_manager::SlipstreamPluginManager;
 #[cfg(feature = "slipstream-plugins")]
 use std::sync::{Arc, OnceLock, RwLock, atomic::AtomicBool};
+#[cfg(any(feature = "history", feature = "history-staking-rewards"))]
 use std::{
     borrow::Cow,
     sync::atomic::{AtomicU32, Ordering},
