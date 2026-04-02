@@ -658,10 +658,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         #[cfg(feature = "slipstream-plugins")]
         {
             tracing::info!(target: "slipstream", "atomic_finalize: is_finalize_mode → true");
-            self.store
-                .finalize_store()
-                .is_finalize_mode()
-                .store(true, std::sync::atomic::Ordering::SeqCst);
+            self.store.finalize_store().is_finalize_mode().store(true, std::sync::atomic::Ordering::SeqCst);
         }
 
         // Perform the finalize operation on the preset finalize mode.
@@ -891,10 +888,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Reset the canonical finalize flag regardless of whether finalize succeeded or failed.
         #[cfg(feature = "slipstream-plugins")]
         {
-            self.store
-                .finalize_store()
-                .is_finalize_mode()
-                .store(false, std::sync::atomic::Ordering::SeqCst);
+            self.store.finalize_store().is_finalize_mode().store(false, std::sync::atomic::Ordering::SeqCst);
             tracing::info!(target: "slipstream", "atomic_finalize: is_finalize_mode → false");
         }
 
@@ -1317,7 +1311,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         // Replace the withdraw mapping in storage.
                         store.replace_mapping(program_id, withdraw_mapping, next_withdraw_map)?,
                     ]);
-                    
+
                     // Update the number of validators.
                     finalize_operations.extend(&[
                         // Update the number of validators in the metadata mapping.
@@ -1328,7 +1322,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             Value::from_str(&format!("{}u32", committee.num_members()))?,
                         )?,
                     ]);
-                    
+
                     // Update the number of delegators.
                     finalize_operations.extend(&[
                         // Update the number of delegators in the metadata mapping.
@@ -1424,7 +1418,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
                     // Compute the updated stakers, using the committee and block reward.
                     let next_stakers = staking_rewards(&current_stakers, &current_committee, *block_reward);
-                    
+
                     #[cfg(feature = "history-staking-rewards")]
                     {
                         let height = state.block_height();

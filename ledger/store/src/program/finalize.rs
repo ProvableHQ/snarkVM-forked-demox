@@ -31,14 +31,14 @@ use aleo_std_storage::StorageMode;
 use anyhow::Result;
 use core::marker::PhantomData;
 use indexmap::IndexSet;
+#[cfg(feature = "slipstream-plugins")]
+use snarkvm_slipstream_plugin_manager::SlipstreamPluginManager;
+#[cfg(feature = "slipstream-plugins")]
+use std::sync::{Arc, OnceLock, RwLock, atomic::AtomicBool};
 use std::{
     borrow::Cow,
     sync::atomic::{AtomicU32, Ordering},
 };
-#[cfg(feature = "slipstream-plugins")]
-use std::sync::{Arc, OnceLock, RwLock, atomic::AtomicBool};
-#[cfg(feature = "slipstream-plugins")]
-use snarkvm_slipstream_plugin_manager::SlipstreamPluginManager;
 #[cfg(all(feature = "history", feature = "slipstream-plugins"))]
 type SerializedMappingEntries = Option<(Vec<u8>, Vec<u8>, Vec<(Vec<u8>, Vec<u8>)>)>;
 
@@ -775,7 +775,6 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         new_stake: u64,
         block_height: u32,
     ) {
-
         if !self.is_finalize_mode.load(Ordering::SeqCst) {
             return;
         }
@@ -996,7 +995,6 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         mapping_name: Identifier<N>,
         entries: Vec<(Plaintext<N>, Value<N>)>,
     ) -> Result<FinalizeOperation<N>> {
-
         // Serialize mapping identity and all entries before moving them into storage,
         // so they are available for plugin notification after the storage call.
         #[cfg(all(feature = "history", feature = "slipstream-plugins"))]
