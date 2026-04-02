@@ -46,9 +46,7 @@ impl SlipstreamPluginService {
         match self.plugin_manager.write() {
             Ok(mut manager) => manager.unload(),
             Err(e) => {
-                tracing::warn!(
-                    "Slipstream: plugin manager lock poisoned during shutdown, attempting recovery: {e}"
-                );
+                tracing::warn!("Slipstream: plugin manager lock poisoned during shutdown, attempting recovery: {e}");
                 e.into_inner().unload();
             }
         }

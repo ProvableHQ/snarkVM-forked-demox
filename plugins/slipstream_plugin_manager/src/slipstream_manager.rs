@@ -32,10 +32,7 @@ pub struct LoadedSlipstreamPlugin {
 
 impl LoadedSlipstreamPlugin {
     pub fn new(plugin: Box<dyn SlipstreamPlugin>, name: Option<String>) -> Self {
-        Self {
-            name: name.unwrap_or_else(|| plugin.name().to_owned()),
-            plugin,
-        }
+        Self { name: name.unwrap_or_else(|| plugin.name().to_owned()), plugin }
     }
 
     pub fn name(&self) -> &str {
@@ -118,8 +115,8 @@ impl SlipstreamPluginManager {
         block_height: u32,
     ) {
         for plugin in &self.plugins {
-            if plugin.history_enabled() && let Err(e) =
-                    plugin.notify_mapping_update(program_id, mapping_name, key, value, block_height)
+            if plugin.history_enabled()
+                && let Err(e) = plugin.notify_mapping_update(program_id, mapping_name, key, value, block_height)
             {
                 warn!("Slipstream plugin '{}' mapping_update error: {e}", plugin.name());
             }
@@ -137,8 +134,8 @@ impl SlipstreamPluginManager {
         block_height: u32,
     ) {
         for plugin in &self.plugins {
-            if plugin.history_staking_rewards_enabled() && let Err(e) =
-                    plugin.notify_staking_reward(staker, validator, reward, new_stake, block_height)
+            if plugin.history_staking_rewards_enabled()
+                && let Err(e) = plugin.notify_staking_reward(staker, validator, reward, new_stake, block_height)
             {
                 warn!("Slipstream plugin '{}' staking_reward error: {e}", plugin.name());
             }
@@ -156,22 +153,16 @@ impl SlipstreamPluginManager {
     ///
     /// This function loads the dynamically linked library specified in the config. The library
     /// must do necessary initializations.
-    pub fn load_plugin(
-        &mut self,
-        slipstream_plugin_config_file: impl AsRef<Path>,
-    ) -> JsonRpcResult<String> {
+    pub fn load_plugin(&mut self, slipstream_plugin_config_file: impl AsRef<Path>) -> JsonRpcResult<String> {
         // Resolve the library path from the config before calling dlopen.
         // This lets us detect duplicates without loading the library a second time, which is
         // unsafe: a second dlopen on an already-loaded .so can trigger re-execution of Rust
         // .init_array startup code, corrupting global state in the running plugin instance.
-        let resolved_libpath =
-            resolve_libpath_from_config(slipstream_plugin_config_file.as_ref())?;
+        let resolved_libpath = resolve_libpath_from_config(slipstream_plugin_config_file.as_ref())?;
 
         // Check for duplicate library path first (catches same .so before dlopen).
         if let Some(idx) = self.libpaths.iter().position(|p| p == &resolved_libpath) {
-            return Err(SlipstreamPluginManagerError::PluginAlreadyLoaded(
-                self.plugins[idx].name().to_string(),
-            ));
+            return Err(SlipstreamPluginManagerError::PluginAlreadyLoaded(self.plugins[idx].name().to_string()));
         }
 
         let (new_lib, mut new_plugin, new_config_file) =
@@ -179,9 +170,7 @@ impl SlipstreamPluginManager {
 
         // Also guard against a different .so that happens to expose the same plugin name.
         if self.plugins.iter().any(|plugin| plugin.name().eq(new_plugin.name())) {
-            return Err(SlipstreamPluginManagerError::PluginAlreadyLoaded(
-                new_plugin.name().to_string(),
-            ));
+            return Err(SlipstreamPluginManagerError::PluginAlreadyLoaded(new_plugin.name().to_string()));
         }
 
         // Call on_load and push plugin.
@@ -234,17 +223,9 @@ impl SlipstreamPluginManager {
 
 #[derive(Debug)]
 pub enum SlipstreamPluginManagerRequest {
-    UnloadPlugin {
-        name: String,
-        response_sender: OneShotSender<JsonRpcResult<()>>,
-    },
-    LoadPlugin {
-        config_file: String,
-        response_sender: OneShotSender<JsonRpcResult<String>>,
-    },
-    ListPlugins {
-        response_sender: OneShotSender<JsonRpcResult<Vec<String>>>,
-    },
+    UnloadPlugin { name: String, response_sender: OneShotSender<JsonRpcResult<()>> },
+    LoadPlugin { config_file: String, response_sender: OneShotSender<JsonRpcResult<String>> },
+    ListPlugins { response_sender: OneShotSender<JsonRpcResult<Vec<String>>> },
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -362,9 +343,7 @@ pub(crate) fn load_plugin_from_config(
         }
     };
 
-    let libpath = result["libpath"]
-        .as_str()
-        .ok_or(SlipstreamPluginManagerError::LibPathNotSet)?;
+    let libpath = result["libpath"].as_str().ok_or(SlipstreamPluginManagerError::LibPathNotSet)?;
     let mut libpath = PathBuf::from(libpath);
     if libpath.is_relative() {
         let config_dir = slipstream_plugin_config_file.parent().ok_or_else(|| {
@@ -377,17 +356,13 @@ pub(crate) fn load_plugin_from_config(
 
     let plugin_name = result["name"].as_str().map(|s| s.to_owned());
 
-    let config_file = slipstream_plugin_config_file
-        .as_os_str()
-        .to_str()
-        .ok_or(SlipstreamPluginManagerError::InvalidPluginPath)?;
+    let config_file =
+        slipstream_plugin_config_file.as_os_str().to_str().ok_or(SlipstreamPluginManagerError::InvalidPluginPath)?;
 
     let (plugin, lib) = unsafe {
-        let lib = Library::new(libpath)
-            .map_err(|e| SlipstreamPluginManagerError::PluginLoadError(e.to_string()))?;
-        let constructor: Symbol<PluginConstructor> = lib
-            .get(b"_create_plugin")
-            .map_err(|e| SlipstreamPluginManagerError::PluginLoadError(e.to_string()))?;
+        let lib = Library::new(libpath).map_err(|e| SlipstreamPluginManagerError::PluginLoadError(e.to_string()))?;
+        let constructor: Symbol<PluginConstructor> =
+            lib.get(b"_create_plugin").map_err(|e| SlipstreamPluginManagerError::PluginLoadError(e.to_string()))?;
         let plugin_raw = constructor();
         if plugin_raw.is_null() {
             return Err(SlipstreamPluginManagerError::PluginLoadError(
@@ -434,10 +409,7 @@ pub(crate) fn load_plugin_from_config(
 mod tests {
     use {
         crate::slipstream_manager::{
-            LoadedSlipstreamPlugin,
-            SlipstreamPluginManager,
-            TESTPLUGIN2_CONFIG,
-            TESTPLUGIN_CONFIG,
+            LoadedSlipstreamPlugin, SlipstreamPluginManager, TESTPLUGIN_CONFIG, TESTPLUGIN2_CONFIG,
         },
         libloading::Library,
         snarkvm_slipstream_plugin_interface::slipstream_plugin_interface::SlipstreamPlugin,
