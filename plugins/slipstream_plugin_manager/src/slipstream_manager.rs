@@ -17,8 +17,10 @@ use snarkvm_slipstream_plugin_interface::slipstream_plugin_interface::Slipstream
 use tokio::sync::oneshot::Sender as OneShotSender;
 
 use libloading::Library;
-use std::ops::{Deref, DerefMut};
-use std::path::{Path, PathBuf};
+use std::{
+    ops::{Deref, DerefMut},
+    path::{Path, PathBuf}
+};
 use tracing::{info, warn};
 
 /// A type alias for the result of plugin manager operations.
@@ -407,14 +409,15 @@ pub(crate) fn load_plugin_from_config(
 
 #[cfg(test)]
 mod tests {
-    use {
-        crate::slipstream_manager::{
-            LoadedSlipstreamPlugin, SlipstreamPluginManager, TESTPLUGIN_CONFIG, TESTPLUGIN2_CONFIG,
-        },
-        libloading::Library,
-        snarkvm_slipstream_plugin_interface::slipstream_plugin_interface::SlipstreamPlugin,
-        std::sync::{Arc, RwLock},
+    use crate::slipstream_manager::{
+        LoadedSlipstreamPlugin,
+        SlipstreamPluginManager,
+        TESTPLUGIN_CONFIG,
+        TESTPLUGIN2_CONFIG,
     };
+    use libloading::Library;
+    use snarkvm_slipstream_plugin_interface::slipstream_plugin_interface::SlipstreamPlugin;
+    use std::sync::{Arc, RwLock};
 
     pub(super) fn dummy_plugin_and_library<P: SlipstreamPlugin>(
         plugin: P,
@@ -501,9 +504,11 @@ mod tests {
             fn name(&self) -> &'static str {
                 "tracking"
             }
+
             fn history_enabled(&self) -> bool {
                 true
             }
+            
             fn notify_mapping_update(
                 &self,
                 _program_id: &[u8],

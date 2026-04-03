@@ -15,7 +15,10 @@
 
 use crate::slipstream_manager::SlipstreamPluginManager;
 
-use std::{path::PathBuf, sync::Arc, sync::RwLock};
+use std::{
+    path::PathBuf,
+    sync::{Arc, RwLock}
+};
 use thiserror::Error;
 
 /// The service managing the Slipstream plugin workflow.
