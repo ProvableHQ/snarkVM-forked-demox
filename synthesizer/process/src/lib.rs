@@ -69,11 +69,13 @@ use snarkvm_ledger_block::{Deployment, DeploymentVersion, Execution, Fee, Input,
 use snarkvm_ledger_store::{FinalizeStorage, FinalizeStore, atomic_batch_scope};
 use snarkvm_synthesizer_program::{
     Branch,
+    CastType,
     Command,
     FinalizeGlobalState,
     FinalizeOperation,
     Function,
     Instruction,
+    Operand,
     Program,
     StackTrait,
 };
@@ -81,12 +83,16 @@ use snarkvm_synthesizer_snark::{ProvingKey, UniversalSRS, VerifyingKey};
 use snarkvm_utilities::{defer, dev_println};
 
 use aleo_std::prelude::{finish, lap, timer};
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
+
 #[cfg(feature = "locktick")]
 use locktick::parking_lot::RwLock;
 #[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 // Note: a `Process` and all of its fields are meant to be completely stateless. They have no
 // notion of block height or consensus version.
@@ -124,7 +130,7 @@ impl<N: Network> Process<N> {
             stack.synthesize_key::<A, _>(function_name, rng)?;
             lap!(timer, "Synthesize circuit keys for {function_name}");
         }
-        let rng = &mut rand::thread_rng();
+        let rng = &mut rand::rng();
         let credits_record_name = Identifier::<N>::from_str("credits").unwrap(); // Safe: "credits" is always a valid identifier.
         stack.synthesize_translation_key::<A, _>(&credits_record_name, rng)?;
         lap!(timer, "Synthesize credits program keys");

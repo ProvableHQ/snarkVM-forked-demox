@@ -15,6 +15,8 @@
 
 use super::*;
 
+mod ensure_records_exist;
+
 impl<N: Network> Process<N> {
     /// Verifies the given execution is valid.
     /// Note: This does *not* check that the global state root exists in the ledger.
@@ -68,6 +70,14 @@ impl<N: Network> Process<N> {
 
         // Construct the call graph of the execution.
         let call_graph = self.construct_call_graph(execution.transitions())?;
+
+        // From ConsensusVersion::V15 onwards, ensure that, for each non-closure
+        // function in the execution, all DynamicRecords and ExternalRecords
+        // received as inputs or from callees exist on the ledger at the end of
+        // the execution (whether spent or not).
+        if consensus_version >= ConsensusVersion::V15 {
+            self.ensure_records_exist(execution.transitions(), &call_graph)?;
+        }
 
         // Construct the reverse call graph of the execution.
         // Note: This is a mapping of the child transition ID to the parent transition ID.
@@ -279,14 +289,17 @@ impl<N: Network> Process<N> {
         // count. The Varuna verifier pads inputs up to the domain size (the next power of two at
         // least as large as `num_public_inputs`) with zero field elements, so having fewer inputs
         // than the padded count is always valid.
-        for (verifying_key, inputs_list) in &verifier_inputs {
-            let expected = verifying_key.circuit_info.num_public_inputs;
-            for inputs in inputs_list {
-                ensure!(
-                    inputs.len() <= expected,
-                    "Verifier input count mismatch: expected at most {expected} public inputs, found {}",
-                    inputs.len()
-                );
+        #[cfg(not(feature = "dev_skip_checks"))]
+        {
+            for (verifying_key, inputs_list) in &verifier_inputs {
+                let expected = verifying_key.circuit_info.num_public_inputs;
+                for inputs in inputs_list {
+                    ensure!(
+                        inputs.len() <= expected,
+                        "Verifier input count mismatch: expected at most {expected} public inputs, found {}",
+                        inputs.len()
+                    );
+                }
             }
         }
 

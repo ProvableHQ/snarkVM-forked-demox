@@ -1485,8 +1485,8 @@ function call_fee_private:
         vm.add_next_block(&sample_next_block(&vm, &private_key, &[deployment], rng).unwrap()).unwrap();
 
         // Execute the programs.
-        let internal_base_fee_amount: u64 = rng.gen_range(1..1000);
-        let internal_priority_fee_amount: u64 = rng.gen_range(1..1000);
+        let internal_base_fee_amount: u64 = rng.random_range(1..1000);
+        let internal_priority_fee_amount: u64 = rng.random_range(1..1000);
 
         // Ensure that the transaction that calls `fee_public` internally cannot be generated.
         let inputs = [
@@ -3029,7 +3029,7 @@ function add_thrice:
         let vm = sample_vm();
 
         // Ensure this call succeeds.
-        vm.puzzle.prove(rng.r#gen(), rng.r#gen(), rng.r#gen(), None).unwrap();
+        vm.puzzle.prove(rng.random(), rng.random(), rng.random(), None).unwrap();
     }
 
     #[test]

@@ -54,6 +54,8 @@ pub enum ConsensusVersion {
     ///      Introduces `aleo::GENERATOR`, `aleo::GENERATOR_POWERS`, `snark.verify` opcodes,
     ///      and dynamic dispatch, and identifier literal types.
     V14 = 14,
+    /// V15: Introduces the record-existence check and `commit.*.raw` instruction variants.
+    V15 = 15,
 }
 
 impl ToBytes for ConsensusVersion {
@@ -80,6 +82,7 @@ impl FromBytes for ConsensusVersion {
             12 => Ok(Self::V12),
             13 => Ok(Self::V13),
             14 => Ok(Self::V14),
+            15 => Ok(Self::V15),
             _ => Err(io_error("Invalid consensus version")),
         }
     }
@@ -117,6 +120,7 @@ pub const CANARY_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CON
     (ConsensusVersion::V12, 10_030_000),
     (ConsensusVersion::V13, 10_881_000),
     (ConsensusVersion::V14, 11_960_000),
+    (ConsensusVersion::V15, u32::MAX),
 ];
 
 /// The consensus version height for `MainnetV0`.
@@ -134,7 +138,8 @@ pub const MAINNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V11, 12_870_000),
     (ConsensusVersion::V12, 13_815_000),
     (ConsensusVersion::V13, 16_850_000),
-    (ConsensusVersion::V14, u32::MAX),
+    (ConsensusVersion::V14, 17_700_000),
+    (ConsensusVersion::V15, u32::MAX),
 ];
 
 /// The consensus version heights for `TestnetV0`.
@@ -152,7 +157,8 @@ pub const TESTNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V11, 11_952_000),
     (ConsensusVersion::V12, 12_669_000),
     (ConsensusVersion::V13, 14_906_000),
-    (ConsensusVersion::V14, u32::MAX),
+    (ConsensusVersion::V14, 15_370_000),
+    (ConsensusVersion::V15, u32::MAX),
 ];
 
 /// The consensus version heights when the `test_consensus_heights` feature is enabled.
@@ -171,6 +177,7 @@ pub const TEST_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CONSENSU
     (ConsensusVersion::V12, 15),
     (ConsensusVersion::V13, 16),
     (ConsensusVersion::V14, 17),
+    (ConsensusVersion::V15, 18),
 ];
 
 #[cfg(any(test, feature = "test", feature = "test_consensus_heights"))]
