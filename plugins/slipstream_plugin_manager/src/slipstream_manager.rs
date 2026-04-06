@@ -14,12 +14,12 @@
 // limitations under the License.
 
 use snarkvm_slipstream_plugin_interface::slipstream_plugin_interface::SlipstreamPlugin;
-use tokio::sync::oneshot::Sender as OneShotSender;
 
+use tokio::sync::oneshot::Sender as OneShotSender;
 use libloading::Library;
 use std::{
     ops::{Deref, DerefMut},
-    path::{Path, PathBuf}
+    path::{Path, PathBuf},
 };
 use tracing::{info, warn};
 

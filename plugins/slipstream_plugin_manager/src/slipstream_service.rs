@@ -17,7 +17,7 @@ use crate::slipstream_manager::SlipstreamPluginManager;
 
 use std::{
     path::PathBuf,
-    sync::{Arc, RwLock}
+    sync::{Arc, RwLock},
 };
 use thiserror::Error;
 

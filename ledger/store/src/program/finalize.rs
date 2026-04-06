@@ -950,10 +950,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for FinalizeStore<
         // Notify plugins of the update if in canonical finalize mode.
         #[cfg(all(feature = "history", feature = "slipstream-plugins"))]
         if let Some((pid, mname, k, v)) = plugin_data {
-            #[cfg(feature = "history")]
             let height = self.storage.current_block_height().load(Ordering::SeqCst);
-            #[cfg(all(not(feature = "history"), feature = "slipstream-plugins"))]
-            let height = 0u32;
             if let Some(mgr) = self.slipstream_plugin_manager.get() {
                 match mgr.read() {
                     Ok(plugin_mgr) => plugin_mgr.notify_mapping_update(&pid, &mname, &k, &v, height),
@@ -1029,10 +1026,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         // Notify plugins of each updated key-value pair if in canonical finalize mode.
         #[cfg(all(feature = "history", feature = "slipstream-plugins"))]
         if let Some((pid, mname, serialized_entries)) = plugin_data {
-            #[cfg(feature = "history")]
             let height = self.storage.current_block_height().load(Ordering::SeqCst);
-            #[cfg(all(not(feature = "history"), feature = "slipstream-plugins"))]
-            let height = 0u32;
             if let Some(mgr) = self.slipstream_plugin_manager.get() {
                 match mgr.read() {
                     Ok(plugin_mgr) => {

@@ -63,6 +63,4 @@ let service = SlipstreamPluginService::new(&[
 ])?;
 ```
 
-> **Note:** Not yet wired up to any CLI flags or environment variables. How/where `SlipstreamPluginService` gets constructed and passed into the VM still needs to be plumbed in (likely in snarkOS or wherever the VM is instantiated).
-
 > Errors from plugin callbacks (`notify_mapping_update`, `notify_staking_reward`) are logged as warnings and never propagated — a misbehaving plugin will not crash the node.
