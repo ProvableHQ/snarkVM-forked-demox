@@ -15,8 +15,7 @@
 
 use snarkvm_slipstream_plugin_interface::slipstream_plugin_interface::SlipstreamPlugin;
 
-use tokio::sync::oneshot::Sender as OneShotSender;
-use libloading::Library;
+use libloading::Library;    
 use std::{
     ops::{Deref, DerefMut},
     path::{Path, PathBuf},
@@ -221,13 +220,6 @@ impl SlipstreamPluginManager {
         drop(current_plugin);
         drop(current_lib);
     }
-}
-
-#[derive(Debug)]
-pub enum SlipstreamPluginManagerRequest {
-    UnloadPlugin { name: String, response_sender: OneShotSender<JsonRpcResult<()>> },
-    LoadPlugin { config_file: String, response_sender: OneShotSender<JsonRpcResult<String>> },
-    ListPlugins { response_sender: OneShotSender<JsonRpcResult<Vec<String>>> },
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -508,7 +500,7 @@ mod tests {
             fn history_enabled(&self) -> bool {
                 true
             }
-            
+
             fn notify_mapping_update(
                 &self,
                 _program_id: &[u8],
