@@ -4042,6 +4042,7 @@ dependencies = [
  "anyhow",
  "json5",
  "libloading",
+ "parking_lot",
  "serde_json",
  "snarkvm-slipstream-plugin-interface",
  "thiserror 2.0.18",

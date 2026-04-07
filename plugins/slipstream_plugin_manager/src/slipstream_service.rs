@@ -15,10 +15,8 @@
 
 use crate::slipstream_manager::SlipstreamPluginManager;
 
-use std::{
-    path::PathBuf,
-    sync::{Arc, RwLock},
-};
+use parking_lot::RwLock;
+use std::{path::PathBuf, sync::Arc};
 use thiserror::Error;
 
 /// The service managing the Slipstream plugin workflow.
@@ -46,13 +44,7 @@ impl SlipstreamPluginService {
 
     /// Unloads all plugins and shuts down the service.
     pub fn join(self) {
-        match self.plugin_manager.write() {
-            Ok(mut manager) => manager.unload(),
-            Err(e) => {
-                tracing::warn!("Slipstream: plugin manager lock poisoned during shutdown, attempting recovery: {e}");
-                e.into_inner().unload();
-            }
-        }
+        self.plugin_manager.write().unload();
     }
 }
 
