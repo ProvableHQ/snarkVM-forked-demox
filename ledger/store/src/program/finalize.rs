@@ -34,14 +34,22 @@ use indexmap::IndexSet;
 #[cfg(feature = "slipstream-plugins")]
 use snarkvm_slipstream_plugin_manager::SlipstreamPluginManager;
 #[cfg(feature = "slipstream-plugins")]
-use std::sync::{Arc, OnceLock, RwLock, atomic::AtomicBool};
+use parking_lot::RwLock;
+#[cfg(feature = "slipstream-plugins")]
+use std::sync::{Arc, OnceLock, atomic::AtomicBool};
 #[cfg(any(feature = "history", feature = "history-staking-rewards"))]
 use std::{
     borrow::Cow,
     sync::atomic::{AtomicU32, Ordering},
 };
+
+/// Serialized form of a mapping replacement, captured before storage consumes the entries.
 #[cfg(all(feature = "history", feature = "slipstream-plugins"))]
-type SerializedMappingEntries = Option<(Vec<u8>, Vec<u8>, Vec<(Vec<u8>, Vec<u8>)>)>;
+struct SerializedMappingEntries {
+    program_id: Vec<u8>,
+    mapping_name: Vec<u8>,
+    entries: Vec<(Vec<u8>, Vec<u8>)>,
+}
 
 /// TODO (howardwu): Remove this.
 /// Returns the mapping ID for the given `program ID` and `mapping name`.
@@ -781,28 +789,10 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         }
 
         if let Some(mgr) = self.slipstream_plugin_manager.get() {
-            let staker_bytes = match staker.to_bytes_le() {
-                Ok(b) => b,
-                Err(e) => {
-                    tracing::warn!("Slipstream: failed to serialize staker address: {e}");
-                    return;
-                }
-            };
-            let validator_bytes = match validator.to_bytes_le() {
-                Ok(b) => b,
-                Err(e) => {
-                    tracing::warn!("Slipstream: failed to serialize validator address: {e}");
-                    return;
-                }
-            };
-            match mgr.read() {
-                Ok(plugin_mgr) => {
-                    plugin_mgr.notify_staking_reward(&staker_bytes, &validator_bytes, reward, new_stake, block_height)
-                }
-                Err(e) => tracing::warn!(
-                    "Slipstream: plugin manager lock poisoned, skipping staking reward notification: {e}"
-                ),
-            }
+            // Address serializes to a fixed 32-byte array; this cannot fail.
+            let staker_bytes = staker.to_bytes_le().expect("Address::to_bytes_le is infallible");
+            let validator_bytes = validator.to_bytes_le().expect("Address::to_bytes_le is infallible");
+            mgr.read().notify_staking_reward(&staker_bytes, &validator_bytes, reward, new_stake, block_height);
         }
     }
 
@@ -923,20 +913,16 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for FinalizeStore<
         #[cfg(all(feature = "history", feature = "slipstream-plugins"))]
         let plugin_data = if self.is_finalize_mode.load(Ordering::SeqCst) {
             if let Some(mgr) = self.slipstream_plugin_manager.get() {
-                match mgr.read() {
-                    Ok(plugin_mgr) if plugin_mgr.history_mappings_enabled() => Some((
+                let plugin_mgr = mgr.read();
+                if plugin_mgr.history_mappings_enabled() {
+                    Some((
                         program_id.to_bytes_le()?,
                         mapping_name.to_bytes_le()?,
                         key.to_bytes_le()?,
                         value.to_bytes_le()?,
-                    )),
-                    Ok(_) => None,
-                    Err(e) => {
-                        tracing::warn!(
-                            "Slipstream: plugin manager lock poisoned, skipping mapping update serialization: {e}"
-                        );
-                        None
-                    }
+                    ))
+                } else {
+                    None
                 }
             } else {
                 None
@@ -952,12 +938,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for FinalizeStore<
         if let Some((pid, mname, k, v)) = plugin_data {
             let height = self.storage.current_block_height().load(Ordering::SeqCst);
             if let Some(mgr) = self.slipstream_plugin_manager.get() {
-                match mgr.read() {
-                    Ok(plugin_mgr) => plugin_mgr.notify_mapping_update(&pid, &mname, &k, &v, height),
-                    Err(e) => tracing::warn!(
-                        "Slipstream: plugin manager lock poisoned, skipping mapping update notification: {e}"
-                    ),
-                }
+                mgr.read().notify_mapping_update(&pid, &mname, &k, &v, height);
             }
         }
         Ok(result)
@@ -996,23 +977,21 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         // Serialize mapping identity and all entries before moving them into storage,
         // so they are available for plugin notification after the storage call.
         #[cfg(all(feature = "history", feature = "slipstream-plugins"))]
-        let plugin_data: SerializedMappingEntries = if self.is_finalize_mode.load(Ordering::SeqCst) {
+        let plugin_data: Option<SerializedMappingEntries> = if self.is_finalize_mode.load(Ordering::SeqCst) {
             if let Some(mgr) = self.slipstream_plugin_manager.get() {
-                match mgr.read() {
-                    Ok(plugin_mgr) if plugin_mgr.history_mappings_enabled() => {
-                        let mut serialized_entries = Vec::with_capacity(entries.len());
-                        for (key, value) in &entries {
-                            serialized_entries.push((key.to_bytes_le()?, value.to_bytes_le()?));
-                        }
-                        Some((program_id.to_bytes_le()?, mapping_name.to_bytes_le()?, serialized_entries))
+                let plugin_mgr = mgr.read();
+                if plugin_mgr.history_mappings_enabled() {
+                    let mut entries_bytes = Vec::with_capacity(entries.len());
+                    for (key, value) in &entries {
+                        entries_bytes.push((key.to_bytes_le()?, value.to_bytes_le()?));
                     }
-                    Ok(_) => None,
-                    Err(e) => {
-                        tracing::warn!(
-                            "Slipstream: plugin manager lock poisoned, skipping mapping replace serialization: {e}"
-                        );
-                        None
-                    }
+                    Some(SerializedMappingEntries {
+                        program_id: program_id.to_bytes_le()?,
+                        mapping_name: mapping_name.to_bytes_le()?,
+                        entries: entries_bytes,
+                    })
+                } else {
+                    None
                 }
             } else {
                 None
@@ -1025,18 +1004,12 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
 
         // Notify plugins of each updated key-value pair if in canonical finalize mode.
         #[cfg(all(feature = "history", feature = "slipstream-plugins"))]
-        if let Some((pid, mname, serialized_entries)) = plugin_data {
+        if let Some(data) = plugin_data {
             let height = self.storage.current_block_height().load(Ordering::SeqCst);
             if let Some(mgr) = self.slipstream_plugin_manager.get() {
-                match mgr.read() {
-                    Ok(plugin_mgr) => {
-                        for (k, v) in &serialized_entries {
-                            plugin_mgr.notify_mapping_update(&pid, &mname, k, v, height);
-                        }
-                    }
-                    Err(e) => tracing::warn!(
-                        "Slipstream: plugin manager lock poisoned, skipping mapping update notifications: {e}"
-                    ),
+                let plugin_mgr = mgr.read();
+                for (k, v) in &data.entries {
+                    plugin_mgr.notify_mapping_update(&data.program_id, &data.mapping_name, k, v, height);
                 }
             }
         }

@@ -15,7 +15,7 @@
 
 use snarkvm_slipstream_plugin_interface::slipstream_plugin_interface::SlipstreamPlugin;
 
-use libloading::Library;    
+use libloading::Library;
 use std::{
     ops::{Deref, DerefMut},
     path::{Path, PathBuf},
@@ -78,31 +78,18 @@ impl SlipstreamPluginManager {
             plugin.on_unload();
         }
 
-        for lib in self.libs.drain(..) {
-            drop(lib);
-        }
-
+        self.libs.clear();
         self.libpaths.clear();
     }
 
     /// Check which plugins are interested in regular mapping data.
     pub fn history_mappings_enabled(&self) -> bool {
-        for plugin in &self.plugins {
-            if plugin.history_enabled() {
-                return true;
-            }
-        }
-        false
+        self.plugins.iter().any(|p| p.history_enabled())
     }
 
     /// Check if there is any plugin interested in historical staking data.
     pub fn history_staking_rewards_enabled(&self) -> bool {
-        for plugin in &self.plugins {
-            if plugin.history_staking_rewards_enabled() {
-                return true;
-            }
-        }
-        false
+        self.plugins.iter().any(|p| p.history_staking_rewards_enabled())
     }
 
     /// Broadcasts a mapping update to all interested plugins. Errors are
