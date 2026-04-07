@@ -142,7 +142,7 @@ impl<N: Network> Stack<N> {
                 CallStack::Evaluate(authorization) => (authorization.next()?, call_stack),
                 // If the evaluation is performed in the `Execute` mode, create a new `Evaluate` mode.
                 // This is done to ensure that evaluation during execution is performed consistently.
-                CallStack::Execute(authorization, _) => {
+                CallStack::Execute(authorization, _, _) => {
                     // Note: We need to replicate the authorization, so that 'execute' can call 'authorization.next()?'.
                     // This way, the authorization remains unmodified in this 'evaluate' scope.
                     let authorization = authorization.replicate();
@@ -228,6 +228,9 @@ impl<N: Network> Stack<N> {
             let result = match instruction {
                 // If the instruction is a `call` instruction, we need to handle it separately.
                 Instruction::Call(call) => CallTrait::evaluate(call, self, &mut registers, rng)
+                    .map_err(|e| InstructionEvalError::Call(Box::new(e))),
+                // If the instruction is a `call.dynamic` instruction, we need to handle it separately.
+                Instruction::CallDynamic(call_dynamic) => CallTrait::evaluate(call_dynamic, self, &mut registers, rng)
                     .map_err(|e| InstructionEvalError::Call(Box::new(e))),
                 // Otherwise, evaluate the instruction normally.
                 _ => instruction.evaluate(self, &mut registers).map_err(Into::into),

@@ -38,6 +38,10 @@ use snarkvm_ledger_block::{Block, ConfirmedTransaction, Execution, Ratify, Rejec
 use snarkvm_ledger_committee::{Committee, MIN_VALIDATOR_STAKE};
 use snarkvm_ledger_narwhal::{BatchHeader, Data, Subdag, Transmission, TransmissionID};
 use snarkvm_ledger_store::ConsensusStore;
+#[cfg(feature = "history-staking-rewards")]
+use snarkvm_ledger_store::helpers::MapRead;
+#[cfg(feature = "history-staking-rewards")]
+use snarkvm_synthesizer::bonded_map_into_stakers;
 use snarkvm_synthesizer::{
     program::{Program, StackTrait},
     vm::VM,
@@ -812,53 +816,66 @@ fn test_bond_and_unbond_validator() {
     // Check the historical mapping values after the unbonding.
     #[cfg(feature = "history")]
     {
-        let initial_mapping_value = ledger
-            .vm()
-            .finalize_store()
+        let store = ledger.vm().finalize_store();
+        let initial_mapping_value = store
             .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 0)
             .unwrap()
             .unwrap();
         assert_eq!(&*initial_mapping_value, &Value::<CurrentNetwork>::try_from("4u32").unwrap());
 
-        let initial_mapping_value_overshot = ledger
-            .vm()
-            .finalize_store()
+        let initial_mapping_value_overshot = store
             .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 1)
             .unwrap()
             .unwrap();
         assert_eq!(&*initial_mapping_value_overshot, &Value::<CurrentNetwork>::try_from("4u32").unwrap());
 
-        let post_bond_mapping_value = ledger
-            .vm()
-            .finalize_store()
+        let post_bond_mapping_value = store
             .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 2)
             .unwrap()
             .unwrap();
         assert_eq!(&*post_bond_mapping_value, &Value::<CurrentNetwork>::try_from("5u32").unwrap());
 
-        let post_unbond_mapping_value = ledger
-            .vm()
-            .finalize_store()
+        let post_unbond_mapping_value = store
             .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 3)
             .unwrap()
             .unwrap();
         assert_eq!(&*post_unbond_mapping_value, &Value::<CurrentNetwork>::try_from("4u32").unwrap());
 
-        let post_unbond_mapping_value_overshot = ledger
-            .vm()
-            .finalize_store()
+        let post_unbond_mapping_value_overshot = store
             .get_historical_mapping_value(program_id, metadata_mapping_name, metadata_mapping_key.clone(), 100)
             .unwrap()
             .unwrap();
         assert_eq!(&*post_unbond_mapping_value_overshot, &Value::<CurrentNetwork>::try_from("4u32").unwrap());
 
-        let post_unbond_mapping_heights = ledger
-            .vm()
-            .finalize_store()
+        let post_unbond_mapping_heights = store
             .get_mapping_update_heights(program_id, metadata_mapping_name, metadata_mapping_key.clone())
             .unwrap()
             .unwrap();
         assert_eq!(&*post_unbond_mapping_heights, &[0, 2, 3]);
+    }
+
+    // Check the historical rewards after the (un)bonding operations.
+    #[cfg(feature = "history-staking-rewards")]
+    {
+        let store = ledger.vm().finalize_store();
+        let program_id = ProgramID::from_str("credits.aleo").unwrap();
+        let bonded_mapping = Identifier::from_str("bonded").unwrap();
+        let bonded_map = store.get_mapping_speculative(program_id, bonded_mapping).unwrap();
+        let stakers = bonded_map_into_stakers(bonded_map).unwrap();
+
+        let initial_stake = MIN_VALIDATOR_STAKE;
+        let mut cumulative_reward = 0;
+        for height in 1..=3 {
+            for (i, staker) in stakers.keys().enumerate() {
+                let (validator, reward, new_stake) =
+                    store.staking_rewards_map().get_confirmed(&(*staker, height)).unwrap().unwrap().into_owned();
+                if i == 0 {
+                    cumulative_reward += reward;
+                }
+                assert_eq!(*staker, validator);
+                assert_eq!(initial_stake + cumulative_reward, new_stake);
+            }
+        }
     }
 
     // Check that the committee does not include the new member.
@@ -962,9 +979,9 @@ fn test_aborted_solution_ids() -> Result<()> {
     let minimum_proof_target = ledger.latest_proof_target();
 
     // Create a solution that is less than the minimum proof target.
-    let mut invalid_solution = puzzle.prove(latest_epoch_hash, address, rng.r#gen(), None).unwrap();
+    let mut invalid_solution = puzzle.prove(latest_epoch_hash, address, rng.random(), None).unwrap();
     while puzzle.get_proof_target(&invalid_solution).unwrap() >= minimum_proof_target {
-        invalid_solution = puzzle.prove(latest_epoch_hash, address, rng.r#gen(), None).unwrap();
+        invalid_solution = puzzle.prove(latest_epoch_hash, address, rng.random(), None).unwrap();
     }
 
     // Create a valid transaction for the block.
@@ -1468,7 +1485,7 @@ fn test_get_transaction() {
     let ledger = crate::test_helpers::sample_test_env(rng).ledger;
 
     // Generate a random transaction ID.
-    let transaction = crate::test_helpers::sample_deployment_transaction(1, 0, true, rng);
+    let transaction = crate::test_helpers::sample_deployment_transaction(1, 0, false, true, rng);
     let transaction_id = transaction.id();
 
     assert_eq!(ledger.try_get_transaction(&transaction_id).unwrap(), None);
@@ -2067,8 +2084,8 @@ fn test_split_candidate_solutions() {
     const ITERATIONS: usize = 1_000;
 
     for _ in 0..ITERATIONS {
-        let num_candidates = rng.gen_range(0..max_solutions * 2);
-        let candidate_solutions: Vec<u8> = rng.sample_iter(Standard).take(num_candidates).collect();
+        let num_candidates = rng.random_range(0..max_solutions * 2);
+        let candidate_solutions: Vec<u8> = rng.sample_iter(StandardUniform).take(num_candidates).collect();
 
         let (_accepted, _aborted) =
             split_candidate_solutions(candidate_solutions, max_solutions, |candidate| *candidate % 2 == 0);
@@ -2461,7 +2478,7 @@ finalize foo:
         aborted_transactions.shuffle(rng);
 
         // Randomly insert the aborted transactions.
-        let start_position = rng.gen_range(0..=transactions.len());
+        let start_position = rng.random_range(0..=transactions.len());
         for (index, element) in aborted_transactions.iter().enumerate() {
             transactions.insert(start_position + index, element.clone());
         }
@@ -2750,14 +2767,14 @@ mod valid_solutions {
         let minimum_proof_target = ledger.latest_proof_target();
 
         // Create a solution that is greater than the minimum proof target.
-        let mut valid_solution = puzzle.prove(latest_epoch_hash, prover_address, rng.r#gen(), None).unwrap();
+        let mut valid_solution = puzzle.prove(latest_epoch_hash, prover_address, rng.random(), None).unwrap();
         while puzzle.get_proof_target(&valid_solution).unwrap() < minimum_proof_target {
             println!(
                 "Solution is invalid: {} < {}",
                 puzzle.get_proof_target(&valid_solution).unwrap(),
                 minimum_proof_target
             );
-            valid_solution = puzzle.prove(latest_epoch_hash, prover_address, rng.r#gen(), None).unwrap();
+            valid_solution = puzzle.prove(latest_epoch_hash, prover_address, rng.random(), None).unwrap();
         }
 
         // Create a valid transaction for the block.
@@ -2838,7 +2855,7 @@ mod valid_solutions {
             let latest_proof_target = ledger.latest_proof_target();
 
             // Sample the number of solutions to generate.
-            let num_solutions = rng.gen_range(1..=CurrentNetwork::MAX_SOLUTIONS);
+            let num_solutions = rng.random_range(1..=CurrentNetwork::MAX_SOLUTIONS);
 
             // Initialize a vector for valid solutions for this block.
             let mut solutions = Vec::with_capacity(num_solutions);
@@ -2846,7 +2863,7 @@ mod valid_solutions {
             // Loop through proofs until two that meet the threshold are found.
             loop {
                 if let Ok(solution) =
-                    puzzle.prove(latest_epoch_hash, prover_address, rng.r#gen(), Some(latest_proof_target))
+                    puzzle.prove(latest_epoch_hash, prover_address, rng.random(), Some(latest_proof_target))
                 {
                     // Get the proof target.
                     let proof_target = puzzle.get_proof_target(&solution).unwrap();
@@ -2961,7 +2978,7 @@ mod valid_solutions {
             let latest_proof_target = ledger.latest_proof_target();
 
             // Sample the number of solutions to generate.
-            let num_solutions = rng.gen_range(1..=CurrentNetwork::MAX_SOLUTIONS);
+            let num_solutions = rng.random_range(1..=CurrentNetwork::MAX_SOLUTIONS);
 
             // Initialize a vector for valid solutions for this block.
             let mut solutions = Vec::with_capacity(num_solutions);
@@ -2969,7 +2986,7 @@ mod valid_solutions {
             // Loop through proofs until two that meet the threshold are found.
             loop {
                 if let Ok(solution) =
-                    puzzle.prove(latest_epoch_hash, prover_address, rng.r#gen(), Some(latest_proof_target))
+                    puzzle.prove(latest_epoch_hash, prover_address, rng.random(), Some(latest_proof_target))
                 {
                     // Get the proof target.
                     let proof_target = puzzle.get_proof_target(&solution).unwrap();
@@ -3045,7 +3062,7 @@ mod valid_solutions {
 
         // Create solutions that are greater than the minimum proof target.
         let valid_solution = loop {
-            let solution = puzzle.prove(latest_epoch_hash, prover_address, rng.r#gen(), None).unwrap();
+            let solution = puzzle.prove(latest_epoch_hash, prover_address, rng.random(), None).unwrap();
             if puzzle.get_proof_target(&solution).unwrap() >= minimum_proof_target {
                 break solution;
             }
@@ -3139,7 +3156,7 @@ mod valid_solutions {
         let mut valid_solutions = Vec::with_capacity(2);
         // Create solutions that are greater than the minimum proof target.
         while valid_solutions.len() < 2 {
-            let solution = puzzle.prove(latest_epoch_hash, prover_address, rng.r#gen(), None).unwrap();
+            let solution = puzzle.prove(latest_epoch_hash, prover_address, rng.random(), None).unwrap();
             if puzzle.get_proof_target(&solution).unwrap() >= minimum_proof_target {
                 valid_solutions.push(solution);
             }
@@ -3202,7 +3219,7 @@ mod valid_solutions {
 
         // Create solutions that are greater than the minimum proof target.
         while valid_solutions.len() < NUM_VALID_SOLUTIONS {
-            let solution = puzzle.prove(latest_epoch_hash, prover_address, rng.r#gen(), None).unwrap();
+            let solution = puzzle.prove(latest_epoch_hash, prover_address, rng.random(), None).unwrap();
             if puzzle.get_proof_target(&solution).unwrap() < minimum_proof_target {
                 if invalid_solutions.len() < NUM_INVALID_SOLUTIONS {
                     invalid_solutions.push(solution);
@@ -3213,7 +3230,7 @@ mod valid_solutions {
         }
         // Create the remaining solutions that are less than the minimum proof target.
         while invalid_solutions.len() < NUM_INVALID_SOLUTIONS {
-            let solution = puzzle.prove(latest_epoch_hash, prover_address, rng.r#gen(), None).unwrap();
+            let solution = puzzle.prove(latest_epoch_hash, prover_address, rng.random(), None).unwrap();
             if puzzle.get_proof_target(&solution).unwrap() < minimum_proof_target {
                 invalid_solutions.push(solution);
             }
@@ -3292,7 +3309,7 @@ mod valid_solutions {
 
         // Create solutions that are greater than the minimum proof target.
         while valid_solutions.len() < NUM_VALID_SOLUTIONS {
-            let solution = puzzle.prove(latest_epoch_hash, prover_address, rng.r#gen(), None).unwrap();
+            let solution = puzzle.prove(latest_epoch_hash, prover_address, rng.random(), None).unwrap();
             if puzzle.get_proof_target(&solution).unwrap() >= minimum_proof_target {
                 valid_solutions.push(solution);
             }
@@ -3365,7 +3382,7 @@ mod valid_solutions {
         // Initialize a valid solution object.
         let mut valid_solution = None;
         while valid_solution.is_none() {
-            let solution = puzzle.prove(latest_epoch_hash, prover_address, rng.r#gen(), None).unwrap();
+            let solution = puzzle.prove(latest_epoch_hash, prover_address, rng.random(), None).unwrap();
             if puzzle.get_proof_target(&solution).unwrap() >= minimum_proof_target {
                 valid_solution = Some(solution);
             }
@@ -3453,7 +3470,7 @@ mod valid_solutions {
         // Initialize a valid solution object.
         let mut invalid_solution = None;
         while invalid_solution.is_none() {
-            let solution = puzzle.prove(latest_epoch_hash, prover_address, rng.r#gen(), None).unwrap();
+            let solution = puzzle.prove(latest_epoch_hash, prover_address, rng.random(), None).unwrap();
             if puzzle.get_proof_target(&solution).unwrap() < minimum_proof_target {
                 invalid_solution = Some(solution);
             }
@@ -3551,7 +3568,7 @@ mod valid_solutions {
 
         // Create solutions that are greater than the minimum proof target.
         let valid_solution = loop {
-            let solution = puzzle.prove(latest_epoch_hash, address, rng.r#gen(), None).unwrap();
+            let solution = puzzle.prove(latest_epoch_hash, address, rng.random(), None).unwrap();
             if puzzle.get_proof_target(&solution).unwrap() >= minimum_proof_target {
                 break solution;
             }
@@ -3625,14 +3642,14 @@ fn test_forged_block_subdags() -> Result<()> {
             .prepare_advance_to_next_quorum_block(
                 block_3_subdag.clone(),
                 block_3_transmissions.clone(),
-                &mut rand::thread_rng(),
+                &mut rand::rng(),
             )
             .unwrap();
 
         assert_ne!(forged_block_2, block_2);
 
         // Attempt to verify the forged block.
-        assert!(ledger.check_next_block(&forged_block_2, &mut rand::thread_rng()).is_err());
+        assert!(ledger.check_next_block(&forged_block_2, &mut rand::rng()).is_err());
     }
 
     ////////////////////////////////////////////////////////////////////////////
@@ -3657,14 +3674,14 @@ fn test_forged_block_subdags() -> Result<()> {
             .prepare_advance_to_next_quorum_block(
                 Subdag::from(combined_subdag).unwrap(),
                 combined_transmissions,
-                &mut rand::thread_rng(),
+                &mut rand::rng(),
             )
             .unwrap();
 
         assert_ne!(forged_block_2_from_both_subdags, block_1);
 
         // Attempt to verify the forged block.
-        assert!(ledger.check_next_block(&forged_block_2_from_both_subdags, &mut rand::thread_rng()).is_err());
+        assert!(ledger.check_next_block(&forged_block_2_from_both_subdags, &mut rand::rng()).is_err());
     }
 
     ////////////////////////////////////////////////////////////////////////////
@@ -3691,13 +3708,13 @@ fn test_forged_block_subdags() -> Result<()> {
 
         // Forge the block.
         let forged_block_2 = ledger
-            .prepare_advance_to_next_quorum_block(Subdag::from(subdag).unwrap(), transmissions, &mut rand::thread_rng())
+            .prepare_advance_to_next_quorum_block(Subdag::from(subdag).unwrap(), transmissions, &mut rand::rng())
             .unwrap();
 
         assert_ne!(forged_block_2, block_1);
 
         // Attempt to verify the forged block.
-        assert!(ledger.check_next_block(&forged_block_2, &mut rand::thread_rng()).is_err());
+        assert!(ledger.check_next_block(&forged_block_2, &mut rand::rng()).is_err());
     }
 
     Ok(())
@@ -3778,13 +3795,13 @@ fn test_subdag_with_gc_length() -> Result<()> {
         let forged_block = ledger.prepare_advance_to_next_quorum_block(
             Subdag::from(forged_subdag).unwrap(),
             transmissions,
-            &mut rand::thread_rng(),
+            &mut rand::rng(),
         )?;
 
         assert_ne!(forged_block, block);
 
         // Attempt to verify the forged block.
-        assert!(ledger.check_next_block(&forged_block, &mut rand::thread_rng()).is_err());
+        assert!(ledger.check_next_block(&forged_block, &mut rand::rng()).is_err());
     }
 
     // Ensure it is still accepted

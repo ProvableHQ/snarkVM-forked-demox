@@ -16,6 +16,8 @@
 use super::*;
 
 use snarkvm_ledger_committee::{MAX_DELEGATORS, MIN_DELEGATOR_STAKE, MIN_VALIDATOR_SELF_STAKE};
+#[cfg(feature = "history-staking-rewards")]
+use snarkvm_ledger_store::helpers::Map;
 use snarkvm_utilities::{cfg_sort_by_cached_key, defer, dev_eprintln};
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
@@ -81,12 +83,15 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let unordered_aborted_transaction_ids: IndexMap<N::TransactionID, &String> =
             verification_aborted_transaction_ids.chain(speculation_aborted_transaction_ids).collect();
 
+        dev_eprintln!("Unordered aborted transactions: {unordered_aborted_transaction_ids:?}");
+
         // Filter and order the aborted transaction ids according to candidate_transactions
         let aborted_transaction_ids: Vec<_> = candidate_transaction_ids
             .into_iter()
             .filter_map(|tx_id| {
                 unordered_aborted_transaction_ids.get(&tx_id).map(|error| {
                     warn!("Speculation safely aborted a transaction - {error} ({tx_id})");
+                    dev_eprintln!("Speculation safely aborted a transaction - {error} ({tx_id})");
                     tx_id
                 })
             })
@@ -437,6 +442,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                 }
                                 // Construct the rejected deploy transaction.
                                 Err(error) => {
+                                    dev_eprintln!("Failed to finalize deploy tx {} - {error}", transaction.id());
                                     trace!("Failed to finalize deploy tx {} - {error}", transaction.id());
                                     match process_rejected_deployment(fee, *deployment.clone()) {
                                         Ok(result) => result,
@@ -467,6 +473,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             }
                             // Construct the rejected execute transaction.
                             Err(error) => {
+                                dev_eprintln!("Failed to finalize execute tx {} - {error}", transaction.id());
                                 trace!("Failed to finalize execute tx {} - {error}", transaction.id());
                                 match fee {
                                     // Finalize the fee, to ensure it is valid.
@@ -1036,7 +1043,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         // Verify the transactions in batches and separate the valid and invalid transactions.
         for transactions in deployments_for_verification.chain(executions_for_verification) {
-            let rngs = (0..transactions.len()).map(|_| StdRng::from_seed(rng.r#gen())).collect::<Vec<_>>();
+            let rngs = (0..transactions.len()).map(|_| StdRng::from_seed(rng.random())).collect::<Vec<_>>();
             // Verify the transactions and collect the error message if there is one.
             let (valid, invalid): (Vec<_>, Vec<_>) =
                 cfg_into_iter!(transactions).zip(rngs).partition_map(|(transaction, mut rng)| {
@@ -1396,6 +1403,17 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     // Compute the updated stakers, using the committee and block reward.
                     let next_stakers = staking_rewards(&current_stakers, &current_committee, *block_reward);
 
+                    #[cfg(feature = "history-staking-rewards")]
+                    {
+                        for (curr_stake, (staker, (validator, new_stake))) in
+                            current_stakers.values().map(|(_, current_stake)| current_stake).zip(&next_stakers)
+                        {
+                            let reward = new_stake - curr_stake;
+                            let height = state.block_height();
+                            store.staking_rewards_map().insert((*staker, height), (*validator, reward, *new_stake))?;
+                        }
+                    }
+
                     // Compute the updated delegated amounts, using the next_stakers updated amounts.
                     let next_delegated = to_next_delegated(&next_stakers);
 
@@ -1487,7 +1505,7 @@ mod tests {
     use snarkvm_ledger_committee::{MAX_DELEGATORS, MIN_VALIDATOR_STAKE};
     use snarkvm_synthesizer_program::Program;
 
-    use rand::distributions::DistString;
+    use rand::distr::SampleString;
 
     type CurrentNetwork = test_helpers::CurrentNetwork;
     #[cfg(not(feature = "rocks"))]

@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-ledger-store"
-version = "4.4.0"
+version = "4.6.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A data store for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -19,6 +19,7 @@ edition = "2024"
 [features]
 default = [ "indexmap/rayon" ]
 history = [ ]
+history-staking-rewards = [ ]
 locktick = [ "dep:locktick", "snarkvm-ledger-puzzle/locktick" ]
 rocks = [ "rocksdb", "smallvec" ]
 serial = [
