@@ -55,41 +55,53 @@ impl DerefMut for LoadedSlipstreamPlugin {
     }
 }
 
+/// A fully-loaded plugin entry: the plugin instance, its backing shared library, and the
+/// resolved path used for duplicate detection. Fields are declared in drop order — `plugin`
+/// is dropped before `lib` — which guarantees all plugin code finishes executing before the
+/// shared library is unloaded.
+#[derive(Debug)]
+struct LoadedPlugin {
+    plugin: LoadedSlipstreamPlugin,
+    lib: Library,
+    /// Resolved, absolute path to the `.so` file.
+    /// Used to detect duplicate loads before calling `dlopen`, preventing unsafe double-loading.
+    libpath: PathBuf,
+}
+
+impl Drop for LoadedPlugin {
+    fn drop(&mut self) {
+        info!("Unloading plugin '{}'", self.plugin.name());
+        self.plugin.on_unload();
+        // `plugin` then drops before `lib` (declaration order), ensuring all plugin code
+        // finishes executing before the shared library is unloaded.
+    }
+}
+
 // The Plugin Manager itself
 #[derive(Default, Debug)]
 pub struct SlipstreamPluginManager {
-    pub plugins: Vec<LoadedSlipstreamPlugin>,
-    libs: Vec<Library>,
-    /// Resolved, absolute paths to the loaded `.so` files, parallel to `plugins` / `libs`.
-    /// Used to detect duplicate loads before calling `dlopen`, preventing unsafe double-loading.
-    libpaths: Vec<PathBuf>,
+    plugins: Vec<LoadedPlugin>,
 }
 
 impl SlipstreamPluginManager {
     pub fn new() -> Self {
-        SlipstreamPluginManager { plugins: Vec::default(), libs: Vec::default(), libpaths: Vec::default() }
+        SlipstreamPluginManager { plugins: Vec::default() }
     }
 
     /// Unload all plugins and loaded plugin libraries, making sure to fire
     /// their `on_unload()` methods so they can do any necessary cleanup.
     pub fn unload(&mut self) {
-        for mut plugin in self.plugins.drain(..) {
-            info!("Unloading plugin for {:?}", plugin.name());
-            plugin.on_unload();
-        }
-
-        self.libs.clear();
-        self.libpaths.clear();
+        self.plugins.clear(); // Drop impl fires on_unload and enforces plugin-before-lib drop order.
     }
 
     /// Check which plugins are interested in regular mapping data.
     pub fn history_mappings_enabled(&self) -> bool {
-        self.plugins.iter().any(|p| p.history_enabled())
+        self.plugins.iter().any(|p| p.plugin.history_enabled())
     }
 
     /// Check if there is any plugin interested in historical staking data.
     pub fn history_staking_rewards_enabled(&self) -> bool {
-        self.plugins.iter().any(|p| p.history_staking_rewards_enabled())
+        self.plugins.iter().any(|p| p.plugin.history_staking_rewards_enabled())
     }
 
     /// Broadcasts a mapping update to all interested plugins. Errors are
@@ -102,11 +114,11 @@ impl SlipstreamPluginManager {
         value: &[u8],
         block_height: u32,
     ) {
-        for plugin in &self.plugins {
-            if plugin.history_enabled()
-                && let Err(e) = plugin.notify_mapping_update(program_id, mapping_name, key, value, block_height)
+        for entry in &self.plugins {
+            if entry.plugin.history_enabled()
+                && let Err(e) = entry.plugin.notify_mapping_update(program_id, mapping_name, key, value, block_height)
             {
-                warn!("Slipstream plugin '{}' mapping_update error: {e}", plugin.name());
+                warn!("Slipstream plugin '{}' mapping_update error: {e}", entry.plugin.name());
             }
         }
     }
@@ -121,18 +133,18 @@ impl SlipstreamPluginManager {
         new_stake: u64,
         block_height: u32,
     ) {
-        for plugin in &self.plugins {
-            if plugin.history_staking_rewards_enabled()
-                && let Err(e) = plugin.notify_staking_reward(staker, validator, reward, new_stake, block_height)
+        for entry in &self.plugins {
+            if entry.plugin.history_staking_rewards_enabled()
+                && let Err(e) = entry.plugin.notify_staking_reward(staker, validator, reward, new_stake, block_height)
             {
-                warn!("Slipstream plugin '{}' staking_reward error: {e}", plugin.name());
+                warn!("Slipstream plugin '{}' staking_reward error: {e}", entry.plugin.name());
             }
         }
     }
 
     /// Returns the names of all loaded plugins.
     pub fn list_plugins(&self) -> JsonRpcResult<Vec<String>> {
-        Ok(self.plugins.iter().map(|p| p.name().to_owned()).collect())
+        Ok(self.plugins.iter().map(|p| p.plugin.name().to_owned()).collect())
     }
 
     /// Loads a plugin from the given config file.
@@ -149,15 +161,15 @@ impl SlipstreamPluginManager {
         let resolved_libpath = resolve_libpath_from_config(slipstream_plugin_config_file.as_ref())?;
 
         // Check for duplicate library path first (catches same .so before dlopen).
-        if let Some(idx) = self.libpaths.iter().position(|p| p == &resolved_libpath) {
-            return Err(SlipstreamPluginManagerError::PluginAlreadyLoaded(self.plugins[idx].name().to_string()));
+        if let Some(entry) = self.plugins.iter().find(|p| p.libpath == resolved_libpath) {
+            return Err(SlipstreamPluginManagerError::PluginAlreadyLoaded(entry.plugin.name().to_string()));
         }
 
         let (new_lib, mut new_plugin, new_config_file) =
             load_plugin_from_config(slipstream_plugin_config_file.as_ref())?;
 
         // Also guard against a different .so that happens to expose the same plugin name.
-        if self.plugins.iter().any(|plugin| plugin.name().eq(new_plugin.name())) {
+        if self.plugins.iter().any(|entry| entry.plugin.name().eq(new_plugin.name())) {
             return Err(SlipstreamPluginManagerError::PluginAlreadyLoaded(new_plugin.name().to_string()));
         }
 
@@ -167,9 +179,7 @@ impl SlipstreamPluginManager {
             .map_err(|e| SlipstreamPluginManagerError::PluginStartError(e.to_string()))?;
         let name = new_plugin.name().to_string();
 
-        self.plugins.push(new_plugin);
-        self.libs.push(new_lib);
-        self.libpaths.push(resolved_libpath);
+        self.plugins.push(LoadedPlugin { plugin: new_plugin, lib: new_lib, libpath: resolved_libpath });
 
         info!("Loaded plugin: {}", name);
 
@@ -178,7 +188,7 @@ impl SlipstreamPluginManager {
 
     /// Unloads the plugin with the given name.
     pub fn unload_plugin(&mut self, name: &str) -> JsonRpcResult<()> {
-        let Some(idx) = self.plugins.iter().position(|plugin| plugin.name().eq(name)) else {
+        let Some(idx) = self.plugins.iter().position(|entry| entry.plugin.name().eq(name)) else {
             return Err(SlipstreamPluginManagerError::PluginNotLoaded(name.to_string()));
         };
 
@@ -199,13 +209,7 @@ impl SlipstreamPluginManager {
     }
 
     fn _drop_plugin(&mut self, idx: usize) {
-        let current_lib = self.libs.remove(idx);
-        let mut current_plugin = self.plugins.remove(idx);
-        self.libpaths.remove(idx);
-        current_plugin.on_unload();
-        // The plugin must be dropped before the library to avoid a crash.
-        drop(current_plugin);
-        drop(current_lib);
+        self.plugins.remove(idx); // Drop impl fires on_unload and enforces plugin-before-lib drop order.
     }
 }
 
@@ -389,6 +393,7 @@ pub(crate) fn load_plugin_from_config(
 #[cfg(test)]
 mod tests {
     use crate::slipstream_manager::{
+        LoadedPlugin,
         LoadedSlipstreamPlugin,
         SlipstreamPluginManager,
         TESTPLUGIN_CONFIG,
@@ -396,7 +401,7 @@ mod tests {
     };
     use libloading::Library;
     use snarkvm_slipstream_plugin_interface::slipstream_plugin_interface::SlipstreamPlugin;
-    use std::sync::{Arc, RwLock};
+    use std::{path::PathBuf, sync::{Arc, RwLock}};
 
     pub(super) fn dummy_plugin_and_library<P: SlipstreamPlugin>(
         plugin: P,
@@ -439,13 +444,11 @@ mod tests {
         // Load two plugins.
         let (lib, mut plugin, config) = dummy_plugin_and_library(TestPlugin, TESTPLUGIN_CONFIG);
         plugin.on_load(config, false).unwrap();
-        plugin_manager_lock.plugins.push(plugin);
-        plugin_manager_lock.libs.push(lib);
+        plugin_manager_lock.plugins.push(LoadedPlugin { plugin, lib, libpath: PathBuf::from(config) });
 
         let (lib, mut plugin, config) = dummy_plugin_and_library(TestPlugin2, TESTPLUGIN2_CONFIG);
         plugin.on_load(config, false).unwrap();
-        plugin_manager_lock.plugins.push(plugin);
-        plugin_manager_lock.libs.push(lib);
+        plugin_manager_lock.plugins.push(LoadedPlugin { plugin, lib, libpath: PathBuf::from(config) });
 
         // Check that both plugins are returned in the list.
         let plugins = plugin_manager_lock.list_plugins().unwrap();
@@ -508,8 +511,11 @@ mod tests {
         let lib = Library::from(libloading::os::windows::Library::this().unwrap());
 
         let plugin = TrackingPlugin { calls: std::sync::atomic::AtomicU32::new(0) };
-        manager.plugins.push(LoadedSlipstreamPlugin::new(Box::new(plugin), None));
-        manager.libs.push(lib);
+        manager.plugins.push(LoadedPlugin {
+            plugin: LoadedSlipstreamPlugin::new(Box::new(plugin), None),
+            lib,
+            libpath: PathBuf::new(),
+        });
 
         // Call notify_mapping_update and verify the plugin received it.
         manager.notify_mapping_update(b"program_id", b"mapping", b"key", b"value", 42);

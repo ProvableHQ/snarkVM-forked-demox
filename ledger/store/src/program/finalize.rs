@@ -33,7 +33,9 @@ use core::marker::PhantomData;
 use indexmap::IndexSet;
 #[cfg(feature = "slipstream-plugins")]
 use snarkvm_slipstream_plugin_manager::SlipstreamPluginManager;
-#[cfg(feature = "slipstream-plugins")]
+#[cfg(all(feature = "slipstream-plugins", feature = "locktick"))]
+use locktick::parking_lot::RwLock;
+#[cfg(all(feature = "slipstream-plugins", not(feature = "locktick")))]
 use parking_lot::RwLock;
 #[cfg(feature = "slipstream-plugins")]
 use std::sync::{Arc, OnceLock, atomic::AtomicBool};
