@@ -4042,6 +4042,7 @@ dependencies = [
  "anyhow",
  "json5",
  "libloading",
+ "locktick",
  "parking_lot",
  "serde_json",
  "snarkvm-slipstream-plugin-interface",

@@ -401,7 +401,10 @@ mod tests {
     };
     use libloading::Library;
     use snarkvm_slipstream_plugin_interface::slipstream_plugin_interface::SlipstreamPlugin;
-    use std::{path::PathBuf, sync::{Arc, RwLock}};
+    use std::{
+        path::PathBuf, 
+        sync::{Arc, RwLock},
+    };
 
     pub(super) fn dummy_plugin_and_library<P: SlipstreamPlugin>(
         plugin: P,
