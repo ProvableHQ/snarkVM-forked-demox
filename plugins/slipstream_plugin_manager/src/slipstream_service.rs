@@ -15,6 +15,9 @@
 
 use crate::slipstream_manager::SlipstreamPluginManager;
 
+#[cfg(feature = "locktick")]
+use locktick::parking_lot::RwLock;
+#[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
 use std::{path::PathBuf, sync::Arc};
 use thiserror::Error;
