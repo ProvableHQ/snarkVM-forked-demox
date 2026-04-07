@@ -62,7 +62,7 @@ impl DerefMut for LoadedSlipstreamPlugin {
 #[derive(Debug)]
 struct LoadedPlugin {
     plugin: LoadedSlipstreamPlugin,
-    lib: Library,
+    _lib: Library,
     /// Resolved, absolute path to the `.so` file.
     /// Used to detect duplicate loads before calling `dlopen`, preventing unsafe double-loading.
     libpath: PathBuf,
@@ -179,7 +179,7 @@ impl SlipstreamPluginManager {
             .map_err(|e| SlipstreamPluginManagerError::PluginStartError(e.to_string()))?;
         let name = new_plugin.name().to_string();
 
-        self.plugins.push(LoadedPlugin { plugin: new_plugin, lib: new_lib, libpath: resolved_libpath });
+        self.plugins.push(LoadedPlugin { plugin: new_plugin, _lib: new_lib, libpath: resolved_libpath });
 
         info!("Loaded plugin: {}", name);
 
@@ -402,7 +402,7 @@ mod tests {
     use libloading::Library;
     use snarkvm_slipstream_plugin_interface::slipstream_plugin_interface::SlipstreamPlugin;
     use std::{
-        path::PathBuf, 
+        path::PathBuf,
         sync::{Arc, RwLock},
     };
 
