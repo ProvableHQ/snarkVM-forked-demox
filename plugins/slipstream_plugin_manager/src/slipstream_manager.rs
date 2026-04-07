@@ -393,11 +393,7 @@ pub(crate) fn load_plugin_from_config(
 #[cfg(test)]
 mod tests {
     use crate::slipstream_manager::{
-        LoadedPlugin,
-        LoadedSlipstreamPlugin,
-        SlipstreamPluginManager,
-        TESTPLUGIN_CONFIG,
-        TESTPLUGIN2_CONFIG,
+        LoadedPlugin, LoadedSlipstreamPlugin, SlipstreamPluginManager, TESTPLUGIN_CONFIG, TESTPLUGIN2_CONFIG,
     };
     use libloading::Library;
     use snarkvm_slipstream_plugin_interface::slipstream_plugin_interface::SlipstreamPlugin;
@@ -447,11 +443,11 @@ mod tests {
         // Load two plugins.
         let (lib, mut plugin, config) = dummy_plugin_and_library(TestPlugin, TESTPLUGIN_CONFIG);
         plugin.on_load(config, false).unwrap();
-        plugin_manager_lock.plugins.push(LoadedPlugin { plugin, lib, libpath: PathBuf::from(config) });
+        plugin_manager_lock.plugins.push(LoadedPlugin { plugin, _lib, libpath: PathBuf::from(config) });
 
         let (lib, mut plugin, config) = dummy_plugin_and_library(TestPlugin2, TESTPLUGIN2_CONFIG);
         plugin.on_load(config, false).unwrap();
-        plugin_manager_lock.plugins.push(LoadedPlugin { plugin, lib, libpath: PathBuf::from(config) });
+        plugin_manager_lock.plugins.push(LoadedPlugin { plugin, _lib, libpath: PathBuf::from(config) });
 
         // Check that both plugins are returned in the list.
         let plugins = plugin_manager_lock.list_plugins().unwrap();
