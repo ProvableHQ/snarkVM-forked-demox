@@ -153,7 +153,7 @@ pub fn execution_cost_for_call<A: Aleo, R: Rng + CryptoRng>(
     consensus_version: ConsensusVersion,
     rng: &mut R,
 ) -> Result<(MinimumCost, ExecuteCostDetails)> {
-    let stack = process.get_stack(program_id).unwrap();
+    let stack = process.get_stack(program_id)?;
 
     // Follow the evaluation flow for the given call, using correct input/output values and calls and mocking
     // only the fields which cannot be computed (essentially: values depending on the private key, such as
