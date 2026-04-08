@@ -659,7 +659,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         {
             tracing::debug!(target: "slipstream", "atomic_finalize: is_finalize_mode → true");
             self.store.finalize_store().is_finalize_mode().store(true, std::sync::atomic::Ordering::SeqCst);
-            self.store.finalize_store().slipstream_block_height().store(state.block_height(), std::sync::atomic::Ordering::SeqCst);
+            self.store
+                .finalize_store()
+                .slipstream_block_height()
+                .store(state.block_height(), std::sync::atomic::Ordering::SeqCst);
         }
 
         // Perform the finalize operation on the preset finalize mode.
