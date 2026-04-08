@@ -659,6 +659,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         {
             tracing::debug!(target: "slipstream", "atomic_finalize: is_finalize_mode → true");
             self.store.finalize_store().is_finalize_mode().store(true, std::sync::atomic::Ordering::SeqCst);
+            self.store.finalize_store().slipstream_block_height().store(state.block_height(), std::sync::atomic::Ordering::SeqCst);
         }
 
         // Perform the finalize operation on the preset finalize mode.
@@ -1432,6 +1433,18 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             if IS_FINALIZE {
                                 store.notify_staking_reward(staker, validator, reward, *new_stake, height);
                             }
+                        }
+                    }
+
+                    // When history-staking-rewards is disabled, notify Slipstream plugins directly.
+                    #[cfg(all(feature = "slipstream-plugins", not(feature = "history-staking-rewards")))]
+                    if IS_FINALIZE {
+                        let height = state.block_height();
+                        for (curr_stake, (staker, (validator, new_stake))) in
+                            current_stakers.values().map(|(_, current_stake)| current_stake).zip(&next_stakers)
+                        {
+                            let reward = new_stake - curr_stake;
+                            store.notify_staking_reward(staker, validator, reward, *new_stake, height);
                         }
                     }
 
