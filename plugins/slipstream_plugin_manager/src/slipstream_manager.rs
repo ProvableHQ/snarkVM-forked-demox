@@ -393,7 +393,11 @@ pub(crate) fn load_plugin_from_config(
 #[cfg(test)]
 mod tests {
     use crate::slipstream_manager::{
-        LoadedPlugin, LoadedSlipstreamPlugin, SlipstreamPluginManager, TESTPLUGIN_CONFIG, TESTPLUGIN2_CONFIG,
+        LoadedPlugin,
+        LoadedSlipstreamPlugin,
+        SlipstreamPluginManager,
+        TESTPLUGIN_CONFIG,
+        TESTPLUGIN2_CONFIG,
     };
     use libloading::Library;
     use snarkvm_slipstream_plugin_interface::slipstream_plugin_interface::SlipstreamPlugin;
@@ -441,11 +445,11 @@ mod tests {
         let mut plugin_manager_lock = plugin_manager.write().unwrap();
 
         // Load two plugins.
-        let (lib, mut plugin, config) = dummy_plugin_and_library(TestPlugin, TESTPLUGIN_CONFIG);
+        let (_lib, mut plugin, config) = dummy_plugin_and_library(TestPlugin, TESTPLUGIN_CONFIG);
         plugin.on_load(config, false).unwrap();
         plugin_manager_lock.plugins.push(LoadedPlugin { plugin, _lib, libpath: PathBuf::from(config) });
 
-        let (lib, mut plugin, config) = dummy_plugin_and_library(TestPlugin2, TESTPLUGIN2_CONFIG);
+        let (_lib, mut plugin, config) = dummy_plugin_and_library(TestPlugin2, TESTPLUGIN2_CONFIG);
         plugin.on_load(config, false).unwrap();
         plugin_manager_lock.plugins.push(LoadedPlugin { plugin, _lib, libpath: PathBuf::from(config) });
 
@@ -505,14 +509,14 @@ mod tests {
 
         // Manually push the plugin (bypassing dynamic loading).
         #[cfg(unix)]
-        let lib = Library::from(libloading::os::unix::Library::this());
+        let _lib = Library::from(libloading::os::unix::Library::this());
         #[cfg(windows)]
-        let lib = Library::from(libloading::os::windows::Library::this().unwrap());
+        let _lib = Library::from(libloading::os::windows::Library::this().unwrap());
 
         let plugin = TrackingPlugin { calls: std::sync::atomic::AtomicU32::new(0) };
         manager.plugins.push(LoadedPlugin {
             plugin: LoadedSlipstreamPlugin::new(Box::new(plugin), None),
-            lib,
+            _lib,
             libpath: PathBuf::new(),
         });
 
