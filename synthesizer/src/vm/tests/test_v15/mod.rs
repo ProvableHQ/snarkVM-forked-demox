@@ -37,4 +37,4 @@ use console::{
 use snarkvm_synthesizer_program::Program;
 use snarkvm_utilities::TestRng;
 
-use super::test_v14::{add_and_test, add_and_test_with_costs};
+use super::test_v14::add_and_test_with_costs;

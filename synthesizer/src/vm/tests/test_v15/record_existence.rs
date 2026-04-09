@@ -454,28 +454,28 @@ fn test_existence_check() {
 
     println!("Deploying program base...");
     let deploy_base = vm.deploy(&caller_private_key, &program_base, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_base], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_base], rng);
 
     println!("Deploying program extension...");
     let deploy_extension = vm.deploy(&caller_private_key, &program_extension, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_extension], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_extension], rng);
 
     println!("Deploying program frontier...");
     let deploy_frontier = vm.deploy(&caller_private_key, &program_frontier, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_frontier], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_frontier], rng);
 
     println!("Deploying program mini_remapper...");
     let deploy_mini_remapper = vm.deploy(&caller_private_key, &program_mini_remapper, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_mini_remapper], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_mini_remapper], rng);
 
     println!("Deploying program remapper...");
     let deploy_remapper = vm.deploy(&caller_private_key, &program_remapper, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_remapper], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_remapper], rng);
 
     println!("Upgrading program frontier...");
     let deploy_frontier_upgraded =
         vm.deploy(&caller_private_key, &program_frontier_upgraded, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_frontier_upgraded], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_frontier_upgraded], rng);
 
     // Test 1: A child function of the root transition breaks the (function version of the) local check
     // Involves process_transition cases 3, 5, 7
@@ -525,7 +525,7 @@ fn test_existence_check() {
         .execute(&caller_private_key, ("frontier.aleo", "mint_and_read_then_output"), inputs.iter(), None, 0, None, rng)
         .unwrap();
 
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&inputs], &[tx_base_function_2_2], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx_base_function_2_2], rng);
 
     // Involves process_transition cases 3, 5, 6b
     println!(
@@ -565,7 +565,7 @@ fn test_existence_check() {
         )
         .unwrap();
 
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&inputs], &[tx_base_function_2_4], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx_base_function_2_4], rng);
 
     println!("    2.5) Both static Record and DynamicRecord passed to a function call; both also output");
 
@@ -584,7 +584,7 @@ fn test_existence_check() {
         )
         .unwrap();
 
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&inputs], &[tx_base_function_2_5], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx_base_function_2_5], rng);
 
     // Test 3: A static record cast to dynamic twice and passed to a callee once
     // translated and once as dynamic does not break the global or local checks.
@@ -596,7 +596,14 @@ fn test_existence_check() {
     let mint_planet_4_tx =
         vm.execute(&caller_private_key, ("base.aleo", "mint_rover"), inputs.iter(), None, 0, None, rng).unwrap();
 
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&inputs], &[mint_planet_4_tx.clone()], rng);
+    add_and_test_with_costs(
+        &vm,
+        &caller_private_key,
+        &caller_address,
+        Some(&[&inputs]),
+        &[mint_planet_4_tx.clone()],
+        rng,
+    );
 
     let mint_planet_4_output = mint_planet_4_tx.transitions().next().unwrap().outputs().first().unwrap();
     let mint_planet_4_record = match mint_planet_4_output {
@@ -610,7 +617,14 @@ fn test_existence_check() {
         .execute(&caller_private_key, ("extension.aleo", "check_decommission_same"), inputs.iter(), None, 0, None, rng)
         .unwrap();
 
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&inputs], &[check_decommission_same_tx], rng);
+    add_and_test_with_costs(
+        &vm,
+        &caller_private_key,
+        &caller_address,
+        Some(&[&inputs]),
+        &[check_decommission_same_tx],
+        rng,
+    );
 
     // Test 4: a root function receives a DynamicRecord R_d1 and calls a
     // function that mints a static Record, receiving it as a DynamicRecord
@@ -625,18 +639,11 @@ fn test_existence_check() {
     // Records and 4.3 nets -1 unspent Records on the ledger.
     println!("Test 4: mint_own_and_decom_wrapper...");
 
+    let mint_inputs = [Value::from_str("5u8").unwrap(), Value::from_str("true").unwrap()];
     let three_mint_txs = (0..3)
         .map(|_| {
-            vm.execute(
-                &caller_private_key,
-                ("base.aleo", "mint_rover"),
-                [Value::from_str("5u8").unwrap(), Value::from_str("true").unwrap()].into_iter(),
-                None,
-                0,
-                None,
-                rng,
-            )
-            .unwrap()
+            vm.execute(&caller_private_key, ("base.aleo", "mint_rover"), mint_inputs.iter(), None, 0, None, rng)
+                .unwrap()
         })
         .collect::<Vec<_>>();
 
@@ -648,7 +655,14 @@ fn test_existence_check() {
         })
         .collect::<Vec<_>>();
 
-    add_and_test(&vm, &caller_private_key, &three_mint_txs, rng);
+    add_and_test_with_costs(
+        &vm,
+        &caller_private_key,
+        &caller_address,
+        Some(&[&mint_inputs, &mint_inputs, &mint_inputs]),
+        &three_mint_txs,
+        rng,
+    );
 
     // Involves process_transition cases 1, 2, 3, 4, 8
     println!("    4.1) Final function receives (DynamicRecord, Record)...");
@@ -692,7 +706,14 @@ fn test_existence_check() {
         .execute(&caller_private_key, ("extension.aleo", "mint_own_and_decom_int"), inputs.iter(), None, 0, None, rng)
         .unwrap();
 
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&inputs], &[mint_own_and_decom_4_2_tx], rng);
+    add_and_test_with_costs(
+        &vm,
+        &caller_private_key,
+        &caller_address,
+        Some(&[&inputs]),
+        &[mint_own_and_decom_4_2_tx],
+        rng,
+    );
 
     let num_unspent_records_2 =
         vm.transition_store().records().count() - vm.transition_store().serial_numbers().count();
@@ -714,7 +735,14 @@ fn test_existence_check() {
         .execute(&caller_private_key, ("extension.aleo", "mint_own_and_decom_int"), inputs.iter(), None, 0, None, rng)
         .unwrap();
 
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&inputs], &[mint_own_and_decom_4_3_tx], rng);
+    add_and_test_with_costs(
+        &vm,
+        &caller_private_key,
+        &caller_address,
+        Some(&[&inputs]),
+        &[mint_own_and_decom_4_3_tx],
+        rng,
+    );
 
     let num_unspent_records_3 =
         vm.transition_store().records().count() - vm.transition_store().serial_numbers().count();
@@ -760,7 +788,7 @@ fn test_existence_check() {
         _ => panic!("expected record output from mint_map"),
     };
 
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&[]], &[map_record_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&[]]), &[map_record_tx], rng);
 
     let other_map_record_tx = vm
         .execute(
@@ -779,7 +807,7 @@ fn test_existence_check() {
         _ => panic!("expected record output from mint_map"),
     };
 
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&[]], &[other_map_record_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&[]]), &[other_map_record_tx], rng);
 
     // Involves process_transition cases 1, 2, 4, 8
     println!("    6.1) Calling remapper.aleo/growing_family and making the family materialize at the end...");
@@ -790,7 +818,7 @@ fn test_existence_check() {
         .execute(&caller_private_key, ("remapper.aleo", "growing_family"), inputs.iter(), None, 0, None, rng)
         .unwrap();
 
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&inputs], &[growing_family_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[growing_family_tx], rng);
 
     // Involves process_transition cases 2, 4, 8
     println!("    6.2) Calling remapper.aleo/growing_family and not making the family materialize at the end...");
@@ -833,7 +861,7 @@ fn test_existence_check() {
                 _ => panic!("expected record output from mint_map"),
             };
 
-            add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&[]], &[mint_map_tx], rng);
+            add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&[]]), &[mint_map_tx], rng);
 
             map_record
         })
@@ -855,7 +883,14 @@ fn test_existence_check() {
         .execute(&caller_private_key, ("remapper.aleo", "consume_external_map"), inputs.iter(), None, 0, None, rng)
         .unwrap();
 
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&inputs], &[consume_external_map_tx], rng);
+    add_and_test_with_costs(
+        &vm,
+        &caller_private_key,
+        &caller_address,
+        Some(&[&inputs]),
+        &[consume_external_map_tx],
+        rng,
+    );
 
     // Case 7.2) ExternalRecord is remapped once via a function call and then consumed by a callee
     // Involves process_transition cases 1, 2, 8
@@ -884,7 +919,7 @@ fn test_existence_check() {
         &vm,
         &caller_private_key,
         &caller_address,
-        &[&inputs],
+        Some(&[&inputs]),
         &[convert_dynamic_and_consume_tx],
         rng,
     );
@@ -910,5 +945,12 @@ fn test_existence_check() {
         )
         .unwrap();
 
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, &[&inputs], &[cast_translate_consume_tx], rng);
+    add_and_test_with_costs(
+        &vm,
+        &caller_private_key,
+        &caller_address,
+        Some(&[&inputs]),
+        &[cast_translate_consume_tx],
+        rng,
+    );
 }
