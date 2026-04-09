@@ -893,7 +893,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         #[cfg(feature = "slipstream-plugins")]
         {
             self.store.finalize_store().is_finalize_mode().store(false, std::sync::atomic::Ordering::SeqCst);
-            tracing::info!(target: "slipstream", "atomic_finalize: is_finalize_mode → false");
+            tracing::debug!(target: "slipstream", "atomic_finalize: is_finalize_mode → false");
         }
 
         finalize_result
