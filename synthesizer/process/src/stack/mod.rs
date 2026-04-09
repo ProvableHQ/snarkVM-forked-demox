@@ -112,6 +112,8 @@ pub type Translations<N> = Arc<RwLock<Vec<Vec<(TranslationAssignment<N>, Proving
 pub enum CallStack<N: Network> {
     /// Authorize an `Execute` transaction.
     Authorize(Vec<Request<N>>, Option<PrivateKey<N>>, Authorization<N>),
+    /// Mock an evaluation for cost estimation.
+    AuthorizeMocked(Vec<Request<N>>, Address<N>, Authorization<N>),
     /// Synthesize a function circuit before a `Deploy` transaction.
     Synthesize(Vec<Request<N>>, PrivateKey<N>, Authorization<N>),
     /// Validate a `Deploy` transaction's function circuit.
@@ -129,6 +131,7 @@ impl<N: Network> CallStack<N> {
     fn type_as_string(&self) -> String {
         match self {
             CallStack::Authorize(..) => "Authorize".to_string(),
+            CallStack::AuthorizeMocked(..) => "Mock".to_string(),
             CallStack::Synthesize(..) => "Synthesize".to_string(),
             CallStack::CheckDeployment(..) => "CheckDeployment".to_string(),
             CallStack::Evaluate(..) => "Evaluate".to_string(),
@@ -161,6 +164,9 @@ impl<N: Network> CallStack<N> {
             CallStack::Authorize(requests, private_key, authorization) => {
                 CallStack::Authorize(requests.clone(), *private_key, authorization.replicate())
             }
+            CallStack::AuthorizeMocked(requests, address, authorization) => {
+                CallStack::AuthorizeMocked(requests.clone(), *address, authorization.replicate())
+            }
             CallStack::Synthesize(requests, private_key, authorization) => {
                 CallStack::Synthesize(requests.clone(), *private_key, authorization.replicate())
             }
@@ -189,6 +195,7 @@ impl<N: Network> CallStack<N> {
     pub fn push(&mut self, request: Request<N>) -> Result<()> {
         match self {
             CallStack::Authorize(requests, ..)
+            | CallStack::AuthorizeMocked(requests, ..)
             | CallStack::Synthesize(requests, ..)
             | CallStack::CheckDeployment(requests, ..)
             | CallStack::PackageRun(requests, ..) => {
@@ -211,6 +218,7 @@ impl<N: Network> CallStack<N> {
     pub fn pop(&mut self) -> Result<Request<N>> {
         match self {
             CallStack::Authorize(requests, ..)
+            | CallStack::AuthorizeMocked(requests, ..)
             | CallStack::Synthesize(requests, ..)
             | CallStack::CheckDeployment(requests, ..)
             | CallStack::PackageRun(requests, ..) => {
@@ -225,6 +233,7 @@ impl<N: Network> CallStack<N> {
     pub fn peek(&self) -> Result<Request<N>> {
         match self {
             CallStack::Authorize(requests, ..)
+            | CallStack::AuthorizeMocked(requests, ..)
             | CallStack::Synthesize(requests, ..)
             | CallStack::CheckDeployment(requests, ..)
             | CallStack::PackageRun(requests, ..) => {

@@ -17,9 +17,11 @@ use std::collections::HashMap;
 
 use crate::{Authorization, FinalizeTypes, Process, Stack, StackRef, StackTrait};
 
+use circuit::Aleo;
 use console::{
     prelude::*,
-    program::{FinalizeType, Identifier, LiteralType, PlaintextType},
+    program::{FinalizeType, Identifier, LiteralType, PlaintextType, ProgramID, Value},
+    types::Address,
 };
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use snarkvm_ledger_block::{Deployment, Execution, Transaction};
@@ -75,7 +77,7 @@ fn execution_cost_given_size<N: Network>(
     }
 }
 
-/// Returns the execution cost in microcredits for a given `Authorization.
+/// Returns the execution cost in microcredits for a given `Authorization`.
 pub fn execution_cost_for_authorization<N: Network>(
     process: &Process<N>,
     authorization: &Authorization<N>,
@@ -139,6 +141,26 @@ pub fn execution_cost_for_authorization<N: Network>(
     ))?;
 
     execution_cost_given_size(process, &reconstructed_execution, execution_size, consensus_version)
+}
+
+/// Returns the execution cost in microcredits for a call to the given function with the given inputs.
+pub fn execution_cost_for_call<A: Aleo, R: Rng + CryptoRng>(
+    process: &Process<A::Network>,
+    address: Address<A::Network>,
+    program_id: ProgramID<A::Network>,
+    function_name: Identifier<A::Network>,
+    inputs: impl ExactSizeIterator<Item = impl TryInto<Value<A::Network>>>,
+    consensus_version: ConsensusVersion,
+    rng: &mut R,
+) -> Result<(MinimumCost, ExecuteCostDetails)> {
+    let stack = process.get_stack(program_id)?;
+
+    // Follow the evaluation flow for the given call, using correct input/output values and calls and mocking
+    // only the fields which cannot be computed (essentially: values depending on the private key, such as
+    // the signature)
+    let authorization = stack.sample_authorization::<A, R>(address, program_id, function_name, inputs, rng)?;
+
+    execution_cost_for_authorization(process, &authorization, consensus_version)
 }
 
 /// Returns the compute cost for a deployment in microcredits.

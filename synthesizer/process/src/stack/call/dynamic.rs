@@ -129,6 +129,36 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
                     true,
                     rng,
                 )?;
+
+                // Add the request to the requests.
+                requests.push(request.clone());
+                // Add the request to the authorization.
+                authorization.push(request)?;
+            };
+
+            // In AuthorizeMocked mode, we operate similarly to the Authorize mode but mock the request.
+            if let CallStack::AuthorizeMocked(requests, address, authorization) = &mut call_stack {
+                // Get the input types of the callee.
+                let input_types = substack.program().get_function_ref(function_name)?.input_types();
+                // Ensure the number of inputs matches the number of input types.
+                if input_types.len() != inputs.len() {
+                    return Err(anyhow!("Expected {} inputs, found {}", input_types.len(), inputs.len()).into());
+                }
+
+                // Convert the caller's inputs to the callee's context.
+                let callee_inputs = convert_caller_inputs_to_callee_inputs(inputs, &input_types, substack)?;
+
+                // Mock the request.
+                let request = Request::sample(
+                    *address,
+                    *substack.program_id(),
+                    *function.name(),
+                    callee_inputs.iter(),
+                    &function.input_types(),
+                    true,
+                    rng,
+                )?;
+
                 // Add the request to the requests.
                 requests.push(request.clone());
                 // Add the request to the authorization.
@@ -315,6 +345,10 @@ impl<N: Network> CallTrait<N> for CallDynamic<N> {
 
                         // Return the request verification inputs and response.
                         (request_verification_inputs, caller_response_outputs)
+                    }
+                    // In `AuthorizeMocked` mode, throw an error.
+                    CallStack::AuthorizeMocked(..) => {
+                        return Err(anyhow!("Cannot 'execute' a function in 'AuthorizeMocked' mode.").into());
                     }
                     // In `Synthesize` or `CheckDeployment` mode, we use dummy inputs and outputs to avoid building a full sub-circuit.
                     CallStack::Synthesize(_, private_key, ..) | CallStack::CheckDeployment(_, private_key, ..) => {
