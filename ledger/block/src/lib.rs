@@ -63,6 +63,8 @@ use snarkvm_ledger_narwhal_subdag::Subdag;
 use snarkvm_ledger_narwhal_transmission_id::TransmissionID;
 use snarkvm_ledger_puzzle::{PuzzleSolutions, Solution, SolutionID};
 
+use std::mem;
+
 #[derive(Clone, PartialEq, Eq)]
 pub struct Block<N: Network> {
     /// The hash of this block.
@@ -145,7 +147,7 @@ impl<N: Network> Block<N> {
 
     /// Initializes a new block from the given previous block hash, block header, authority,
     /// ratifications, solutions, aborted solution IDs, transactions, and aborted transaction IDs.
-    pub fn from(
+    fn from(
         previous_hash: N::BlockHash,
         header: Header<N>,
         authority: Authority<N>,
@@ -265,6 +267,15 @@ impl<N: Network> Block<N> {
             transactions,
             aborted_transaction_ids,
         })
+    }
+
+    // Strip the rejection reasons from the transactions.
+    pub fn strip_rejected_reasons(&mut self) {
+        let transactions = mem::replace(&mut self.transactions, Transactions::from(&[]));
+        self.transactions = Transactions::from_iter(transactions.into_iter().map(|mut tx| {
+            tx.remove_rejected_reason();
+            tx
+        }));
     }
 }
 

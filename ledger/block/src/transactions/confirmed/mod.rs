@@ -230,6 +230,16 @@ impl<N: Network> ConfirmedTransaction<N> {
             }
         }
     }
+
+    /// Removes the rejected reason, if the confirmed transaction is rejected.
+    pub fn remove_rejected_reason(&mut self) -> Option<RejectedReason<N>> {
+        match self {
+            Self::AcceptedDeploy(..) | Self::AcceptedExecute(..) => None,
+            Self::RejectedDeploy(_, _, rejected, _) | Self::RejectedExecute(_, _, rejected, _) => {
+                rejected.remove_rejected_reason()
+            }
+        }
+    }
 }
 
 impl<N: Network> ConfirmedTransaction<N> {

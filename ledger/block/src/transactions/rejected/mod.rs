@@ -85,6 +85,14 @@ impl<N: Network> Rejected<N> {
         }
     }
 
+    /// Removes the rejected reason.
+    pub fn remove_rejected_reason(&mut self) -> Option<RejectedReason<N>> {
+        match self {
+            Self::Deployment(_, _, rejected_reason) => rejected_reason.take(),
+            Self::Execution(_, rejected_reason) => rejected_reason.take(),
+        }
+    }
+
     /// Returns the rejected ID.
     pub fn to_id(&self) -> Result<Field<N>> {
         match self {
