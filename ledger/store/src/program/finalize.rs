@@ -141,6 +141,7 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.committee_store().start_atomic();
         self.program_id_map().start_atomic();
         self.key_value_map().start_atomic();
+        self.rejected_reason_map().start_atomic();
         #[cfg(feature = "history")]
         {
             self.mapping_update_map().start_atomic();
@@ -148,7 +149,6 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         }
         #[cfg(feature = "history-staking-rewards")]
         self.staking_rewards_map().start_atomic();
-        self.rejected_reason_map().start_atomic();
     }
 
     /// Checks if an atomic batch is in progress.
