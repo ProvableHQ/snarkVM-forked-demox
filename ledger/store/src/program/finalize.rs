@@ -25,6 +25,7 @@ use console::{
     program::{Identifier, Plaintext, ProgramID, Value},
     types::Field,
 };
+use snarkvm_ledger_block::RejectedReason;
 use snarkvm_synthesizer_program::{FinalizeOperation, FinalizeStoreTrait};
 
 use aleo_std_storage::StorageMode;
@@ -99,6 +100,8 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
     type ProgramIDMap: for<'a> Map<'a, ProgramID<N>, IndexSet<Identifier<N>>>;
     /// The mapping of `(program ID, mapping name)` to `[(key, value)]`.
     type KeyValueMap: for<'a> NestedMap<'a, (ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>;
+    /// The mapping of `transaction ID` to `rejection reason`.
+    type RejectedReasonMap: for<'a> Map<'a, Field<N>, RejectedReason<N>>;
     /// The mapping of `(program ID, mapping name, key, height)` to `value`.
     #[cfg(feature = "history")]
     type MappingUpdateMap: for<'a> Map<'a, (ProgramID<N>, Identifier<N>, Plaintext<N>, u32), Value<N>>;
@@ -118,6 +121,8 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
     fn program_id_map(&self) -> &Self::ProgramIDMap;
     /// Returns the key-value map.
     fn key_value_map(&self) -> &Self::KeyValueMap;
+    /// Returns the rejection reason map.
+    fn rejected_reason_map(&self) -> &Self::RejectedReasonMap;
     /// Returns the historical mapping value map.
     #[cfg(feature = "history")]
     fn mapping_update_map(&self) -> &Self::MappingUpdateMap;
@@ -143,13 +148,15 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         }
         #[cfg(feature = "history-staking-rewards")]
         self.staking_rewards_map().start_atomic();
+        self.rejected_reason_map().start_atomic();
     }
 
     /// Checks if an atomic batch is in progress.
     fn is_atomic_in_progress(&self) -> bool {
         let ret = self.committee_store().is_atomic_in_progress()
             || self.program_id_map().is_atomic_in_progress()
-            || self.key_value_map().is_atomic_in_progress();
+            || self.key_value_map().is_atomic_in_progress()
+            || self.rejected_reason_map().is_atomic_in_progress();
         #[cfg(feature = "history")]
         let ret = ret
             || self.mapping_update_map().is_atomic_in_progress()
@@ -165,6 +172,7 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.committee_store().atomic_checkpoint();
         self.program_id_map().atomic_checkpoint();
         self.key_value_map().atomic_checkpoint();
+        self.rejected_reason_map().atomic_checkpoint();
         #[cfg(feature = "history")]
         {
             self.mapping_update_map().atomic_checkpoint();
@@ -179,6 +187,7 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.committee_store().clear_latest_checkpoint();
         self.program_id_map().clear_latest_checkpoint();
         self.key_value_map().clear_latest_checkpoint();
+        self.rejected_reason_map().clear_latest_checkpoint();
         #[cfg(feature = "history")]
         {
             self.mapping_update_map().clear_latest_checkpoint();
@@ -193,6 +202,7 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.committee_store().atomic_rewind();
         self.program_id_map().atomic_rewind();
         self.key_value_map().atomic_rewind();
+        self.rejected_reason_map().atomic_rewind();
         #[cfg(feature = "history")]
         {
             self.mapping_update_map().atomic_rewind();
@@ -207,6 +217,7 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.committee_store().abort_atomic();
         self.program_id_map().abort_atomic();
         self.key_value_map().abort_atomic();
+        self.rejected_reason_map().abort_atomic();
         #[cfg(feature = "history")]
         {
             self.mapping_update_map().abort_atomic();
@@ -221,6 +232,7 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.committee_store().finish_atomic()?;
         self.program_id_map().finish_atomic()?;
         self.key_value_map().finish_atomic()?;
+        self.rejected_reason_map().finish_atomic()?;
         #[cfg(feature = "history")]
         {
             self.mapping_update_map().finish_atomic()?;
@@ -746,6 +758,11 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         self.storage.storage_mode()
     }
 
+    /// Returns the rejection reason map.
+    pub fn rejected_reason_map(&self) -> &P::RejectedReasonMap {
+        self.storage.rejected_reason_map()
+    }
+
     /// Returns the current block height.
     #[cfg(feature = "history")]
     pub fn current_block_height(&self) -> &AtomicU32 {
@@ -1137,6 +1154,26 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
     /// Returns the confirmed checksum of the finalize store.
     pub fn get_checksum_confirmed(&self) -> Result<Field<N>> {
         self.storage.get_checksum_confirmed()
+    }
+}
+
+impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
+    /// Stores the rejection reason for the given transaction ID.
+    pub fn insert_rejected_reason(&self, transaction_id: Field<N>, reason: RejectedReason<N>) -> Result<()> {
+        self.storage.rejected_reason_map().insert(transaction_id, reason)
+    }
+
+    /// Returns the rejection reason for the given transaction ID.
+    pub fn get_rejected_reason(&self, transaction_id: &Field<N>) -> Result<Option<RejectedReason<N>>> {
+        match self.storage.rejected_reason_map().get_speculative(transaction_id)? {
+            Some(reason) => Ok(Some(reason.into_owned())),
+            None => Ok(None),
+        }
+    }
+
+    /// Returns `true` if a rejection reason exists for the given transaction ID.
+    pub fn contains_rejected_reason(&self, transaction_id: &Field<N>) -> Result<bool> {
+        self.storage.rejected_reason_map().contains_key_speculative(transaction_id)
     }
 }
 
