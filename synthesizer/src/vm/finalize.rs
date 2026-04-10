@@ -285,9 +285,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Determine the maximum number of aborted transactions allowed in a block.
         let max_aborted_transactions = Transactions::<N>::max_aborted_transactions();
 
-        // Determine the consensus version being used for this block height.
-        let consensus_version = N::CONSENSUS_VERSION(state.block_height())?;
-
         // Update the block height used for the purposes of historical mapping accounting.
         #[cfg(feature = "history")]
         self.store
@@ -408,7 +405,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         let process_rejected_deployment =
                             |fee: &Fee<N>,
                              deployment: Deployment<N>,
-                             rejected_reason: Option<RejectedReason<N>>|
+                             rejected_reason: RejectedReason<N>|
                              -> Result<Result<ConfirmedTransaction<N>, String>> {
                                 process
                                     .finalize_fee(state, store, fee)
@@ -417,9 +414,19 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                         Transaction::from_fee(fee.clone()).map(|fee_tx| (fee_tx, finalize))
                                     })
                                     .map(|(fee_tx, finalize)| {
-                                        let rejected =
-                                            Rejected::new_deployment(*program_owner, deployment, rejected_reason);
+                                        let rejected = Rejected::new_deployment(
+                                            *program_owner,
+                                            deployment,
+                                            Some(rejected_reason.clone()),
+                                        );
                                         ConfirmedTransaction::rejected_deploy(counter, fee_tx, rejected, finalize)
+                                            .and_then(|confirmed_tx| {
+                                                // Store the rejection reason.
+                                                store
+                                                    .insert_rejected_reason(*confirmed_tx.id(), rejected_reason)
+                                                    .map_err(|e| anyhow!("Failed to store rejection reason: {e}"))?;
+                                                Ok(confirmed_tx)
+                                            })
                                             .map_err(|e| e.to_string())
                                     })
                             };
@@ -428,10 +435,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         match deployments.contains(deployment.program_id()) {
                             // If the program has already been deployed, construct the rejected deploy transaction.
                             true => {
-                                let rejected_reason = match consensus_version < ConsensusVersion::V14 {
-                                    true => None,
-                                    false => Some(RejectedReason::DuplicateProgramID(*deployment.program_id())),
-                                };
+                                let rejected_reason = RejectedReason::DuplicateProgramID(*deployment.program_id());
                                 match process_rejected_deployment(fee, *deployment.clone(), rejected_reason) {
                                     Ok(result) => result,
                                     Err(error) => {
@@ -457,10 +461,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                 Err(error) => {
                                     dev_eprintln!("Failed to finalize deploy tx {} - {error}", transaction.id());
                                     trace!("Failed to finalize deploy tx {} - {error}", transaction.id());
-                                    let rejected_reason = match consensus_version < ConsensusVersion::V14 {
-                                        true => None,
-                                        false => Some(RejectedReason::from_indexed_finalize_error(error)),
-                                    };
+                                    let rejected_reason = RejectedReason::from_indexed_finalize_error(error);
                                     match process_rejected_deployment(fee, *deployment.clone(), rejected_reason) {
                                         Ok(result) => result,
                                         Err(error) => {
@@ -493,10 +494,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             Err(error) => {
                                 dev_eprintln!("Failed to finalize execute tx {} - {error}", transaction.id());
                                 trace!("Failed to finalize execute tx {} - {error}", transaction.id());
-                                let rejected_reason = match consensus_version < ConsensusVersion::V14 {
-                                    true => None,
-                                    false => Some(RejectedReason::from_indexed_finalize_error(error)),
-                                };
+                                let rejected_reason = RejectedReason::from_indexed_finalize_error(error);
                                 match fee {
                                     // Finalize the fee, to ensure it is valid.
                                     Some(fee) => {
@@ -508,12 +506,21 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                             }) {
                                             Ok((fee_tx, finalize)) => {
                                                 // Construct the rejected execution.
-                                                let rejected =
-                                                    Rejected::new_execution(*execution.clone(), rejected_reason);
+                                                let rejected = Rejected::new_execution(
+                                                    *execution.clone(),
+                                                    Some(rejected_reason.clone()),
+                                                );
                                                 // Construct the rejected execute transaction.
                                                 ConfirmedTransaction::rejected_execute(
                                                     counter, fee_tx, rejected, finalize,
                                                 )
+                                                .and_then(|confirmed_tx| {
+                                                    // Store the rejection reason.
+                                                    store
+                                                        .insert_rejected_reason(*confirmed_tx.id(), rejected_reason)
+                                                        .map_err(|e| anyhow!("Failed to store rejection reason: {e}"))?;
+                                                    Ok(confirmed_tx)
+                                                })
                                                 .map_err(|e| e.to_string())
                                             }
                                             Err(error) => {
