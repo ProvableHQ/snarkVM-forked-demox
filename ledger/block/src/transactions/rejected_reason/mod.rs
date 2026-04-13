@@ -28,7 +28,7 @@ pub enum RejectedReason<N: Network> {
     /// The transaction was rejected due to a failed finalize command. (program ID, edition, resource, index, command).
     /// Note: We do not log the actual error message from the finalize command, as it may contain
     /// sensitive information or lead to DOS vectors by storing string representations of large structs.
-    Finalize(ProgramID<N>, u16, Identifier<N>, usize, Command<N>),
+    Finalize(ProgramID<N>, u16, Identifier<N>, usize, Box<Command<N>>),
 
     /// The transaction was rejected due to a VM error not captured by a finalize command.
     /// The programID and resource are logged if they are available.
@@ -49,7 +49,7 @@ impl<N: Network> RejectedReason<N> {
                 // Parse the command from its display string. Falls back to NonFinalize on failure.
                 match (program_id, resource, command.to_string().parse::<Command<N>>()) {
                     (Some((pid, edition)), Some(resource), Ok(command)) => {
-                        Self::Finalize(pid, edition, resource, index, command)
+                        Self::Finalize(pid, edition, resource, index, Box::new(command))
                     }
                     (program_id, resource, _) => Self::NonFinalize(program_id, resource),
                 }
@@ -73,7 +73,7 @@ pub mod test_helpers {
         let command = Command::<N>::from_str("assert.eq r0 r1;").unwrap();
         vec![
             RejectedReason::DuplicateProgramID(program),
-            RejectedReason::Finalize(credits, 1, transfer, 3, command),
+            RejectedReason::Finalize(credits, 1, transfer, 3, Box::new(command)),
             RejectedReason::NonFinalize(Some((credits, 0u16)), Some(bond)),
             RejectedReason::NonFinalize(None, Some(bond)),
             RejectedReason::NonFinalize(Some((credits, 0u16)), None),

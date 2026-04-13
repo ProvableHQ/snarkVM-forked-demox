@@ -82,7 +82,7 @@ impl<'de, N: Network> Deserialize<'de> for RejectedReason<N> {
                         // The command is stored as a display string; parse it back.
                         let command_str: String = DeserializeExt::take_from_value::<D>(&mut object, "command")?;
                         let command = command_str.parse::<Command<N>>().map_err(de::Error::custom)?;
-                        Ok(Self::Finalize(program_id, edition, resource, index, command))
+                        Ok(Self::Finalize(program_id, edition, resource, index, Box::new(command)))
                     }
                     Some("non_finalize") => {
                         // Both fields are optional; use `.get()` to check presence before parsing.

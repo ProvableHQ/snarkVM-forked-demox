@@ -31,7 +31,7 @@ impl<N: Network> FromBytes for RejectedReason<N> {
                 let resource = Identifier::<N>::read_le(&mut reader)?;
                 let index = u32::read_le(&mut reader)? as usize;
                 let command = Command::<N>::read_le(&mut reader)?;
-                Ok(Self::Finalize(program_id, edition, resource, index, command))
+                Ok(Self::Finalize(program_id, edition, resource, index, Box::new(command)))
             }
             2 => {
                 // Read the optional program ID and edition.
