@@ -417,7 +417,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                         let rejected = Rejected::new_deployment(
                                             *program_owner,
                                             deployment,
-                                            Some(rejected_reason.clone()),
                                         );
                                         ConfirmedTransaction::rejected_deploy(counter, fee_tx, rejected, finalize)
                                             .and_then(|confirmed_tx| {
@@ -508,7 +507,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                                 // Construct the rejected execution.
                                                 let rejected = Rejected::new_execution(
                                                     *execution.clone(),
-                                                    Some(rejected_reason.clone()),
                                                 );
                                                 // Construct the rejected execute transaction.
                                                 ConfirmedTransaction::rejected_execute(
@@ -837,12 +835,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                         "Mismatch in finalize operations for a rejected deploy - (found: {finalize_operations:?}, expected: {finalize:?})"
                                     ));
                                 }
-
-                                if let Some(rejected_reason) = rejected.rejected_reason() {
-                                    store.insert_rejected_reason(**fee_tx_id, rejected_reason.clone()).map_err(
-                                        |_| "Couldn't store the reason behind a rejected deployment".to_string(),
-                                    )?;
-                                }
                             }
                             // Note: This will abort the entire atomic batch.
                             Err(_e) => {
@@ -881,12 +873,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                     return Err(format!(
                                         "Mismatch in finalize operations for a rejected execute - (found: {finalize_operations:?}, expected: {finalize:?})"
                                     ));
-                                }
-
-                                if let Some(rejected_reason) = rejected.rejected_reason() {
-                                    store.insert_rejected_reason(**fee_tx_id, rejected_reason.clone()).map_err(
-                                        |_| "Couldn't store the reason behind a rejected deployment".to_string(),
-                                    )?;
                                 }
                             }
                             // Note: This will abort the entire atomic batch.
@@ -1867,7 +1853,7 @@ finalize transfer_public:
             Transaction::Execute(_, _, execution, fee) => ConfirmedTransaction::RejectedExecute(
                 index,
                 Transaction::from_fee(fee.clone().unwrap()).unwrap(),
-                Rejected::new_execution(*execution.clone(), None),
+                Rejected::new_execution(*execution.clone()),
                 finalize.to_vec(),
             ),
             _ => panic!("only reject execution transactions"),
@@ -2573,7 +2559,7 @@ function ped_hash:
                 let expected_confirmed_transaction = ConfirmedTransaction::RejectedExecute(
                     0,
                     fee_transaction,
-                    Rejected::new_execution(*execution, None),
+                    Rejected::new_execution(*execution),
                     vec![],
                 );
 

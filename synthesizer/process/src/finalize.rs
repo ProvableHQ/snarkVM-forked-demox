@@ -237,11 +237,9 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
                 return Err(anyhow!("The number of transitions in the execution is incorrect. Expected at least {minimum_number_of_calls}, but found {}",
                 execution.len()).into());
             }
-        } else {
-            if minimum_number_of_calls != execution.len() {
-                return Err(anyhow!("The number of transitions in the execution is incorrect. Expected {minimum_number_of_calls}, but found {}",
-                execution.len()).into());
-            }
+        } else if minimum_number_of_calls != execution.len() {
+            return Err(anyhow!("The number of transitions in the execution is incorrect. Expected {minimum_number_of_calls}, but found {}",
+            execution.len()).into());
         }
         lap!(timer, "Verify the number of transitions");
 
