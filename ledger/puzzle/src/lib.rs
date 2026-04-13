@@ -50,6 +50,7 @@ use console::{
     },
     types::U64,
 };
+
 use snarkvm_utilities::ensure_equals;
 
 use aleo_std::prelude::*;
@@ -130,17 +131,16 @@ impl<N: Network> Puzzle<N> {
 
     /// Returns the proof target given the solution.
     pub fn get_proof_target(&self, solution: &Solution<N>) -> Result<u64> {
-        let solution_id = solution.id();
-
+        let address = solution.address();
         // Calculate the proof target.
         let proof_target = self
             .get_proof_target_unchecked(solution)
-            .with_context(|| format!("Failed to get proof target for solution {solution_id}"))?;
+            .with_context(|| format!("Failed to get proof target for solution {address}"))?;
         // Ensure the proof target matches the expected proof target.
         ensure_equals!(
             solution.target(),
             proof_target,
-            "The proof target for solution {solution_id} does not match the expected proof target"
+            "The proof target for solution {address} does not match the expected proof target"
         );
         // Return the proof target.
         Ok(proof_target)
@@ -213,7 +213,7 @@ impl<N: Network> Puzzle<N> {
                     ensure_equals!(
                         solution.target(),
                         proof_target,
-                        "The proof target for solution {solution_id} does not match the computed proof target"
+                        "The proof target for solutions {solution_id} does not match the computed proof target"
                     );
                     // Insert the proof target into the cache.
                     self.proof_target_cache.write().put(*solution_id, proof_target);
@@ -293,7 +293,7 @@ impl<N: Network> Puzzle<N> {
         // Calculate the proof target of the solution.
         let proof_target = self.get_proof_target_unchecked(solution)?;
 
-        // Set the target with the newly calculated proof target value.
+        // Set the target with the newly calculated proof target value
         solution.target = proof_target;
 
         // Ensure the solution is greater than or equal to the expected proof target.
@@ -329,7 +329,7 @@ impl<N: Network> Puzzle<N> {
             ensure_equals!(
                 solution.epoch_hash(),
                 expected_epoch_hash,
-                "Solution {solution_id} did not match the expected epoch hash"
+                "Solution '{solution_id}' did not match the expected epoch hash"
             );
             Ok(())
         })?;
