@@ -194,7 +194,7 @@ impl<N: Network> Package<N> {
             .collect::<Vec<_>>();
 
         // Load the programs.
-        process.add_programs_with_editions(&programs_and_editions)?;
+        process.lock().add_programs_with_editions(&programs_and_editions)?;
 
         Ok(process)
     }

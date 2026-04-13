@@ -338,8 +338,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             // Acquire a guard on the contents of the process.
             // Note: Due to the highly-sensitive nature of processing all `finalize` calls,
             // we choose to acquire it for the entire duration of this atomic batch.
-            let process = &self.process;
-            let _process_guard = process.lock();
+            let process = self.process.lock();
 
             // Revert any unstaged stacks, when the function returns.
             // Note. This function does not call `commit_stacks` so the staged stacks will always be reverted
@@ -688,8 +687,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             // Acquire a guard on the contents of the process.
             // Note: Due to the highly-sensitive nature of processing all `finalize` calls,
             // we choose to acquire it for the entire duration of this atomic batch.
-            let process = &self.process;
-            let _process_guard = process.lock();
+            let process = self.process.lock();
 
             // Revert any unstaged stacks, when the function returns.
             // Note. `commit_stacks` is called at the bottom of this function after successful finalization.

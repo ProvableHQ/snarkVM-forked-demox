@@ -333,11 +333,11 @@ constructor:
 
     // Using the off-chain VM, generate a sequence of deployments.
     let deployment_v0_pass = off_chain_vm.deploy(&caller_private_key, &program_v0, None, 0, None, rng)?;
-    off_chain_vm.process().add_program(&program_v0)?;
+    off_chain_vm.process().lock().add_program(&program_v0)?;
     let deployment_v1_fail = off_chain_vm.deploy(&caller_private_key, &program_v1, None, 0, None, rng)?;
     let deployment_v1_pass = off_chain_vm.deploy(&caller_private_key, &program_v1, None, 0, None, rng)?;
     let deployment_v2_as_v1_fail = off_chain_vm.deploy(&caller_private_key, &program_v2_as_v1, None, 0, None, rng)?;
-    off_chain_vm.process().add_program(&program_v1)?;
+    off_chain_vm.process().lock().add_program(&program_v1)?;
     let deployment_v2_fail = off_chain_vm.deploy(&caller_private_key, &program_v2, None, 0, None, rng)?;
     let deployment_v2_pass = off_chain_vm.deploy(&caller_private_key, &program_v2, None, 0, None, rng)?;
 
@@ -2435,7 +2435,7 @@ constructor:
     // Initialize a new VM.
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V9).unwrap(), rng);
     // Add the programs to the VM.
-    vm.process().add_programs_with_editions(&[(program_a_v1, 1), (program_b_v0, 0)]).unwrap();
+    vm.process().lock().add_programs_with_editions(&[(program_a_v1, 1), (program_b_v0, 0)]).unwrap();
 
     // Check that the programs can be executed.
     let execution_foo = vm
@@ -2862,12 +2862,12 @@ function baz:
     // Generate the deployments.
     // Note that we are attempting to upgrade twice with consecutive editions.
     let process = Process::load().unwrap();
-    process.add_program(&program_v0).unwrap();
+    process.lock().add_program(&program_v0).unwrap();
     let mut deployment_v1 = process.deploy::<CurrentAleo, _>(&program_v1, rng).unwrap();
     deployment_v1.set_program_checksum_raw(Some(deployment_v1.program().to_checksum()));
     deployment_v1.set_program_owner_raw(Some(Address::try_from(&private_key_1).unwrap()));
     assert_eq!(deployment_v1.edition(), 1);
-    process.add_program(&program_v1).unwrap();
+    process.lock().add_program(&program_v1).unwrap();
     let mut deployment_v2 = process.deploy::<CurrentAleo, _>(&program_v2, rng).unwrap();
     deployment_v2.set_program_checksum_raw(Some(deployment_v2.program().to_checksum()));
     deployment_v2.set_program_owner_raw(Some(Address::try_from(&private_key_2).unwrap()));

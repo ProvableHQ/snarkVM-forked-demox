@@ -20,7 +20,7 @@ use snarkvm_utilities::try_vm_runtime;
 
 use std::collections::HashSet;
 
-impl<N: Network> Process<N> {
+impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
     /// Finalizes the deployment and fee.
     /// This method assumes the given deployment **is valid**.
     /// This method should **only** be called by `VM::finalize()`.
@@ -41,7 +41,7 @@ impl<N: Network> Process<N> {
         match version {
             DeploymentVersion::V1 | DeploymentVersion::V2 => {
                 // Compute the program stack.
-                let mut stack = Stack::new(self, deployment.program())?;
+                let mut stack = Stack::new(self.process, deployment.program())?;
                 lap!(timer, "Compute the stack");
 
                 // Set the program owner.
@@ -58,7 +58,7 @@ impl<N: Network> Process<N> {
                     true => deployment.program().mappings().values().collect::<Vec<_>>(),
                     false => {
                         // Get the existing stack.
-                        let existing_stack = self.get_stack(deployment.program_id())?;
+                        let existing_stack = self.process.get_stack(deployment.program_id())?;
                         // Get the existing mappings.
                         let existing_mappings = existing_stack.program().mappings();
                         // Determine and return the new mappings
@@ -81,7 +81,7 @@ impl<N: Network> Process<N> {
                     /* Finalize the fee. */
 
                     // Retrieve the fee stack.
-                    let fee_stack = self.get_stack(fee.program_id())?;
+                    let fee_stack = self.process.get_stack(fee.program_id())?;
                     // Finalize the fee transition.
                     finalize_operations.extend(finalize_fee_transition(state, store, &fee_stack, fee)?);
                     lap!(timer, "Finalize transition for '{}/{}'", fee.program_id(), fee.function_name());
@@ -118,13 +118,13 @@ impl<N: Network> Process<N> {
                 );
 
                 // Get the existing stack.
-                let existing_stack = self.get_stack(deployment.program_id())?;
+                let existing_stack = self.process.get_stack(deployment.program_id())?;
 
                 // Compute a new stack with the same program and edition.
                 // Note: `Stack::new` cannot be used here because it would increment the edition.
                 // Amendments must preserve the existing edition. Validity is verified by `initialize_and_check`.
-                let mut stack = Stack::new_raw(self, deployment.program(), *existing_stack.program_edition())?;
-                stack.initialize_and_check(self)?;
+                let mut stack = Stack::new_raw(self.process, deployment.program(), *existing_stack.program_edition())?;
+                stack.initialize_and_check(self.process)?;
                 lap!(timer, "Compute the stack");
 
                 // Set the program owner to the existing owner.
@@ -141,7 +141,7 @@ impl<N: Network> Process<N> {
                     let mut finalize_operations = Vec::new();
 
                     // Retrieve the fee stack.
-                    let fee_stack = self.get_stack(fee.program_id())?;
+                    let fee_stack = self.process.get_stack(fee.program_id())?;
                     // Finalize the fee transition.
                     finalize_operations.extend(finalize_fee_transition(state, store, &fee_stack, fee)?);
                     lap!(timer, "Finalize transition for '{}/{}'", fee.program_id(), fee.function_name());
@@ -173,7 +173,7 @@ impl<N: Network> Process<N> {
         // Retrieve the root transition (without popping it).
         let transition = execution.peek()?;
         // Retrieve the stack.
-        let stack = self.get_stack(transition.program_id())?;
+        let stack = self.process.get_stack(transition.program_id())?;
         // Calculate the minimum number of calls for the root transition.
         let minimum_number_of_calls = stack.get_minimum_number_of_calls(transition.function_name())?;
         // If the root transition contains a dynamic call,
@@ -217,7 +217,7 @@ impl<N: Network> Process<N> {
         // Construct the call graph.
         let consensus_version = N::CONSENSUS_VERSION(state.block_height())?;
         let call_graph = match (ConsensusVersion::V1..=ConsensusVersion::V2).contains(&consensus_version) {
-            true => self.construct_call_graph(execution.transitions())?,
+            true => self.process.construct_call_graph(execution.transitions())?,
             // If the height is greater than or equal to `ConsensusVersion::V3`, then provide an empty call graph, as it is no longer used during finalization.
             false => HashMap::new(),
         };
@@ -232,7 +232,7 @@ impl<N: Network> Process<N> {
             /* Finalize the fee. */
             if let Some(fee) = fee {
                 // Retrieve the fee stack.
-                let fee_stack = self.get_stack(fee.program_id())?;
+                let fee_stack = self.process.get_stack(fee.program_id())?;
                 // Finalize the fee transition.
                 finalize_operations.extend(finalize_fee_transition(state, store, &fee_stack, fee)?);
                 lap!(timer, "Finalize transition for '{}/{}'", fee.program_id(), fee.function_name());
@@ -258,7 +258,7 @@ impl<N: Network> Process<N> {
 
         atomic_batch_scope!(store, {
             // Retrieve the stack.
-            let stack = self.get_stack(fee.program_id())?;
+            let stack = self.process.get_stack(fee.program_id())?;
             // Finalize the fee transition.
             let result = finalize_fee_transition(state, store, &stack, fee);
             finish!(timer, "Finalize transition for '{}/{}'", fee.program_id(), fee.function_name());
@@ -769,9 +769,9 @@ function compute:
         let fee = sample_fee::<_, CurrentAleo, _, _>(&process, &block_store, &finalize_store, rng);
         // Finalize the deployment.
         let (stack, _) =
-            process.finalize_deployment(sample_finalize_state(1), &finalize_store, &deployment, &fee).unwrap();
+            process.lock().finalize_deployment(sample_finalize_state(1), &finalize_store, &deployment, &fee).unwrap();
         // Add the stack *manually* to the process.
-        process.add_stack(stack);
+        process.lock().add_stack(stack);
 
         // Ensure the program exists.
         assert!(process.contains_program(program.id()));

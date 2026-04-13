@@ -137,7 +137,7 @@ fn test_external_vs_local_struct_equivalence() -> Result<()> {
         struct Foo: x as u32; y as u32;
         function main:",
     )?;
-    process.add_program(&external_program)?;
+    process.lock().add_program(&external_program)?;
 
     // Local program that imports external
     let local_program = Program::from_str(
@@ -146,7 +146,7 @@ fn test_external_vs_local_struct_equivalence() -> Result<()> {
         struct Foo: x as u32; y as u32;
         function main:",
     )?;
-    process.add_program(&local_program)?;
+    process.lock().add_program(&local_program)?;
 
     // Retrieve the stack for the local program
     let s_local = process.get_stack(local_program.id())?;
@@ -182,7 +182,7 @@ fn test_external_and_array_struct_equivalence() -> Result<()> {
         struct Bar: a as u32; b as u32;
         function main:",
     )?;
-    process.add_program(&external_program)?;
+    process.lock().add_program(&external_program)?;
 
     // ---------- Local program importing external ----------
     let local_program = Program::from_str(
@@ -192,7 +192,7 @@ fn test_external_and_array_struct_equivalence() -> Result<()> {
         struct Baz: f as Foo; g as u32;
         function main:",
     )?;
-    process.add_program(&local_program)?;
+    process.lock().add_program(&local_program)?;
 
     // ---------- Retrieve the stack ----------
     let s_local = process.get_stack(local_program.id())?;

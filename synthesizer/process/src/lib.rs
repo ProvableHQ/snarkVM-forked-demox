@@ -112,6 +112,133 @@ pub struct Process<N: Network> {
     lock: Mutex<()>,
 }
 
+/// A wrapper ensuring exclusive access to the Process for the purposes of add_stacks.
+pub struct ProcessExclusiveGuard<'a, N: Network> {
+    process: &'a Process<N>,
+    #[cfg(not(feature = "locktick"))]
+    _guard: MutexGuard<'a, ()>,
+    #[cfg(feature = "locktick")]
+    _guard: LockGuard<MutexGuard<'a, ()>>,
+}
+
+impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
+    /// Adds a new stack to the process.
+    /// If the program already exists, then the existing stack is replaced and the original stack is returned.
+    /// Note. This method assumes that the provided stack is valid.
+    #[inline]
+    pub fn add_stack(&self, stack: Stack<N>) -> Option<Arc<Stack<N>>> {
+        // Get the program ID.
+        let program_id = *stack.program_id();
+        // Arc the stack first to limit the scope of the write lock.
+        let stack = Arc::new(stack);
+        // Insert the stack into the process, replacing the existing stack if it exists.
+        self.process.stacks.write().insert(program_id, stack)
+    }
+
+    /// Stages a stack to be added to the process.
+    /// The new stack is active, while the old stack is retained in `old_stacks`.
+    /// The `commit_stacks` method must be called to finalize the addition of the new stack.
+    /// The `revert_stacks` method can be called to revert the staged stacks.
+    #[inline]
+    pub fn stage_stack(&self, stack: Stack<N>) {
+        // Get the program ID.
+        let program_id = *stack.program_id();
+        // Arc the stack first to limit the scope of the write lock.
+        let stack = Arc::new(stack);
+        // If no entry in `old_stacks` exists for `program_id`, store the old stack.
+        // Note: If `old_stack` is `None`, it means that we are adding a new program to the process.
+        let old_stack = self.process.stacks.write().insert(program_id, stack);
+        let mut old_stacks = self.process.old_stacks.write();
+        if !old_stacks.contains_key(&program_id) {
+            old_stacks.insert(program_id, old_stack);
+        }
+    }
+
+    /// Commits the staged stacks to the process.
+    /// This finalizes the addition of the new stacks and clears the old stacks.
+    #[inline]
+    pub fn commit_stacks(&self) {
+        // Clear the old stacks.
+        self.process.old_stacks.write().clear();
+    }
+
+    /// Reverts the staged stacks, restoring the previous state of the process.
+    /// This will remove the new stacks and restore the old stacks.
+    #[inline]
+    pub fn revert_stacks(&self) {
+        // Restore the old stacks.
+        for (program_id, stack) in self.process.old_stacks.write().drain(..) {
+            // If the stack is `None`, remove the program from the process.
+            // Otherwise, insert the old stack back into the process.
+            if let Some(stack) = stack {
+                self.process.stacks.write().insert(program_id, stack);
+            } else {
+                self.process.stacks.write().shift_remove(&program_id);
+            }
+        }
+    }
+
+    /// Adds a new program to the process, verifying that it is a valid addition.
+    /// If the program exists, then the existing stack is replaced and discarded.
+    /// Note. This method should **NOT** be used by the on-chain VM to add new program, use `finalize_deployment` or `load_deployment` instead instead.
+    #[inline]
+    pub fn add_program(&self, program: &Program<N>) -> Result<()> {
+        // Initialize the 'credits.aleo' program ID.
+        let credits_program_id = ProgramID::<N>::from_str("credits.aleo")?;
+        // If the program is not 'credits.aleo', compute the program stack, and add it to the process.
+        if program.id() != &credits_program_id {
+            self.add_stack(Stack::new(self.process, program)?);
+        }
+        Ok(())
+    }
+
+    /// Adds a new program with the given edition to the process, verifying that it is a valid addition.
+    /// If the program exists, then the existing stack is replaced and discarded.
+    /// Note. This method should **NOT** be used by the on-chain VM to add new program, use `finalize_deployment` or `load_deployment` instead instead.
+    #[inline]
+    pub fn add_program_with_edition(&self, program: &Program<N>, edition: u16) -> Result<()> {
+        // Initialize the 'credits.aleo' program ID.
+        let credits_program_id = ProgramID::<N>::from_str("credits.aleo")?;
+        // If the program is not 'credits.aleo', compute the program stack, and add it to the process.
+        if program.id() != &credits_program_id {
+            let stack = Stack::new_raw(self.process, program, edition)?;
+            stack.initialize_and_check(self.process)?;
+            self.add_stack(stack);
+        }
+        Ok(())
+    }
+
+    /// Adds a set of programs and editions, in topological order, to the process, deferring validation of the programs until all programs are added.
+    /// If a program exists, then the existing stack is replaced and discarded.
+    /// Either all programs are added or none are.
+    /// Note. This method should **NOT** be used by the on-chain VM to add new program, use `finalize_deployment` or `load_deployment` instead instead.
+    #[inline]
+    pub fn add_programs_with_editions(&self, programs: &[(Program<N>, u16)]) -> Result<()> {
+        // Initialize the 'credits.aleo' program ID.
+        let credits_program_id = ProgramID::<N>::from_str("credits.aleo")?;
+        // Defer cleanup of the uncommitted stacks.
+        defer! {
+            self.revert_stacks()
+        }
+        // Initialize raw stacks for each of the programs, skipping `credits.aleo`.
+        for (program, edition) in programs {
+            if program.id() != &credits_program_id {
+                self.stage_stack(Stack::new_raw(self.process, program, *edition)?)
+            }
+        }
+        // For each stack, check and initialize it before adding it to the process.
+        for (program, _) in programs {
+            // Retrieve the stack.
+            let stack = self.process.get_stack(program.id())?;
+            // Initialize and check the stack for well-formedness.
+            stack.initialize_and_check(self.process)?;
+        }
+        // Commit the staged stacks.
+        self.commit_stacks();
+        Ok(())
+    }
+}
+
 impl<N: Network> Process<N> {
     /// Initializes a new process.
     #[inline]
@@ -146,7 +273,7 @@ impl<N: Network> Process<N> {
         lap!(timer, "Synthesize credits program keys");
 
         // Add the 'credits.aleo' stack to the process.
-        process.add_stack(stack);
+        process.lock().add_stack(stack);
 
         finish!(timer);
         // Return the process.
@@ -154,71 +281,8 @@ impl<N: Network> Process<N> {
     }
 
     /// Guard the Process against any concurrent reads or writes.
-    #[cfg(feature = "locktick")]
-    pub fn lock(&self) -> LockGuard<MutexGuard<()>> {
-        self.lock.lock()
-    }
-
-    /// Guard the Process against any concurrent reads or writes.
-    #[cfg(not(feature = "locktick"))]
-    pub fn lock(&self) -> MutexGuard<()> {
-        self.lock.lock()
-    }
-
-    /// Adds a new stack to the process.
-    /// If the program already exists, then the existing stack is replaced and the original stack is returned.
-    /// Note. This method assumes that the provided stack is valid.
-    #[inline]
-    pub fn add_stack(&self, stack: Stack<N>) -> Option<Arc<Stack<N>>> {
-        // Get the program ID.
-        let program_id = *stack.program_id();
-        // Arc the stack first to limit the scope of the write lock.
-        let stack = Arc::new(stack);
-        // Insert the stack into the process, replacing the existing stack if it exists.
-        self.stacks.write().insert(program_id, stack)
-    }
-
-    /// Stages a stack to be added to the process.
-    /// The new stack is active, while the old stack is retained in `old_stacks`.
-    /// The `commit_stacks` method must be called to finalize the addition of the new stack.
-    /// The `revert_stacks` method can be called to revert the staged stacks.
-    #[inline]
-    pub fn stage_stack(&self, stack: Stack<N>) {
-        // Get the program ID.
-        let program_id = *stack.program_id();
-        // Arc the stack first to limit the scope of the write lock.
-        let stack = Arc::new(stack);
-        // If no entry in `old_stacks` exists for `program_id`, store the old stack.
-        // Note: If `old_stack` is `None`, it means that we are adding a new program to the process.
-        let old_stack = self.stacks.write().insert(program_id, stack);
-        let mut old_stacks = self.old_stacks.write();
-        if !old_stacks.contains_key(&program_id) {
-            old_stacks.insert(program_id, old_stack);
-        }
-    }
-
-    /// Commits the staged stacks to the process.
-    /// This finalizes the addition of the new stacks and clears the old stacks.
-    #[inline]
-    pub fn commit_stacks(&self) {
-        // Clear the old stacks.
-        self.old_stacks.write().clear();
-    }
-
-    /// Reverts the staged stacks, restoring the previous state of the process.
-    /// This will remove the new stacks and restore the old stacks.
-    #[inline]
-    pub fn revert_stacks(&self) {
-        // Restore the old stacks.
-        for (program_id, stack) in self.old_stacks.write().drain(..) {
-            // If the stack is `None`, remove the program from the process.
-            // Otherwise, insert the old stack back into the process.
-            if let Some(stack) = stack {
-                self.stacks.write().insert(program_id, stack);
-            } else {
-                self.stacks.write().shift_remove(&program_id);
-            }
-        }
+    pub fn lock(&self) -> ProcessExclusiveGuard<'_, N> {
+        ProcessExclusiveGuard { process: self, _guard: self.lock.lock() }
     }
 
     /// Ensure that the types referred to in this program's mappings exist.
@@ -296,7 +360,7 @@ impl<N: Network> Process<N> {
         lap!(timer, "Load circuit keys");
 
         // Add the stack to the process.
-        process.add_stack(stack);
+        process.lock().add_stack(stack);
 
         finish!(timer, "Process::load");
         // Return the process.
@@ -340,7 +404,7 @@ impl<N: Network> Process<N> {
         lap!(timer, "Load circuit keys");
 
         // Add the stack to the process.
-        process.add_stack(stack);
+        process.lock().add_stack(stack);
 
         finish!(timer, "Process::load_v0");
         // Return the process.
@@ -366,70 +430,10 @@ impl<N: Network> Process<N> {
         let stack = Stack::new(&process, &program)?;
 
         // Add the stack to the process.
-        process.add_stack(stack);
+        process.lock().add_stack(stack);
 
         // Return the process.
         Ok(process)
-    }
-
-    /// Adds a new program to the process, verifying that it is a valid addition.
-    /// If the program exists, then the existing stack is replaced and discarded.
-    /// Note. This method should **NOT** be used by the on-chain VM to add new program, use `finalize_deployment` or `load_deployment` instead instead.
-    #[inline]
-    pub fn add_program(&self, program: &Program<N>) -> Result<()> {
-        // Initialize the 'credits.aleo' program ID.
-        let credits_program_id = ProgramID::<N>::from_str("credits.aleo")?;
-        // If the program is not 'credits.aleo', compute the program stack, and add it to the process.
-        if program.id() != &credits_program_id {
-            self.add_stack(Stack::new(self, program)?);
-        }
-        Ok(())
-    }
-
-    /// Adds a new program with the given edition to the process, verifying that it is a valid addition.
-    /// If the program exists, then the existing stack is replaced and discarded.
-    /// Note. This method should **NOT** be used by the on-chain VM to add new program, use `finalize_deployment` or `load_deployment` instead instead.
-    #[inline]
-    pub fn add_program_with_edition(&self, program: &Program<N>, edition: u16) -> Result<()> {
-        // Initialize the 'credits.aleo' program ID.
-        let credits_program_id = ProgramID::<N>::from_str("credits.aleo")?;
-        // If the program is not 'credits.aleo', compute the program stack, and add it to the process.
-        if program.id() != &credits_program_id {
-            let stack = Stack::new_raw(self, program, edition)?;
-            stack.initialize_and_check(self)?;
-            self.add_stack(stack);
-        }
-        Ok(())
-    }
-
-    /// Adds a set of programs and editions, in topological order, to the process, deferring validation of the programs until all programs are added.
-    /// If a program exists, then the existing stack is replaced and discarded.
-    /// Either all programs are added or none are.
-    /// Note. This method should **NOT** be used by the on-chain VM to add new program, use `finalize_deployment` or `load_deployment` instead instead.
-    #[inline]
-    pub fn add_programs_with_editions(&self, programs: &[(Program<N>, u16)]) -> Result<()> {
-        // Initialize the 'credits.aleo' program ID.
-        let credits_program_id = ProgramID::<N>::from_str("credits.aleo")?;
-        // Defer cleanup of the uncommitted stacks.
-        defer! {
-            self.revert_stacks()
-        }
-        // Initialize raw stacks for each of the programs, skipping `credits.aleo`.
-        for (program, edition) in programs {
-            if program.id() != &credits_program_id {
-                self.stage_stack(Stack::new_raw(self, program, *edition)?)
-            }
-        }
-        // For each stack, check and initialize it before adding it to the process.
-        for (program, _) in programs {
-            // Retrieve the stack.
-            let stack = self.get_stack(program.id())?;
-            // Initialize and check the stack for well-formedness.
-            stack.initialize_and_check(self)?;
-        }
-        // Commit the staged stacks.
-        self.commit_stacks();
-        Ok(())
     }
 
     /// Returns the universal SRS.
@@ -584,7 +588,7 @@ pub mod test_helpers {
 
         // Add the program to the process if doesn't yet exist.
         if !process.contains_program(program.id()) {
-            process.add_program(program).unwrap();
+            process.lock().add_program(program).unwrap();
         }
 
         // Compute the authorization.
@@ -719,7 +723,7 @@ function compute:
         // Construct a new process.
         let process = Process::load().unwrap();
         // Add the program to the process.
-        process.add_program(program).unwrap();
+        process.lock().add_program(program).unwrap();
         // Return the process.
         process
     }

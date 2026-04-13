@@ -34,7 +34,7 @@ constructor:
     assert.eq true true;
     ",
     )?;
-    process.add_program(&default_program)?;
+    process.lock().add_program(&default_program)?;
     // Return the process.
     Ok(process)
 }
@@ -51,7 +51,7 @@ function foo:
     ",
     )?;
     // Add the new program to the process.
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
     // Get the program from the process.
     let stack = process.get_stack("test.aleo")?;
     let program = stack.program();
@@ -71,7 +71,7 @@ program test.aleo;
 function foo:
     ",
     )?;
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
     // Attempt to upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -81,7 +81,7 @@ function bar:
     ",
     )?;
     // Verify that the upgrade was not successful.
-    assert!(process.add_program(&new_program).is_err());
+    assert!(process.lock().add_program(&new_program).is_err());
     Ok(())
 }
 
@@ -100,7 +100,7 @@ function bar:
     ",
     )?;
     // Verify that the upgrade was successful.
-    process.add_program(&new_program)?;
+    process.lock().add_program(&new_program)?;
     Ok(())
 }
 
@@ -118,7 +118,7 @@ constructor:
 function foo:
     ",
     )?;
-    process.add_program(&new_program)?;
+    process.lock().add_program(&new_program)?;
     // Verify that the upgrade was successful.
     let stack = process.get_stack("test.aleo")?;
     let program = stack.program();
@@ -141,7 +141,7 @@ struct bar:
 function foo:
     ",
     )?;
-    process.add_program(&new_program)?;
+    process.lock().add_program(&new_program)?;
     // Verify that the upgrade was successful.
     let stack = process.get_stack("test.aleo")?;
     let program = stack.program();
@@ -165,7 +165,7 @@ record bar:
 function foo:
     ",
     )?;
-    process.add_program(&new_program)?;
+    process.lock().add_program(&new_program)?;
     // Verify that the upgrade was successful.
     let stack = process.get_stack("test.aleo")?;
     let program = stack.program();
@@ -189,7 +189,7 @@ mapping onchain:
 function foo:
     ",
     )?;
-    process.add_program(&new_program)?;
+    process.lock().add_program(&new_program)?;
     // Verify that the upgrade was successful.
     let stack = process.get_stack("test.aleo")?;
     let program = stack.program();
@@ -215,7 +215,7 @@ closure sum:
 function foo:
     ",
     )?;
-    process.add_program(&new_program)?;
+    process.lock().add_program(&new_program)?;
     // Verify that the upgrade was successful.
     let stack = process.get_stack("test.aleo")?;
     let program = stack.program();
@@ -241,7 +241,7 @@ function adder:
 function foo:
     ",
     )?;
-    process.add_program(&new_program)?;
+    process.lock().add_program(&new_program)?;
     // Verify that the upgrade was successful.
     let stack = process.get_stack("test.aleo")?;
     let program = stack.program();
@@ -266,7 +266,7 @@ function adder:
     output r2 as u8.private;
     ",
     )?;
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -280,7 +280,7 @@ function adder:
     output r2 as u8.private;
     ",
     )?;
-    process.add_program(&new_program)?;
+    process.lock().add_program(&new_program)?;
     // Verify that the upgrade was successful.
     let stack = process.get_stack("basic.aleo")?;
     let program = stack.program();
@@ -305,7 +305,7 @@ function adder:
     output r2 as u8.private;
     ",
     )?;
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -320,7 +320,7 @@ function adder:
     ",
     )?;
     // Verify that the upgrade was not successful.
-    assert!(process.add_program(&new_program).is_err());
+    assert!(process.lock().add_program(&new_program).is_err());
     Ok(())
 }
 
@@ -345,7 +345,7 @@ finalize assert_on_chain:
     assert.eq r0 r1;
     ",
     )?;
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -363,7 +363,7 @@ finalize assert_on_chain:
     assert.neq r0 r1;
     ",
     )?;
-    process.add_program(&new_program)?;
+    process.lock().add_program(&new_program)?;
     // Verify that the upgrade was successful.
     let stack = process.get_stack("basic.aleo")?;
     let program = stack.program();
@@ -392,7 +392,7 @@ finalize assert_on_chain:
     assert.eq r0 r1;
     ",
     )?;
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -411,7 +411,7 @@ finalize assert_on_chain:
     ",
     )?;
     // Verify that the upgrade was not successful.
-    assert!(process.add_program(&new_program).is_err());
+    assert!(process.lock().add_program(&new_program).is_err());
     Ok(())
 }
 
@@ -430,7 +430,7 @@ struct bar:
 function foo:
     ",
     )?;
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -443,7 +443,7 @@ function foo:
     ",
     )?;
     // Verify that the upgrade was not successful.
-    assert!(process.add_program(&new_program).is_err());
+    assert!(process.lock().add_program(&new_program).is_err());
     Ok(())
 }
 
@@ -463,7 +463,7 @@ record bar:
 function foo:
     ",
     )?;
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -477,7 +477,7 @@ function foo:
     ",
     )?;
     // Verify that the upgrade was not successful.
-    assert!(process.add_program(&new_program).is_err());
+    assert!(process.lock().add_program(&new_program).is_err());
     Ok(())
 }
 
@@ -497,7 +497,7 @@ mapping onchain:
 function foo:
     ",
     )?;
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -511,7 +511,7 @@ function foo:
     ",
     )?;
     // Verify that the upgrade was not successful.
-    assert!(process.add_program(&new_program).is_err());
+    assert!(process.lock().add_program(&new_program).is_err());
     Ok(())
 }
 
@@ -533,7 +533,7 @@ closure sum:
 function foo:
     ",
     )?;
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -549,7 +549,7 @@ function foo:
     ",
     )?;
     // Verify that the upgrade was not successful.
-    assert!(process.add_program(&new_program).is_err());
+    assert!(process.lock().add_program(&new_program).is_err());
     Ok(())
 }
 
@@ -571,7 +571,7 @@ closure sum:
 function foo:
     ",
     )?;
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -587,7 +587,7 @@ function foo:
     ",
     )?;
     // Verify that the upgrade was not successful.
-    assert!(process.add_program(&new_program).is_err());
+    assert!(process.lock().add_program(&new_program).is_err());
     Ok(())
 }
 
@@ -605,7 +605,7 @@ constructor:
 function foo:
     ",
     )?;
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -616,7 +616,7 @@ function foo:
     ",
     )?;
     // Verify that the upgrade was not successful.
-    assert!(process.add_program(&new_program).is_err());
+    assert!(process.lock().add_program(&new_program).is_err());
     Ok(())
 }
 
@@ -635,7 +635,7 @@ struct bar:
 function foo:
     ",
     )?;
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -646,7 +646,7 @@ function foo:
     ",
     )?;
     // Verify that the upgrade was not successful.
-    assert!(process.add_program(&new_program).is_err());
+    assert!(process.lock().add_program(&new_program).is_err());
     Ok(())
 }
 
@@ -666,7 +666,7 @@ record bar:
 function foo:
     ",
     )?;
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -677,7 +677,7 @@ function foo:
     ",
     )?;
     // Verify that the upgrade was not successful.
-    assert!(process.add_program(&new_program).is_err());
+    assert!(process.lock().add_program(&new_program).is_err());
     Ok(())
 }
 
@@ -697,7 +697,7 @@ mapping onchain:
 function foo:
     ",
     )?;
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -708,7 +708,7 @@ function foo:
     ",
     )?;
     // Verify that the upgrade was not successful.
-    assert!(process.add_program(&new_program).is_err());
+    assert!(process.lock().add_program(&new_program).is_err());
     Ok(())
 }
 
@@ -730,7 +730,7 @@ closure sum:
 function foo:
     ",
     )?;
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -741,7 +741,7 @@ function foo:
     ",
     )?;
     // Verify that the upgrade was not successful.
-    assert!(process.add_program(&new_program).is_err());
+    assert!(process.lock().add_program(&new_program).is_err());
     Ok(())
 }
 
@@ -763,7 +763,7 @@ function adder:
 function foo:
     ",
     )?;
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -774,7 +774,7 @@ function foo:
     ",
     )?;
     // Verify that the upgrade was not successful.
-    assert!(process.add_program(&new_program).is_err());
+    assert!(process.lock().add_program(&new_program).is_err());
     Ok(())
 }
 
@@ -794,7 +794,7 @@ function foo:
     add r0 r1 into r2;
     output r2 as u8.private;",
     )?;
-    process.add_program(&new_program)?;
+    process.lock().add_program(&new_program)?;
     // Add the initial program to the process.
     let initial_program = Program::from_str(
         r"
@@ -809,7 +809,7 @@ function adder:
     output r2 as u8.private;
     ",
     )?;
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -824,7 +824,7 @@ function adder:
     output r2 as u8.private;
     ",
     )?;
-    process.add_program(&new_program)?;
+    process.lock().add_program(&new_program)?;
     // Verify that the upgrade was successful.
     let stack = process.get_stack("basic.aleo")?;
     let program = stack.program();
@@ -854,7 +854,7 @@ finalize foo:
     input r1 as u8.public;
     assert.eq r0 r1;",
     )?;
-    process.add_program(&new_program)?;
+    process.lock().add_program(&new_program)?;
     // Add the initial program to the process.
     let initial_program = Program::from_str(
         r"
@@ -869,7 +869,7 @@ function adder:
     output r2 as u8.private;
     ",
     )?;
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -889,7 +889,7 @@ finalize adder:
     await r0;",
     )?;
     // Verify that the upgrade was not successful.
-    assert!(process.add_program(&new_program).is_err());
+    assert!(process.lock().add_program(&new_program).is_err());
     Ok(())
 }
 
@@ -911,7 +911,7 @@ function adder:
     output r2 as u8.private;
     ",
     )?;
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
 
     // Verify that self-import cycles are not allowed.
     let new_program = Program::from_str(
@@ -927,7 +927,7 @@ function adder:
     output r2 as u8.private;
     ",
     )?;
-    assert!(process.add_program(&new_program).is_err());
+    assert!(process.lock().add_program(&new_program).is_err());
 
     // Add a program dependent on `basic.aleo`.
     let dependent_program = Program::from_str(
@@ -942,7 +942,7 @@ function foo:
     call basic.aleo/adder r0 r1 into r2;
     output r2 as u8.private;",
     )?;
-    process.add_program(&dependent_program)?;
+    process.lock().add_program(&dependent_program)?;
     // Verify that the upgrade was successful.
     let stack = process.get_stack("dependent.aleo")?;
     let program = stack.program();
@@ -964,7 +964,7 @@ function adder:
     ",
     )?;
     // Verify that the upgrade was successful.
-    process.add_program(&new_program)?;
+    process.lock().add_program(&new_program)?;
     Ok(())
 }
 
@@ -981,7 +981,7 @@ constructor:
     assert.eq 1u8 1u8;
     ",
     )?;
-    process.add_program(&initial_program)?;
+    process.lock().add_program(&initial_program)?;
     // Upgrade the program.
     let new_program = Program::from_str(
         r"
@@ -992,7 +992,7 @@ constructor:
     ",
     )?;
     // Verify that the upgrade was not successful.
-    assert!(process.add_program(&new_program).is_err());
+    assert!(process.lock().add_program(&new_program).is_err());
     Ok(())
 }
 
@@ -1053,22 +1053,22 @@ closure foo:
     // Check that the below programs are invalid.
 
     let program = sample_program_with_operand_in_function("edition")?;
-    assert!(process.add_program(&program).is_err());
+    assert!(process.lock().add_program(&program).is_err());
 
     let program = sample_program_with_operand_in_function("checksum")?;
-    assert!(process.add_program(&program).is_err());
+    assert!(process.lock().add_program(&program).is_err());
 
     let program = sample_program_with_operand_in_function("program_owner")?;
-    assert!(process.add_program(&program).is_err());
+    assert!(process.lock().add_program(&program).is_err());
 
     let program = sample_program_with_operand_in_closure("edition")?;
-    assert!(process.add_program(&program).is_err());
+    assert!(process.lock().add_program(&program).is_err());
 
     let program = sample_program_with_operand_in_closure("checksum")?;
-    assert!(process.add_program(&program).is_err());
+    assert!(process.lock().add_program(&program).is_err());
 
     let program = sample_program_with_operand_in_closure("program_owner")?;
-    assert!(process.add_program(&program).is_err());
+    assert!(process.lock().add_program(&program).is_err());
 
     Ok(())
 }

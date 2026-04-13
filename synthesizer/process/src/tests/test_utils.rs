@@ -254,7 +254,7 @@ fn execute_function<F: FinalizeStorage<CurrentNetwork>>(
     let block_height = block_height.unwrap_or(1);
 
     // Add an atomic finalize wrapper around the finalize function.
-    process.finalize_execution(sample_finalize_state(block_height), finalize_store, &execution, None)?;
+    process.lock().finalize_execution(sample_finalize_state(block_height), finalize_store, &execution, None)?;
 
     Ok(())
 }

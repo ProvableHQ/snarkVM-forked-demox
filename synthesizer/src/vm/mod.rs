@@ -3133,10 +3133,10 @@ function check:
         let process = Process::<CurrentNetwork>::load().unwrap();
 
         // Load the child and parent program
-        process.add_program(&child_program_1).unwrap();
-        process.add_program(&child_program_2).unwrap();
-        process.add_program(&parent_program).unwrap();
-        process.add_program(&grandparent_program).unwrap();
+        process.lock().add_program(&child_program_1).unwrap();
+        process.lock().add_program(&child_program_2).unwrap();
+        process.lock().add_program(&parent_program).unwrap();
+        process.lock().add_program(&grandparent_program).unwrap();
 
         // Specify the function name on the parent program
         let function_name = Identifier::<CurrentNetwork>::from_str("check").unwrap();
@@ -3285,7 +3285,7 @@ function adder:
         // Check that the account has enough to pay for the deployment.
         assert_eq!(*deployment_1.fee_amount().unwrap(), 2483025);
         // Add the first program to the off-chain VM.
-        off_chain_vm.process().add_program(&program_1).unwrap();
+        off_chain_vm.process().lock().add_program(&program_1).unwrap();
         // Deploy the second program.
         let deployment_2 = off_chain_vm.deploy(&private_key_2, &program_2, None, 0, None, rng).unwrap();
         // Check that the account has enough to pay for the deployment.
@@ -3403,7 +3403,7 @@ function adder:
         // Check that the account has enough to pay for the deployment.
         assert_eq!(*deployment.fee_amount().unwrap(), 2483025);
         // Add the program to the off-chain VM.
-        off_chain_vm.process().add_program(&program).unwrap();
+        off_chain_vm.process().lock().add_program(&program).unwrap();
         // Execute the program.
         let transaction = off_chain_vm
             .execute(
