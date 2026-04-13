@@ -285,6 +285,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Determine the maximum number of aborted transactions allowed in a block.
         let max_aborted_transactions = Transactions::<N>::max_aborted_transactions();
 
+        // Clear out any pending rejection reasons in case of errors in the previous iteration.
+        self.pending_rejected_reasons.write().clear();
+
         // Update the block height used for the purposes of historical mapping accounting.
         #[cfg(feature = "history")]
         self.store
@@ -414,13 +417,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                         Transaction::from_fee(fee.clone()).map(|fee_tx| (fee_tx, finalize))
                                     })
                                     .map(|(fee_tx, finalize)| {
-                                        let rejected = Rejected::new_deployment(
-                                            *program_owner,
-                                            deployment,
-                                        );
+                                        let rejected = Rejected::new_deployment(*program_owner, deployment);
                                         ConfirmedTransaction::rejected_deploy(counter, fee_tx, rejected, finalize)
                                             .and_then(|confirmed_tx| {
                                                 // Store the rejection reason.
+                                                self.pending_rejected_reasons
+                                                    .write()
+                                                    .insert(confirmed_tx.id(), rejected_reason.clone());
                                                 store
                                                     .insert_rejected_reason(*confirmed_tx.id(), rejected_reason)
                                                     .map_err(|e| anyhow!("Failed to store rejection reason: {e}"))?;
@@ -505,15 +508,16 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                             }) {
                                             Ok((fee_tx, finalize)) => {
                                                 // Construct the rejected execution.
-                                                let rejected = Rejected::new_execution(
-                                                    *execution.clone(),
-                                                );
+                                                let rejected = Rejected::new_execution(*execution.clone());
                                                 // Construct the rejected execute transaction.
                                                 ConfirmedTransaction::rejected_execute(
                                                     counter, fee_tx, rejected, finalize,
                                                 )
                                                 .and_then(|confirmed_tx| {
                                                     // Store the rejection reason.
+                                                    self.pending_rejected_reasons
+                                                        .write()
+                                                        .insert(confirmed_tx.id(), rejected_reason.clone());
                                                     store
                                                         .insert_rejected_reason(*confirmed_tx.id(), rejected_reason)
                                                         .map_err(|e| anyhow!("Failed to store rejection reason: {e}"))?;
@@ -835,6 +839,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                         "Mismatch in finalize operations for a rejected deploy - (found: {finalize_operations:?}, expected: {finalize:?})"
                                     ));
                                 }
+
+                                if let Some(rejected_reason) = self.pending_rejected_reasons.write().remove(fee_tx_id) {
+                                    store.insert_rejected_reason(**fee_tx_id, rejected_reason.clone()).map_err(
+                                        |_| "Couldn't store the reason behind a rejected deployment".to_string(),
+                                    )?;
+                                }
                             }
                             // Note: This will abort the entire atomic batch.
                             Err(_e) => {
@@ -873,6 +883,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                                     return Err(format!(
                                         "Mismatch in finalize operations for a rejected execute - (found: {finalize_operations:?}, expected: {finalize:?})"
                                     ));
+                                }
+
+                                if let Some(rejected_reason) = self.pending_rejected_reasons.write().remove(fee_tx_id) {
+                                    store.insert_rejected_reason(**fee_tx_id, rejected_reason.clone()).map_err(
+                                        |_| "Couldn't store the reason behind a rejected deployment".to_string(),
+                                    )?;
                                 }
                             }
                             // Note: This will abort the entire atomic batch.

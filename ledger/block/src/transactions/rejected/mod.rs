@@ -30,10 +30,7 @@ pub enum Rejected<N: Network> {
 
 impl<N: Network> Rejected<N> {
     /// Initializes a rejected deployment.
-    pub fn new_deployment(
-        program_owner: ProgramOwner<N>,
-        deployment: Deployment<N>,
-    ) -> Self {
+    pub fn new_deployment(program_owner: ProgramOwner<N>, deployment: Deployment<N>) -> Self {
         Self::Deployment(program_owner, Box::new(deployment))
     }
 

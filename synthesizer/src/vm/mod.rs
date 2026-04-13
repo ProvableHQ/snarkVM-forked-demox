@@ -107,7 +107,7 @@ use lru::LruCache;
 use parking_lot::{Mutex, RwLock};
 use rand::{SeedableRng, rngs::StdRng};
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     num::NonZeroUsize,
     sync::{Arc, mpsc},
     thread,
@@ -134,6 +134,8 @@ pub struct VM<N: Network, C: ConsensusStorage<N>> {
     partially_verified_transactions: Arc<RwLock<LruCache<TransactionCacheKey<N>, N::TransmissionChecksum>>>,
     /// The restrictions list.
     restrictions: Restrictions<N>,
+    /// The list of rejection reasons for pending confirmed transactions.
+    pending_rejected_reasons: Arc<RwLock<HashMap<N::TransactionID, RejectedReason<N>>>>,
     /// A sender to the channel for operations that must be performed sequentially.
     sequential_ops_tx: Arc<RwLock<Option<mpsc::Sender<SequentialOperationRequest<N>>>>>,
     /// The handle to the thread which processes operations sequentially.
@@ -236,6 +238,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             ))),
             restrictions: Restrictions::load()?,
             sequential_ops_tx: Default::default(),
+            pending_rejected_reasons: Default::default(),
             sequential_ops_thread: Default::default(),
         };
 
