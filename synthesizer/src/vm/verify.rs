@@ -146,9 +146,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Construct the transaction checksum.
         let checksum = Data::<Transaction<N>>::Buffer(transaction.to_bytes_le()?.into()).to_checksum::<N>()?;
 
-        // Get the program editions from the transaction.
+        // Get the program checksums from the transaction.
 
-        let mut program_editions = Vec::with_capacity(Transaction::<N>::MAX_TRANSITIONS);
+        let mut program_checksums = Vec::with_capacity(Transaction::<N>::MAX_TRANSITIONS);
         for transition in transaction.transitions() {
             // Get the stack.
             let stack = self.process.read().get_stack(transition.program_id())?;
@@ -171,12 +171,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     transaction.id()
                 );
             }
-            // Add the program editions.
-            program_editions.push(edition);
+            // Add the program checksum.
+            program_checksums.push(*stack.program_checksum());
         }
 
         // Prepare the cache key.
-        let cache_key = (transaction.id(), program_editions);
+        let cache_key = (transaction.id(), program_checksums);
 
         // Check if the transaction exists in the partially-verified cache.
         let is_partially_verified = self.partially_verified_transactions.read().peek(&cache_key) == Some(&checksum);
@@ -941,11 +941,11 @@ mod tests {
     use console::account::ViewKey;
 
     use crate::vm::test_helpers::LedgerType;
-    use console::{account::Address, types::Field};
     #[cfg(feature = "test")]
+    use console::algorithms::{ECDSASignature, Keccak256};
     use console::{
-        algorithms::{ECDSASignature, Keccak256},
-        types::U8,
+        account::Address,
+        types::{Field, U8},
     };
     use snarkvm_ledger_block::{Block, Header, Metadata, Transaction, Transition};
     #[cfg(feature = "test")]
@@ -960,17 +960,17 @@ mod tests {
     fn create_cache_key(
         vm: &VM<CurrentNetwork, LedgerType>,
         transaction: &Transaction<CurrentNetwork>,
-    ) -> (<CurrentNetwork as Network>::TransactionID, Vec<U16<CurrentNetwork>>) {
-        // Get the program editions.
-        let program_editions = transaction
+    ) -> (<CurrentNetwork as Network>::TransactionID, Vec<[U8<CurrentNetwork>; 32]>) {
+        // Get the program checksums.
+        let program_checksums = transaction
             .transitions()
             .map(|transition| {
-                vm.process().read().get_stack(transition.program_id()).map(|stack| stack.program_edition())
+                vm.process().read().get_stack(transition.program_id()).map(|stack| *stack.program_checksum())
             })
             .collect::<Result<Vec<_>>>()
             .unwrap();
         // Return the cache key.
-        (transaction.id(), program_editions)
+        (transaction.id(), program_checksums)
     }
 
     #[test]

@@ -31,7 +31,7 @@ use console::{
     account::{Address, PrivateKey},
     network::{MainnetV0, prelude::*},
     program::{Entry, Identifier, Literal, Plaintext, ProgramID, Value},
-    types::U16,
+    types::{U8, U16},
 };
 use snarkvm_ledger_authority::Authority;
 use snarkvm_ledger_block::{Block, ConfirmedTransaction, Execution, Ratify, Rejected, Transaction};
@@ -81,15 +81,15 @@ fn extract_transmissions(
 fn create_cache_key(
     vm: &VM<CurrentNetwork, CurrentConsensusStorage>,
     transaction: &Transaction<CurrentNetwork>,
-) -> (<CurrentNetwork as Network>::TransactionID, Vec<U16<CurrentNetwork>>) {
-    // Get the program editions.
-    let program_editions = transaction
+) -> (<CurrentNetwork as Network>::TransactionID, Vec<[U8<CurrentNetwork>; 32]>) {
+    // Get the program checksums.
+    let program_checksums = transaction
         .transitions()
-        .map(|transition| vm.process().read().get_stack(transition.program_id()).map(|stack| stack.program_edition()))
+        .map(|transition| vm.process().read().get_stack(transition.program_id()).map(|stack| *stack.program_checksum()))
         .collect::<Result<Vec<_>>>()
         .unwrap();
     // Return the cache key.
-    (transaction.id(), program_editions)
+    (transaction.id(), program_checksums)
 }
 
 #[test]
