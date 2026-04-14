@@ -116,6 +116,17 @@ pub(crate) fn apply_randomized_selector<F: PrimeField>(
         // That's what we're computing here.
         let selector_time = start_timer!(|| "Compute selector with remainder witness");
 
+        // Fast path: when src and target domains are equal, the selector polynomial is 1.
+        // The multiplier simplifies to `combiner` (size/size = 1), and the subsequent
+        // mul_by_vanishing_poly(target) + divide_by_vanishing_poly(src) round-trip
+        // cancels exactly since v_target == v_src. This fires on every single-circuit proof.
+        if src_domain.size == target_domain.size {
+            poly.coeffs.iter_mut().for_each(|c| *c *= combiner);
+            let (h_i, xg_i) = poly.divide_by_vanishing_poly(*src_domain)?;
+            end_timer!(selector_time);
+            return Ok((h_i, Some(xg_i)));
+        }
+
         let multiplier = combiner * src_domain.size_as_field_element * target_domain.size_inv;
         poly.coeffs.iter_mut().for_each(|c| *c *= multiplier);
 
