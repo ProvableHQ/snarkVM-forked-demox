@@ -2629,7 +2629,7 @@ fn test_process_deploy_credits_program() {
     let empty_process = Process {
         universal_srs: UniversalSRS::<CurrentNetwork>::load().unwrap(),
         stacks: Default::default(),
-        old_stacks: Default::default(),
+        new_stacks: Default::default(),
         lock: Default::default(),
     };
 

@@ -344,7 +344,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             // Note. This function does not call `commit_stacks` so the staged stacks will always be reverted
             //  regardless of whether the function succeeds or fails.
             defer! {
-                process.revert_stacks();
+                process.cancel_staged_stacks();
             }
 
             // Initialize a list of the confirmed transactions.
@@ -693,7 +693,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             // Note. `commit_stacks` is called at the bottom of this function after successful finalization.
             //  The staged stacks are only reverted if the function returns an error.
             defer! {
-                process.revert_stacks();
+                process.cancel_staged_stacks();
             }
 
             // Finalize the transactions.
