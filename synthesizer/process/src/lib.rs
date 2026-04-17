@@ -225,6 +225,32 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
         self.commit_stacks();
         Ok(())
     }
+
+    /// Update the `credits.aleo` program in the VM with the latest verifying keys.
+    pub fn update_credits_verifying_keys(&self) -> Result<()> {
+        // Initialize the store for 'credits.aleo'.
+        let credits = Program::<N>::credits()?;
+
+        // Synthesize the 'credits.aleo' verifying keys.
+        for function_name in credits.functions().keys() {
+            // Remove the proving key.
+            self.process.remove_proving_key(credits.id(), function_name)?;
+            // Load the verifying key.
+            let verifying_key = N::get_credits_verifying_key(function_name.to_string())?;
+            // Retrieve the number of public and private variables.
+            // Note: This number does *NOT* include the number of constants. This is safe because
+            // this program is never deployed, as it is a first-class citizen of the protocol.
+            let num_variables = verifying_key.circuit_info.num_public_and_private_variables as u64;
+            // Insert the verifying key.
+            self.process.insert_verifying_key(
+                credits.id(),
+                function_name,
+                VerifyingKey::new(verifying_key.clone(), num_variables),
+            )?;
+        }
+
+        Ok(())
+    }
 }
 
 impl<N: Network> Process<N> {

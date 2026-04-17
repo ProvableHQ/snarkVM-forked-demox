@@ -93,7 +93,6 @@ use snarkvm_synthesizer_program::{
     Program,
     StackTrait as _,
 };
-use snarkvm_synthesizer_snark::VerifyingKey;
 use snarkvm_utilities::try_vm_runtime;
 
 use aleo_std::prelude::{finish, lap, timer};
@@ -526,7 +525,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             Ok(_ratified_finalize_operations) => {
                 // If the block advances to `ConsensusVersion::V8`, updated the VKs used for the credits program.
                 if N::CONSENSUS_HEIGHT(ConsensusVersion::V8).unwrap_or_default() == block.height() {
-                    self.update_credits_verifying_keys()?;
+                    self.process.lock().update_credits_verifying_keys()?;
                 }
                 // Unpause the atomic writes, executing the ones queued from block insertion and finalization.
                 #[cfg(feature = "rocks")]
@@ -568,37 +567,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 Err(finalize_error)
             }
         }
-    }
-}
-
-impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
-    /// Update the `credits.aleo` program in the VM with the latest verifying keys.
-    fn update_credits_verifying_keys(&self) -> Result<()> {
-        // Initialize the store for 'credits.aleo'.
-        let credits = Program::<N>::credits()?;
-
-        // Acquire the process.
-        let process = &self.process;
-
-        // Synthesize the 'credits.aleo' verifying keys.
-        for function_name in credits.functions().keys() {
-            // Remove the proving key.
-            process.remove_proving_key(credits.id(), function_name)?;
-            // Load the verifying key.
-            let verifying_key = N::get_credits_verifying_key(function_name.to_string())?;
-            // Retrieve the number of public and private variables.
-            // Note: This number does *NOT* include the number of constants. This is safe because
-            // this program is never deployed, as it is a first-class citizen of the protocol.
-            let num_variables = verifying_key.circuit_info.num_public_and_private_variables as u64;
-            // Insert the verifying key.
-            process.insert_verifying_key(
-                credits.id(),
-                function_name,
-                VerifyingKey::new(verifying_key.clone(), num_variables),
-            )?;
-        }
-
-        Ok(())
     }
 }
 
