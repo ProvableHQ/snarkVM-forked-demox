@@ -657,7 +657,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Signal to Slipstream plugins that canonical finalize is starting.
         #[cfg(feature = "slipstream-plugins")]
         {
-            tracing::debug!(target: "slipstream", "atomic_finalize: is_finalize_mode → true");
             self.store.finalize_store().is_finalize_mode().store(true, std::sync::atomic::Ordering::SeqCst);
             self.store
                 .finalize_store()

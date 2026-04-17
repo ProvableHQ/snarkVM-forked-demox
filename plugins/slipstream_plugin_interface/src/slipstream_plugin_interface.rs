@@ -13,13 +13,61 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use anyhow::Result;
+use std::any::Any;
+
+/// Discriminant-only companion to [`BroadcastEvent`], used by
+/// [`SlipstreamPlugin::subscribed_events`] to declare which event types a plugin
+/// wishes to receive without carrying data payloads.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum BroadcastEventKind {
+    /// Mapping key-value update during canonical finalize.
+    MappingUpdate,
+    /// Staking reward distribution during canonical finalize.
+    StakingReward,
+}
+
+/// A single event dispatched to plugins via [`SlipstreamPlugin::on_broadcast`].
+///
+/// All `&[u8]` fields carry little-endian byte representations of the
+/// corresponding snarkVM console types (serialized via `ToBytes`).
+///
+/// Derives `Copy` — every field is `Copy` (`&[u8]`, `u32`, `u64`) — so the
+/// same value can be passed to multiple plugins in a dispatch loop without cloning.
+#[derive(Copy, Clone, Debug)]
+pub enum BroadcastEvent<'a> {
+    /// A mapping key-value pair was inserted or updated during canonical finalize.
+    MappingUpdate {
+        program_id: &'a [u8],
+        mapping_name: &'a [u8],
+        key: &'a [u8],
+        value: &'a [u8],
+        block_height: u32,
+    },
+    /// A staking reward was distributed to a staker during canonical finalize.
+    StakingReward {
+        staker: &'a [u8],
+        validator: &'a [u8],
+        reward: u64,
+        new_stake: u64,
+        block_height: u32,
+    },
+}
+
+impl BroadcastEvent<'_> {
+    /// Returns the discriminant of this event.
+    pub fn kind(&self) -> BroadcastEventKind {
+        match self {
+            BroadcastEvent::MappingUpdate { .. } => BroadcastEventKind::MappingUpdate,
+            BroadcastEvent::StakingReward { .. } => BroadcastEventKind::StakingReward,
+        }
+    }
+}
+
 /// The interface for Aleo Slipstream plugins. A plugin must implement
 /// the `SlipstreamPlugin` trait to work with the runtime. In addition,
 /// the dynamic library must export a `C` function `_create_plugin` that
 /// creates the implementation of the plugin.
-use anyhow::Result;
-use std::any::Any;
-
 pub trait SlipstreamPlugin: Any + Send + Sync + std::fmt::Debug {
     /// Returns the name of the plugin.
     fn name(&self) -> &'static str;
@@ -36,38 +84,19 @@ pub trait SlipstreamPlugin: Any + Send + Sync + std::fmt::Debug {
     /// Used for doing cleanup before unload.
     fn on_unload(&mut self) {}
 
-    /// Called when a mapping key-value pair is inserted or updated during canonical finalize.
-    /// All arguments are serialized to bytes to keep the trait object-safe.
-    fn notify_mapping_update(
-        &self,
-        _program_id: &[u8],
-        _mapping_name: &[u8],
-        _key: &[u8],
-        _value: &[u8],
-        _block_height: u32,
-    ) -> Result<()> {
+    /// Returns the event kinds this plugin subscribes to.
+    ///
+    /// The manager checks this before serializing and dispatching each event,
+    /// so plugins that return an empty slice pay no serialization cost. Defaults
+    /// to no subscriptions.
+    fn subscribed_events(&self) -> &[BroadcastEventKind] {
+        &[]
+    }
+
+    /// Receives a single broadcast event from the plugin manager.
+    ///
+    /// Only invoked when the event's kind appears in [`subscribed_events`].
+    fn on_broadcast(&self, _event: BroadcastEvent<'_>) -> Result<()> {
         Ok(())
-    }
-
-    /// Called once per staker per block during staking reward distribution.
-    fn notify_staking_reward(
-        &self,
-        _staker: &[u8],
-        _validator: &[u8],
-        _reward: u64,
-        _new_stake: u64,
-        _block_height: u32,
-    ) -> Result<()> {
-        Ok(())
-    }
-
-    /// Returns `true` if the plugin is interested in general mapping update data.
-    fn history_enabled(&self) -> bool {
-        false
-    }
-
-    /// Returns `true` if the plugin is interested in staking reward data.
-    fn history_staking_rewards_enabled(&self) -> bool {
-        false
     }
 }

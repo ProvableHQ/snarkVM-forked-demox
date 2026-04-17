@@ -36,7 +36,7 @@ use locktick::parking_lot::RwLock;
 #[cfg(all(feature = "slipstream-plugins", not(feature = "locktick")))]
 use parking_lot::RwLock;
 #[cfg(feature = "slipstream-plugins")]
-use snarkvm_slipstream_plugin_manager::SlipstreamPluginManager;
+use snarkvm_slipstream_plugin_manager::{BroadcastEvent, BroadcastEventKind, SlipstreamPluginManager};
 #[cfg(feature = "slipstream-plugins")]
 use std::sync::{Arc, OnceLock, atomic::AtomicBool};
 #[cfg(any(feature = "history", feature = "history-staking-rewards", feature = "slipstream-plugins"))]
@@ -803,10 +803,19 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         }
 
         if let Some(mgr) = self.slipstream_plugin_manager.get() {
-            // Address serializes to a fixed 32-byte array; this cannot fail.
-            let staker_bytes = staker.to_bytes_le().expect("Address::to_bytes_le is infallible");
-            let validator_bytes = validator.to_bytes_le().expect("Address::to_bytes_le is infallible");
-            mgr.read().notify_staking_reward(&staker_bytes, &validator_bytes, reward, new_stake, block_height);
+            let mgr_read = mgr.read();
+            if mgr_read.any_plugin_subscribes(BroadcastEventKind::StakingReward) {
+                // Address serializes to a fixed 32-byte array; this cannot fail.
+                let staker_bytes = staker.to_bytes_le().expect("Address::to_bytes_le is infallible");
+                let validator_bytes = validator.to_bytes_le().expect("Address::to_bytes_le is infallible");
+                mgr_read.broadcast(BroadcastEvent::StakingReward {
+                    staker: &staker_bytes,
+                    validator: &validator_bytes,
+                    reward,
+                    new_stake,
+                    block_height,
+                });
+            }
         }
     }
 
@@ -928,7 +937,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for FinalizeStore<
         let plugin_data = if self.is_finalize_mode.load(Ordering::SeqCst) {
             if let Some(mgr) = self.slipstream_plugin_manager.get() {
                 let plugin_mgr = mgr.read();
-                if plugin_mgr.history_mappings_enabled() {
+                if plugin_mgr.any_plugin_subscribes(BroadcastEventKind::MappingUpdate) {
                     Some((
                         program_id.to_bytes_le()?,
                         mapping_name.to_bytes_le()?,
@@ -952,7 +961,13 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for FinalizeStore<
         if let Some((pid, mname, k, v)) = plugin_data {
             let height = self.slipstream_block_height().load(Ordering::SeqCst);
             if let Some(mgr) = self.slipstream_plugin_manager.get() {
-                mgr.read().notify_mapping_update(&pid, &mname, &k, &v, height);
+                mgr.read().broadcast(BroadcastEvent::MappingUpdate {
+                    program_id: &pid,
+                    mapping_name: &mname,
+                    key: &k,
+                    value: &v,
+                    block_height: height,
+                });
             }
         }
         Ok(result)
@@ -994,7 +1009,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         let plugin_data: Option<SerializedMappingEntries> = if self.is_finalize_mode.load(Ordering::SeqCst) {
             if let Some(mgr) = self.slipstream_plugin_manager.get() {
                 let plugin_mgr = mgr.read();
-                if plugin_mgr.history_mappings_enabled() {
+                if plugin_mgr.any_plugin_subscribes(BroadcastEventKind::MappingUpdate) {
                     let mut entries_bytes = Vec::with_capacity(entries.len());
                     for (key, value) in &entries {
                         entries_bytes.push((key.to_bytes_le()?, value.to_bytes_le()?));
@@ -1023,7 +1038,13 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
             if let Some(mgr) = self.slipstream_plugin_manager.get() {
                 let plugin_mgr = mgr.read();
                 for (k, v) in &data.entries {
-                    plugin_mgr.notify_mapping_update(&data.program_id, &data.mapping_name, k, v, height);
+                    plugin_mgr.broadcast(BroadcastEvent::MappingUpdate {
+                        program_id: &data.program_id,
+                        mapping_name: &data.mapping_name,
+                        key: k,
+                        value: v,
+                        block_height: height,
+                    });
                 }
             }
         }

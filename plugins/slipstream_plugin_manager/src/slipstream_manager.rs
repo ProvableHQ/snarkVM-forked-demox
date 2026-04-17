@@ -13,7 +13,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use snarkvm_slipstream_plugin_interface::slipstream_plugin_interface::SlipstreamPlugin;
+use snarkvm_slipstream_plugin_interface::slipstream_plugin_interface::{
+    BroadcastEvent,
+    BroadcastEventKind,
+    SlipstreamPlugin,
+};
 
 use libloading::Library;
 use std::{
@@ -94,50 +98,23 @@ impl SlipstreamPluginManager {
         self.plugins.clear(); // Drop impl fires on_unload and enforces plugin-before-lib drop order.
     }
 
-    /// Check which plugins are interested in regular mapping data.
-    pub fn history_mappings_enabled(&self) -> bool {
-        self.plugins.iter().any(|p| p.plugin.history_enabled())
+    /// Returns `true` if any loaded plugin subscribes to the given event kind.
+    ///
+    /// Used as a pre-serialization guard: callers skip expensive byte serialization
+    /// when no plugin would receive the resulting event.
+    pub fn any_plugin_subscribes(&self, kind: BroadcastEventKind) -> bool {
+        self.plugins.iter().any(|p| p.plugin.subscribed_events().contains(&kind))
     }
 
-    /// Check if there is any plugin interested in historical staking data.
-    pub fn history_staking_rewards_enabled(&self) -> bool {
-        self.plugins.iter().any(|p| p.plugin.history_staking_rewards_enabled())
-    }
-
-    /// Broadcasts a mapping update to all interested plugins. Errors are
-    /// logged as warnings but never propagated.
-    pub fn notify_mapping_update(
-        &self,
-        program_id: &[u8],
-        mapping_name: &[u8],
-        key: &[u8],
-        value: &[u8],
-        block_height: u32,
-    ) {
+    /// Dispatches an event to every plugin subscribed to its kind.
+    /// Errors are logged as warnings but never propagated.
+    pub fn broadcast(&self, event: BroadcastEvent<'_>) {
+        let kind = event.kind();
         for entry in &self.plugins {
-            if entry.plugin.history_enabled()
-                && let Err(e) = entry.plugin.notify_mapping_update(program_id, mapping_name, key, value, block_height)
+            if entry.plugin.subscribed_events().contains(&kind)
+                && let Err(e) = entry.plugin.on_broadcast(event)
             {
-                warn!("Slipstream plugin '{}' mapping_update error: {e}", entry.plugin.name());
-            }
-        }
-    }
-
-    /// Broadcasts a staking reward to all interested plugins. Errors are
-    /// logged as warnings but never propagated.
-    pub fn notify_staking_reward(
-        &self,
-        staker: &[u8],
-        validator: &[u8],
-        reward: u64,
-        new_stake: u64,
-        block_height: u32,
-    ) {
-        for entry in &self.plugins {
-            if entry.plugin.history_staking_rewards_enabled()
-                && let Err(e) = entry.plugin.notify_staking_reward(staker, validator, reward, new_stake, block_height)
-            {
-                warn!("Slipstream plugin '{}' staking_reward error: {e}", entry.plugin.name());
+                warn!("Slipstream plugin '{}' on_broadcast error: {e}", entry.plugin.name());
             }
         }
     }
@@ -400,7 +377,11 @@ mod tests {
         TESTPLUGIN2_CONFIG,
     };
     use libloading::Library;
-    use snarkvm_slipstream_plugin_interface::slipstream_plugin_interface::SlipstreamPlugin;
+    use snarkvm_slipstream_plugin_interface::slipstream_plugin_interface::{
+        BroadcastEvent,
+        BroadcastEventKind,
+        SlipstreamPlugin,
+    };
     use std::{
         path::PathBuf,
         sync::{Arc, RwLock},
@@ -477,7 +458,7 @@ mod tests {
     }
 
     #[test]
-    fn test_notify_mapping_update() {
+    fn test_broadcast_mapping_update() {
         let mut manager = SlipstreamPluginManager::new();
 
         // Install a mock plugin that tracks calls.
@@ -490,18 +471,11 @@ mod tests {
                 "tracking"
             }
 
-            fn history_enabled(&self) -> bool {
-                true
+            fn subscribed_events(&self) -> &[BroadcastEventKind] {
+                &[BroadcastEventKind::MappingUpdate]
             }
 
-            fn notify_mapping_update(
-                &self,
-                _program_id: &[u8],
-                _mapping_name: &[u8],
-                _key: &[u8],
-                _value: &[u8],
-                _block_height: u32,
-            ) -> anyhow::Result<()> {
+            fn on_broadcast(&self, _event: BroadcastEvent<'_>) -> anyhow::Result<()> {
                 self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 Ok(())
             }
@@ -520,8 +494,14 @@ mod tests {
             libpath: PathBuf::new(),
         });
 
-        // Call notify_mapping_update and verify the plugin received it.
-        manager.notify_mapping_update(b"program_id", b"mapping", b"key", b"value", 42);
+        // Broadcast a MappingUpdate and verify the plugin received it.
+        manager.broadcast(BroadcastEvent::MappingUpdate {
+            program_id: b"program_id",
+            mapping_name: b"mapping",
+            key: b"key",
+            value: b"value",
+            block_height: 42,
+        });
 
         // Verify via list_plugins that the plugin is still loaded.
         assert_eq!(manager.list_plugins().unwrap(), vec!["tracking"]);

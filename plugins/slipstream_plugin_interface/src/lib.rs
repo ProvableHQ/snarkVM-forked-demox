@@ -14,3 +14,5 @@
 // limitations under the License.
 
 pub mod slipstream_plugin_interface;
+
+pub use slipstream_plugin_interface::{BroadcastEvent, BroadcastEventKind};
