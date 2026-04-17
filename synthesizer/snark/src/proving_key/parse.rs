@@ -38,16 +38,14 @@ impl<N: Network> FromStr for ProvingKey<N> {
     /// Reads in the proving key string.
     fn from_str(key: &str) -> Result<Self, Self::Err> {
         // Decode the proving key string from bech32m.
-        let (hrp, data, variant) = bech32::decode(key)?;
-        if hrp != PROVING_KEY {
+        let (hrp, data) = bech32::decode(key)?;
+        if hrp.as_str() != PROVING_KEY {
             bail!("Failed to decode proving key: '{hrp}' is an invalid prefix")
         } else if data.is_empty() {
             bail!("Failed to decode proving key: data field is empty")
-        } else if variant != bech32::Variant::Bech32m {
-            bail!("Found a proving key that is not bech32m encoded: {key}");
         }
-        // Decode the proving key data from u5 to u8, and into the proving key.
-        Ok(Self::read_le(&Vec::from_base32(&data)?[..])?)
+        // Decode the proving key data into the proving key.
+        Ok(Self::read_le(&data[..])?)
     }
 }
 
@@ -63,8 +61,8 @@ impl<N: Network> Display for ProvingKey<N> {
         // Convert the proving key to bytes.
         let bytes = self.to_bytes_le().map_err(|_| fmt::Error)?;
         // Encode the bytes into bech32m.
-        let string =
-            bech32::encode(PROVING_KEY, bytes.to_base32(), bech32::Variant::Bech32m).map_err(|_| fmt::Error)?;
+        let string = bech32::encode::<bech32::Bech32m>(bech32::Hrp::parse_unchecked(PROVING_KEY), &bytes)
+            .map_err(|_| fmt::Error)?;
         // Output the string.
         Display::fmt(&string, f)
     }

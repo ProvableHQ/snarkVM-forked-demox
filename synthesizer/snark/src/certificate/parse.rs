@@ -40,16 +40,14 @@ impl<N: Network> FromStr for Certificate<N> {
     /// Reads in the certificate string.
     fn from_str(certificate: &str) -> Result<Self, Self::Err> {
         // Decode the certificate string from bech32m.
-        let (hrp, data, variant) = bech32::decode(certificate)?;
-        if hrp != PROOF_PREFIX {
+        let (hrp, data) = bech32::decode(certificate)?;
+        if hrp.as_str() != PROOF_PREFIX {
             bail!("Failed to decode certificate: '{hrp}' is an invalid prefix")
         } else if data.is_empty() {
             bail!("Failed to decode certificate: data field is empty")
-        } else if variant != bech32::Variant::Bech32m {
-            bail!("Found an certificate that is not bech32m encoded: {certificate}");
         }
-        // Decode the certificate data from u5 to u8, and into the certificate.
-        Ok(Self::read_le(&Vec::from_base32(&data)?[..])?)
+        // Decode the certificate data into the certificate.
+        Ok(Self::read_le(&data[..])?)
     }
 }
 
@@ -65,8 +63,8 @@ impl<N: Network> Display for Certificate<N> {
         // Convert the certificate to bytes.
         let bytes = self.to_bytes_le().map_err(|_| fmt::Error)?;
         // Encode the bytes into bech32m.
-        let string =
-            bech32::encode(PROOF_PREFIX, bytes.to_base32(), bech32::Variant::Bech32m).map_err(|_| fmt::Error)?;
+        let string = bech32::encode::<bech32::Bech32m>(bech32::Hrp::parse_unchecked(PROOF_PREFIX), &bytes)
+            .map_err(|_| fmt::Error)?;
         // Output the string.
         Display::fmt(&string, f)
     }
