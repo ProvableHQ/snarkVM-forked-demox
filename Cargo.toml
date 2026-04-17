@@ -498,6 +498,10 @@ version = "0.12"
 [workspace.dependencies.paste]
 version = "1"
 
+[workspace.dependencies.proptest]
+# Pin to 1.6 to avoid pulling in rand >=0.9.
+version = "=1.6"
+
 [workspace.dependencies.rand]
 version = "0.8"
 
