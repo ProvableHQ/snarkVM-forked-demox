@@ -38,7 +38,7 @@ use parking_lot::RwLock;
 #[cfg(feature = "slipstream-plugins")]
 use snarkvm_slipstream_plugin_manager::{BroadcastEvent, BroadcastEventKind, SlipstreamPluginManager};
 #[cfg(feature = "slipstream-plugins")]
-use std::sync::{Arc, OnceLock, atomic::AtomicBool};
+use std::sync::{Arc, atomic::AtomicBool};
 #[cfg(any(feature = "history", feature = "history-staking-rewards", feature = "slipstream-plugins"))]
 use std::{
     borrow::Cow,
@@ -679,10 +679,10 @@ pub struct FinalizeStore<N: Network, P: FinalizeStorage<N>> {
     #[cfg(feature = "slipstream-plugins")]
     slipstream_block_height: Arc<AtomicU32>,
     /// Optional plugin manager for streaming canonical mapping and staking updates.
-    /// Wrapped in `Arc` so that all clones of `FinalizeStore` share the same cell; the inner
-    /// `OnceLock` ensures it can be installed from a shared reference after construction.
+    /// Wrapped in `Arc` so that all clones of `FinalizeStore` share the same instance;
+    /// the `RwLock` allows installation from a shared reference after construction.
     #[cfg(feature = "slipstream-plugins")]
-    slipstream_plugin_manager: Arc<OnceLock<Arc<RwLock<SlipstreamPluginManager>>>>,
+    slipstream_plugin_manager: Arc<RwLock<Option<SlipstreamPluginManager>>>,
 }
 
 impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
@@ -702,7 +702,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
             #[cfg(feature = "slipstream-plugins")]
             slipstream_block_height: Arc::new(AtomicU32::new(0)),
             #[cfg(feature = "slipstream-plugins")]
-            slipstream_plugin_manager: Arc::new(OnceLock::new()),
+            slipstream_plugin_manager: Arc::new(RwLock::new(None)),
         })
     }
 
@@ -771,19 +771,22 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
     ///
     /// May be called from a shared reference. Logs a warning if called more than once.
     #[cfg(feature = "slipstream-plugins")]
-    pub fn set_slipstream_plugin_manager(&self, manager: Arc<RwLock<SlipstreamPluginManager>>) {
-        if self.slipstream_plugin_manager.set(manager).is_err() {
+    pub fn set_slipstream_plugin_manager(&self, manager: SlipstreamPluginManager) {
+        let mut guard = self.slipstream_plugin_manager.write();
+        if guard.is_some() {
             tracing::warn!("Slipstream plugin manager is already set; ignoring subsequent call.");
+            return;
         }
+        *guard = Some(manager);
     }
 
-    /// Returns the Slipstream plugin manager, if one has been installed.
+    /// Returns a handle to the Slipstream plugin manager cell.
     ///
-    /// The returned `Arc` is a lightweight additional handle to the same manager instance;
-    /// it does not clone the manager itself.
+    /// The returned `Arc` is a lightweight additional handle to the same shared instance;
+    /// acquire a read or write lock on it to inspect or replace the manager.
     #[cfg(feature = "slipstream-plugins")]
-    pub fn slipstream_plugin_manager(&self) -> Option<Arc<RwLock<SlipstreamPluginManager>>> {
-        self.slipstream_plugin_manager.get().cloned()
+    pub fn slipstream_plugin_manager(&self) -> Arc<RwLock<Option<SlipstreamPluginManager>>> {
+        Arc::clone(&self.slipstream_plugin_manager)
     }
 
     /// Notifies all interested plugins of a staking reward, if canonical finalize is active.
@@ -802,13 +805,13 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
             return;
         }
 
-        if let Some(mgr) = self.slipstream_plugin_manager.get() {
-            let mgr_read = mgr.read();
-            if mgr_read.any_plugin_subscribes(BroadcastEventKind::StakingReward) {
+        let spm_guard = self.slipstream_plugin_manager.read();
+        if let Some(mgr) = spm_guard.as_ref() {
+            if mgr.any_plugin_subscribes(BroadcastEventKind::StakingReward) {
                 // Address serializes to a fixed 32-byte array; this cannot fail.
                 let staker_bytes = staker.to_bytes_le().expect("Address::to_bytes_le is infallible");
                 let validator_bytes = validator.to_bytes_le().expect("Address::to_bytes_le is infallible");
-                mgr_read.broadcast(BroadcastEvent::StakingReward {
+                mgr.broadcast(BroadcastEvent::StakingReward {
                     staker: &staker_bytes,
                     validator: &validator_bytes,
                     reward,
@@ -935,9 +938,9 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for FinalizeStore<
         // Serialize before moving, if a plugin notification may be needed.
         #[cfg(feature = "slipstream-plugins")]
         let plugin_data = if self.is_finalize_mode.load(Ordering::SeqCst) {
-            if let Some(mgr) = self.slipstream_plugin_manager.get() {
-                let plugin_mgr = mgr.read();
-                if plugin_mgr.any_plugin_subscribes(BroadcastEventKind::MappingUpdate) {
+            let spm_guard = self.slipstream_plugin_manager.read();
+            if let Some(mgr) = spm_guard.as_ref() {
+                if mgr.any_plugin_subscribes(BroadcastEventKind::MappingUpdate) {
                     Some((
                         program_id.to_bytes_le()?,
                         mapping_name.to_bytes_le()?,
@@ -960,8 +963,9 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for FinalizeStore<
         #[cfg(feature = "slipstream-plugins")]
         if let Some((pid, mname, k, v)) = plugin_data {
             let height = self.slipstream_block_height().load(Ordering::SeqCst);
-            if let Some(mgr) = self.slipstream_plugin_manager.get() {
-                mgr.read().broadcast(BroadcastEvent::MappingUpdate {
+            let spm_guard = self.slipstream_plugin_manager.read();
+            if let Some(mgr) = spm_guard.as_ref() {
+                mgr.broadcast(BroadcastEvent::MappingUpdate {
                     program_id: &pid,
                     mapping_name: &mname,
                     key: &k,
@@ -1007,9 +1011,9 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         // so they are available for plugin notification after the storage call.
         #[cfg(feature = "slipstream-plugins")]
         let plugin_data: Option<SerializedMappingEntries> = if self.is_finalize_mode.load(Ordering::SeqCst) {
-            if let Some(mgr) = self.slipstream_plugin_manager.get() {
-                let plugin_mgr = mgr.read();
-                if plugin_mgr.any_plugin_subscribes(BroadcastEventKind::MappingUpdate) {
+            let spm_guard = self.slipstream_plugin_manager.read();
+            if let Some(mgr) = spm_guard.as_ref() {
+                if mgr.any_plugin_subscribes(BroadcastEventKind::MappingUpdate) {
                     let mut entries_bytes = Vec::with_capacity(entries.len());
                     for (key, value) in &entries {
                         entries_bytes.push((key.to_bytes_le()?, value.to_bytes_le()?));
@@ -1035,10 +1039,10 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         #[cfg(feature = "slipstream-plugins")]
         if let Some(data) = plugin_data {
             let height = self.slipstream_block_height().load(Ordering::SeqCst);
-            if let Some(mgr) = self.slipstream_plugin_manager.get() {
-                let plugin_mgr = mgr.read();
+            let spm_guard = self.slipstream_plugin_manager.read();
+            if let Some(mgr) = spm_guard.as_ref() {
                 for (k, v) in &data.entries {
-                    plugin_mgr.broadcast(BroadcastEvent::MappingUpdate {
+                    mgr.broadcast(BroadcastEvent::MappingUpdate {
                         program_id: &data.program_id,
                         mapping_name: &data.mapping_name,
                         key: k,
