@@ -32,6 +32,26 @@ macro_rules! ensure_is_unique {
     };
 }
 
+// A helper function to create the cache key for a transaction in the partially-verified transactions cache.
+fn create_cache_key<N: Network, C: ConsensusStorage<N>>(
+    vm: &VM<N, C>,
+    transaction: &Transaction<N>,
+) -> Result<TransactionCacheKey<N>> {
+    // Get the program checksums.
+    let program_checksums = transaction
+        .transitions()
+        .map(|transition| {
+            let stack = vm.process().read().get_stack(transition.program_id())?;
+            let program_id = *stack.program_id();
+            let edition = *stack.program_edition();
+            let amendment_count = vm.transaction_store().get_amendment_count(&program_id, edition)?;
+            Ok((*stack.program_checksum(), edition, amendment_count))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    // Return the cache key.
+    Ok((transaction.id(), program_checksums))
+}
+
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// The maximum number of deployments that the VM can verify in parallel.
     pub const MAX_PARALLEL_DEPLOY_VERIFICATIONS: usize = 5;
@@ -146,9 +166,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Construct the transaction checksum.
         let checksum = Data::<Transaction<N>>::Buffer(transaction.to_bytes_le()?.into()).to_checksum::<N>()?;
 
-        // Get the program checksums from the transaction.
-
-        let mut program_checksums = Vec::with_capacity(Transaction::<N>::MAX_TRANSITIONS);
+        // Ensure transitions satisfy edition constraints for the current consensus version.
         for transition in transaction.transitions() {
             // Get the stack.
             let stack = self.process.read().get_stack(transition.program_id())?;
@@ -156,8 +174,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             let program_id = *stack.program_id();
             // Get the program edition.
             let edition = stack.program_edition();
-            // Get the amendment count for this program and edition.
-            let amendment_count = self.transaction_store().get_amendment_count(&program_id, *edition)?;
 
             // If the consensus version is V8 or greater and any of the component programs (except for `credits.aleo`)
             //   - have edition 0
@@ -173,12 +189,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     transaction.id()
                 );
             }
-            // Add the program checksum, edition, and amendment count.
-            program_checksums.push((*stack.program_checksum(), *edition, amendment_count));
         }
 
         // Prepare the cache key.
-        let cache_key = (transaction.id(), program_checksums);
+        let cache_key = create_cache_key(self, transaction)?;
 
         // Check if the transaction exists in the partially-verified cache.
         let is_partially_verified = self.partially_verified_transactions.read().peek(&cache_key) == Some(&checksum);
@@ -958,27 +972,6 @@ mod tests {
 
     type CurrentNetwork = test_helpers::CurrentNetwork;
 
-    // A helper function to create the cache key for a transaction in the partially-verified transactions cache.
-    fn create_cache_key(
-        vm: &VM<CurrentNetwork, LedgerType>,
-        transaction: &Transaction<CurrentNetwork>,
-    ) -> (<CurrentNetwork as Network>::TransactionID, Vec<([U8<CurrentNetwork>; 32], u16, Option<u64>)>) {
-        // Get the program checksums.
-        let program_checksums = transaction
-            .transitions()
-            .map(|transition| {
-                let stack = vm.process().read().get_stack(transition.program_id())?;
-                let program_id = *stack.program_id();
-                let edition = *stack.program_edition();
-                let amendment_count = vm.transaction_store().get_amendment_count(&program_id, edition)?;
-                Ok((*stack.program_checksum(), edition, amendment_count))
-            })
-            .collect::<Result<Vec<_>>>()
-            .unwrap();
-        // Return the cache key.
-        (transaction.id(), program_checksums)
-    }
-
     #[test]
     fn test_verify() {
         let rng = &mut TestRng::default();
@@ -986,7 +979,7 @@ mod tests {
 
         // Fetch a deployment transaction.
         let deployment_transaction = crate::vm::test_helpers::sample_deployment_transaction(rng);
-        let cache_key = create_cache_key(&vm, &deployment_transaction);
+        let cache_key = create_cache_key(&vm, &deployment_transaction).unwrap();
         // Ensure the transaction verifies.
         vm.check_transaction(&deployment_transaction, None, rng).unwrap();
         // Ensure the partially_verified_transactions cache is updated.
@@ -994,7 +987,7 @@ mod tests {
 
         // Fetch an execution transaction.
         let execution_transaction = crate::vm::test_helpers::sample_execution_transaction_with_private_fee(rng);
-        let cache_key = create_cache_key(&vm, &execution_transaction);
+        let cache_key = create_cache_key(&vm, &execution_transaction).unwrap();
         // Ensure the transaction verifies.
         vm.check_transaction(&execution_transaction, None, rng).unwrap();
         // Ensure the partially_verified_transactions cache is updated.
@@ -1002,7 +995,7 @@ mod tests {
 
         // Fetch an execution transaction.
         let execution_transaction = crate::vm::test_helpers::sample_execution_transaction_with_public_fee(rng);
-        let cache_key = create_cache_key(&vm, &execution_transaction);
+        let cache_key = create_cache_key(&vm, &execution_transaction).unwrap();
         // Ensure the transaction verifies.
         vm.check_transaction(&execution_transaction, None, rng).unwrap();
         // Ensure the partially_verified_transactions cache is updated.
@@ -1125,21 +1118,21 @@ mod tests {
 
         // Fetch a valid execution transaction with a private fee.
         let valid_transaction = crate::vm::test_helpers::sample_execution_transaction_with_private_fee(rng);
-        let cache_key = create_cache_key(&vm, &valid_transaction);
+        let cache_key = create_cache_key(&vm, &valid_transaction).unwrap();
         vm.check_transaction(&valid_transaction, None, rng).unwrap();
         // Ensure the partially_verified_transactions cache is updated.
         assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_some());
 
         // Fetch a valid execution transaction with a public fee.
         let valid_transaction = crate::vm::test_helpers::sample_execution_transaction_with_public_fee(rng);
-        let cache_key = create_cache_key(&vm, &valid_transaction);
+        let cache_key = create_cache_key(&vm, &valid_transaction).unwrap();
         vm.check_transaction(&valid_transaction, None, rng).unwrap();
         // Ensure the partially_verified_transactions cache is updated.
         assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_some());
 
         // Fetch a valid execution transaction with no fee.
         let valid_transaction = crate::vm::test_helpers::sample_execution_transaction_without_fee(rng);
-        let cache_key = create_cache_key(&vm, &valid_transaction);
+        let cache_key = create_cache_key(&vm, &valid_transaction).unwrap();
         vm.check_transaction(&valid_transaction, None, rng).unwrap();
         // Ensure the partially_verified_transactions cache is updated.
         assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_some());
@@ -1248,7 +1241,7 @@ mod tests {
         // Execute.
         let transaction =
             vm.execute(&caller_private_key, ("testing.aleo", "initialize"), inputs, credits, 10, None, rng).unwrap();
-        let cache_key = create_cache_key(&vm, &transaction);
+        let cache_key = create_cache_key(&vm, &transaction).unwrap();
 
         // Verify.
         vm.check_transaction(&transaction, None, rng).unwrap();
@@ -1303,7 +1296,7 @@ function compute:
         // Fetch a valid execution transaction with a public fee.
         let valid_transaction = crate::vm::test_helpers::sample_execution_transaction_with_public_fee(rng);
         vm.check_transaction(&valid_transaction, None, rng).unwrap();
-        let cache_key = create_cache_key(&vm, &valid_transaction);
+        let cache_key = create_cache_key(&vm, &valid_transaction).unwrap();
         // Ensure the partially_verified_transactions cache is updated.
         assert!(vm.partially_verified_transactions.read().peek(&cache_key).is_some());
 
@@ -1354,7 +1347,7 @@ function compute:
 
         // Construct the transaction.
         let mutated_transaction = Transaction::from_execution(mutated_execution, Some(fee)).unwrap();
-        let cache_key = create_cache_key(&vm, &mutated_transaction);
+        let cache_key = create_cache_key(&vm, &mutated_transaction).unwrap();
 
         // Ensure that the mutated transaction fails verification due to an extra output.
         assert!(vm.check_transaction(&mutated_transaction, None, rng).is_err());
