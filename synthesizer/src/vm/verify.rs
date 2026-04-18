@@ -165,31 +165,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Construct the transaction checksum.
         let checksum = Data::<Transaction<N>>::Buffer(transaction.to_bytes_le()?.into()).to_checksum::<N>()?;
 
-        // Ensure transitions satisfy edition constraints for the current consensus version.
-        for transition in transaction.transitions() {
-            // Get the stack.
-            let stack = self.process.read().get_stack(transition.program_id())?;
-            // Get the program ID.
-            let program_id = *stack.program_id();
-            // Get the program edition.
-            let edition = stack.program_edition();
-
-            // If the consensus version is V8 or greater and any of the component programs (except for `credits.aleo`)
-            //   - have edition 0
-            //   - and the program does not have a constructor.
-            // then fail.
-            if consensus_version >= ConsensusVersion::V8
-                && program_id != ProgramID::from_str("credits.aleo")?
-                && edition.is_zero()
-                && !stack.program().contains_constructor()
-            {
-                bail!(
-                    "Invalid transaction '{}' - the program edition for '{program_id}' cannot be zero for `ConsensusVersion::V8` or greater. Please redeploy the program.",
-                    transaction.id()
-                );
-            }
-        }
-
         // Prepare the cache key.
         let cache_key = create_cache_key(self, transaction)?;
 
