@@ -271,6 +271,8 @@ pub struct Stack<N: Network> {
     program_checksum: [U8<N>; 32],
     /// The program edition.
     program_edition: U16<N>,
+    /// The number of amendments applied to the current program edition.
+    program_amendment_count: Option<u64>,
     /// The program owner.
     program_owner: Option<Address<N>>,
 }

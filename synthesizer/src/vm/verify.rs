@@ -42,9 +42,8 @@ fn create_cache_key<N: Network, C: ConsensusStorage<N>>(
         .transitions()
         .map(|transition| {
             let stack = vm.process().read().get_stack(transition.program_id())?;
-            let program_id = *stack.program_id();
             let edition = *stack.program_edition();
-            let amendment_count = vm.transaction_store().get_amendment_count(&program_id, edition)?;
+            let amendment_count = stack.program_amendment_count();
             Ok((*stack.program_checksum(), edition, amendment_count))
         })
         .collect::<Result<Vec<_>>>()?;
