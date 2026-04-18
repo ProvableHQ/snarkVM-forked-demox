@@ -225,7 +225,13 @@ impl<N: Network> Process<N> {
         // Construct the call graph.
         let consensus_version = N::CONSENSUS_VERSION(state.block_height())?;
         let call_graph = match (ConsensusVersion::V1..=ConsensusVersion::V2).contains(&consensus_version) {
-            true => self.construct_call_graph(execution.transitions())?,
+            true => {
+                let mut execution_stacks = indexmap::IndexMap::new();
+                for transition in execution.transitions() {
+                    execution_stacks.insert(*transition.program_id(), self.get_stack(transition.program_id())?);
+                }
+                Process::construct_call_graph(execution.transitions(), &execution_stacks)?
+            }
             // If the height is greater than or equal to `ConsensusVersion::V3`, then provide an empty call graph, as it is no longer used during finalization.
             false => HashMap::new(),
         };
