@@ -156,6 +156,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             let program_id = *stack.program_id();
             // Get the program edition.
             let edition = stack.program_edition();
+            // Get the amendment count for this program and edition.
+            let amendment_count = self.transaction_store().get_amendment_count(&program_id, *edition)?;
 
             // If the consensus version is V8 or greater and any of the component programs (except for `credits.aleo`)
             //   - have edition 0
@@ -171,8 +173,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     transaction.id()
                 );
             }
-            // Add the program checksum.
-            program_checksums.push(*stack.program_checksum());
+            // Add the program checksum, edition, and amendment count.
+            program_checksums.push((*stack.program_checksum(), *edition, amendment_count));
         }
 
         // Prepare the cache key.
@@ -941,12 +943,12 @@ mod tests {
     use console::account::ViewKey;
 
     use crate::vm::test_helpers::LedgerType;
+    #[cfg(feature = "test")]
+    use console::algorithms::{ECDSASignature, Keccak256};
     use console::{
         account::Address,
         types::{Field, U8},
     };
-    #[cfg(feature = "test")]
-    use console::algorithms::{ECDSASignature, Keccak256};
     use snarkvm_ledger_block::{Block, Header, Metadata, Transaction, Transition};
     #[cfg(feature = "test")]
     use snarkvm_utilities::bytes_from_bits_le;
@@ -960,12 +962,16 @@ mod tests {
     fn create_cache_key(
         vm: &VM<CurrentNetwork, LedgerType>,
         transaction: &Transaction<CurrentNetwork>,
-    ) -> (<CurrentNetwork as Network>::TransactionID, Vec<[U8<CurrentNetwork>; 32]>) {
+    ) -> (<CurrentNetwork as Network>::TransactionID, Vec<([U8<CurrentNetwork>; 32], u16, Option<u64>)>) {
         // Get the program checksums.
         let program_checksums = transaction
             .transitions()
             .map(|transition| {
-                vm.process().read().get_stack(transition.program_id()).map(|stack| *stack.program_checksum())
+                let stack = vm.process().read().get_stack(transition.program_id())?;
+                let program_id = *stack.program_id();
+                let edition = *stack.program_edition();
+                let amendment_count = vm.transaction_store().get_amendment_count(&program_id, edition)?;
+                Ok((*stack.program_checksum(), edition, amendment_count))
             })
             .collect::<Result<Vec<_>>>()
             .unwrap();
