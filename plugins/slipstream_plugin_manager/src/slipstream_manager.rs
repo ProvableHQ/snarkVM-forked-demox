@@ -92,6 +92,18 @@ impl SlipstreamPluginManager {
         SlipstreamPluginManager { plugins: Vec::default() }
     }
 
+    /// Initializes a manager by loading one plugin per config file.
+    ///
+    /// Each config file must be a JSON5 file with a `libpath` field pointing to the
+    /// shared library that implements `SlipstreamPlugin`.
+    pub fn from_config_files(config_files: &[std::path::PathBuf]) -> Result<Self, SlipstreamPluginManagerError> {
+        let mut manager = Self::new();
+        for path in config_files {
+            manager.load_plugin(path)?;
+        }
+        Ok(manager)
+    }
+
     /// Unload all plugins and loaded plugin libraries, making sure to fire
     /// their `on_unload()` methods so they can do any necessary cleanup.
     pub fn unload(&mut self) {

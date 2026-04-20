@@ -22,7 +22,6 @@ compile_error!(
 );
 
 pub mod slipstream_manager;
-pub mod slipstream_service;
 
 pub use slipstream_manager::{LoadedSlipstreamPlugin, SlipstreamPluginManager};
 pub use snarkvm_slipstream_plugin_interface::{BroadcastEvent, BroadcastEventKind};
