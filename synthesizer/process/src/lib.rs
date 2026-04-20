@@ -105,8 +105,8 @@ pub struct Process<N: Network> {
     universal_srs: UniversalSRS<N>,
     /// The mapping of program IDs to stacks.
     stacks: Arc<RwLock<IndexMap<ProgramID<N>, Arc<Stack<N>>>>>,
-    /// The mapping of program IDs to new, pending stacks.
-    new_stacks: RwLock<IndexMap<ProgramID<N>, Arc<Stack<N>>>>,
+    /// The mapping of program IDs to old stacks.
+    old_stacks: RwLock<IndexMap<ProgramID<N>, Option<Arc<Stack<N>>>>>,
     /// A lock guarding the entire Process in case no concurrent reads or writes
     /// on the object are to be permitted.
     lock: Mutex<()>,
@@ -136,34 +136,46 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
     }
 
     /// Stages a stack to be added to the process.
-    /// The new stack is pending in `new_stacks`.
+    /// The new stack is active, while the old stack is retained in `old_stacks`.
     /// The `commit_stacks` method must be called to finalize the addition of the new stack.
-    /// The `cancel_staged_stacks` method can be called to revert the staged stacks.
+    /// The `revert_stacks` method can be called to revert the staged stacks.
     #[inline]
     pub fn stage_stack(&self, stack: Stack<N>) {
         // Get the program ID.
         let program_id = *stack.program_id();
         // Arc the stack first to limit the scope of the write lock.
         let stack = Arc::new(stack);
-        self.process.new_stacks.write().insert(program_id, stack);
-    }
-
-    /// Commits the staged stacks to the process.
-    /// This finalizes the addition of the new stacks.
-    #[inline]
-    pub fn commit_stacks(&self) {
-        let mut new_stacks = self.process.new_stacks.write();
-        let mut stacks = self.process.stacks.write();
-        // Move the pending new stacks to the current stacks.
-        for (program_id, stack) in new_stacks.drain(..) {
-            stacks.insert(program_id, stack);
+        // If no entry in `old_stacks` exists for `program_id`, store the old stack.
+        // Note: If `old_stack` is `None`, it means that we are adding a new program to the process.
+        let old_stack = self.process.stacks.write().insert(program_id, stack);
+        let mut old_stacks = self.process.old_stacks.write();
+        if !old_stacks.contains_key(&program_id) {
+            old_stacks.insert(program_id, old_stack);
         }
     }
 
-    /// Removes the staged stacks.
+    /// Commits the staged stacks to the process.
+    /// This finalizes the addition of the new stacks and clears the old stacks.
     #[inline]
-    pub fn cancel_staged_stacks(&self) {
-        self.process.new_stacks.write().clear();
+    pub fn commit_stacks(&self) {
+        // Clear the old stacks.
+        self.process.old_stacks.write().clear();
+    }
+
+    /// Reverts the staged stacks, restoring the previous state of the process.
+    /// This will remove the new stacks and restore the old stacks.
+    #[inline]
+    pub fn revert_stacks(&self) {
+        // Restore the old stacks.
+        for (program_id, stack) in self.process.old_stacks.write().drain(..) {
+            // If the stack is `None`, remove the program from the process.
+            // Otherwise, insert the old stack back into the process.
+            if let Some(stack) = stack {
+                self.process.stacks.write().insert(program_id, stack);
+            } else {
+                self.process.stacks.write().shift_remove(&program_id);
+            }
+        }
     }
 
     /// Adds a new program to the process, verifying that it is a valid addition.
@@ -206,7 +218,7 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
         let credits_program_id = ProgramID::<N>::from_str("credits.aleo")?;
         // Defer cleanup of the uncommitted stacks.
         defer! {
-            self.cancel_staged_stacks()
+            self.revert_stacks()
         }
         // Initialize raw stacks for each of the programs, skipping `credits.aleo`.
         for (program, edition) in programs {
@@ -263,7 +275,7 @@ impl<N: Network> Process<N> {
         let process = Self {
             universal_srs: UniversalSRS::load()?,
             stacks: Default::default(),
-            new_stacks: Default::default(),
+            old_stacks: Default::default(),
             lock: Default::default(),
         };
         lap!(timer, "Initialize process");
@@ -346,7 +358,7 @@ impl<N: Network> Process<N> {
         let process = Self {
             universal_srs: UniversalSRS::load()?,
             stacks: Default::default(),
-            new_stacks: Default::default(),
+            old_stacks: Default::default(),
             lock: Default::default(),
         };
         lap!(timer, "Initialize process");
@@ -390,7 +402,7 @@ impl<N: Network> Process<N> {
         let process = Self {
             universal_srs: UniversalSRS::load()?,
             stacks: Default::default(),
-            new_stacks: Default::default(),
+            old_stacks: Default::default(),
             lock: Default::default(),
         };
         lap!(timer, "Initialize process");
@@ -433,7 +445,7 @@ impl<N: Network> Process<N> {
         let process = Self {
             universal_srs: UniversalSRS::load()?,
             stacks: Default::default(),
-            new_stacks: Default::default(),
+            old_stacks: Default::default(),
             lock: Default::default(),
         };
 
