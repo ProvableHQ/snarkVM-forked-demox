@@ -37,21 +37,9 @@ pub enum BroadcastEventKind {
 #[derive(Copy, Clone, Debug)]
 pub enum BroadcastEvent<'a> {
     /// A mapping key-value pair was inserted or updated during canonical finalize.
-    MappingUpdate {
-        program_id: &'a [u8],
-        mapping_name: &'a [u8],
-        key: &'a [u8],
-        value: &'a [u8],
-        block_height: u32,
-    },
+    MappingUpdate { program_id: &'a [u8], mapping_name: &'a [u8], key: &'a [u8], value: &'a [u8], block_height: u32 },
     /// A staking reward was distributed to a staker during canonical finalize.
-    StakingReward {
-        staker: &'a [u8],
-        validator: &'a [u8],
-        reward: u64,
-        new_stake: u64,
-        block_height: u32,
-    },
+    StakingReward { staker: &'a [u8], validator: &'a [u8], reward: u64, new_stake: u64, block_height: u32 },
 }
 
 impl BroadcastEvent<'_> {
