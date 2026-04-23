@@ -14,7 +14,9 @@
 // limitations under the License.
 
 use snarkvm_slipstream_plugin_interface::slipstream_plugin_interface::{
-    BroadcastEvent, BroadcastEventKind, SlipstreamPlugin,
+    BroadcastEvent,
+    BroadcastEventKind,
+    SlipstreamPlugin,
 };
 
 use libloading::Library;
@@ -380,11 +382,17 @@ pub(crate) fn load_plugin_from_config(
 #[cfg(test)]
 mod tests {
     use crate::slipstream_manager::{
-        LoadedPlugin, LoadedSlipstreamPlugin, SlipstreamPluginManager, TESTPLUGIN_CONFIG, TESTPLUGIN2_CONFIG,
+        LoadedPlugin,
+        LoadedSlipstreamPlugin,
+        SlipstreamPluginManager,
+        TESTPLUGIN_CONFIG,
+        TESTPLUGIN2_CONFIG,
     };
     use libloading::Library;
     use snarkvm_slipstream_plugin_interface::slipstream_plugin_interface::{
-        BroadcastEvent, BroadcastEventKind, SlipstreamPlugin,
+        BroadcastEvent,
+        BroadcastEventKind,
+        SlipstreamPlugin,
     };
     use std::{
         path::PathBuf,
