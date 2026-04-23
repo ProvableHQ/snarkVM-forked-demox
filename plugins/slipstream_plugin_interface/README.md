@@ -14,19 +14,19 @@ Defines the `SlipstreamPlugin` trait — the interface all plugins must implemen
 | Method | Description |
 |---|---|
 | `on_load` / `on_unload` | Lifecycle hooks |
-| `notify_mapping_update` | Called when a mapping key-value is inserted/updated during canonical finalize; args are serialized to bytes for object-safety |
-| `notify_staking_reward` | Called once per staker per block during staking reward distribution |
-| `history_enabled` / `history_staking_rewards_enabled` | Flags plugins use to opt in to data streams |
+| `subscribed_events` | Returns the event types a plugin subscribes to |
+| `on_broadcast` | Called once per mapping (if the event kind is in the subscribed list), broadcasts the event to the plugin|
 
 ### `plugins/slipstream_plugin_manager`
 Manages loaded plugins and their backing `libloading::Library` handles.
 
 - **`LoadedSlipstreamPlugin`** — wrapper holding a boxed plugin + its name; implements `Deref`/`DerefMut`
 - **`SlipstreamPluginManager`**
+  - `from_config_files` - takes a vec of paths to plugin config files and loads them into the manager
   - `unload()` — fires `on_unload()` on each plugin then drops the libraries
-  - `history_mappings_enabled()` / `history_staking_rewards_enabled()` — aggregate opt-in checks
-  - `notify_mapping_update()` — fan-out broadcast to all interested plugins
-- **`SlipstreamService`** — async service wrapping the manager (separate file)
+  - `any_plugin_subscribes()` — aggregate opt-in checks
+  - `broadcast()` — fan-out broadcast to all interested plugins
+  - `list_plugins()` - return the names of all loaded plugins
 
 ---
 
@@ -56,11 +56,11 @@ pub extern "C" fn _create_plugin() -> *mut dyn SlipstreamPlugin {
 
 ## Startup
 
-`SlipstreamPluginService::new()` takes a slice of config file paths:
+`SlipstreamPluginManager::from_config_files()` takes a slice of config file paths and returns a manager object:
 ```rust
-let service = SlipstreamPluginService::new(&[
+let manager = SlipstreamPluginManager::from_config_files(&[
     PathBuf::from("/etc/aleo/plugins/my_plugin.json5"),
 ])?;
 ```
 
-> Errors from plugin callbacks (`notify_mapping_update`, `notify_staking_reward`) are logged as warnings and never propagated — a misbehaving plugin will not crash the node.
+> Errors from plugin callbacks (`on_broadcast`) are logged as warnings and never propagated — a misbehaving plugin will not crash the node.
