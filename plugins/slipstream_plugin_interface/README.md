@@ -1,10 +1,13 @@
 # Aleo Slipstream Plugin Interface
 
-This crate enables a plugin to be added into a SnarkVM runtime to
-take actions at the time of mapping updates at block finalization;
-for example, saving historical mappings state and staking data to an external database. The plugin must
-implement the `SlipstreamPlugin` trait. Please see the details of the
-`slipstream_plugin_interface.rs` for the interface definition.
+This crate enables a plugin to be added into a SnarkVM runtime to take actions at the time of
+mapping updates at block finalization; for example, saving historical mapping state and staking
+data to an external database. The plugin must implement the `SlipstreamPlugin` trait. See
+`slipstream_plugin_interface.rs` for the full interface definition.
+
+> **Feature flag:** compile with `--features slipstream-plugins` to enable plugin support.
+> Plugin callbacks fire only during **canonical finalize** — speculative and dry-run executions
+> are never observed by plugins.
 
 # Components
 
@@ -13,20 +16,21 @@ Defines the `SlipstreamPlugin` trait — the interface all plugins must implemen
 
 | Method | Description |
 |---|---|
-| `on_load` / `on_unload` | Lifecycle hooks |
-| `subscribed_events` | Returns the event types a plugin subscribes to |
-| `on_broadcast` | Called once per mapping (if the event kind is in the subscribed list), broadcasts the event to the plugin|
+| `on_load` / `on_unload` | Lifecycle hooks called on startup and shutdown |
+| `subscribed_events` | Returns the event types a plugin subscribes to. Defaults to `&[]` — a plugin that does not override this method receives **no callbacks**. |
+| `on_broadcast` | Called once per key-value update (and once per entry in a `replace_mapping` batch). Only fires for event kinds in the subscribed list. |
 
 ### `plugins/slipstream_plugin_manager`
 Manages loaded plugins and their backing `libloading::Library` handles.
 
 - **`LoadedSlipstreamPlugin`** — wrapper holding a boxed plugin + its name; implements `Deref`/`DerefMut`
 - **`SlipstreamPluginManager`**
-  - `from_config_files` - takes a vec of paths to plugin config files and loads them into the manager
-  - `unload()` — fires `on_unload()` on each plugin then drops the libraries
-  - `any_plugin_subscribes()` — aggregate opt-in checks
+  - `from_config_files` — takes a slice of config file paths and loads one plugin per file
+  - `load_plugin(path)` / `unload_plugin(name)` — load or unload a single plugin at runtime
+  - `unload()` — fires `on_unload()` on every plugin then drops the libraries; field declaration order guarantees all plugin code finishes executing before the backing `.so` is unmapped
+  - `any_plugin_subscribes()` — aggregate opt-in check; used internally to skip serialization when no plugin is interested in an event kind
   - `broadcast()` — fan-out broadcast to all interested plugins
-  - `list_plugins()` - return the names of all loaded plugins
+  - `list_plugins()` — returns the names of all loaded plugins
 
 ---
 
@@ -54,13 +58,34 @@ pub extern "C" fn _create_plugin() -> *mut dyn SlipstreamPlugin {
 
 ---
 
+## Broadcast Event Format
+
+All byte-slice fields in `BroadcastEvent` are serialized in **little-endian** format (via
+`to_bytes_le()`). Plugin implementations must deserialize accordingly.
+
+---
+
 ## Startup
 
-`SlipstreamPluginManager::from_config_files()` takes a slice of config file paths and returns a manager object:
+`SlipstreamPluginManager::from_config_files()` takes a slice of config file paths and returns a
+manager object. Install it into the `FinalizeStore` before the node begins processing blocks:
+
 ```rust
 let manager = SlipstreamPluginManager::from_config_files(&[
     PathBuf::from("/etc/aleo/plugins/my_plugin.json5"),
 ])?;
+finalize_store.set_slipstream_plugin_manager(manager);
+```
+
+## Shutdown
+
+Call `manager.unload()` during graceful shutdown before aborting tasks. This fires `on_unload()`
+on every plugin — the right place for flushing buffers, closing connections, etc.:
+
+```rust
+if let Some(manager) = finalize_store.slipstream_plugin_manager().write().as_mut() {
+    manager.unload();
+}
 ```
 
 > Errors from plugin callbacks (`on_broadcast`) are logged as warnings and never propagated — a misbehaving plugin will not crash the node.
