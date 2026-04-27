@@ -28,7 +28,7 @@ Manages loaded plugins and their backing `libloading::Library` handles.
   - `from_config_files` — takes a slice of config file paths and loads one plugin per file
   - `load_plugin(path)` / `unload_plugin(name)` — load or unload a single plugin at runtime
   - `unload()` — fires `on_unload()` on every plugin then drops the libraries; field declaration order guarantees all plugin code finishes executing before the backing `.so` is unmapped
-  - `any_plugin_subscribes()` — aggregate opt-in check; used internally to skip serialization when no plugin is interested in an event kind
+  - `has_subscribers()` — aggregate opt-in check; used internally to skip serialization when no plugin is interested in an event kind
   - `broadcast()` — fan-out broadcast to all interested plugins
   - `list_plugins()` — returns the names of all loaded plugins
 

@@ -807,7 +807,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
 
         let spm_guard = self.slipstream_plugin_manager.read();
         if let Some(mgr) = spm_guard.as_ref() {
-            if mgr.any_plugin_subscribes(BroadcastEventKind::StakingReward) {
+            if mgr.has_subscribers(BroadcastEventKind::StakingReward) {
                 // Address serializes to a fixed 32-byte array; this cannot fail.
                 let staker_bytes = staker.to_bytes_le().expect("Address::to_bytes_le is infallible");
                 let validator_bytes = validator.to_bytes_le().expect("Address::to_bytes_le is infallible");
@@ -940,7 +940,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for FinalizeStore<
         let plugin_data = if self.is_finalize_mode.load(Ordering::SeqCst) {
             let spm_guard = self.slipstream_plugin_manager.read();
             if let Some(mgr) = spm_guard.as_ref() {
-                if mgr.any_plugin_subscribes(BroadcastEventKind::MappingUpdate) {
+                if mgr.has_subscribers(BroadcastEventKind::MappingUpdate) {
                     Some((
                         program_id.to_bytes_le()?,
                         mapping_name.to_bytes_le()?,
@@ -1013,7 +1013,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         let plugin_data: Option<SerializedMappingEntries> = if self.is_finalize_mode.load(Ordering::SeqCst) {
             let spm_guard = self.slipstream_plugin_manager.read();
             if let Some(mgr) = spm_guard.as_ref() {
-                if mgr.any_plugin_subscribes(BroadcastEventKind::MappingUpdate) {
+                if mgr.has_subscribers(BroadcastEventKind::MappingUpdate) {
                     let mut entries_bytes = Vec::with_capacity(entries.len());
                     for (key, value) in &entries {
                         entries_bytes.push((key.to_bytes_le()?, value.to_bytes_le()?));

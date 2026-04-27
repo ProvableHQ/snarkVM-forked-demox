@@ -114,7 +114,7 @@ impl SlipstreamPluginManager {
     ///
     /// Used as a pre-serialization guard: callers skip expensive byte serialization
     /// when no plugin would receive the resulting event.
-    pub fn any_plugin_subscribes(&self, kind: BroadcastEventKind) -> bool {
+    pub fn has_subscribers(&self, kind: BroadcastEventKind) -> bool {
         self.plugins.iter().any(|p| p.plugin.subscribed_events().contains(&kind))
     }
 
