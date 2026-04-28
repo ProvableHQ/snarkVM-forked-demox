@@ -169,6 +169,28 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let mut execution_stacks: IndexMap<ProgramID<N>, Arc<Stack<N>>> = IndexMap::new();
         for transition in transaction.transitions() {
             let stack = self.process.read().get_stack(transition.program_id())?;
+
+            // Perform a check relevant to the V8 migration on the execution.
+            // TODO: this can be pruned in the future with an appropriate documentation strategy.
+            // Get the program ID.
+            let program_id = *stack.program_id();
+            // Get the program edition.
+            let edition = stack.program_edition();
+            // If the consensus version is V8 or greater and any of the component programs (except for `credits.aleo`)
+            //   - have edition 0
+            //   - and the program does not have a constructor.
+            // then fail.
+            if consensus_version >= ConsensusVersion::V8
+                && program_id != ProgramID::from_str("credits.aleo")?
+                && edition.is_zero()
+                && !stack.program().contains_constructor()
+            {
+                bail!(
+                    "Invalid transaction '{}' - the program edition for '{program_id}' cannot be zero for `ConsensusVersion::V8` or greater. Please redeploy the program.",
+                    transaction.id()
+                );
+            }
+
             execution_stacks.insert(*transition.program_id(), stack);
         }
 
