@@ -96,7 +96,9 @@ impl<T: Clone + Debug + ToBytes + FromBytes + PartialEq + Eq + Sync + Send, cons
     /// Reads in a bech32m string.
     #[inline]
     fn from_str(string: &str) -> Result<Self, Self::Err> {
-        let (hrp, data) = bech32::decode(string)?;
+        let checked = bech32::primitives::decode::CheckedHrpstring::new::<LongBech32m>(string)?;
+        let hrp = checked.hrp();
+        let data: Vec<u8> = checked.byte_iter().collect();
         if hrp.as_bytes() != PREFIX.to_le_bytes() {
             bail!("Invalid prefix for a bech32m hash: {hrp}")
         };
@@ -112,7 +114,7 @@ impl<T: Clone + Debug + ToBytes + FromBytes + PartialEq + Eq + Sync + Send, cons
 {
     #[inline]
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        bech32::encode_to_fmt::<bech32::Bech32m, _>(
+        bech32::encode_to_fmt::<LongBech32m, _>(
             f,
             bech32::Hrp::parse_unchecked(&Self::prefix()),
             &self.0.to_bytes_le().expect("Failed to write data as bytes"),

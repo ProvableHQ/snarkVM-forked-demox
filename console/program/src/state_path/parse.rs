@@ -40,7 +40,9 @@ impl<N: Network> FromStr for StatePath<N> {
     /// Reads in the state path string.
     fn from_str(state_path: &str) -> Result<Self, Self::Err> {
         // Decode the state path string from bech32m.
-        let (hrp, data) = bech32::decode(state_path)?;
+        let checked = bech32::primitives::decode::CheckedHrpstring::new::<LongBech32m>(state_path)?;
+        let hrp = checked.hrp();
+        let data: Vec<u8> = checked.byte_iter().collect();
         if hrp.as_str() != STATE_PATH_PREFIX {
             bail!("Failed to decode state path: '{hrp}' is an invalid prefix")
         } else if data.is_empty() {
@@ -63,7 +65,7 @@ impl<N: Network> Display for StatePath<N> {
         // Convert the state path to bytes.
         let bytes = self.to_bytes_le().map_err(|_| fmt::Error)?;
         // Encode the bytes into bech32m.
-        let string = bech32::encode::<bech32::Bech32m>(bech32::Hrp::parse_unchecked(STATE_PATH_PREFIX), &bytes)
+        let string = bech32::encode::<LongBech32m>(bech32::Hrp::parse_unchecked(STATE_PATH_PREFIX), &bytes)
             .map_err(|_| fmt::Error)?;
         // Output the string.
         Display::fmt(&string, f)

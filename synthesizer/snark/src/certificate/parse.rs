@@ -40,7 +40,9 @@ impl<N: Network> FromStr for Certificate<N> {
     /// Reads in the certificate string.
     fn from_str(certificate: &str) -> Result<Self, Self::Err> {
         // Decode the certificate string from bech32m.
-        let (hrp, data) = bech32::decode(certificate)?;
+        let checked = bech32::primitives::decode::CheckedHrpstring::new::<LongBech32m>(certificate)?;
+        let hrp = checked.hrp();
+        let data: Vec<u8> = checked.byte_iter().collect();
         if hrp.as_str() != VK_CERTIFICATE_PREFIX {
             bail!("Failed to decode certificate: '{hrp}' is an invalid prefix")
         } else if data.is_empty() {
@@ -63,7 +65,7 @@ impl<N: Network> Display for Certificate<N> {
         // Convert the certificate to bytes.
         let bytes = self.to_bytes_le().map_err(|_| fmt::Error)?;
         // Encode the bytes into bech32m.
-        let string = bech32::encode::<bech32::Bech32m>(bech32::Hrp::parse_unchecked(VK_CERTIFICATE_PREFIX), &bytes)
+        let string = bech32::encode::<LongBech32m>(bech32::Hrp::parse_unchecked(VK_CERTIFICATE_PREFIX), &bytes)
             .map_err(|_| fmt::Error)?;
         // Output the string.
         Display::fmt(&string, f)

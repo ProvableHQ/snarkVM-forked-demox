@@ -38,7 +38,9 @@ impl<N: Network> FromStr for Proof<N> {
     /// Reads in the proof string.
     fn from_str(proof: &str) -> Result<Self, Self::Err> {
         // Decode the proof string from bech32m.
-        let (hrp, data) = bech32::decode(proof)?;
+        let checked = bech32::primitives::decode::CheckedHrpstring::new::<LongBech32m>(proof)?;
+        let hrp = checked.hrp();
+        let data: Vec<u8> = checked.byte_iter().collect();
         if hrp.as_str() != PROOF_PREFIX {
             bail!("Failed to decode proof: '{hrp}' is an invalid prefix")
         } else if data.is_empty() {
@@ -61,7 +63,7 @@ impl<N: Network> Display for Proof<N> {
         // Convert the proof to bytes.
         let bytes = self.to_bytes_le().map_err(|_| fmt::Error)?;
         // Encode the bytes into bech32m.
-        let string = bech32::encode::<bech32::Bech32m>(bech32::Hrp::parse_unchecked(PROOF_PREFIX), &bytes)
+        let string = bech32::encode::<LongBech32m>(bech32::Hrp::parse_unchecked(PROOF_PREFIX), &bytes)
             .map_err(|_| fmt::Error)?;
         // Output the string.
         Display::fmt(&string, f)

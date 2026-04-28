@@ -40,7 +40,9 @@ impl<N: Network> FromStr for Signature<N> {
     /// Reads in the signature string.
     fn from_str(signature: &str) -> Result<Self, Self::Err> {
         // Decode the signature string from bech32m.
-        let (hrp, data) = bech32::decode(signature)?;
+        let checked = bech32::primitives::decode::CheckedHrpstring::new::<LongBech32m>(signature)?;
+        let hrp = checked.hrp();
+        let data: Vec<u8> = checked.byte_iter().collect();
         if hrp.as_str() != SIGNATURE_PREFIX {
             bail!("Failed to decode signature: '{hrp}' is an invalid prefix")
         } else if data.is_empty() {
@@ -63,7 +65,7 @@ impl<N: Network> Display for Signature<N> {
         // Convert the signature to bytes.
         let bytes = self.to_bytes_le().map_err(|_| fmt::Error)?;
         // Encode the bytes into bech32m.
-        let string = bech32::encode::<bech32::Bech32m>(bech32::Hrp::parse_unchecked(SIGNATURE_PREFIX), &bytes)
+        let string = bech32::encode::<LongBech32m>(bech32::Hrp::parse_unchecked(SIGNATURE_PREFIX), &bytes)
             .map_err(|_| fmt::Error)?;
         // Output the string.
         Display::fmt(&string, f)

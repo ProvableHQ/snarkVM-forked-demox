@@ -44,7 +44,9 @@ impl<E: Environment> FromStr for Address<E> {
             bail!("Invalid account address length: found {}, expected 63", address.len())
         }
         // Decode the address string from bech32m.
-        let (hrp, data) = bech32::decode(address)?;
+        let checked = bech32::primitives::decode::CheckedHrpstring::new::<LongBech32m>(address)?;
+        let hrp = checked.hrp();
+        let data: Vec<u8> = checked.byte_iter().collect();
         if hrp.as_str() != ADDRESS_PREFIX {
             bail!("Failed to decode address: '{hrp}' is an invalid prefix")
         } else if data.is_empty() {
@@ -67,7 +69,7 @@ impl<E: Environment> Display for Address<E> {
         // Convert the address to bytes.
         let bytes = self.to_bytes_le().map_err(|_| fmt::Error)?;
         // Encode the bytes into bech32m.
-        let string = bech32::encode::<bech32::Bech32m>(bech32::Hrp::parse_unchecked(ADDRESS_PREFIX), &bytes)
+        let string = bech32::encode::<LongBech32m>(bech32::Hrp::parse_unchecked(ADDRESS_PREFIX), &bytes)
             .map_err(|_| fmt::Error)?;
         // Output the string.
         Display::fmt(&string, f)

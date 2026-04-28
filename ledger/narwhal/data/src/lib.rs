@@ -189,7 +189,7 @@ impl<T: FromBytes + ToBytes + Serialize + Send + 'static> Serialize for Data<T> 
 
                         // Encode to bech32m.
                         let buffer =
-                            bech32::encode::<bech32::Bech32m>(bech32::Hrp::parse_unchecked(PREFIX), buffer.as_ref())
+                            bech32::encode::<LongBech32m>(bech32::Hrp::parse_unchecked(PREFIX), buffer.as_ref())
                                 .map_err(|_| S::Error::custom("Failed to encode data into bech32m"))?;
 
                         // Add the bech32m string.
@@ -222,7 +222,10 @@ impl<'de, T: FromBytes + ToBytes + DeserializeOwned + Send + 'static> Deserializ
                         let encoding: String = DeserializeExt::take_from_value::<D>(&mut data, "data")?;
 
                         // Decode from bech32m.
-                        let (hrp, data) = bech32::decode(&encoding).map_err(de::Error::custom)?;
+                        let checked = bech32::primitives::decode::CheckedHrpstring::new::<LongBech32m>(&encoding)
+                            .map_err(de::Error::custom)?;
+                        let hrp = checked.hrp();
+                        let data: Vec<u8> = checked.byte_iter().collect();
                         if hrp.as_str() != PREFIX {
                             return Err(de::Error::custom(error(format!("Invalid data HRP - {hrp}"))));
                         };

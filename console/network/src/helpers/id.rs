@@ -126,7 +126,9 @@ impl<F: FieldTrait, const PREFIX: u16> FromStr for AleoID<F, PREFIX> {
             bail!("Invalid byte size for a bech32m hash: {} bytes", string.len())
         }
 
-        let (hrp, data) = bech32::decode(string)?;
+        let checked = bech32::primitives::decode::CheckedHrpstring::new::<LongBech32m>(string)?;
+        let hrp = checked.hrp();
+        let data: Vec<u8> = checked.byte_iter().collect();
         if hrp.as_bytes() != PREFIX.to_le_bytes() {
             bail!("Invalid prefix for a bech32m hash: {hrp}")
         };
@@ -140,7 +142,7 @@ impl<F: FieldTrait, const PREFIX: u16> FromStr for AleoID<F, PREFIX> {
 impl<F: FieldTrait, const PREFIX: u16> Display for AleoID<F, PREFIX> {
     #[inline]
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        bech32::encode_to_fmt::<bech32::Bech32m, _>(
+        bech32::encode_to_fmt::<LongBech32m, _>(
             f,
             bech32::Hrp::parse_unchecked(&Self::prefix()),
             &self.0.to_bytes_le().expect("Failed to write data as bytes"),

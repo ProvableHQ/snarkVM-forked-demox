@@ -23,7 +23,9 @@ impl<N: Network> FromStr for SolutionID<N> {
     /// Reads in the solution ID string.
     fn from_str(solution_id: &str) -> Result<Self, Self::Err> {
         // Decode the solution ID string from bech32m.
-        let (hrp, data) = bech32::decode(solution_id)?;
+        let checked = bech32::primitives::decode::CheckedHrpstring::new::<LongBech32m>(solution_id)?;
+        let hrp = checked.hrp();
+        let data: Vec<u8> = checked.byte_iter().collect();
         if hrp.as_str() != SOLUTION_ID_PREFIX {
             bail!("Failed to decode solution ID: '{hrp}' is an invalid prefix")
         } else if data.is_empty() {
@@ -46,7 +48,7 @@ impl<N: Network> Display for SolutionID<N> {
         // Convert the solution ID to bytes.
         let bytes = self.to_bytes_le().map_err(|_| fmt::Error)?;
         // Encode the bytes into bech32m.
-        let string = bech32::encode::<bech32::Bech32m>(bech32::Hrp::parse_unchecked(SOLUTION_ID_PREFIX), &bytes)
+        let string = bech32::encode::<LongBech32m>(bech32::Hrp::parse_unchecked(SOLUTION_ID_PREFIX), &bytes)
             .map_err(|_| fmt::Error)?;
         // Output the string.
         Display::fmt(&string, f)
