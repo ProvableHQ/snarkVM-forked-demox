@@ -41,6 +41,11 @@ pub use function::*;
 mod import;
 pub use import::*;
 
+pub mod query;
+pub use query::QueryCore;
+
+pub type Query<N> = crate::QueryCore<N>;
+
 pub mod logic;
 pub use logic::*;
 
@@ -145,6 +150,8 @@ enum ProgramDefinition {
     Closure,
     /// A program function.
     Function,
+    /// A program query function.
+    Query,
 }
 
 #[derive(Clone)]
@@ -167,6 +174,8 @@ pub struct ProgramCore<N: Network> {
     closures: IndexMap<Identifier<N>, ClosureCore<N>>,
     /// A map of the declared functions for the program.
     functions: IndexMap<Identifier<N>, FunctionCore<N>>,
+    /// A map of the declared query functions for the program.
+    queries: IndexMap<Identifier<N>, QueryCore<N>>,
 }
 
 impl<N: Network> PartialEq for ProgramCore<N> {
@@ -191,6 +200,7 @@ impl<N: Network> PartialEq for ProgramCore<N> {
             && self.records == other.records
             && self.closures == other.closures
             && self.functions == other.functions
+            && self.queries == other.queries
     }
 }
 
@@ -251,6 +261,7 @@ impl<N: Network> ProgramCore<N> {
         "value",
         "async",
         "finalize",
+        "query",
         // Reserved (catch all)
         "global",
         "block",
@@ -301,6 +312,7 @@ impl<N: Network> ProgramCore<N> {
             records: IndexMap::new(),
             closures: IndexMap::new(),
             functions: IndexMap::new(),
+            queries: IndexMap::new(),
         })
     }
 
@@ -350,6 +362,11 @@ impl<N: Network> ProgramCore<N> {
         &self.functions
     }
 
+    /// Returns the query functions in the program.
+    pub const fn queries(&self) -> &IndexMap<Identifier<N>, QueryCore<N>> {
+        &self.queries
+    }
+
     /// Returns `true` if the program contains an import with the given program ID.
     pub fn contains_import(&self, id: &ProgramID<N>) -> bool {
         self.imports.contains_key(id)
@@ -383,6 +400,11 @@ impl<N: Network> ProgramCore<N> {
     /// Returns `true` if the program contains a function with the given name.
     pub fn contains_function(&self, name: &Identifier<N>) -> bool {
         self.functions.contains_key(name)
+    }
+
+    /// Returns `true` if the program contains a query function with the given name.
+    pub fn contains_query(&self, name: &Identifier<N>) -> bool {
+        self.queries.contains_key(name)
     }
 
     /// Returns the mapping with the given name.
@@ -459,6 +481,21 @@ impl<N: Network> ProgramCore<N> {
         ensure!(function.outputs().len() <= N::MAX_OUTPUTS, "Function exceeds maximum number of outputs");
         // Return the function.
         Ok(function)
+    }
+
+    /// Returns the query function with the given name.
+    pub fn get_query(&self, name: &Identifier<N>) -> Result<QueryCore<N>> {
+        self.get_query_ref(name).cloned()
+    }
+
+    /// Returns a reference to the query function with the given name.
+    pub fn get_query_ref(&self, name: &Identifier<N>) -> Result<&QueryCore<N>> {
+        let query = self.queries.get(name).ok_or(anyhow!("Query '{}/{name}' is not defined.", self.id))?;
+        ensure!(query.name() == name, "Expected query '{name}', but found query '{}'", query.name());
+        ensure!(query.inputs().len() <= N::MAX_INPUTS, "Query exceeds maximum number of inputs");
+        ensure!(query.commands().len() <= N::MAX_COMMANDS, "Query exceeds maximum number of commands");
+        ensure!(query.outputs().len() <= N::MAX_OUTPUTS, "Query exceeds maximum number of outputs");
+        Ok(query)
     }
 
     /// Adds a new import statement to the program.
@@ -793,6 +830,37 @@ impl<N: Network> ProgramCore<N> {
         // Add the function to the program.
         if self.functions.insert(function_name, function).is_some() {
             bail!("'{function_name}' already exists in the program.")
+        }
+        Ok(())
+    }
+
+    /// Adds a new query function to the program.
+    ///
+    /// # Errors
+    /// This method will halt if the query function name is already in use in the program.
+    /// This method will halt if the query function name is a reserved opcode or keyword.
+    #[inline]
+    fn add_query(&mut self, query: QueryCore<N>) -> Result<()> {
+        let query_name = *query.name();
+
+        // Reuse the closure cap as the prototype budget for query functions.
+        ensure!(self.queries.len() < N::MAX_CLOSURES, "Program exceeds the maximum number of query functions.");
+
+        ensure!(self.is_unique_name(&query_name), "'{query_name}' is already in use.");
+        ensure!(!Self::is_reserved_opcode(&query_name.to_string()), "'{query_name}' is a reserved opcode.");
+        ensure!(!Self::is_reserved_keyword(&query_name), "'{query_name}' is a reserved keyword.");
+
+        // Queries must have at least one command and at least one output.
+        ensure!(!query.commands().is_empty(), "Cannot evaluate a query function without commands");
+        ensure!(!query.outputs().is_empty(), "A query function must declare at least one output");
+        ensure!(query.inputs().len() <= N::MAX_INPUTS, "Query exceeds maximum number of inputs");
+        ensure!(query.outputs().len() <= N::MAX_OUTPUTS, "Query exceeds maximum number of outputs");
+
+        if self.components.insert(ProgramLabel::Identifier(query_name), ProgramDefinition::Query).is_some() {
+            bail!("'{query_name}' already exists in the program.")
+        }
+        if self.queries.insert(query_name, query).is_some() {
+            bail!("'{query_name}' already exists in the program.")
         }
         Ok(())
     }

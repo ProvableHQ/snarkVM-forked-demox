@@ -302,6 +302,31 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         self.store.transaction_store()
     }
 
+    /// Evaluates a query function in the program identified by `program_id` against the
+    /// VM's current finalize state. Returns the typed outputs.
+    ///
+    /// This is the most ergonomic call site for query functions: the caller supplies only the
+    /// program ID, query name, and inputs. The block height, finalize store, and stack are all
+    /// resolved from the VM. Queries are a node-local lookup; no transaction is produced.
+    #[inline]
+    pub fn evaluate_query(
+        &self,
+        program_id: impl TryInto<ProgramID<N>>,
+        query_name: impl TryInto<Identifier<N>>,
+        inputs: Vec<Value<N>>,
+    ) -> Result<Vec<Value<N>>> {
+        // Bind the query to the current finalize state. Prototype queries do not depend on the
+        // seed material, so a zero previous-block-hash is acceptable here; matches the pattern
+        // used by `sample_finalize_state` in the test helpers.
+        let block_height = self.block_store().current_block_height();
+        let block_round = block_height as u64;
+        let state = FinalizeGlobalState::from(block_round, block_height, None, [0u8; 32]);
+
+        // Delegate to `Process::evaluate_query`.
+        let process = self.process.read();
+        process.evaluate_query(state, self.finalize_store(), program_id, query_name, inputs)
+    }
+
     /// Returns the transition store.
     #[inline]
     pub fn transition_store(&self) -> &TransitionStore<N, C::TransitionStorage> {

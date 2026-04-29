@@ -36,6 +36,8 @@ mod deploy;
 mod evaluate;
 mod execute;
 mod finalize;
+mod query;
+pub use query::evaluate_query;
 mod verify_deployment;
 mod verify_execution;
 mod verify_fee;
