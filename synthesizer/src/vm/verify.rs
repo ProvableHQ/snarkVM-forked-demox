@@ -164,16 +164,18 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Get the consensus version.
         let consensus_version = N::CONSENSUS_VERSION(current_block_height)?;
 
-        // Fetch all required stacks for transition checks once, and reuse them.
-        // This ensures that the checks we perform are consistent with the cache key we create below.
-        let mut execution_stacks: IndexMap<ProgramID<N>, Arc<Stack<N>>> = IndexMap::new();
-        for transition in transaction.transitions() {
-            let stack = self.process.read().get_stack(transition.program_id())?;
+        // Fetch all required stacks for transition checks once, and reuse them for static import checks.
+        // This is just a partial performance optimization, dynamic calls will fetch fresh Stacks.
+        let execution_stacks = transaction
+            .transitions()
+            .map(|t| Ok((*t.program_id(), self.process.read().get_stack(t.program_id())?)))
+            .collect::<Result<IndexMap<_, _>>>()?;
 
-            // Perform a check relevant to the V8 migration on the execution.
-            // TODO: this can be pruned in the future with an appropriate documentation strategy.
-            // Get the program ID.
-            let program_id = *stack.program_id();
+        // Perform a check relevant to the V8 migration on the execution.
+        // TODO: this can be pruned in the future with an appropriate documentation strategy.
+        // Get the program ID.
+        for stack in execution_stacks.values() {
+            let program_id = stack.program_id();
             // Get the program edition.
             let edition = stack.program_edition();
             // If the consensus version is V8 or greater and any of the component programs (except for `credits.aleo`)
@@ -181,7 +183,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             //   - and the program does not have a constructor.
             // then fail.
             if consensus_version >= ConsensusVersion::V8
-                && program_id != ProgramID::from_str("credits.aleo")?
+                && *program_id != ProgramID::from_str("credits.aleo")?
                 && edition.is_zero()
                 && !stack.program().contains_constructor()
             {
@@ -190,8 +192,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     transaction.id()
                 );
             }
-
-            execution_stacks.insert(*transition.program_id(), stack);
         }
 
         // Construct the transaction checksum.
@@ -677,9 +677,18 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             Transaction::Fee(..) => { /* no-op */ }
         }
 
-        // If the above checks have passed and this is not a fee transaction,
-        // then add the transaction ID to the partially-verified transactions cache.
-        if !matches!(transaction, Transaction::Fee(..)) && !is_partially_verified {
+        // Because the Stacks in the Process may have changed, recreate the cache key.
+        let execution_stacks = transaction
+            .transitions()
+            .map(|t| Ok((*t.program_id(), self.process.read().get_stack(t.program_id())?)))
+            .collect::<Result<IndexMap<_, _>>>()?;
+        let new_cache_key = Self::create_cache_key_with_stacks(transaction, &execution_stacks)?;
+        let cache_key_unchanged = cache_key == new_cache_key;
+
+        // If the above checks have passed, against the same cache key, and this
+        // is not a fee transaction, then add the transaction ID to the
+        // partially-verified transactions cache.
+        if !matches!(transaction, Transaction::Fee(..)) && !is_partially_verified && cache_key_unchanged {
             self.partially_verified_transactions.write().push(cache_key, checksum);
         }
 
