@@ -4016,7 +4016,6 @@ name = "snarkvm-slipstream-plugin-interface"
 version = "4.6.0"
 dependencies = [
  "anyhow",
- "tracing",
 ]
 
 [[package]]
@@ -4026,12 +4025,9 @@ dependencies = [
  "anyhow",
  "json5",
  "libloading",
- "locktick",
- "parking_lot",
  "serde_json",
  "snarkvm-slipstream-plugin-interface",
  "thiserror 2.0.18",
- "tokio",
  "tracing",
 ]
 
