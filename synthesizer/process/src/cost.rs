@@ -1563,7 +1563,7 @@ finalize call_child:
 
         // Build the process with both programs
         let mut process = crate::test_helpers::sample_process(&child_program);
-        process.add_program(&caller_program).unwrap();
+        process.lock().add_program(&caller_program).unwrap();
 
         let function_name = Identifier::from_str("call_child").unwrap();
 
@@ -1736,9 +1736,9 @@ finalize main:
 
         // Build the process with all programs
         let mut process = crate::test_helpers::sample_process(&leaf_program);
-        process.add_program(&level1_a_program).unwrap();
-        process.add_program(&level1_b_program).unwrap();
-        process.add_program(&root_program).unwrap();
+        process.lock().add_program(&level1_a_program).unwrap();
+        process.lock().add_program(&level1_b_program).unwrap();
+        process.lock().add_program(&root_program).unwrap();
 
         let function_name = Identifier::from_str("main").unwrap();
 

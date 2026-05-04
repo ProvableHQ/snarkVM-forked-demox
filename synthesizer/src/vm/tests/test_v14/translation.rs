@@ -1465,7 +1465,7 @@ fn test_differing_keys() {
     // Displaying the keys associated to each translation circuit for easier
     // identification with snark-print
     for program_name in ["program_a.aleo", "program_b.aleo"] {
-        let stack = vm.process().read().get_stack(program_name).unwrap();
+        let stack = vm.process().get_stack(program_name).unwrap();
         println!("{program_name} translation keys:");
         for record_name in ["record_a", "record_b"] {
             let record_identifier = Identifier::<CurrentNetwork>::from_str(record_name).unwrap();

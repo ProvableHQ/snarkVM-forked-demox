@@ -1165,7 +1165,7 @@ function transfer:
     assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
 
     // Construct the process.
-    let mut process = crate::test_helpers::sample_process(&program0);
+    let process = crate::test_helpers::sample_process(&program0);
     // Initialize another program.
     let (string, program1) = Program::<CurrentNetwork>::parse(
         r"
@@ -1188,7 +1188,7 @@ function transfer:
     assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
 
     // Add the program to the process.
-    process.add_program(&program1).unwrap();
+    process.lock().add_program(&program1).unwrap();
 
     // Initialize the RNG.
     let rng = &mut TestRng::default();
@@ -1325,7 +1325,7 @@ finalize compute:
     process.synthesize_key::<CurrentAleo, _>(program.id(), &function_name, rng).unwrap();
 
     // Reset the process.
-    let mut process = Process::load().unwrap();
+    let process = Process::load().unwrap();
 
     // Initialize a new block store.
     let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
@@ -1339,9 +1339,10 @@ finalize compute:
     // Compute the fee.
     let fee = sample_fee::<_, CurrentAleo, _, _>(&process, &block_store, &finalize_store, rng);
     // Finalize the deployment.
-    let (stack, _) = process.finalize_deployment(sample_finalize_state(1), &finalize_store, &deployment, &fee).unwrap();
+    let (stack, _) =
+        process.lock().finalize_deployment(sample_finalize_state(1), &finalize_store, &deployment, &fee).unwrap();
     // Add the stack *manually* to the process.
-    process.add_stack(stack);
+    process.lock().add_stack(stack);
 
     // Initialize a new caller account.
     let caller_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
@@ -1393,7 +1394,7 @@ finalize compute:
     assert_eq!(execution_cost(&process, &execution, ConsensusVersion::V10).unwrap(), expected_execution_cost);
 
     // Now, finalize the execution.
-    process.finalize_execution(sample_finalize_state(1), &finalize_store, &execution, None).unwrap();
+    process.lock().finalize_execution(sample_finalize_state(1), &finalize_store, &execution, None).unwrap();
 
     // Check that the account balance is now 8.
     let candidate = finalize_store
@@ -1450,7 +1451,7 @@ finalize compute:
     process.synthesize_key::<CurrentAleo, _>(program.id(), &function_name, rng).unwrap();
 
     // Reset the process.
-    let mut process = Process::load().unwrap();
+    let process = Process::load().unwrap();
 
     // Initialize a new block store.
     let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
@@ -1464,9 +1465,10 @@ finalize compute:
     // Compute the fee.
     let fee = sample_fee::<_, CurrentAleo, _, _>(&process, &block_store, &finalize_store, rng);
     // Finalize the deployment.
-    let (stack, _) = process.finalize_deployment(sample_finalize_state(1), &finalize_store, &deployment, &fee).unwrap();
+    let (stack, _) =
+        process.lock().finalize_deployment(sample_finalize_state(1), &finalize_store, &deployment, &fee).unwrap();
     // Add the stack *manually* to the process.
-    process.add_stack(stack);
+    process.lock().add_stack(stack);
 
     // Initialize a new caller account.
     let caller_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
@@ -1519,7 +1521,7 @@ finalize compute:
     assert_eq!(execution_cost(&process, &execution, ConsensusVersion::V10).unwrap(), expected_execution_cost);
 
     // Now, finalize the execution.
-    process.finalize_execution(sample_finalize_state(1), &finalize_store, &execution, None).unwrap();
+    process.lock().finalize_execution(sample_finalize_state(1), &finalize_store, &execution, None).unwrap();
 
     // Check that the account balance is now 0.
     let candidate = finalize_store
@@ -1590,7 +1592,7 @@ finalize mint_public:
     process.synthesize_key::<CurrentAleo, _>(program.id(), &function_name, rng).unwrap();
 
     // Reset the process.
-    let mut process = Process::load().unwrap();
+    let process = Process::load().unwrap();
 
     // Initialize a new block store.
     let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
@@ -1604,9 +1606,10 @@ finalize mint_public:
     // Compute the fee.
     let fee = sample_fee::<_, CurrentAleo, _, _>(&process, &block_store, &finalize_store, rng);
     // Finalize the deployment.
-    let (stack, _) = process.finalize_deployment(sample_finalize_state(1), &finalize_store, &deployment, &fee).unwrap();
+    let (stack, _) =
+        process.lock().finalize_deployment(sample_finalize_state(1), &finalize_store, &deployment, &fee).unwrap();
     // Add the stack *manually* to the process.
-    process.add_stack(stack);
+    process.lock().add_stack(stack);
 
     // TODO (howardwu): Remove this. I call this to synthesize the proving key independent of the assignment from 'execute'.
     //  In general, we should update all tests to utilize a presynthesized proving key, before execution, to test
@@ -1663,7 +1666,7 @@ finalize mint_public:
     assert_eq!(execution_cost(&process, &execution, ConsensusVersion::V10).unwrap(), expected_execution_cost);
 
     // Now, finalize the execution.
-    process.finalize_execution(sample_finalize_state(1), &finalize_store, &execution, None).unwrap();
+    process.lock().finalize_execution(sample_finalize_state(1), &finalize_store, &execution, None).unwrap();
 
     // Check the account balance.
     let candidate = finalize_store
@@ -1732,7 +1735,7 @@ finalize mint_public:
     process.synthesize_key::<CurrentAleo, _>(program0.id(), &function_name, rng).unwrap();
 
     // Reset the process.
-    let mut process = Process::load().unwrap();
+    let process = Process::load().unwrap();
 
     // Initialize a new block store.
     let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
@@ -1746,9 +1749,10 @@ finalize mint_public:
     // Compute the fee.
     let fee = sample_fee::<_, CurrentAleo, _, _>(&process, &block_store, &finalize_store, rng);
     // Finalize the deployment.
-    let (stack, _) = process.finalize_deployment(sample_finalize_state(1), &finalize_store, &deployment, &fee).unwrap();
+    let (stack, _) =
+        process.lock().finalize_deployment(sample_finalize_state(1), &finalize_store, &deployment, &fee).unwrap();
     // Add the stack *manually* to the process.
-    process.add_stack(stack);
+    process.lock().add_stack(stack);
 
     // TODO (howardwu): Remove this. I call this to synthesize the proving key independent of the assignment from 'execute'.
     //  In general, we should update all tests to utilize a presynthesized proving key, before execution, to test
@@ -1786,9 +1790,10 @@ finalize init:
     // Compute the fee.
     let fee = sample_fee::<_, CurrentAleo, _, _>(&process, &block_store, &finalize_store, rng);
     // Finalize the deployment.
-    let (stack, _) = process.finalize_deployment(sample_finalize_state(2), &finalize_store, &deployment, &fee).unwrap();
+    let (stack, _) =
+        process.lock().finalize_deployment(sample_finalize_state(2), &finalize_store, &deployment, &fee).unwrap();
     // Add the stack *manually* to the process.
-    process.add_stack(stack);
+    process.lock().add_stack(stack);
 
     // TODO (howardwu): Remove this. I call this to synthesize the proving key independent of the assignment from 'execute'.
     //  In general, we should update all tests to utilize a presynthesized proving key, before execution, to test
@@ -1844,7 +1849,7 @@ finalize init:
     assert_eq!(execution_cost(&process, &execution, ConsensusVersion::V10).unwrap(), expected_execution_cost);
 
     // Now, finalize the execution.
-    process.finalize_execution(sample_finalize_state(1), &finalize_store, &execution, None).unwrap();
+    process.lock().finalize_execution(sample_finalize_state(1), &finalize_store, &execution, None).unwrap();
 
     // Check the account balance.
     let candidate = finalize_store
@@ -1903,7 +1908,7 @@ finalize compute:
     process.synthesize_key::<CurrentAleo, _>(program.id(), &function_name, rng).unwrap();
 
     // Reset the process.
-    let mut process = Process::load().unwrap();
+    let process = Process::load().unwrap();
 
     // Initialize a new block store.
     let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
@@ -1917,9 +1922,10 @@ finalize compute:
     // Compute the fee.
     let fee = sample_fee::<_, CurrentAleo, _, _>(&process, &block_store, &finalize_store, rng);
     // Finalize the deployment.
-    let (stack, _) = process.finalize_deployment(sample_finalize_state(1), &finalize_store, &deployment, &fee).unwrap();
+    let (stack, _) =
+        process.lock().finalize_deployment(sample_finalize_state(1), &finalize_store, &deployment, &fee).unwrap();
     // Add the stack *manually* to the process.
-    process.add_stack(stack);
+    process.lock().add_stack(stack);
 
     // Initialize a new caller account.
     let caller_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
@@ -1972,7 +1978,7 @@ finalize compute:
     assert_eq!(execution_cost(&process, &execution, ConsensusVersion::V10).unwrap(), expected_execution_cost);
 
     // Now, finalize the execution.
-    process.finalize_execution(sample_finalize_state(1), &finalize_store, &execution, None).unwrap();
+    process.lock().finalize_execution(sample_finalize_state(1), &finalize_store, &execution, None).unwrap();
 
     // Check that the account balance is now 8.
     let candidate = finalize_store
@@ -2009,7 +2015,7 @@ finalize c:
     assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
 
     // Construct the process.
-    let mut process = crate::test_helpers::sample_process(&program0);
+    let process = crate::test_helpers::sample_process(&program0);
 
     // Initialize another program (middle node).
     let (string, program1) = Program::<CurrentNetwork>::parse(
@@ -2040,7 +2046,7 @@ finalize b:
     assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
 
     // Add the program to the process.
-    process.add_program(&program1).unwrap();
+    process.lock().add_program(&program1).unwrap();
 
     // Initialize another program (root node).
     let (string, program2) = Program::<CurrentNetwork>::parse(
@@ -2072,7 +2078,7 @@ finalize a:
     assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
 
     // Add the program to the process.
-    process.add_program(&program2).unwrap();
+    process.lock().add_program(&program2).unwrap();
 
     // Initialize the RNG.
     let rng = &mut TestRng::default();
@@ -2211,7 +2217,7 @@ fn test_complex_execution_order() {
     assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
 
     // Construct the process.
-    let mut process = crate::test_helpers::sample_process(&program0);
+    let process = crate::test_helpers::sample_process(&program0);
 
     // Initialize another program (leaf).
     let (string, program1) = Program::<CurrentNetwork>::parse(
@@ -2238,7 +2244,7 @@ fn test_complex_execution_order() {
     assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
 
     // Add the program to the process.
-    process.add_program(&program1).unwrap();
+    process.lock().add_program(&program1).unwrap();
 
     // Initialize another program (calls zero and one).
     let (string, program2) = Program::<CurrentNetwork>::parse(
@@ -2273,7 +2279,7 @@ fn test_complex_execution_order() {
     assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
 
     // Add the program to the process.
-    process.add_program(&program2).unwrap();
+    process.lock().add_program(&program2).unwrap();
 
     // Initialize another program (calls two, one, zero).
     let (string, program3) = Program::<CurrentNetwork>::parse(
@@ -2312,7 +2318,7 @@ fn test_complex_execution_order() {
     assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
 
     // Add the program to the process.
-    process.add_program(&program3).unwrap();
+    process.lock().add_program(&program3).unwrap();
 
     // Initialize another program (calls two and three).
     let (string, program4) = Program::<CurrentNetwork>::parse(
@@ -2349,7 +2355,7 @@ fn test_complex_execution_order() {
     assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
 
     // Add the program to the process.
-    process.add_program(&program4).unwrap();
+    process.lock().add_program(&program4).unwrap();
 
     // Initialize the RNG.
     let rng = &mut TestRng::default();
@@ -2505,7 +2511,7 @@ finalize compute:
     process.synthesize_key::<CurrentAleo, _>(program.id(), &function_name, rng).unwrap();
 
     // Reset the process.
-    let mut process = Process::load().unwrap();
+    let process = Process::load().unwrap();
 
     // Initialize a new block store.
     let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
@@ -2519,9 +2525,10 @@ finalize compute:
     // Compute the fee.
     let fee = sample_fee::<_, CurrentAleo, _, _>(&process, &block_store, &finalize_store, rng);
     // Finalize the deployment.
-    let (stack, _) = process.finalize_deployment(sample_finalize_state(1), &finalize_store, &deployment, &fee).unwrap();
+    let (stack, _) =
+        process.lock().finalize_deployment(sample_finalize_state(1), &finalize_store, &deployment, &fee).unwrap();
     // Add the stack *manually* to the process.
-    process.add_stack(stack);
+    process.lock().add_stack(stack);
 
     // Initialize a new caller account.
     let caller_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
@@ -2573,7 +2580,7 @@ finalize compute:
     assert_eq!(execution_cost(&process, &execution, ConsensusVersion::V10).unwrap(), expected_execution_cost);
 
     // Now, finalize the execution.
-    process.finalize_execution(sample_finalize_state(1), &finalize_store, &execution, None).unwrap();
+    process.lock().finalize_execution(sample_finalize_state(1), &finalize_store, &execution, None).unwrap();
 
     // Check that the struct is stored as expected.
     let candidate = finalize_store
@@ -2704,6 +2711,7 @@ fn test_process_deploy_credits_program() {
         universal_srs: UniversalSRS::<CurrentNetwork>::load().unwrap(),
         stacks: Default::default(),
         old_stacks: Default::default(),
+        lock: Default::default(),
     };
 
     // Construct the process.
@@ -2761,7 +2769,7 @@ function {function_name}:
     .unwrap();
 
     // Reset the process.
-    let mut process = Process::load().unwrap();
+    let process = Process::load().unwrap();
 
     // Initialize a new block store.
     let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
@@ -2775,9 +2783,10 @@ function {function_name}:
     // Compute the fee.
     let fee = sample_fee::<_, CurrentAleo, _, _>(&process, &block_store, &finalize_store, rng);
     // Finalize the deployment.
-    let (stack, _) = process.finalize_deployment(sample_finalize_state(1), &finalize_store, &deployment, &fee).unwrap();
+    let (stack, _) =
+        process.lock().finalize_deployment(sample_finalize_state(1), &finalize_store, &deployment, &fee).unwrap();
     // Add the stack *manually* to the process.
-    process.add_stack(stack);
+    process.lock().add_stack(stack);
 
     // Initialize a new caller account.
     let caller_private_key = PrivateKey::<CurrentNetwork>::new(rng).unwrap();
@@ -2837,7 +2846,7 @@ fn test_long_import_chain() {
     .unwrap();
 
     // Construct the process.
-    let mut process = crate::test_helpers::sample_process(&program);
+    let process = crate::test_helpers::sample_process(&program);
 
     // Add `MAX_PROGRAM_DEPTH` programs to the process.
     for i in 1..=MAX_PROGRAM_DEPTH {
@@ -2853,7 +2862,7 @@ fn test_long_import_chain() {
         ))
         .unwrap();
         // Add the program to the process.
-        process.add_program(&program).unwrap();
+        process.lock().add_program(&program).unwrap();
     }
 
     // Add the `MAX_PROGRAM_DEPTH + 1` program to the process, which should fail.
@@ -2866,7 +2875,7 @@ fn test_long_import_chain() {
         MAX_PROGRAM_DEPTH + 1
     ))
     .unwrap();
-    let result = process.add_program(&program);
+    let result = process.lock().add_program(&program);
     // Programs may create long import chains as long as number of calls does not exceed the maximum number of transitions.
     assert!(result.is_ok());
 }
@@ -2882,7 +2891,7 @@ fn test_long_import_chain_with_calls() {
     .unwrap();
 
     // Construct the process.
-    let mut process = crate::test_helpers::sample_process(&program);
+    let process = crate::test_helpers::sample_process(&program);
 
     // Check that the number of calls, up to `Transaction::MAX_TRANSITIONS - 1`, is correct.
     for i in 1..(Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 1) {
@@ -2900,7 +2909,7 @@ fn test_long_import_chain_with_calls() {
         ))
         .unwrap();
         // Add the program to the process.
-        process.add_program(&program).unwrap();
+        process.lock().add_program(&program).unwrap();
         // Check that the number of calls is correct.
         let stack = process.get_stack(program.id()).unwrap();
         let number_of_calls =
@@ -2920,14 +2929,14 @@ fn test_long_import_chain_with_calls() {
         Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 2
     ))
     .unwrap();
-    let result = process.add_program(&program);
+    let result = process.lock().add_program(&program);
     assert!(result.is_err())
 }
 
 #[test]
 fn test_max_imports() {
     // Construct the process.
-    let mut process = Process::<CurrentNetwork>::load().unwrap();
+    let process = Process::<CurrentNetwork>::load().unwrap();
 
     // Add `MAX_IMPORTS` programs to the process.
     for i in 0..CurrentNetwork::MAX_IMPORTS {
@@ -2935,7 +2944,7 @@ fn test_max_imports() {
         // Initialize a new program.
         let program = Program::from_str(&format!("program test{i}.aleo; function c:")).unwrap();
         // Add the program to the process.
-        process.add_program(&program).unwrap();
+        process.lock().add_program(&program).unwrap();
     }
 
     // Add a program importing all `MAX_IMPORTS` programs, which should pass.
@@ -2944,7 +2953,7 @@ fn test_max_imports() {
     let program =
         Program::from_str(&format!("{import_string}program test{}.aleo; function c:", CurrentNetwork::MAX_IMPORTS))
             .unwrap();
-    process.add_program(&program).unwrap();
+    process.lock().add_program(&program).unwrap();
 
     // Attempt to construct a program importing `MAX_IMPORTS + 1` programs, which should fail.
     let import_string =

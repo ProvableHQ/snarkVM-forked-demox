@@ -42,7 +42,7 @@ impl<N: Network> Process<N> {
     /// Adds the newly-deployed program.
     /// This method assumes the given deployment **is valid**.
     #[inline]
-    pub fn load_deployment(&mut self, deployment: &Deployment<N>) -> Result<()> {
+    pub fn load_deployment(&self, deployment: &Deployment<N>) -> Result<()> {
         let timer = timer!("Process::load_deployment");
 
         // Get the deployment version.
@@ -92,7 +92,7 @@ impl<N: Network> Process<N> {
         lap!(timer, "Insert the verifying keys");
 
         // Add the stack to the process.
-        self.add_stack(stack);
+        self.lock().add_stack(stack);
 
         finish!(timer);
 

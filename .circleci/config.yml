@@ -775,7 +775,7 @@ jobs:
 
   ledger-narwhal-data:
     executor: rust-docker
-    resource_class: << pipeline.parameters.small >>
+    resource_class: << pipeline.parameters.medium >>
     steps:
       - run_test:
           workspace_member: snarkvm-ledger-narwhal-data
@@ -872,7 +872,7 @@ jobs:
     steps:
       - run_test:
           workspace_member: snarkvm-parameters
-          flags: --run-ignored ignored-only -- --test-threads=2 
+          flags: --run-ignored ignored-only -- --test-threads=2
           use_cache: false
           cache_key_suffix: -v-{{ epoch }}
           no_output_timeout: 20m
@@ -1272,6 +1272,12 @@ workflows:
       - utilities
       - utilities-derives
       - wasm
+
+  # Jobs specific to this branch to run
+  custom-workflow:
+    when: pipeline.git.branch == "fix_target_adjustment_tests"
+    jobs:
+      - ledger-block
 
   # Run additional but unlikely to fail checks on merges only
   merge-workflow:

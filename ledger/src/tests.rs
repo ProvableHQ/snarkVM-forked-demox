@@ -78,7 +78,7 @@ fn create_cache_key(
 ) -> Result<TransactionCacheKey<CurrentNetwork>> {
     let mut execution_stacks = IndexMap::new();
     for transition in transaction.transitions() {
-        execution_stacks.insert(*transition.program_id(), vm.process().read().get_stack(transition.program_id())?);
+        execution_stacks.insert(*transition.program_id(), vm.process().get_stack(transition.program_id())?);
     }
     VM::<CurrentNetwork, LedgerType>::create_cache_key_with_stacks(transaction, &execution_stacks)
 }
@@ -2657,7 +2657,7 @@ function foo:
             };
             let deployment = deployment_tx.deployment().unwrap().clone();
             for _ in 0..ITERATIONS {
-                let result = match try_vm_runtime!(|| process.read().verify_deployment::<CurrentAleo, _>(
+                let result = match try_vm_runtime!(|| process.verify_deployment::<CurrentAleo, _>(
                     ConsensusVersion::V8,
                     &deployment,
                     rng
