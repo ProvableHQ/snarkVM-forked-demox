@@ -869,7 +869,7 @@ fn test_complex_dynamic_graph_construction_internal(
     // 6 -> []
     // 7 -> []
 
-    let graph = vm.process().read().construct_call_graph(transitions.into_iter()).unwrap();
+    let graph = vm.process().construct_call_graph(transitions.into_iter()).unwrap();
     assert_eq!(graph[tids[9]], &[*tids[2], *tids[8]]);
     assert_eq!(graph[tids[8]], &[*tids[5], *tids[6], *tids[7]]);
     assert_eq!(graph[tids[5]], &[*tids[3], *tids[4]]);
@@ -2156,8 +2156,7 @@ fn test_dynamic_call_to_pre_v14_program() {
     let token_name = Identifier::<CurrentNetwork>::from_str("token").unwrap();
 
     {
-        let process = verifier_vm.process();
-        let vm_process = process.read();
+        let vm_process = verifier_vm.process();
         let stack = vm_process.get_stack(legacy_program_id).unwrap();
         assert_eq!(*stack.program_edition(), 0, "Verifier should have edition 0 before upgrade");
         assert!(
@@ -2250,8 +2249,7 @@ fn test_dynamic_call_to_pre_v14_program() {
 
     // Verify the verifier VM now HAS translation keys after upgrade, and the edition incremented.
     {
-        let process = verifier_vm.process();
-        let vm_process = process.read();
+        let vm_process = verifier_vm.process();
         let stack = vm_process.get_stack(legacy_program_id).unwrap();
         assert_eq!(*stack.program_edition(), 1, "Verifier should have edition 1 after upgrade");
         assert!(

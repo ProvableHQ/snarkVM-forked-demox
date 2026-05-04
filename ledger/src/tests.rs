@@ -85,7 +85,7 @@ fn create_cache_key(
     // Get the program editions.
     let program_editions = transaction
         .transitions()
-        .map(|transition| vm.process().read().get_stack(transition.program_id()).map(|stack| stack.program_edition()))
+        .map(|transition| vm.process().get_stack(transition.program_id()).map(|stack| stack.program_edition()))
         .collect::<Result<Vec<_>>>()
         .unwrap();
     // Return the cache key.
@@ -2666,7 +2666,7 @@ function foo:
             };
             let deployment = deployment_tx.deployment().unwrap().clone();
             for _ in 0..ITERATIONS {
-                let result = match try_vm_runtime!(|| process.read().verify_deployment::<CurrentAleo, _>(
+                let result = match try_vm_runtime!(|| process.verify_deployment::<CurrentAleo, _>(
                     ConsensusVersion::V8,
                     &deployment,
                     rng
