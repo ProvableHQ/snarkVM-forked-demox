@@ -107,12 +107,13 @@ pub struct Process<N: Network> {
     stacks: Arc<RwLock<IndexMap<ProgramID<N>, Arc<Stack<N>>>>>,
     /// The mapping of program IDs to old stacks.
     old_stacks: RwLock<IndexMap<ProgramID<N>, Option<Arc<Stack<N>>>>>,
-    /// A lock guarding the entire Process in case no concurrent reads or writes
-    /// on the object are to be permitted.
+    /// A lock used to create instances of `ProcessExclusiveGuard`, which ensures that only
+    /// one of them may ever exist at a time.
     lock: Mutex<()>,
 }
 
-/// A wrapper ensuring exclusive access to the Process for the purposes of add_stacks.
+/// A wrapper ensuring exclusive access to the Process for the purposes of methods which
+/// affect the state of the stacks.
 pub struct ProcessExclusiveGuard<'a, N: Network> {
     process: &'a Process<N>,
     #[cfg(not(feature = "locktick"))]
