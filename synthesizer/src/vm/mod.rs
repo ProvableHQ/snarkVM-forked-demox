@@ -574,6 +574,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
 impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Update the `credits.aleo` program in the VM with the latest verifying keys.
+    /// This was used just once during the V8 migration. Future updates to
+    /// verifying keys should always be accompanied by an increase in the
+    /// edition or amendment count in order for the TransactionCacheKey to
+    /// reference it correctly.
     fn update_credits_verifying_keys(&self) -> Result<()> {
         // Initialize the store for 'credits.aleo'.
         let credits = Program::<N>::credits()?;

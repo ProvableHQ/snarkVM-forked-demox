@@ -38,7 +38,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// The maximum number of executions to verify in parallel.
     pub const MAX_PARALLEL_EXECUTE_VERIFICATIONS: usize = 1000;
 
-    /// Creates the cache key for a transaction using the given prepared execution stacks.
+    /// Creates the cache key for a transaction using the given prepared
+    /// execution stacks.
+    /// Note: If any of these stacks are updated in the VM
+    /// while `check_transaction` is running, the cache key will be outdated.
+    /// The cache key should therefore be checked at the end of
+    /// `check_transaction`.
     pub fn create_cache_key_with_stacks(
         transaction: &Transaction<N>,
         execution_stacks: &IndexMap<ProgramID<N>, Arc<Stack<N>>>,
