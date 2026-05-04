@@ -168,13 +168,14 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
     #[inline]
     pub fn revert_stacks(&self) {
         // Restore the old stacks.
+        let mut stacks = self.process.stacks.write();
         for (program_id, stack) in self.process.old_stacks.write().drain(..) {
             // If the stack is `None`, remove the program from the process.
             // Otherwise, insert the old stack back into the process.
             if let Some(stack) = stack {
-                self.process.stacks.write().insert(program_id, stack);
+                stacks.insert(program_id, stack);
             } else {
-                self.process.stacks.write().shift_remove(&program_id);
+                stacks.shift_remove(&program_id);
             }
         }
     }
