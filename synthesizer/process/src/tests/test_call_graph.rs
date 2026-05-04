@@ -255,6 +255,42 @@ fn test_deep_static_chain() {
     assert_eq!(graph[t_bot.id()], [] as [_; 0]);
 }
 
+/// A cross-program closure call must be skipped, since closures do not produce transitions.
+/// `caller.aleo/use_closure` invokes `lib.aleo/c`, which is a closure (not a function).
+/// Execution post-order: `[caller_t]` (the closure call adds nothing to the execution).
+/// Expected graph: `{ caller_t → [] }`.
+#[test]
+fn test_cross_program_closure_call_is_skipped() {
+    let process = make_process(&[
+        r"
+        program lib.aleo;
+        closure c:
+            input r0 as u8;
+            add r0 r0 into r1;
+            output r1 as u8;
+        function f:
+            input r0 as u8.private;
+            output r0 as u8.private;",
+        r"
+        import lib.aleo;
+        program caller.aleo;
+        function use_closure:
+            input r0 as u8.private;
+            call lib.aleo/c r0 into r1;
+            output r1 as u8.private;",
+    ]);
+
+    let caller_pid = ProgramID::from_str("caller.aleo").unwrap();
+    let use_closure = Identifier::from_str("use_closure").unwrap();
+    let t_caller = fake_transition(caller_pid, use_closure, 0);
+    let transitions = [&t_caller];
+
+    let graph = construct_call_graph(&process, &transitions).expect("construct_call_graph must skip closure calls");
+
+    assert_eq!(graph.len(), 1);
+    assert_eq!(graph[t_caller.id()], [] as [_; 0]);
+}
+
 /// A single dynamic call: `caller.aleo/dyn_call` issues one `call.dynamic` instruction.
 /// The callee program and function are not known at graph-build time; they are taken from the actual transition.
 /// Execution post-order: `[callee_t, caller_t]`.

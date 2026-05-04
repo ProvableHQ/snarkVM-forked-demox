@@ -750,12 +750,7 @@ impl<N: Network> Process<N> {
                             snarkvm_synthesizer_program::CallOperator::Resource(fname) => (caller_pid, fname),
                         };
                         // Add the child to the traversal stack, only if it is a call to a transition.
-                        if execution_stacks
-                            .get(pid)
-                            .ok_or_else(|| anyhow!("Missing stack for program '{pid}'"))?
-                            .get_function(fname)
-                            .is_ok()
-                        {
+                        if execution_stacks.get(pid).is_some_and(|stack| stack.get_function(fname).is_ok()) {
                             children.push(TransitionMetadata::new(&mut counter, Some((*pid, *fname)), None));
                         }
                     }
