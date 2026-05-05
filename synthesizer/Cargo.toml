@@ -80,10 +80,16 @@ workspace = true
 [dependencies.snarkvm-console]
 workspace = true
 
+[dependencies.snarkvm-ledger-authority]
+workspace = true
+
 [dependencies.snarkvm-ledger-block]
 workspace = true
 
 [dependencies.snarkvm-ledger-committee]
+workspace = true
+
+[dependencies.snarkvm-ledger-narwhal-batch-header]
 workspace = true
 
 [dependencies.snarkvm-ledger-narwhal-data]

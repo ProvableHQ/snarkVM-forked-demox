@@ -56,6 +56,7 @@ pub enum ConsensusVersion {
     V14 = 14,
     /// V15: Introduces the record-existence check and `commit.*.raw` instruction variants.
     ///      Increase the anchor time to 35.
+    ///      Moves the block's spend limit check to the finalize phase.
     V15 = 15,
 }
 
