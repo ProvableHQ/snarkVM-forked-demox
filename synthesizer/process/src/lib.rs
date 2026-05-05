@@ -122,6 +122,14 @@ pub struct ProcessExclusiveGuard<'a, N: Network> {
     _guard: LockGuard<MutexGuard<'a, ()>>,
 }
 
+impl<'a, N: Network> std::ops::Deref for ProcessExclusiveGuard<'a, N> {
+    type Target = Process<N>;
+
+    fn deref(&self) -> &Self::Target {
+        self.process
+    }
+}
+
 impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
     /// Adds a new stack to the process.
     /// If the program already exists, then the existing stack is replaced and the original stack is returned.
