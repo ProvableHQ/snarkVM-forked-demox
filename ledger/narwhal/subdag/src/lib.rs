@@ -180,9 +180,15 @@ impl<N: Network> Subdag<N> {
 
     /// Returns the block spend limit for this subdag at `block_height`.
     #[inline]
-    pub fn spend_limit(&self, block_height: u32) -> u64 {
-        self.values().map(|certificates| certificates.len() as u64).sum::<u64>()
-            * BatchHeader::<N>::batch_spend_limit(block_height)
+    pub fn spend_limit(&self, block_height: u32) -> Option<u64> {
+        if block_height >= N::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap() {
+            Some(
+                self.values().map(|certificates| certificates.len() as u64).sum::<u64>()
+                    * BatchHeader::<N>::batch_spend_limit(block_height),
+            )
+        } else {
+            None
+        }
     }
 
     /// Returns the leader certificate.

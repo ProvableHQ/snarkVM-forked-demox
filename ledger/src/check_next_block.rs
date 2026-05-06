@@ -232,11 +232,8 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         let block_timestamp = (block.height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
             .then_some(block.timestamp());
         // Determine the block's spend limit.
-        let block_spend_limit = if let Authority::Quorum(subdag) = block.authority() {
-            Some(subdag.spend_limit(block.height()))
-        } else {
-            None
-        };
+        let block_spend_limit =
+            if let Authority::Quorum(subdag) = block.authority() { subdag.spend_limit(block.height()) } else { None };
 
         // Construct the finalize state.
         let state = FinalizeGlobalState::new::<N>(
