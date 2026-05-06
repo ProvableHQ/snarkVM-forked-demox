@@ -13,19 +13,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub(crate) mod committee;
-pub use committee::*;
+use console::network::{Network, TestnetV0};
 
-mod macros;
-
-mod program;
-pub use program::*;
-
-mod rewards;
-pub use rewards::*;
-
-mod sequential_op;
-pub(crate) use sequential_op::*;
-
-pub(crate) mod transaction;
-pub(crate) use transaction::*;
+/// Returns `true` if the given transaction ID belongs to the set of transactions accepted on
+/// Testnet. These transactions remain valid for historical chain continuity.
+pub(crate) fn is_pre_accepted_testnet_transaction<N: Network>(id: N::TransactionID) -> bool {
+    if N::ID != TestnetV0::ID {
+        return false;
+    }
+    const IDS: &[&str] = &["at16r0qm288yvprqyvq22dj0elsx3dsvep43tslwz65r8a7t0z0zvpsqxxpmf"];
+    let id_str = id.to_string();
+    IDS.iter().any(|&s| id_str == s)
+}
