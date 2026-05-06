@@ -414,10 +414,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         let next_block_timestamp =
             (next_height >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default()).then_some(next_timestamp);
         // Determine the block spend limit.
-        let block_spend_limit = subdag.map(|subdag| {
-            subdag.values().map(|certificates| certificates.len() as u64).sum::<u64>()
-                * BatchHeader::<N>::batch_spend_limit(next_height)
-        });
+        let block_spend_limit = subdag.map(|subdag| subdag.spend_limit(next_height));
         // Construct the finalize state.
         let state = FinalizeGlobalState::new::<N>(
             next_round,

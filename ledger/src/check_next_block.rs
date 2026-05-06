@@ -233,10 +233,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             .then_some(block.timestamp());
         // Determine the block's spend limit.
         let block_spend_limit = if let Authority::Quorum(subdag) = block.authority() {
-            Some(
-                subdag.values().map(|certificates| certificates.len() as u64).sum::<u64>()
-                    * BatchHeader::<N>::batch_spend_limit(block.height()),
-            )
+            Some(subdag.spend_limit(block.height()))
         } else {
             None
         };

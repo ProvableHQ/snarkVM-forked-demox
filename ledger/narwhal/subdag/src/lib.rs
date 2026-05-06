@@ -178,6 +178,13 @@ impl<N: Network> Subdag<N> {
         self.values().flatten()
     }
 
+    /// Returns the block spend limit for this subdag at `block_height`.
+    #[inline]
+    pub fn spend_limit(&self, block_height: u32) -> u64 {
+        self.values().map(|certificates| certificates.len() as u64).sum::<u64>()
+            * BatchHeader::<N>::batch_spend_limit(block_height)
+    }
+
     /// Returns the leader certificate.
     pub fn leader_certificate(&self) -> &BatchCertificate<N> {
         // Retrieve entry for the anchor round.
