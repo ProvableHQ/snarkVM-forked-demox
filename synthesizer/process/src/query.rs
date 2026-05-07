@@ -290,4 +290,51 @@ query fetch_balance:
         }
         Ok(())
     }
+
+    #[test]
+    fn test_evaluate_query_errors_when_mapping_not_initialized() -> Result<()> {
+        // Same shape of program as the other tests, but the finalize store is intentionally not
+        // initialized for `balances`. The runtime path must surface the existing
+        // "Mapping ... does not exist" error rather than panic or silently succeed.
+        let program = Program::<CurrentNetwork>::from_str(
+            r"
+program token_with_query.aleo;
+
+mapping balances:
+    key as address.public;
+    value as u64.public;
+
+function noop:
+    input r0 as u64.private;
+    output r0 as u64.private;
+
+query fetch_balance:
+    input r0 as address.public;
+    get.or_use balances[r0] 7u64 into r1;
+    output r1 as u64.public;",
+        )?;
+
+        let process = Process::<CurrentNetwork>::load()?;
+        let stack = Stack::new(&process, &program)?;
+
+        // Open an empty finalize store. Note: `initialize_mapping` is deliberately NOT called.
+        let finalize_store = FinalizeStore::<_, FinalizeMemory<_>>::open(aleo_std::StorageMode::new_test(None))?;
+
+        let mut rng = console::prelude::TestRng::default();
+        let private_key = PrivateKey::<CurrentNetwork>::new(&mut rng)?;
+        let address = console::account::Address::try_from(&private_key)?;
+        let address_key = Plaintext::from(Literal::Address(address));
+
+        let result = evaluate_query(
+            sample_finalize_state(1),
+            &finalize_store,
+            &stack,
+            &Identifier::from_str("fetch_balance")?,
+            vec![Value::Plaintext(address_key)],
+        );
+
+        let err = result.expect_err("expected error when mapping is not initialized").to_string();
+        assert!(err.contains("does not exist"), "unexpected error message: {err}");
+        Ok(())
+    }
 }
