@@ -732,8 +732,8 @@ function dynamic_func:
         )
         .unwrap();
         // Add the program to a fresh process (no deployment needed for stack inspection).
-        let mut process = Process::<CurrentNetwork>::load().unwrap();
-        process.add_program(&program).unwrap();
+        let process = Process::<CurrentNetwork>::load().unwrap();
+        process.lock().add_program(&program).unwrap();
         let stack = process.get_stack("dynamic_test.aleo").unwrap();
         // `dynamic_func` contains a `call.dynamic` instruction and must be detected.
         let function_name = Identifier::from_str("dynamic_func").unwrap();
@@ -771,9 +771,9 @@ function caller_func:
         )
         .unwrap();
         // Add programs in dependency order: helper first, then caller.
-        let mut process = Process::<CurrentNetwork>::load().unwrap();
-        process.add_program(&helper_program).unwrap();
-        process.add_program(&caller_program).unwrap();
+        let process = Process::<CurrentNetwork>::load().unwrap();
+        process.lock().add_program(&helper_program).unwrap();
+        process.lock().add_program(&caller_program).unwrap();
         let stack = process.get_stack("caller.aleo").unwrap();
         // `caller_func` transitively reaches `call.dynamic` via `helper.aleo/dynamic_helper`.
         let function_name = Identifier::from_str("caller_func").unwrap();

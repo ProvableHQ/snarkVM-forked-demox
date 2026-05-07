@@ -191,16 +191,15 @@ pub(crate) fn add_and_test_with_costs(
     if let Some(inputs) = inputs {
         for (transaction, inputs) in transactions.iter().zip_eq(inputs) {
             if let Some(execution) = transaction.execution() {
-                let actual_cost = execution_cost(&vm.process().read(), execution, ConsensusVersion::V14).unwrap();
+                let actual_cost = execution_cost(vm.process(), execution, ConsensusVersion::V14).unwrap();
                 let authorization = Authorization::from_unchecked((vec![], execution.transitions().cloned().collect()));
                 let estimated_cost_authorization =
-                    execution_cost_for_authorization(&vm.process().read(), &authorization, ConsensusVersion::V14)
-                        .unwrap();
+                    execution_cost_for_authorization(vm.process(), &authorization, ConsensusVersion::V14).unwrap();
                 assert_eq!(actual_cost, estimated_cost_authorization);
 
                 let root_transition = execution.transitions().last().unwrap();
                 let estimated_cost_request = execution_cost_for_call::<CurrentAleo, _>(
-                    &vm.process().read(),
+                    vm.process(),
                     *caller_address,
                     *root_transition.program_id(),
                     *root_transition.function_name(),

@@ -91,13 +91,12 @@ fn get_deployment_costs(
     dynamic_deployment: &Deployment<CurrentNetwork>,
     consensus_version: ConsensusVersion,
 ) -> (DeploymentCosts, DeploymentCosts) {
-    let process_guard = vm.process();
-    let process = process_guard.read();
+    let process = vm.process();
 
     let (static_total, (static_storage, static_synthesis, _, _)) =
-        deployment_cost(&*process, static_deployment, consensus_version).unwrap();
+        deployment_cost(process, static_deployment, consensus_version).unwrap();
     let (dynamic_total, (dynamic_storage, dynamic_synthesis, _, _)) =
-        deployment_cost(&*process, dynamic_deployment, consensus_version).unwrap();
+        deployment_cost(process, dynamic_deployment, consensus_version).unwrap();
 
     ((static_total, static_storage, static_synthesis), (dynamic_total, dynamic_storage, dynamic_synthesis))
 }
@@ -139,16 +138,15 @@ fn get_execution_costs(
     dynamic_tx: &Transaction<CurrentNetwork>,
     consensus_version: ConsensusVersion,
 ) -> (ExecutionCosts, ExecutionCosts) {
-    let process_guard = vm.process();
-    let process = process_guard.read();
+    let process = vm.process();
 
     let static_exec = static_tx.execution().unwrap();
     let dynamic_exec = dynamic_tx.execution().unwrap();
 
     let (static_total, (static_storage, static_finalize)) =
-        execution_cost(&*process, static_exec, consensus_version).unwrap();
+        execution_cost(process, static_exec, consensus_version).unwrap();
     let (dynamic_total, (dynamic_storage, dynamic_finalize)) =
-        execution_cost(&*process, dynamic_exec, consensus_version).unwrap();
+        execution_cost(process, dynamic_exec, consensus_version).unwrap();
 
     ((static_total, static_storage, static_finalize), (dynamic_total, dynamic_storage, dynamic_finalize))
 }

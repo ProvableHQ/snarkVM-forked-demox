@@ -151,7 +151,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let mut program_editions = Vec::with_capacity(Transaction::<N>::MAX_TRANSITIONS);
         for transition in transaction.transitions() {
             // Get the stack.
-            let stack = self.process.read().get_stack(transition.program_id())?;
+            let stack = self.process.get_stack(transition.program_id())?;
             // Get the program ID.
             let program_id = *stack.program_id();
             // Get the program edition.
@@ -268,12 +268,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
                     // Returns the external record that `locator` references.
                     let get_external_record = |locator: &Locator<N>| {
-                        let external_stack = self.process.read().get_stack(locator.program_id())?;
+                        let external_stack = self.process.get_stack(locator.program_id())?;
                         external_stack.program().get_record(locator.resource()).cloned()
                     };
                     // Returns the external function that `locator` references.
                     let get_external_function = |locator: &Locator<N>| {
-                        let external_stack = self.process.read().get_stack(locator.program_id())?;
+                        let external_stack = self.process.get_stack(locator.program_id())?;
                         external_stack.program().get_function(locator.resource())
                     };
                     // Returns the *external* finalize logic that `locator` references.
@@ -281,7 +281,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         if program.id() == locator.program_id() {
                             anyhow::bail!("external finalize logic refers to the current program")
                         }
-                        let external_stack = self.process.read().get_stack(locator.program_id())?;
+                        let external_stack = self.process.get_stack(locator.program_id())?;
                         external_stack
                             .program()
                             .get_function_ref(locator.resource())?
@@ -313,7 +313,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         "Invalid deployment transaction '{id}' - program uses syntax that is not allowed before `ConsensusVersion::V14`"
                     );
                     // Check that all future argument bit sizes do not exceed the maximum allowed size of u16::MAX.
-                    let stack = Stack::new(&self.process().read(), deployment.program())?;
+                    let stack = Stack::new(&self.process, deployment.program())?;
                     check_future_argument_bit_size(deployment.program(), &stack, u16::MAX as usize)?;
                     // Before V14, record verifying keys are not allowed.
                     let num_functions = deployment.num_functions();
@@ -364,7 +364,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     );
                 }
                 if consensus_version >= ConsensusVersion::V13 {
-                    self.process.read().mapping_types_exist(deployment.program())?;
+                    self.process.mapping_types_exist(deployment.program())?;
                 }
                 if consensus_version >= ConsensusVersion::V14 {
                     let num_functions = deployment.num_functions();
@@ -445,7 +445,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     );
 
                     // Get the existing program.
-                    let stack = self.process().read().get_stack(deployment.program_id())?;
+                    let stack = self.process.get_stack(deployment.program_id())?;
                     let existing_program = stack.program();
 
                     // Ensure the existing program matches the deployment program.
@@ -537,7 +537,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             );
                             // Get the existing program.
                             // It should be the case that the stored program matches the process program.
-                            let stack = self.process().read().get_stack(deployment.program_id())?;
+                            let stack = self.process.get_stack(deployment.program_id())?;
                             let existing_program = stack.program();
                             // Check that the new edition increments the old edition by 1.
                             let old_edition = *stack.program_edition();
@@ -627,7 +627,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 let total_writes = transaction
                     .transitions()
                     .map(|t| -> Result<u16> {
-                        let stack = self.process.read().get_stack(t.program_id())?;
+                        let stack = self.process.get_stack(t.program_id())?;
                         let program = stack.program();
                         Ok(program
                             .get_function(t.function_name())?
@@ -677,8 +677,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 // Ensure the rejected ID is not present.
                 ensure!(rejected_id.is_none(), "Transaction '{id}' should not have a rejected ID (deployment)");
                 // Compute the minimum deployment cost.
-                let (minimum_cost, cost_details) =
-                    deployment_cost(&self.process().read(), deployment, consensus_version)?;
+                let (minimum_cost, cost_details) = deployment_cost(&self.process, deployment, consensus_version)?;
                 // Ensure the compute cost does not exceed the transaction spend limit.
                 // Comparison logic before ConsensusVersion::V10 has been pruned to simplify the code.
                 if consensus_version >= ConsensusVersion::V10 {
@@ -709,8 +708,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     // If the fee is required, then check that the base fee amount is satisfied.
                     if is_fee_required {
                         // Compute the minimum execution cost.
-                        let (minimum_cost, cost_details) =
-                            execution_cost(&self.process().read(), execution, consensus_version)?;
+                        let (minimum_cost, cost_details) = execution_cost(&self.process, execution, consensus_version)?;
                         // Ensure the compute cost does not exceed the transaction spend limit.
                         // Comparison logic before ConsensusVersion::V10 has been pruned to simplify the code.
                         if consensus_version >= ConsensusVersion::V10 {
@@ -829,9 +827,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Verify the execution proof, if it has not been partially-verified before.
         let verification = match is_partially_verified {
             true => Ok(()),
-            false => {
-                self.process.read().verify_execution(consensus_version, varuna_version, inclusion_version, execution)
-            }
+            false => self.process.verify_execution(consensus_version, varuna_version, inclusion_version, execution),
         };
         lap!(timer, "Verify the execution");
 
@@ -887,7 +883,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Verify the fee, if it has not been partially-verified before.
         let verification = match is_partially_verified {
             true => Ok(()),
-            false => self.process.read().verify_fee(
+            false => self.process.verify_fee(
                 consensus_version,
                 varuna_version,
                 inclusion_version,
@@ -964,9 +960,7 @@ mod tests {
         // Get the program editions.
         let program_editions = transaction
             .transitions()
-            .map(|transition| {
-                vm.process().read().get_stack(transition.program_id()).map(|stack| stack.program_edition())
-            })
+            .map(|transition| vm.process().get_stack(transition.program_id()).map(|stack| stack.program_edition()))
             .collect::<Result<Vec<_>>>()
             .unwrap();
         // Return the cache key.
