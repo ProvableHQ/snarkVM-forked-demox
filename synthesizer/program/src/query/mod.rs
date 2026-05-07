@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Command, Instruction};
+use crate::Command;
 
 mod input;
 pub use input::*;
@@ -141,11 +141,6 @@ impl<N: Network> QueryCore<N> {
         ensure!(!command.is_cast_to_record(), "Forbidden operation: query functions cannot cast to a record");
         // `rand.chacha` is only meaningful with finalize global state.
         ensure!(!command.is_rand_chacha(), "Forbidden operation: query functions cannot use 'rand.chacha'");
-
-        // Reject `async` instructions explicitly (already covered by is_async, but be paranoid).
-        if let Command::Instruction(Instruction::Async(_)) = &command {
-            bail!("Forbidden operation: query functions cannot invoke 'async'");
-        }
 
         // Check the destination registers.
         for register in command.destinations() {
