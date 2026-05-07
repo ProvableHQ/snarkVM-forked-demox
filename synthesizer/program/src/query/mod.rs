@@ -138,7 +138,7 @@ impl<N: Network> QueryCore<N> {
         ensure!(!command.is_async(), "Forbidden operation: query functions cannot invoke an 'async' instruction");
         ensure!(!command.is_await(), "Forbidden operation: query functions cannot 'await' a future");
         ensure!(!command.is_call(), "Forbidden operation: query functions cannot 'call' another function");
-        ensure!(!command.is_cast_to_record(), "Forbidden operation: query functions cannot cast to a record");
+        ensure!(!command.is_instruction_for_record(), "Forbidden operation: query functions cannot operate on records");
         // `rand.chacha` is only meaningful with finalize global state.
         ensure!(!command.is_rand_chacha(), "Forbidden operation: query functions cannot use 'rand.chacha'");
 
@@ -260,7 +260,27 @@ mod tests {
         let cmd =
             Command::<CurrentNetwork>::from_str("cast r0.owner r0.token_amount into r1 as token.record;").unwrap();
         let err = query.add_command(cmd).unwrap_err();
-        assert!(err.to_string().contains("cast to a record"));
+        assert!(err.to_string().contains("operate on records"));
+    }
+
+    #[test]
+    fn test_reject_cast_to_dynamic_record() {
+        let name = Identifier::from_str("query_core_test").unwrap();
+        let mut query = QueryCore::<CurrentNetwork>::new(name);
+
+        let cmd = Command::<CurrentNetwork>::from_str("cast r0 into r1 as dynamic.record;").unwrap();
+        let err = query.add_command(cmd).unwrap_err();
+        assert!(err.to_string().contains("operate on records"));
+    }
+
+    #[test]
+    fn test_reject_get_record_dynamic() {
+        let name = Identifier::from_str("query_core_test").unwrap();
+        let mut query = QueryCore::<CurrentNetwork>::new(name);
+
+        let cmd = Command::<CurrentNetwork>::from_str("get.record.dynamic r0.x into r1 as bool;").unwrap();
+        let err = query.add_command(cmd).unwrap_err();
+        assert!(err.to_string().contains("operate on records"));
     }
 
     #[test]

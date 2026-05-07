@@ -105,9 +105,28 @@ impl<N: Network> Command<N> {
         matches!(self, Command::Instruction(Instruction::Call(_) | Instruction::CallDynamic(_)))
     }
 
-    /// Returns `true` if the command is a cast to record instruction.
+    /// Returns `true` if the command is a cast-to-record instruction. Covers all three
+    /// record cast variants: static `record`, `external_record`, and `dynamic.record`.
     pub fn is_cast_to_record(&self) -> bool {
-        matches!(self, Command::Instruction(Instruction::Cast(cast)) if matches!(cast.cast_type(), CastType::Record(_) | CastType::ExternalRecord(_)))
+        matches!(
+            self,
+            Command::Instruction(Instruction::Cast(cast))
+                if matches!(
+                    cast.cast_type(),
+                    CastType::Record(_) | CastType::ExternalRecord(_) | CastType::DynamicRecord
+                )
+        )
+    }
+
+    /// Returns `true` if the command is a `get.record.dynamic` instruction.
+    pub fn is_get_record_dynamic(&self) -> bool {
+        matches!(self, Command::Instruction(Instruction::GetRecordDynamic(_)))
+    }
+
+    /// Returns `true` if the command operates on a record value, either by creating one via
+    /// `cast` (static, external, or dynamic) or by reading one via `get.record.dynamic`.
+    pub fn is_instruction_for_record(&self) -> bool {
+        self.is_cast_to_record() || self.is_get_record_dynamic()
     }
 
     /// Returns `true` if the command is a `rand.chacha` command.

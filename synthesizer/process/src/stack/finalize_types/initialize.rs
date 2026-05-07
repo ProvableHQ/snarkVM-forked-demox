@@ -32,8 +32,8 @@ impl<N: Network> FinalizeTypes<N> {
         for command in constructor.commands() {
             // Ensure the command is not a call instruction.
             ensure!(!command.is_call(), "`call` commands are not allowed in constructors.");
-            // Ensure the command is not a cast to record instruction.
-            ensure!(!command.is_cast_to_record(), "`cast` (to record) commands are not allowed in constructors.");
+            // Ensure the command does not operate on a record (cast-to-record or `get.record.dynamic`).
+            ensure!(!command.is_instruction_for_record(), "Record operations are not allowed in constructors.");
             // Ensure the command is not an await command.
             ensure!(!command.is_await(), "`await` commands are not allowed in constructors.");
             // Check the command opcode, operands, and destinations.
