@@ -843,8 +843,7 @@ impl<N: Network> ProgramCore<N> {
     fn add_query(&mut self, query: QueryCore<N>) -> Result<()> {
         let query_name = *query.name();
 
-        // Reuse the closure cap as the prototype budget for query functions.
-        ensure!(self.queries.len() < N::MAX_CLOSURES, "Program exceeds the maximum number of query functions.");
+        ensure!(self.queries.len() < N::MAX_QUERIES, "Program exceeds the maximum number of query functions.");
 
         ensure!(self.is_unique_name(&query_name), "'{query_name}' is already in use.");
         ensure!(!Self::is_reserved_opcode(&query_name.to_string()), "'{query_name}' is a reserved opcode.");
