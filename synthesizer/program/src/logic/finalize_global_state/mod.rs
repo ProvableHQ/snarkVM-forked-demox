@@ -96,12 +96,16 @@ impl FinalizeGlobalState {
     /// Initializes a global state for a query function evaluation.
     ///
     /// Queries are not associated with consensus state beyond the block height. The
-    /// other fields (`block_round`, `block_timestamp`, `random_seed`) are filled with
-    /// safe defaults: queries forbid `rand.chacha` (the only reader of `random_seed`),
-    /// and no query path reads `block_round` or `block_timestamp`.
+    /// other fields are filled with safe defaults:
+    ///   - `block_round`: `0`. Queries are not produced by a consensus round, so no real
+    ///     value is meaningful. We pick `0` rather than the block height so that any
+    ///     future opcode reading `block_round` from inside a query gets an unambiguous
+    ///     "no round" sentinel instead of a misleading height-as-round value.
+    ///   - `block_timestamp`: `None`. Same reasoning — queries are off-consensus.
+    ///   - `random_seed`: `[0u8; 32]`. Only read by `rand.chacha`, which queries forbid.
     #[inline]
     pub const fn for_query(block_height: u32) -> Self {
-        Self { block_round: block_height as u64, block_height, block_timestamp: None, random_seed: [0u8; 32] }
+        Self { block_round: 0, block_height, block_timestamp: None, random_seed: [0u8; 32] }
     }
 
     /// Returns the block round.

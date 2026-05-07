@@ -51,7 +51,7 @@ pub struct QueryCore<N: Network> {
 }
 
 impl<N: Network> QueryCore<N> {
-    /// Initializes a new read with the given name.
+    /// Initializes a new query function with the given name.
     pub fn new(name: Identifier<N>) -> Self {
         Self {
             name,
@@ -95,6 +95,45 @@ impl<N: Network> QueryCore<N> {
     /// Returns the mapping of `Position`s to their index in `commands`.
     pub const fn positions(&self) -> &HashMap<Identifier<N>, usize> {
         &self.positions
+    }
+
+    /// Returns `true` if the query contains an array type with a size that exceeds the given maximum.
+    /// Mirrors `Finalize::exceeds_max_array_size` and additionally walks `outputs`, since queries
+    /// declare typed outputs.
+    pub fn exceeds_max_array_size(&self, max_array_size: u32) -> bool {
+        self.inputs.iter().any(|input| {
+            matches!(input.finalize_type(), FinalizeType::Plaintext(p) if p.exceeds_max_array_size(max_array_size))
+        }) || self.commands.iter().any(|command| command.exceeds_max_array_size(max_array_size))
+            || self.outputs.iter().any(|output| {
+                matches!(output.finalize_type(), FinalizeType::Plaintext(p) if p.exceeds_max_array_size(max_array_size))
+            })
+    }
+
+    /// Returns `true` if the query refers to an external struct in its inputs, body, or outputs.
+    pub fn contains_external_struct(&self) -> bool {
+        self.inputs
+            .iter()
+            .any(|input| matches!(input.finalize_type(), FinalizeType::Plaintext(p) if p.contains_external_struct()))
+            || self
+                .commands
+                .iter()
+                .any(|command| matches!(command, Command::Instruction(inst) if inst.contains_external_struct()))
+            || self.outputs.iter().any(
+                |output| matches!(output.finalize_type(), FinalizeType::Plaintext(p) if p.contains_external_struct()),
+            )
+    }
+
+    /// Returns `true` if the query contains a string type. Mirrors `Finalize::contains_string_type`
+    /// and additionally walks `outputs`.
+    pub fn contains_string_type(&self) -> bool {
+        self.inputs
+            .iter()
+            .any(|input| matches!(input.finalize_type(), FinalizeType::Plaintext(p) if p.contains_string_type()))
+            || self.commands.iter().any(|command| command.contains_string_type())
+            || self
+                .outputs
+                .iter()
+                .any(|output| matches!(output.finalize_type(), FinalizeType::Plaintext(p) if p.contains_string_type()))
     }
 }
 

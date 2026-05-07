@@ -464,3 +464,88 @@ fn test_query_rejects_write_commands_at_parse() {
         assert!(result.is_err(), "expected parse error for query with forbidden command:\n{source}");
     }
 }
+
+/// Tests that a program containing a `query` block is rejected at V14 (since `query` is V15
+/// syntax) and accepted at V15. Without this gate, deploying such a program pre-V15 would
+/// fork: new nodes accept the bytes, old nodes reject the unknown component variant.
+#[test]
+fn test_deploy_query_before_and_at_v15() {
+    let rng = &mut TestRng::default();
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    // Start one block before V15 so that after the (rejected) deployment block we are
+    // exactly at V15 and the same program is accepted.
+    let v15_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap();
+    let vm = sample_vm_at_height(v15_height - 1, rng);
+
+    let program = Program::from_str(
+        r"
+program qy_v15_gate.aleo;
+
+function noop:
+    input r0 as u64.private;
+    output r0 as u64.private;
+
+constructor:
+    assert.eq true true;
+
+query fixed_value:
+    add 0u64 1234u64 into r0;
+    output r0 as u64.public;
+",
+    )
+    .unwrap();
+
+    // Deployment before V15 should be aborted.
+    let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
+    let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 0, "Deployment with query before V15 should not be accepted");
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 1, "Deployment with query before V15 should be aborted");
+    vm.add_next_block(&block).unwrap();
+
+    // We should now be at V15.
+    assert_eq!(vm.block_store().current_block_height(), v15_height);
+
+    // Deployment at V15 should succeed.
+    let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
+    let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1, "Deployment with query at V15 should be accepted");
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    vm.add_next_block(&block).unwrap();
+}
+
+/// Tests that a query containing a `string` type is rejected at deploy via the strengthened
+/// `Program::contains_string_type` (which now walks `self.queries`). Without that fix, strings
+/// could sneak in through query inputs/outputs even though they're banned post-V12.
+#[test]
+fn test_deploy_query_with_string_type_rejected() {
+    let rng = &mut TestRng::default();
+    let caller_private_key = sample_genesis_private_key(rng);
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
+
+    let program = Program::from_str(
+        r"
+program qy_string_input.aleo;
+
+function noop:
+    input r0 as u64.private;
+    output r0 as u64.private;
+
+constructor:
+    assert.eq true true;
+
+query echo:
+    input r0 as string.public;
+    add 0u64 0u64 into r1;
+    output r0 as string.public;
+",
+    )
+    .unwrap();
+
+    let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
+    let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 0, "Deployment with string-typed query input should be rejected");
+    assert_eq!(block.aborted_transaction_ids().len(), 1);
+}

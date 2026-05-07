@@ -26,7 +26,9 @@ impl<N: Network> Process<N> {
     ///
     /// This is the public-facing query API: callers pass a program ID and query function name,
     /// not a `&Stack<N>`. It mirrors the shape of `Process::authorize` / `Process::execute`,
-    /// minus the proof stage.
+    /// minus the proof stage. **No transitions are produced and no finalize-store writes occur** —
+    /// queries are read-only by construction (`add_command` rejects `set` / `remove` / `async` /
+    /// `await` / `call` / `rand.chacha` / record-touching ops).
     #[inline]
     pub fn evaluate_query<P: FinalizeStorage<N>>(
         &self,
@@ -74,6 +76,21 @@ pub fn evaluate_query<N: Network, P: FinalizeStorage<N>>(
         inputs.len(),
     );
 
+    // Reject non-plaintext inputs up-front. Query input statements are typed
+    // `FinalizeType::Plaintext` at construction, so the per-register store would reject
+    // these as well — but with a generic type-mismatch error. Surfacing the kind here
+    // gives a clearer UX.
+    for (i, value) in inputs.iter().enumerate() {
+        let kind = match value {
+            Value::Plaintext(_) => continue,
+            Value::Record(_) => "record",
+            Value::Future(_) => "future",
+            Value::DynamicRecord(_) => "dynamic record",
+            Value::DynamicFuture(_) => "dynamic future",
+        };
+        bail!("Query '{}' input #{i} must be a plaintext value, got a {kind}", query.name());
+    }
+
     // Store the inputs.
     for (input_stmt, value) in query.inputs().iter().zip(inputs.into_iter()) {
         registers.store(stack, input_stmt.register(), value)?;
@@ -81,6 +98,19 @@ pub fn evaluate_query<N: Network, P: FinalizeStorage<N>>(
 
     // Evaluate the commands. Queries cannot await; branches reuse the finalize-side
     // `branch_to` helper so the two execution paths cannot drift.
+    //
+    // Termination & cost bounds (prototype):
+    //   - The loop is bounded by `query.commands().len()`, which is itself bounded by
+    //     `N::MAX_COMMANDS` (= `u16::MAX`).
+    //   - `branch_to` permits forward jumps only, so the counter strictly advances and
+    //     no command can re-execute. Termination is guaranteed.
+    //   - Deploy-time, `query_cost_for_single_query` enforces that the worst-case body
+    //     cost is `<= TRANSACTION_SPEND_LIMIT`, so a deployed query cannot register an
+    //     unboundedly expensive body.
+    //   - There is intentionally NO smaller per-call runtime budget below the deploy
+    //     bound. A node serving repeated external query calls can therefore consume up
+    //     to the deploy bound per call. Rate-limiting and indexing are expected to be
+    //     handled at the snarkOS RPC layer, not here.
     let mut counter = 0;
     while counter < query.commands().len() {
         let command = &query.commands()[counter];
@@ -294,6 +324,77 @@ query fetch_balance:
 
         let err = result.expect_err("expected error when mapping is not initialized").to_string();
         assert!(err.contains("does not exist"), "unexpected error message: {err}");
+        Ok(())
+    }
+
+    #[test]
+    fn test_evaluate_query_rejects_non_plaintext_input() -> Result<()> {
+        // A query that takes a single plaintext input. We then call it with a `Value::Future`
+        // and expect the entry-point pre-validation to reject with a clear "must be a plaintext
+        // value, got a future" error rather than a generic store-mismatch.
+        let program = Program::<CurrentNetwork>::from_str(
+            r"
+program qy_input_kind.aleo;
+
+function noop:
+    input r0 as u64.private;
+    output r0 as u64.private;
+
+query echo:
+    input r0 as u64.public;
+    add r0 0u64 into r1;
+    output r1 as u64.public;",
+        )?;
+
+        let process = Process::<CurrentNetwork>::load()?;
+        let stack = Stack::new(&process, &program)?;
+        let finalize_store = FinalizeStore::<_, FinalizeMemory<_>>::open(aleo_std::StorageMode::new_test(None))?;
+
+        // Build a non-plaintext Value: a Future with an empty argument list (the contents
+        // don't matter; we only care that it's not Plaintext).
+        let future_value =
+            Value::Future(console::program::Future::new(*program.id(), Identifier::from_str("noop")?, vec![]));
+
+        let result =
+            evaluate_query(sample_finalize_state(1), &finalize_store, &stack, &Identifier::from_str("echo")?, vec![
+                future_value,
+            ]);
+
+        let err = match result {
+            Ok(_) => panic!("expected error for non-plaintext input"),
+            Err(err) => err.to_string(),
+        };
+        assert!(err.contains("future"), "unexpected error message: {err}");
+        assert!(err.contains("plaintext"), "unexpected error message: {err}");
+        Ok(())
+    }
+
+    #[test]
+    fn test_query_rejects_block_timestamp_operand() -> Result<()> {
+        // A query that reads `block.timestamp`. Deployment must fail at type-check time —
+        // queries have no meaningful timestamp, so the runtime would otherwise bail with a
+        // confusing "not available until V12" error on every call.
+        let program = Program::<CurrentNetwork>::from_str(
+            r"
+program qy_block_ts.aleo;
+
+function noop:
+    input r0 as u64.private;
+    output r0 as u64.private;
+
+query reads_ts:
+    add block.timestamp 0i64 into r0;
+    output r0 as i64.public;",
+        )?;
+
+        let process = Process::<CurrentNetwork>::load()?;
+        // `Stack::new` runs `FinalizeTypes::from_query` over every query at construction time,
+        // so the rejection surfaces here.
+        let err = match Stack::new(&process, &program) {
+            Ok(_) => panic!("expected stack construction to reject block.timestamp in a query"),
+            Err(err) => err.to_string(),
+        };
+        assert!(err.contains("block.timestamp"), "unexpected error message: {err}");
         Ok(())
     }
 }

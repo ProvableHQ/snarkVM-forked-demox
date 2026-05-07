@@ -1057,6 +1057,7 @@ impl<N: Network> ProgramCore<N> {
             || self.closures.values().any(|closure| closure.contains_external_struct())
             || self.functions.values().any(|function| function.contains_external_struct())
             || self.constructor.iter().any(|constructor| constructor.contains_external_struct())
+            || self.queries.values().any(|query| query.contains_external_struct())
     }
 
     /// Returns `true` if this program violates pre-V13 rules for external records
@@ -1179,6 +1180,7 @@ impl<N: Network> ProgramCore<N> {
             || self.closures.values().any(|closure| closure.exceeds_max_array_size(max_array_size))
             || self.functions.values().any(|function| function.exceeds_max_array_size(max_array_size))
             || self.constructor.iter().any(|constructor| constructor.exceeds_max_array_size(max_array_size))
+            || self.queries.values().any(|query| query.exceeds_max_array_size(max_array_size))
     }
 
     /// Returns `true` if a program contains any V11 syntax.
@@ -1393,6 +1395,7 @@ impl<N: Network> ProgramCore<N> {
     /// Returns `true` if a program contains any V15 syntax.
     /// This includes:
     /// 1. `commit.*.raw` opcodes (raw commit variants).
+    /// 2. `query` blocks (new on-disk component variant 6).
     ///
     /// This is enforced to be `false` for programs before `ConsensusVersion::V15`.
     #[inline]
@@ -1417,7 +1420,7 @@ impl<N: Network> ProgramCore<N> {
             .chain(cfg_iter!(self.constructor).flat_map(|constructor| constructor.commands()))
             .any(|command| matches!(command, Command::Instruction(instruction) if has_op(*instruction.opcode())));
 
-        function_contains || closure_contains || command_contains
+        function_contains || closure_contains || command_contains || !self.queries.is_empty()
     }
 
     /// Returns `true` if a program contains any string type.
@@ -1431,6 +1434,7 @@ impl<N: Network> ProgramCore<N> {
             || self.closures.values().any(|closure| closure.contains_string_type())
             || self.functions.values().any(|function| function.contains_string_type())
             || self.constructor.iter().any(|constructor| constructor.contains_string_type())
+            || self.queries.values().any(|query| query.contains_string_type())
     }
 }
 
