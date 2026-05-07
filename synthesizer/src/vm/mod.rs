@@ -318,12 +318,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         query_name: impl TryInto<Identifier<N>>,
         inputs: Vec<Value<N>>,
     ) -> Result<(u32, Vec<Value<N>>)> {
-        // Bind the query to the current finalize state. Prototype queries do not depend on the
-        // seed material, so a zero previous-block-hash is acceptable here; matches the pattern
-        // used by `sample_finalize_state` in the test helpers.
+        // Bind the query to the current block height. The dedicated constructor fills the
+        // other `FinalizeGlobalState` fields with safe defaults (queries forbid `rand.chacha`,
+        // the only consumer of `random_seed`).
         let block_height = self.block_store().current_block_height();
-        let block_round = block_height as u64;
-        let state = FinalizeGlobalState::from(block_round, block_height, None, [0u8; 32]);
+        let state = FinalizeGlobalState::for_query(block_height);
 
         // Delegate to `Process::evaluate_query`. `self.process` derefs through the `Arc`.
         //

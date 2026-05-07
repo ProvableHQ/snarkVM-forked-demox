@@ -123,7 +123,7 @@ mod tests {
     type CurrentNetwork = MainnetV0;
 
     fn sample_finalize_state(block_height: u32) -> FinalizeGlobalState {
-        FinalizeGlobalState::from(block_height as u64, block_height, None, [0u8; 32])
+        FinalizeGlobalState::for_query(block_height)
     }
 
     #[test]
