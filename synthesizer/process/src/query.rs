@@ -60,10 +60,10 @@ pub fn evaluate_query<N: Network, P: FinalizeStorage<N>>(
     // Compute the register types for the query body.
     let types = FinalizeTypes::from_query(stack, query)?;
 
-    // Queries are read-only and externally-callable: no transition is associated. Use a default
-    // transition ID and a zero nonce. The block height in `state` is the only state-binding.
-    let transition_id = N::TransitionID::default();
-    let mut registers = FinalizeRegisters::new(state, transition_id, *query.name(), types, 0);
+    // Queries are read-only and externally-callable: no transition is associated. The block
+    // height inside `state` is the only state-binding; `transition_id` and `nonce` are filled
+    // with defaults by the dedicated constructor (they are unused on a query path).
+    let mut registers = FinalizeRegisters::new_for_query(state, *query.name(), types);
 
     // Validate the input arity.
     ensure!(

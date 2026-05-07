@@ -64,6 +64,21 @@ impl<N: Network> FinalizeRegisters<N> {
             last_register: None,
         }
     }
+
+    /// Initializes a set of registers for a query function evaluation.
+    ///
+    /// Queries are externally-callable and not associated with a transition, so the
+    /// `transition_id` and `nonce` slots have no meaningful value. They are filled with
+    /// defaults here; query commands cannot include `rand.chacha` (the only consumer of
+    /// those fields), so they are never read on a query path.
+    #[inline]
+    pub fn new_for_query(
+        state: FinalizeGlobalState,
+        function_name: Identifier<N>,
+        finalize_types: FinalizeTypes<N>,
+    ) -> Self {
+        Self::new(state, N::TransitionID::default(), function_name, finalize_types, 0)
+    }
 }
 
 impl<N: Network> FinalizeRegistersState<N> for FinalizeRegisters<N> {
