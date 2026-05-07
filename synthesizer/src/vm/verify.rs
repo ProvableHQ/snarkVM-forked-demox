@@ -670,8 +670,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let current_height = self.block_store().current_block_height();
         let consensus_version = N::CONSENSUS_VERSION(current_height)?;
         // Get the transaction spend limit.
-        let transaction_spend_limit =
-            consensus_config_value_by_version!(N, TRANSACTION_SPEND_LIMIT, consensus_version).unwrap();
+        let transaction_spend_limit = consensus_config_value_by_version!(N, TRANSACTION_SPEND_LIMIT, consensus_version)
+            .ok_or_else(|| anyhow::anyhow!("Failed to fetch transaction spend limit"))?;
         match transaction {
             Transaction::Deploy(id, deployment_id, _, deployment, fee) => {
                 // Ensure the rejected ID is not present.

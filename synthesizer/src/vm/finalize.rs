@@ -403,7 +403,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             let mut candidate_transaction_details = CandidateTransactionDetails::<N>::default();
             // Accumulate per-block spend.
             let mut block_spend = 0;
-            // Determine the transaction spend limit.
+            // Determine the transaction spend limit. These unwraps are safe, see tests in consensus_heights.rs
             let consensus_version = N::CONSENSUS_VERSION(state.block_height()).unwrap();
             let transaction_spend_limit =
                 consensus_config_value_by_version!(N, TRANSACTION_SPEND_LIMIT, consensus_version).unwrap();
@@ -1094,7 +1094,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let mut candidate_transaction_details = CandidateTransactionDetails::<N>::default();
         // Accumulate per-block spend.
         let mut block_spend = 0;
-        // Determine the transaction spend limit.
+        // Determine the transaction spend limit. These unwraps are safe, see tests in consensus_heights.rs
         let consensus_version = N::CONSENSUS_VERSION(state.block_height()).unwrap();
         let transaction_spend_limit =
             consensus_config_value_by_version!(N, TRANSACTION_SPEND_LIMIT, consensus_version).unwrap();
