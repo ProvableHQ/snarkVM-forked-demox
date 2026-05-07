@@ -326,6 +326,17 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let state = FinalizeGlobalState::from(block_round, block_height, None, [0u8; 32]);
 
         // Delegate to `Process::evaluate_query`. `self.process` derefs through the `Arc`.
+        //
+        // We deliberately do NOT take `self.process.lock()` here. That guard is the same
+        // exclusive `Mutex` held for the entire duration of `finalize_atomic_batch`, so
+        // grabbing it for a query would (a) serialize all concurrent queries and (b) block
+        // chain advancement while any query runs. Instead, the query relies on:
+        //   - `Arc<Stack<N>>` immutability: once `Process::get_stack` returns an Arc, the
+        //     stack contents do not change for the lifetime of that Arc.
+        //   - The finalize store's own internal locking for each mapping read.
+        // A query interleaved with a `revert_stacks`/redeploy can briefly observe program
+        // metadata and finalize state from different boundaries; consumers that need stricter
+        // consistency should index/cache externally or rate-limit at the snarkOS layer.
         let outputs = self.process.evaluate_query(state, self.finalize_store(), program_id, query_name, inputs)?;
         Ok((block_height, outputs))
     }
