@@ -261,7 +261,6 @@ impl<N: Network> ProgramCore<N> {
         "value",
         "async",
         "finalize",
-        "query",
         // Reserved (catch all)
         "global",
         "block",
@@ -294,6 +293,7 @@ impl<N: Network> ProgramCore<N> {
     pub const RESTRICTED_KEYWORDS: &'static [(ConsensusVersion, &'static [&'static str])] = &[
         (ConsensusVersion::V6, &["constructor"]),
         (ConsensusVersion::V14, &["dynamic", "identifier"]),
+        (ConsensusVersion::V15, &["query"]),
     ];
 
     /// Initializes an empty program.
