@@ -77,3 +77,109 @@ impl<N: Network> Display for QueryCore<N> {
         self.outputs.iter().try_for_each(|output| write!(f, "\n    {output}"))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use console::network::MainnetV0;
+
+    type CurrentNetwork = MainnetV0;
+
+    #[test]
+    fn test_query_parse() {
+        let query = QueryCore::<CurrentNetwork>::parse(
+            r"
+query foo:
+    input r0 as field.public;
+    input r1 as field.public;
+    add r0 r1 into r2;
+    output r2 as field.public;",
+        )
+        .unwrap()
+        .1;
+        assert_eq!("foo", query.name().to_string());
+        assert_eq!(2, query.inputs().len());
+        assert_eq!(1, query.commands().len());
+        assert_eq!(1, query.outputs().len());
+    }
+
+    #[test]
+    fn test_query_parse_no_inputs() {
+        let query = QueryCore::<CurrentNetwork>::parse(
+            r"
+query foo:
+    add 1u64 2u64 into r0;
+    output r0 as u64.public;",
+        )
+        .unwrap()
+        .1;
+        assert_eq!("foo", query.name().to_string());
+        assert_eq!(0, query.inputs().len());
+        assert_eq!(1, query.commands().len());
+        assert_eq!(1, query.outputs().len());
+    }
+
+    #[test]
+    fn test_query_display() {
+        let expected = r"query foo:
+    input r0 as field.public;
+    input r1 as field.public;
+    add r0 r1 into r2;
+    output r2 as field.public;";
+        let query = QueryCore::<CurrentNetwork>::parse(expected).unwrap().1;
+        assert_eq!(expected, format!("{query}"));
+    }
+
+    #[test]
+    fn test_query_parse_fails() {
+        // Missing 'query' keyword.
+        assert!(
+            QueryCore::<CurrentNetwork>::from_str(
+                r"
+foo:
+    add 1u64 2u64 into r0;
+    output r0 as u64.public;"
+            )
+            .is_err()
+        );
+        // Missing colon after the query name.
+        assert!(
+            QueryCore::<CurrentNetwork>::from_str(
+                r"
+query foo
+    add 1u64 2u64 into r0;
+    output r0 as u64.public;"
+            )
+            .is_err()
+        );
+        // Missing output (a query must have at least one).
+        assert!(
+            QueryCore::<CurrentNetwork>::from_str(
+                r"
+query foo:
+    add 1u64 2u64 into r0;"
+            )
+            .is_err()
+        );
+        // Missing commands (a query must have at least one).
+        assert!(
+            QueryCore::<CurrentNetwork>::from_str(
+                r"
+query foo:
+    output r0 as u64.public;"
+            )
+            .is_err()
+        );
+        // 'set' is forbidden in a query.
+        assert!(
+            QueryCore::<CurrentNetwork>::from_str(
+                r"
+query foo:
+    input r0 as u64.public;
+    set r0 into balances[r0];
+    output r0 as u64.public;"
+            )
+            .is_err()
+        );
+    }
+}

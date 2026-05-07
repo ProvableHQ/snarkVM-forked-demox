@@ -74,3 +74,55 @@ impl<N: Network> Display for Input<N> {
         write!(f, "{} {} as {};", Self::type_name(), self.register, self.finalize_type)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use console::network::MainnetV0;
+
+    type CurrentNetwork = MainnetV0;
+
+    #[test]
+    fn test_input_parse() -> Result<()> {
+        let input = Input::<CurrentNetwork>::parse("input r0 as field.public;").unwrap().1;
+        assert_eq!(input.register(), &Register::<CurrentNetwork>::Locator(0));
+        assert_eq!(input.finalize_type(), &FinalizeType::<CurrentNetwork>::from_str("field.public")?);
+
+        let input = Input::<CurrentNetwork>::parse("input r1 as u64.public;").unwrap().1;
+        assert_eq!(input.register(), &Register::<CurrentNetwork>::Locator(1));
+        assert_eq!(input.finalize_type(), &FinalizeType::<CurrentNetwork>::from_str("u64.public")?);
+
+        let input = Input::<CurrentNetwork>::parse("input r2 as address.public;").unwrap().1;
+        assert_eq!(input.register(), &Register::<CurrentNetwork>::Locator(2));
+        assert_eq!(input.finalize_type(), &FinalizeType::<CurrentNetwork>::from_str("address.public")?);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_input_display() -> Result<()> {
+        let input = Input::<CurrentNetwork>::from_str("input r0 as field.public;")?;
+        assert_eq!("input r0 as field.public;", input.to_string());
+
+        let input = Input::<CurrentNetwork>::from_str("input r3 as u64.public;")?;
+        assert_eq!("input r3 as u64.public;", input.to_string());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_input_parse_fails() {
+        // Register member is rejected (must be a locator).
+        assert!(Input::<CurrentNetwork>::from_str("input r0.x as field.public;").is_err());
+        // Missing trailing semicolon.
+        assert!(Input::<CurrentNetwork>::from_str("input r0 as field.public").is_err());
+        // Missing 'as' keyword.
+        assert!(Input::<CurrentNetwork>::from_str("input r0 field.public;").is_err());
+        // Missing register.
+        assert!(Input::<CurrentNetwork>::from_str("input as field.public;").is_err());
+        // Missing 'input' keyword.
+        assert!(Input::<CurrentNetwork>::from_str("r0 as field.public;").is_err());
+        // Missing finalize type.
+        assert!(Input::<CurrentNetwork>::from_str("input r0 as ;").is_err());
+    }
+}

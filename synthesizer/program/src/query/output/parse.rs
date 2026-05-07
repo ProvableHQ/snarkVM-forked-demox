@@ -76,3 +76,51 @@ impl<N: Network> Display for Output<N> {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use console::network::MainnetV0;
+
+    type CurrentNetwork = MainnetV0;
+
+    #[test]
+    fn test_output_parse() -> Result<()> {
+        // Register operand.
+        let output = Output::<CurrentNetwork>::parse("output r0 as field.public;").unwrap().1;
+        assert_eq!(output.operand(), &Operand::<CurrentNetwork>::from_str("r0")?);
+        assert_eq!(output.finalize_type(), &FinalizeType::<CurrentNetwork>::from_str("field.public")?);
+
+        // Literal operand.
+        let output = Output::<CurrentNetwork>::parse("output 1u64 as u64.public;").unwrap().1;
+        assert_eq!(output.operand(), &Operand::<CurrentNetwork>::from_str("1u64")?);
+        assert_eq!(output.finalize_type(), &FinalizeType::<CurrentNetwork>::from_str("u64.public")?);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_output_display() -> Result<()> {
+        let output = Output::<CurrentNetwork>::from_str("output r0 as field.public;")?;
+        assert_eq!("output r0 as field.public;", output.to_string());
+
+        let output = Output::<CurrentNetwork>::from_str("output 1u64 as u64.public;")?;
+        assert_eq!("output 1u64 as u64.public;", output.to_string());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_output_parse_fails() {
+        // Missing trailing semicolon.
+        assert!(Output::<CurrentNetwork>::from_str("output r0 as field.public").is_err());
+        // Missing 'as' keyword.
+        assert!(Output::<CurrentNetwork>::from_str("output r0 field.public;").is_err());
+        // Missing operand.
+        assert!(Output::<CurrentNetwork>::from_str("output as field.public;").is_err());
+        // Missing 'output' keyword.
+        assert!(Output::<CurrentNetwork>::from_str("r0 as field.public;").is_err());
+        // Missing finalize type.
+        assert!(Output::<CurrentNetwork>::from_str("output r0 as ;").is_err());
+    }
+}
