@@ -119,6 +119,11 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
 
                 // Get the existing stack.
                 let existing_stack = self.process.get_stack(deployment.program_id())?;
+                // Increment the amendment count while preserving the existing edition.
+                let amendment_count = existing_stack
+                    .program_amendment_count()
+                    .checked_add(1)
+                    .ok_or_else(|| anyhow!("Overflow while incrementing the program amendment count"))?;
 
                 // Compute a new stack with the same program and edition.
                 // Note: `Stack::new` cannot be used here because it would increment the edition.
@@ -127,6 +132,8 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
                 stack.initialize_and_check(self.process)?;
                 lap!(timer, "Compute the stack");
 
+                // Set the amendment count for this edition.
+                stack.set_program_amendment_count(amendment_count);
                 // Set the program owner to the existing owner.
                 stack.set_program_owner(*existing_stack.program_owner());
 
@@ -217,7 +224,13 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
         // Construct the call graph.
         let consensus_version = N::CONSENSUS_VERSION(state.block_height())?;
         let call_graph = match (ConsensusVersion::V1..=ConsensusVersion::V2).contains(&consensus_version) {
-            true => self.process.construct_call_graph(execution.transitions())?,
+            true => {
+                let mut execution_stacks = indexmap::IndexMap::new();
+                for transition in execution.transitions() {
+                    execution_stacks.insert(*transition.program_id(), self.process.get_stack(transition.program_id())?);
+                }
+                Process::construct_call_graph(execution.transitions(), &execution_stacks)?
+            }
             // If the height is greater than or equal to `ConsensusVersion::V3`, then provide an empty call graph, as it is no longer used during finalization.
             false => HashMap::new(),
         };

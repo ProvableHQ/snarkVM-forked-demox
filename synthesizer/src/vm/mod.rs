@@ -42,7 +42,7 @@ use console::{
         Response,
         Value,
     },
-    types::{Field, Group, U16, U64},
+    types::{Field, Group, U8, U64},
 };
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use snarkvm_ledger_block::{
@@ -116,9 +116,10 @@ use std::{
 use rayon::prelude::*;
 
 // The key for the partially-verified transactions cache.
-// The key is a tuple of the transaction ID and a list of program checksums for the transitions in the transaction.
-// Note: If a program is upgraded and its contents are changed, then the program checksums will change, invalidating the previously cached result.
-type TransactionCacheKey<N> = (<N as Network>::TransactionID, Vec<U16<N>>);
+// The key is a tuple of the transaction ID and a list of `(program checksum, edition, amendment count)` for each transition.
+// Note: Program upgrades and amendments can change verification behavior without changing the transaction ID, so the cache key
+// must include program metadata in addition to the checksum.
+pub type TransactionCacheKey<N> = (<N as Network>::TransactionID, Vec<([U8<N>; 32], u16, u64)>);
 
 #[derive(Clone)]
 pub struct VM<N: Network, C: ConsensusStorage<N>> {

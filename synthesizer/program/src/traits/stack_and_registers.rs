@@ -117,6 +117,12 @@ pub trait StackTrait<N: Network> {
     /// Returns the program edition.
     fn program_edition(&self) -> U16<N>;
 
+    /// Returns the number of amendments for the current program edition.
+    fn program_amendment_count(&self) -> u64;
+
+    /// Sets the number of amendments for the current program edition.
+    fn set_program_amendment_count(&mut self, program_amendment_count: u64);
+
     /// Returns the program owner.
     /// The program owner should only be set for programs that are deployed after `ConsensusVersion::V9` is active.
     fn program_owner(&self) -> &Option<Address<N>>;

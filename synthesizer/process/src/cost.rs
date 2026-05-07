@@ -23,6 +23,7 @@ use console::{
     program::{FinalizeType, Identifier, LiteralType, PlaintextType, ProgramID, Value},
     types::Address,
 };
+use indexmap::IndexMap;
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use snarkvm_ledger_block::{Deployment, Execution, Transaction};
 use snarkvm_synthesizer_program::{CallDynamic, CastType, Command, GetRecordDynamic, Instruction, Operand};
@@ -121,9 +122,15 @@ pub fn execution_cost_for_authorization<N: Network>(
         batch_sizes.push(n_input_records);
     }
 
+    // Build the execution stacks once and reuse for translation batch sizing.
+    let mut execution_stacks = IndexMap::new();
+    for transition in authorization.transitions().values() {
+        execution_stacks.insert(*transition.program_id(), process.get_stack(transition.program_id())?);
+    }
+
     // Add the batches corresponding to translation tasks
     let translations_for_transaction =
-        Authorization::translation_batch_sizes(process, authorization.transitions().values())?;
+        Authorization::translation_batch_sizes(authorization.transitions().values(), &execution_stacks)?;
     batch_sizes.extend(translations_for_transaction);
 
     // Varuna is always run in hiding (i. e. ZK) mode when proving Executions.
