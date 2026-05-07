@@ -302,18 +302,22 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     }
 
     /// Evaluates a query function in the program identified by `program_id` against the
-    /// VM's current finalize state. Returns the typed outputs.
+    /// VM's current finalize state. Returns the block height the query was bound to,
+    /// together with the typed outputs.
     ///
     /// This is the most ergonomic call site for query functions: the caller supplies only the
     /// program ID, query name, and inputs. The block height, finalize store, and stack are all
-    /// resolved from the VM. Queries are a node-local lookup; no transaction is produced.
+    /// resolved from the VM. Returning the block height alongside the outputs lets callers
+    /// (UIs, caches, indexers) attribute the answer to a specific chain state without a
+    /// follow-up `current_block_height()` call that could race chain progression.
+    /// Queries are a node-local lookup; no transaction is produced.
     #[inline]
     pub fn evaluate_query(
         &self,
         program_id: impl TryInto<ProgramID<N>>,
         query_name: impl TryInto<Identifier<N>>,
         inputs: Vec<Value<N>>,
-    ) -> Result<Vec<Value<N>>> {
+    ) -> Result<(u32, Vec<Value<N>>)> {
         // Bind the query to the current finalize state. Prototype queries do not depend on the
         // seed material, so a zero previous-block-hash is acceptable here; matches the pattern
         // used by `sample_finalize_state` in the test helpers.
@@ -322,7 +326,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let state = FinalizeGlobalState::from(block_round, block_height, None, [0u8; 32]);
 
         // Delegate to `Process::evaluate_query`. `self.process` derefs through the `Arc`.
-        self.process.evaluate_query(state, self.finalize_store(), program_id, query_name, inputs)
+        let outputs = self.process.evaluate_query(state, self.finalize_store(), program_id, query_name, inputs)?;
+        Ok((block_height, outputs))
     }
 
     /// Returns the transition store.

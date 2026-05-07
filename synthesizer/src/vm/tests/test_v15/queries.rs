@@ -82,8 +82,9 @@ fn test_evaluate_query_reflects_finalize_state() -> Result<()> {
     add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
 
     // Read against an untouched mapping should return the default (0).
-    let outputs =
+    let (height, outputs) =
         vm.evaluate_query("qy_lifecycle.aleo", "total_balance", vec![Value::from_str(&caller_address.to_string())?])?;
+    assert_eq!(height, vm.block_store().current_block_height());
     assert_eq!(expect_u64(&outputs), 0);
 
     // Execute increment(addr, 10).
@@ -92,8 +93,9 @@ fn test_evaluate_query_reflects_finalize_state() -> Result<()> {
     add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
 
     // Read should now reflect the finalize-set value.
-    let outputs =
+    let (height, outputs) =
         vm.evaluate_query("qy_lifecycle.aleo", "total_balance", vec![Value::from_str(&caller_address.to_string())?])?;
+    assert_eq!(height, vm.block_store().current_block_height());
     assert_eq!(expect_u64(&outputs), 10);
 
     // Increment again by 32. New total: 42.
@@ -101,8 +103,9 @@ fn test_evaluate_query_reflects_finalize_state() -> Result<()> {
     let tx = vm.execute(&caller_private_key, ("qy_lifecycle.aleo", "increment"), inputs.iter(), None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
 
-    let outputs =
+    let (height, outputs) =
         vm.evaluate_query("qy_lifecycle.aleo", "total_balance", vec![Value::from_str(&caller_address.to_string())?])?;
+    assert_eq!(height, vm.block_store().current_block_height());
     assert_eq!(expect_u64(&outputs), 42);
 
     Ok(())
@@ -145,7 +148,7 @@ fn test_evaluate_query_multi_output() -> Result<()> {
     let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
 
-    let outputs =
+    let (_, outputs) =
         vm.evaluate_query("qy_multi_output.aleo", "summary", vec![Value::from_str(&caller_address.to_string())?])?;
 
     // Default 0u64 for the unknown key, then +1 and *2.
@@ -189,7 +192,7 @@ fn test_evaluate_query_multi_input() -> Result<()> {
     let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
 
-    let outputs = vm.evaluate_query("qy_multi_in.aleo", "add3", vec![
+    let (_, outputs) = vm.evaluate_query("qy_multi_in.aleo", "add3", vec![
         Value::from_str("10u64")?,
         Value::from_str("20u64")?,
         Value::from_str("12u64")?,
@@ -236,11 +239,11 @@ fn test_evaluate_query_with_branch() -> Result<()> {
     add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
 
     // r0 = 0: branch is taken, doubling is skipped.
-    let outputs = vm.evaluate_query("qy_branch.aleo", "maybe_extra", vec![Value::from_str("0u64")?])?;
+    let (_, outputs) = vm.evaluate_query("qy_branch.aleo", "maybe_extra", vec![Value::from_str("0u64")?])?;
     assert_eq!(expect_u64(&outputs), 10);
 
     // r0 = 5: branch is NOT taken, the unused r2 destination is written but we still output r1.
-    let outputs = vm.evaluate_query("qy_branch.aleo", "maybe_extra", vec![Value::from_str("5u64")?])?;
+    let (_, outputs) = vm.evaluate_query("qy_branch.aleo", "maybe_extra", vec![Value::from_str("5u64")?])?;
     assert_eq!(expect_u64(&outputs), 15);
     Ok(())
 }
@@ -273,7 +276,7 @@ fn test_evaluate_query_zero_inputs() -> Result<()> {
     let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
 
-    let outputs = vm.evaluate_query("qy_zeroin.aleo", "fixed_value", vec![])?;
+    let (_, outputs) = vm.evaluate_query("qy_zeroin.aleo", "fixed_value", vec![])?;
     assert_eq!(expect_u64(&outputs), 1234);
     Ok(())
 }
