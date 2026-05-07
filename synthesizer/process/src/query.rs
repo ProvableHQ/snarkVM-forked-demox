@@ -79,17 +79,18 @@ pub fn evaluate_query<N: Network, P: FinalizeStorage<N>>(
         registers.store(stack, input_stmt.register(), value)?;
     }
 
-    // Evaluate the commands. Queries cannot await; branches are inlined.
+    // Evaluate the commands. Queries cannot await; branches reuse the finalize-side
+    // `branch_to` helper so the two execution paths cannot drift.
     let mut counter = 0;
     while counter < query.commands().len() {
         let command = &query.commands()[counter];
         match command {
             Command::Await(_) => bail!("'await' is forbidden in a query function"),
             Command::BranchEq(branch) => {
-                counter = evaluate_branch_eq(counter, branch, query.positions(), stack, &registers)?;
+                counter = crate::finalize::branch_to(counter, branch, query.positions(), stack, &registers)?;
             }
             Command::BranchNeq(branch) => {
-                counter = evaluate_branch_neq(counter, branch, query.positions(), stack, &registers)?;
+                counter = crate::finalize::branch_to(counter, branch, query.positions(), stack, &registers)?;
             }
             other => {
                 other.finalize(stack, store, &mut registers)?;
@@ -104,48 +105,6 @@ pub fn evaluate_query<N: Network, P: FinalizeStorage<N>>(
         outputs.push(registers.load(stack, output.operand())?);
     }
     Ok(outputs)
-}
-
-fn evaluate_branch_eq<N: Network>(
-    counter: usize,
-    branch: &snarkvm_synthesizer_program::BranchEq<N>,
-    positions: &std::collections::HashMap<Identifier<N>, usize>,
-    stack: &impl StackTrait<N>,
-    registers: &impl RegistersTrait<N>,
-) -> Result<usize> {
-    let first = registers.load(stack, branch.first())?;
-    let second = registers.load(stack, branch.second())?;
-    if first == second {
-        let position = branch.position();
-        match positions.get(position) {
-            Some(index) if *index > counter => Ok(*index),
-            Some(_) => bail!("Cannot branch to an earlier position '{position}'"),
-            None => bail!("The position '{position}' does not exist."),
-        }
-    } else {
-        Ok(counter + 1)
-    }
-}
-
-fn evaluate_branch_neq<N: Network>(
-    counter: usize,
-    branch: &snarkvm_synthesizer_program::BranchNeq<N>,
-    positions: &std::collections::HashMap<Identifier<N>, usize>,
-    stack: &impl StackTrait<N>,
-    registers: &impl RegistersTrait<N>,
-) -> Result<usize> {
-    let first = registers.load(stack, branch.first())?;
-    let second = registers.load(stack, branch.second())?;
-    if first != second {
-        let position = branch.position();
-        match positions.get(position) {
-            Some(index) if *index > counter => Ok(*index),
-            Some(_) => bail!("Cannot branch to an earlier position '{position}'"),
-            None => bail!("The position '{position}' does not exist."),
-        }
-    } else {
-        Ok(counter + 1)
-    }
 }
 
 #[cfg(test)]

@@ -669,7 +669,7 @@ fn setup_await<N: Network>(
 }
 
 // A helper function that returns the index to branch to.
-fn branch_to<N: Network, const VARIANT: u8>(
+pub(crate) fn branch_to<N: Network, const VARIANT: u8>(
     counter: usize,
     branch: &Branch<N, VARIANT>,
     positions: &HashMap<Identifier<N>, usize>,
