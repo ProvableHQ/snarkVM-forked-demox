@@ -139,11 +139,8 @@ impl<N: Network> QueryCore<N> {
         ensure!(!command.is_await(), "Forbidden operation: query functions cannot 'await' a future");
         ensure!(!command.is_call(), "Forbidden operation: query functions cannot 'call' another function");
         ensure!(!command.is_cast_to_record(), "Forbidden operation: query functions cannot cast to a record");
-
-        // Reject `rand.chacha`. It is only meaningful with finalize global state.
-        if matches!(&command, Command::RandChaCha(_)) {
-            bail!("Forbidden operation: query functions cannot use 'rand.chacha'");
-        }
+        // `rand.chacha` is only meaningful with finalize global state.
+        ensure!(!command.is_rand_chacha(), "Forbidden operation: query functions cannot use 'rand.chacha'");
 
         // Reject `async` instructions explicitly (already covered by is_async, but be paranoid).
         if let Command::Instruction(Instruction::Async(_)) = &command {
@@ -238,5 +235,46 @@ mod tests {
         let cmd = Command::<CurrentNetwork>::from_str("rand.chacha into r0 as u64;").unwrap();
         let err = query.add_command(cmd).unwrap_err();
         assert!(err.to_string().contains("rand.chacha"));
+    }
+
+    #[test]
+    fn test_reject_await_command() {
+        let name = Identifier::from_str("query_core_test").unwrap();
+        let mut query = QueryCore::<CurrentNetwork>::new(name);
+
+        let cmd = Command::<CurrentNetwork>::from_str("await r0;").unwrap();
+        let err = query.add_command(cmd).unwrap_err();
+        assert!(err.to_string().contains("'await'"));
+    }
+
+    #[test]
+    fn test_reject_call_instruction() {
+        let name = Identifier::from_str("query_core_test").unwrap();
+        let mut query = QueryCore::<CurrentNetwork>::new(name);
+
+        let cmd = Command::<CurrentNetwork>::from_str("call foo r0 into r1;").unwrap();
+        let err = query.add_command(cmd).unwrap_err();
+        assert!(err.to_string().contains("'call'"));
+    }
+
+    #[test]
+    fn test_reject_cast_to_record() {
+        let name = Identifier::from_str("query_core_test").unwrap();
+        let mut query = QueryCore::<CurrentNetwork>::new(name);
+
+        let cmd =
+            Command::<CurrentNetwork>::from_str("cast r0.owner r0.token_amount into r1 as token.record;").unwrap();
+        let err = query.add_command(cmd).unwrap_err();
+        assert!(err.to_string().contains("cast to a record"));
+    }
+
+    #[test]
+    fn test_reject_async_instruction() {
+        let name = Identifier::from_str("query_core_test").unwrap();
+        let mut query = QueryCore::<CurrentNetwork>::new(name);
+
+        let cmd = Command::<CurrentNetwork>::from_str("async foo r0 r1 into r3;").unwrap();
+        let err = query.add_command(cmd).unwrap_err();
+        assert!(err.to_string().contains("'async'"));
     }
 }

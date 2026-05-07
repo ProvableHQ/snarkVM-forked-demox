@@ -110,6 +110,11 @@ impl<N: Network> Command<N> {
         matches!(self, Command::Instruction(Instruction::Cast(cast)) if matches!(cast.cast_type(), CastType::Record(_) | CastType::ExternalRecord(_)))
     }
 
+    /// Returns `true` if the command is a `rand.chacha` command.
+    pub fn is_rand_chacha(&self) -> bool {
+        matches!(self, Command::RandChaCha(_))
+    }
+
     /// Returns `true` if the command is a write operation.
     pub fn is_write(&self) -> bool {
         matches!(self, Command::Set(_) | Command::Remove(_))
