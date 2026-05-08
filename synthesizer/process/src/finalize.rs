@@ -15,7 +15,7 @@
 
 use super::*;
 use console::program::{FinalizeType, Future, Register};
-use snarkvm_synthesizer_program::{Await, FinalizeRegistersState, Operand, RegistersTrait};
+use snarkvm_synthesizer_program::{Await, FinalizeRegistersState, FinalizeStoreTrait, Operand, RegistersTrait};
 use snarkvm_utilities::try_vm_runtime;
 
 use std::collections::HashSet;
@@ -576,9 +576,12 @@ fn initialize_finalize_state<N: Network>(
 }
 
 // A helper function to finalize all commands except `await`, updating the finalize operations and the counter.
+//
+// Generic over the store so the query evaluator (which passes either the canonical
+// `FinalizeStore` or a read-only historic adapter) can reuse this dispatch.
 #[inline]
-fn finalize_command_except_await<N: Network>(
-    store: &FinalizeStore<N, impl FinalizeStorage<N>>,
+pub(crate) fn finalize_command_except_await<N: Network>(
+    store: &impl FinalizeStoreTrait<N>,
     stack: &impl StackTrait<N>,
     registers: &mut FinalizeRegisters<N>,
     positions: &HashMap<Identifier<N>, usize>,
@@ -669,7 +672,7 @@ fn setup_await<N: Network>(
 }
 
 // A helper function that returns the index to branch to.
-pub(crate) fn branch_to<N: Network, const VARIANT: u8>(
+fn branch_to<N: Network, const VARIANT: u8>(
     counter: usize,
     branch: &Branch<N, VARIANT>,
     positions: &HashMap<Identifier<N>, usize>,

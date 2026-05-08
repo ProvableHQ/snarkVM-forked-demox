@@ -19,7 +19,7 @@ use console::{
     program::{Identifier, ProgramID, Value},
 };
 use snarkvm_ledger_store::{FinalizeMode, FinalizeStorage, FinalizeStore, atomic_finalize};
-use snarkvm_synthesizer_program::{Command, FinalizeGlobalState, FinalizeStoreTrait, RegistersTrait, StackTrait};
+use snarkvm_synthesizer_program::{FinalizeGlobalState, FinalizeStoreTrait, RegistersTrait, StackTrait};
 
 impl<N: Network> Process<N> {
     /// Evaluates a query function in the program identified by `program_id` and returns its outputs.
@@ -253,14 +253,16 @@ fn evaluate_query_inner<N: Network>(
         registers.store(stack, input_stmt.register(), value)?;
     }
 
-    // Evaluate the commands. Queries cannot await; branches reuse the finalize-side
-    // `branch_to` helper so the two execution paths cannot drift.
+    // Evaluate the commands. Queries reject `await` at construction (`add_command`), so the
+    // dispatch is identical to `Finalize` / `Constructor` — we share `finalize_command_except_await`
+    // directly to avoid drift. `try_vm_runtime!` inside that helper also gives queries panic-catch
+    // protection, which is desirable on the off-consensus / RPC-exposed path.
     //
     // Termination & cost bounds (prototype):
     //   - The loop is bounded by `query.commands().len()`, which is itself bounded by
     //     `N::MAX_COMMANDS` (= `u16::MAX`).
-    //   - `branch_to` permits forward jumps only, so the counter strictly advances and
-    //     no command can re-execute. Termination is guaranteed.
+    //   - `branch_to` (used by the helper) permits forward jumps only, so the counter
+    //     strictly advances and no command can re-execute. Termination is guaranteed.
     //   - Deploy-time, `query_cost_for_single_query` enforces that the worst-case body
     //     cost is `<= TRANSACTION_SPEND_LIMIT`, so a deployed query cannot register an
     //     unboundedly expensive body.
@@ -269,22 +271,24 @@ fn evaluate_query_inner<N: Network>(
     //     to the deploy bound per call. Rate-limiting and indexing are expected to be
     //     handled at the snarkOS RPC layer, not here.
     let mut counter = 0;
+    let mut finalize_operations: Vec<snarkvm_synthesizer_program::FinalizeOperation<N>> = Vec::new();
     while counter < query.commands().len() {
         let command = &query.commands()[counter];
-        match command {
-            Command::Await(_) => bail!("'await' is forbidden in a query function"),
-            Command::BranchEq(branch) => {
-                counter = crate::finalize::branch_to(counter, branch, query.positions(), stack, &registers)?;
-            }
-            Command::BranchNeq(branch) => {
-                counter = crate::finalize::branch_to(counter, branch, query.positions(), stack, &registers)?;
-            }
-            other => {
-                other.finalize(stack, store, &mut registers)?;
-                counter += 1;
-            }
-        }
+        crate::finalize::finalize_command_except_await(
+            store,
+            stack,
+            &mut registers,
+            query.positions(),
+            command,
+            &mut counter,
+            &mut finalize_operations,
+            query.name(),
+        )?;
     }
+    // Defensive: queries reject all write-producing commands at construction, so no finalize
+    // operations should ever be emitted. Catches any future regression that allows a write
+    // through the type-check path.
+    debug_assert!(finalize_operations.is_empty(), "query produced finalize operations: {finalize_operations:?}");
 
     // Load the outputs.
     let mut outputs = Vec::with_capacity(query.outputs().len());
