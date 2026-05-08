@@ -219,10 +219,11 @@ fn evaluate_query_inner<N: Network>(
     // Compute the register types for the query body.
     let types = FinalizeTypes::from_query(stack, query)?;
 
-    // Queries are read-only and externally-callable: no transition is associated. The block
-    // height inside `state` is the only state-binding; `transition_id` and `nonce` are filled
-    // with defaults by the dedicated constructor (they are unused on a query path).
-    let mut registers = FinalizeRegisters::new_for_query(state, *query.name(), types);
+    // Queries are read-only and externally-callable: no transition is associated. Pass `None`
+    // for `transition_id` and `nonce` — the only consumer (rand.chacha) is rejected by
+    // `add_command`, so any future reader of these fields must handle the `None` case
+    // explicitly (the trait surface makes this a compile-time obligation).
+    let mut registers = FinalizeRegisters::new(state, None, *query.name(), types, None);
 
     // Validate the input arity.
     ensure!(

@@ -283,14 +283,17 @@ pub trait FinalizeRegistersState<N: Network>: RegistersTrait<N> {
     /// Returns the global state for the finalize scope.
     fn state(&self) -> &FinalizeGlobalState;
 
-    /// Returns the transition ID for the finalize scope.
-    fn transition_id(&self) -> &N::TransitionID;
+    /// Returns the transition ID for the finalize scope, if one is associated with this scope.
+    /// Query functions are externally-callable and have no associated transition, so this is
+    /// `None` on the query path; finalize and constructor scopes always have `Some(...)`.
+    fn transition_id(&self) -> Option<&N::TransitionID>;
 
     /// Returns the function name for the finalize scope.
     fn function_name(&self) -> &Identifier<N>;
 
-    /// Returns the nonce for the finalize registers.
-    fn nonce(&self) -> u64;
+    /// Returns the nonce for the finalize registers, if one is associated with this scope.
+    /// `None` on the query path (no transition → no nonce); always `Some(...)` on finalize.
+    fn nonce(&self) -> Option<u64>;
 }
 
 pub trait RegistersSigner<N: Network>: RegistersTrait<N> {
