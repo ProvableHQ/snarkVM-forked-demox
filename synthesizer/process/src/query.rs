@@ -19,7 +19,7 @@ use console::{
     program::{Identifier, ProgramID, Value},
 };
 use snarkvm_ledger_store::{FinalizeMode, FinalizeStorage, FinalizeStore, atomic_finalize};
-use snarkvm_synthesizer_program::{Command, FinalizeGlobalState, RegistersTrait, StackTrait};
+use snarkvm_synthesizer_program::{Command, FinalizeGlobalState, FinalizeStoreTrait, RegistersTrait, StackTrait};
 
 impl<N: Network> Process<N> {
     /// Evaluates a query function in the program identified by `program_id` and returns its outputs.
@@ -42,6 +42,25 @@ impl<N: Network> Process<N> {
         let query_name = query_name.try_into().map_err(|_| anyhow!("Invalid query function name"))?;
         let stack = self.get_stack(program_id)?;
         evaluate_query(state, store, &stack, &query_name, inputs)
+    }
+
+    /// Evaluates a query function against historic finalize-store state at the given block
+    /// height. Mirrors [`evaluate_query`], but routes mapping reads through the finalize store's
+    /// historical update map. Available only when snarkVM is built with `--features history`.
+    #[cfg(feature = "history")]
+    #[inline]
+    pub fn evaluate_query_at_height<P: FinalizeStorage<N>>(
+        &self,
+        store: &FinalizeStore<N, P>,
+        program_id: impl TryInto<ProgramID<N>>,
+        query_name: impl TryInto<Identifier<N>>,
+        inputs: Vec<Value<N>>,
+        height: u32,
+    ) -> Result<Vec<Value<N>>> {
+        let program_id = program_id.try_into().map_err(|_| anyhow!("Invalid program ID"))?;
+        let query_name = query_name.try_into().map_err(|_| anyhow!("Invalid query function name"))?;
+        let stack = self.get_stack(program_id)?;
+        evaluate_query_at_height(store, &stack, &query_name, inputs, height)
     }
 }
 
@@ -76,11 +95,120 @@ pub fn evaluate_query<N: Network, P: FinalizeStorage<N>>(
     })
 }
 
+/// Evaluates a query function against historic finalize-store state at the given block
+/// `height`. Mapping reads route through `FinalizeStore::get_historical_mapping_value`, which
+/// reconstructs the value applicable at `height` from the per-key update log. The returned
+/// `FinalizeGlobalState` has its `block_height` set to `height` so any consensus-version
+/// behavior the query depends on resolves consistently with the historic state.
+///
+/// Available only when snarkVM is built with `--features history`.
+#[cfg(feature = "history")]
+pub fn evaluate_query_at_height<N: Network, P: FinalizeStorage<N>>(
+    store: &FinalizeStore<N, P>,
+    stack: &Stack<N>,
+    query_name: &Identifier<N>,
+    inputs: Vec<Value<N>>,
+    height: u32,
+) -> Result<Vec<Value<N>>> {
+    let state = FinalizeGlobalState::for_query(height);
+    let historic = HistoricFinalizeStore { store, height };
+    atomic_finalize!(store, FinalizeMode::DryRun, {
+        evaluate_query_inner(state, &historic, stack, query_name, inputs).map_err(|e| e.to_string())
+    })
+}
+
+/// Read-only `FinalizeStoreTrait` adapter that routes mapping reads through the finalize
+/// store's historical update map at a fixed `height`. Writes bail — they are unreachable on
+/// the query path (queries reject `set` / `remove` at construction), but bailing here
+/// preserves that invariant if the adapter is ever passed to other code.
+#[cfg(feature = "history")]
+struct HistoricFinalizeStore<'a, N: Network, P: FinalizeStorage<N>> {
+    store: &'a FinalizeStore<N, P>,
+    height: u32,
+}
+
+#[cfg(feature = "history")]
+impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for HistoricFinalizeStore<'_, N, P> {
+    fn contains_mapping_confirmed(
+        &self,
+        program_id: &console::program::ProgramID<N>,
+        mapping_name: &Identifier<N>,
+    ) -> Result<bool> {
+        // Mapping existence is not versioned per height. Delegate to the underlying store:
+        // if the mapping exists now, queries at any height return per-key historic values
+        // (or `None` for keys that had no value at that height).
+        self.store.contains_mapping_confirmed(program_id, mapping_name)
+    }
+
+    fn contains_mapping_speculative(
+        &self,
+        program_id: &console::program::ProgramID<N>,
+        mapping_name: &Identifier<N>,
+    ) -> Result<bool> {
+        self.store.contains_mapping_speculative(program_id, mapping_name)
+    }
+
+    fn contains_key_speculative(
+        &self,
+        program_id: console::program::ProgramID<N>,
+        mapping_name: Identifier<N>,
+        key: &console::program::Plaintext<N>,
+    ) -> Result<bool> {
+        Ok(self.store.get_historical_mapping_value(program_id, mapping_name, key.clone(), self.height)?.is_some())
+    }
+
+    fn get_value_speculative(
+        &self,
+        program_id: console::program::ProgramID<N>,
+        mapping_name: Identifier<N>,
+        key: &console::program::Plaintext<N>,
+    ) -> Result<Option<Value<N>>> {
+        Ok(self
+            .store
+            .get_historical_mapping_value(program_id, mapping_name, key.clone(), self.height)?
+            .map(|cow| cow.into_owned()))
+    }
+
+    fn insert_key_value(
+        &self,
+        _program_id: console::program::ProgramID<N>,
+        _mapping_name: Identifier<N>,
+        _key: console::program::Plaintext<N>,
+        _value: Value<N>,
+    ) -> Result<snarkvm_synthesizer_program::FinalizeOperation<N>> {
+        bail!("Forbidden operation: query path cannot write to the finalize store ('insert_key_value')")
+    }
+
+    fn update_key_value(
+        &self,
+        _program_id: console::program::ProgramID<N>,
+        _mapping_name: Identifier<N>,
+        _key: console::program::Plaintext<N>,
+        _value: Value<N>,
+    ) -> Result<snarkvm_synthesizer_program::FinalizeOperation<N>> {
+        bail!("Forbidden operation: query path cannot write to the finalize store ('update_key_value')")
+    }
+
+    fn remove_key_value(
+        &self,
+        _program_id: console::program::ProgramID<N>,
+        _mapping_name: Identifier<N>,
+        _key: &console::program::Plaintext<N>,
+    ) -> Result<Option<snarkvm_synthesizer_program::FinalizeOperation<N>>> {
+        bail!("Forbidden operation: query path cannot write to the finalize store ('remove_key_value')")
+    }
+}
+
 /// Inner evaluation of a query. The outer wrapper enforces isolation via
 /// `atomic_finalize!(DryRun)` — see [`evaluate_query`] for the rationale.
-fn evaluate_query_inner<N: Network, P: FinalizeStorage<N>>(
+///
+/// Generic over the store so that `evaluate_query` (current state) and
+/// `evaluate_query_at_height` (historic state via the `--history` feature) can share the
+/// loop body. The historic path passes a read-only adapter that routes to
+/// `FinalizeStore::get_historical_mapping_value`.
+fn evaluate_query_inner<N: Network>(
     state: FinalizeGlobalState,
-    store: &FinalizeStore<N, P>,
+    store: &impl FinalizeStoreTrait<N>,
     stack: &Stack<N>,
     query_name: &Identifier<N>,
     inputs: Vec<Value<N>>,
@@ -469,6 +597,113 @@ query reads_ts:
             Err(err) => err.to_string(),
         };
         assert!(err.contains("block.timestamp"), "unexpected error message: {err}");
+        Ok(())
+    }
+
+    /// Drives a value through two updates at different block heights and asserts that
+    /// `evaluate_query_at_height` returns the value applicable at each height.
+    #[cfg(feature = "history")]
+    #[test]
+    fn test_evaluate_query_at_height_returns_historic_value() -> Result<()> {
+        use std::sync::atomic::Ordering;
+
+        let program = Program::<CurrentNetwork>::from_str(
+            r"
+program qy_history.aleo;
+
+mapping balances:
+    key as address.public;
+    value as u64.public;
+
+function noop:
+    input r0 as u64.private;
+    output r0 as u64.private;
+
+query lookup:
+    input r0 as address.public;
+    get balances[r0] into r1;
+    output r1 as u64.public;",
+        )?;
+
+        let process = Process::<CurrentNetwork>::load()?;
+        let stack = Stack::new(&process, &program)?;
+        let finalize_store = FinalizeStore::<_, FinalizeMemory<_>>::open(aleo_std::StorageMode::new_test(None))?;
+
+        let program_id = *program.id();
+        let mapping_name = Identifier::from_str("balances")?;
+        finalize_store.initialize_mapping(program_id, mapping_name)?;
+
+        let mut rng = console::prelude::TestRng::default();
+        let private_key = PrivateKey::<CurrentNetwork>::new(&mut rng)?;
+        let address = console::account::Address::try_from(&private_key)?;
+        let address_key = Plaintext::from(Literal::Address(address));
+
+        // Write V1 at height 1, then V2 at height 5. The historic update map is populated
+        // automatically because the `--features history` build path is enabled.
+        finalize_store.current_block_height().store(1, Ordering::SeqCst);
+        finalize_store.update_key_value(
+            program_id,
+            mapping_name,
+            address_key.clone(),
+            Value::Plaintext(Plaintext::from(Literal::U64(U64::new(11)))),
+        )?;
+        finalize_store.current_block_height().store(5, Ordering::SeqCst);
+        finalize_store.update_key_value(
+            program_id,
+            mapping_name,
+            address_key.clone(),
+            Value::Plaintext(Plaintext::from(Literal::U64(U64::new(55)))),
+        )?;
+
+        // Helper to extract the u64 from a single-output Vec<Value<N>>.
+        let extract = |outputs: Vec<Value<CurrentNetwork>>| match &outputs[0] {
+            Value::Plaintext(Plaintext::Literal(Literal::U64(v), _)) => **v,
+            other => panic!("expected u64, got: {other}"),
+        };
+
+        // Sanity: confirmed/current state reflects the LAST write (V2 = 55). Historic queries
+        // below must therefore return 11 (not 55) at heights ≤ 4, distinguishing the historic
+        // path from any accidental fall-through to current speculative state.
+        let outputs = evaluate_query(
+            FinalizeGlobalState::for_query(5),
+            &finalize_store,
+            &stack,
+            &Identifier::from_str("lookup")?,
+            vec![Value::Plaintext(address_key.clone())],
+        )?;
+        assert_eq!(extract(outputs), 55, "current state should reflect the most recent write");
+
+        // Query at height 1 → V1.
+        let outputs = evaluate_query_at_height(
+            &finalize_store,
+            &stack,
+            &Identifier::from_str("lookup")?,
+            vec![Value::Plaintext(address_key.clone())],
+            1,
+        )?;
+        assert_eq!(extract(outputs), 11, "expected historic value at height 1");
+
+        // Query at height 5 → V2.
+        let outputs = evaluate_query_at_height(
+            &finalize_store,
+            &stack,
+            &Identifier::from_str("lookup")?,
+            vec![Value::Plaintext(address_key.clone())],
+            5,
+        )?;
+        assert_eq!(extract(outputs), 55, "expected historic value at height 5");
+
+        // Query at height 3 (between the two updates) → V1, since the binary-search picks
+        // the most recent applicable height.
+        let outputs = evaluate_query_at_height(
+            &finalize_store,
+            &stack,
+            &Identifier::from_str("lookup")?,
+            vec![Value::Plaintext(address_key)],
+            3,
+        )?;
+        assert_eq!(extract(outputs), 11, "expected applicable historic value at intermediate height 3");
+
         Ok(())
     }
 }

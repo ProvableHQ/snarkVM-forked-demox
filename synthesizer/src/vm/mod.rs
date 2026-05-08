@@ -340,6 +340,31 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         Ok((block_height, outputs))
     }
 
+    /// Evaluates a query function against historic finalize-store state at the given block
+    /// `height`. Returns the typed outputs (no `(height, outputs)` tuple — the caller already
+    /// supplied the height).
+    ///
+    /// Mapping reads route through the finalize store's historical update map, which is only
+    /// populated when snarkVM is built with `--features history`.
+    ///
+    /// `height` must satisfy `height <= current_block_height()`. Reading a future height
+    /// returns the same "not found" surface a missing key would. The caller is expected to
+    /// validate this at the snarkOS RPC layer if desired.
+    #[cfg(feature = "history")]
+    #[inline]
+    pub fn evaluate_query_at_height(
+        &self,
+        program_id: impl TryInto<ProgramID<N>>,
+        query_name: impl TryInto<Identifier<N>>,
+        inputs: Vec<Value<N>>,
+        height: u32,
+    ) -> Result<Vec<Value<N>>> {
+        // Same isolation reasoning as `evaluate_query`: do not take `self.process.lock()`,
+        // rely on `Arc<Stack>` immutability and the `atomic_finalize!(DryRun)` wrapper that
+        // `Process::evaluate_query_at_height` opens around the historic-read path.
+        self.process.evaluate_query_at_height(self.finalize_store(), program_id, query_name, inputs, height)
+    }
+
     /// Returns the transition store.
     #[inline]
     pub fn transition_store(&self) -> &TransitionStore<N, C::TransitionStorage> {
