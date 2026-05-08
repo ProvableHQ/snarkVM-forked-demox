@@ -56,25 +56,6 @@ impl<N: Network> FinalizeTypes<N> {
     ) -> Result<Self> {
         let mut finalize_types = Self { inputs: IndexMap::new(), destinations: IndexMap::new() };
 
-        // Reject `block.timestamp` reads at deploy time. Queries are not bound to a specific
-        // block timestamp (`FinalizeGlobalState::for_query` sets it to `None`), so the runtime
-        // path would otherwise bail with the misleading "not available until ConsensusVersion::V12"
-        // error on every call.
-        for command in query.commands() {
-            for operand in command.operands() {
-                ensure!(
-                    !matches!(operand, Operand::BlockTimestamp),
-                    "Forbidden operand: query functions cannot read 'block.timestamp'"
-                );
-            }
-        }
-        for output in query.outputs() {
-            ensure!(
-                !matches!(output.operand(), Operand::BlockTimestamp),
-                "Forbidden operand: query functions cannot output 'block.timestamp'"
-            );
-        }
-
         // Type-check the inputs. Query inputs are guaranteed to be plaintext at construction time.
         for input in query.inputs() {
             finalize_types.check_input(stack, input.register(), input.finalize_type())?;

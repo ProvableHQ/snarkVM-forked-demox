@@ -301,6 +301,33 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         self.store.transaction_store()
     }
 
+    /// Builds a `FinalizeGlobalState` from the block at the given `height`.
+    ///
+    /// Returns an error if no block exists at `height`. Queries reuse the same shape that
+    /// the consensus path uses in `add_next_block_inner`, populating round, timestamp, the
+    /// cumulative weights, and the previous-block hash from the actual block — so any
+    /// operand or opcode that reads from `FinalizeGlobalState` (block.height,
+    /// block.timestamp, random_seed via rand.chacha, etc.) sees real values.
+    fn finalize_state_for_block(&self, height: u32) -> Result<FinalizeGlobalState> {
+        let block_hash =
+            self.block_store().get_block_hash(height)?.ok_or_else(|| anyhow!("No block exists at height {height}"))?;
+        let block = self
+            .block_store()
+            .get_block(&block_hash)?
+            .ok_or_else(|| anyhow!("Block hash for height {height} resolved but the block could not be loaded"))?;
+        // Match the consensus path's gating: the timestamp is only included from V12 onward.
+        let block_timestamp = (block.height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
+            .then_some(block.timestamp());
+        FinalizeGlobalState::new::<N>(
+            block.round(),
+            block.height(),
+            block_timestamp,
+            block.cumulative_weight(),
+            block.cumulative_proof_target(),
+            block.previous_hash(),
+        )
+    }
+
     /// Evaluates a query function in the program identified by `program_id` against the
     /// VM's current finalize state. Returns the block height the query was bound to,
     /// together with the typed outputs.
@@ -318,11 +345,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         query_name: impl TryInto<Identifier<N>>,
         inputs: Vec<Value<N>>,
     ) -> Result<(u32, Vec<Value<N>>)> {
-        // Bind the query to the current block height. The dedicated constructor fills the
-        // other `FinalizeGlobalState` fields with safe defaults (queries forbid `rand.chacha`,
-        // the only consumer of `random_seed`).
+        // Bind the query to the current block height and the corresponding `FinalizeGlobalState`
+        // (round / timestamp / cumulative weights / previous hash) — same shape as the
+        // consensus finalize path, so query operands reading those fields see real values.
         let block_height = self.block_store().current_block_height();
-        let state = FinalizeGlobalState::for_query(block_height);
+        let state = self.finalize_state_for_block(block_height)?;
 
         // Delegate to `Process::evaluate_query`. `self.process` derefs through the `Arc`.
         //
@@ -345,11 +372,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// supplied the height).
     ///
     /// Mapping reads route through the finalize store's historical update map, which is only
-    /// populated when snarkVM is built with `--features history`.
+    /// populated when snarkVM is built with `--features history`. The `FinalizeGlobalState`
+    /// passed to the evaluator is also reconstructed from the block at `height`, so query
+    /// operands that read block metadata see the metadata from that historic block.
     ///
     /// `height` must satisfy `height <= current_block_height()`. Reading a future height
-    /// returns the same "not found" surface a missing key would. The caller is expected to
-    /// validate this at the snarkOS RPC layer if desired.
+    /// returns "no block exists" rather than a misleading None.
     #[cfg(feature = "history")]
     #[inline]
     pub fn evaluate_query_at_height(
@@ -359,10 +387,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         inputs: Vec<Value<N>>,
         height: u32,
     ) -> Result<Vec<Value<N>>> {
-        // Same isolation reasoning as `evaluate_query`: do not take `self.process.lock()`,
-        // rely on `Arc<Stack>` immutability and the `atomic_finalize!(DryRun)` wrapper that
-        // `Process::evaluate_query_at_height` opens around the historic-read path.
-        self.process.evaluate_query_at_height(self.finalize_store(), program_id, query_name, inputs, height)
+        // Build the `FinalizeGlobalState` from the actual block at `height`, then route to
+        // the historic adapter inside `Process::evaluate_query_at_height`. Same isolation
+        // story as `evaluate_query`.
+        let state = self.finalize_state_for_block(height)?;
+        self.process.evaluate_query_at_height(state, self.finalize_store(), program_id, query_name, inputs, height)
     }
 
     /// Returns the transition store.

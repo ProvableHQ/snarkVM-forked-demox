@@ -46,11 +46,15 @@ impl<N: Network> Process<N> {
 
     /// Evaluates a query function against historic finalize-store state at the given block
     /// height. Mirrors [`evaluate_query`], but routes mapping reads through the finalize store's
-    /// historical update map. Available only when snarkVM is built with `--features history`.
+    /// historical update map. The caller (typically `VM::evaluate_query_at_height`) is responsible
+    /// for constructing `state` from the historic block at `height` so query operands reading
+    /// block metadata see the historic block's values. Available only when snarkVM is built
+    /// with `--features history`.
     #[cfg(feature = "history")]
     #[inline]
     pub fn evaluate_query_at_height<P: FinalizeStorage<N>>(
         &self,
+        state: FinalizeGlobalState,
         store: &FinalizeStore<N, P>,
         program_id: impl TryInto<ProgramID<N>>,
         query_name: impl TryInto<Identifier<N>>,
@@ -60,7 +64,7 @@ impl<N: Network> Process<N> {
         let program_id = program_id.try_into().map_err(|_| anyhow!("Invalid program ID"))?;
         let query_name = query_name.try_into().map_err(|_| anyhow!("Invalid query function name"))?;
         let stack = self.get_stack(program_id)?;
-        evaluate_query_at_height(store, &stack, &query_name, inputs, height)
+        evaluate_query_at_height(state, store, &stack, &query_name, inputs, height)
     }
 }
 
@@ -97,20 +101,22 @@ pub fn evaluate_query<N: Network, P: FinalizeStorage<N>>(
 
 /// Evaluates a query function against historic finalize-store state at the given block
 /// `height`. Mapping reads route through `FinalizeStore::get_historical_mapping_value`, which
-/// reconstructs the value applicable at `height` from the per-key update log. The returned
-/// `FinalizeGlobalState` has its `block_height` set to `height` so any consensus-version
-/// behavior the query depends on resolves consistently with the historic state.
+/// reconstructs the value applicable at `height` from the per-key update log.
+///
+/// `state` is supplied by the caller — typically `VM::evaluate_query_at_height` constructs it
+/// from the historic block at `height` so query operands reading block metadata
+/// (`block.height`, `block.timestamp`, the random seed) reflect that block.
 ///
 /// Available only when snarkVM is built with `--features history`.
 #[cfg(feature = "history")]
 pub fn evaluate_query_at_height<N: Network, P: FinalizeStorage<N>>(
+    state: FinalizeGlobalState,
     store: &FinalizeStore<N, P>,
     stack: &Stack<N>,
     query_name: &Identifier<N>,
     inputs: Vec<Value<N>>,
     height: u32,
 ) -> Result<Vec<Value<N>>> {
-    let state = FinalizeGlobalState::for_query(height);
     let historic = HistoricFinalizeStore { store, height };
     atomic_finalize!(store, FinalizeMode::DryRun, {
         evaluate_query_inner(state, &historic, stack, query_name, inputs).map_err(|e| e.to_string())
@@ -314,8 +320,12 @@ mod tests {
 
     type CurrentNetwork = MainnetV0;
 
+    /// Builds a synthetic `FinalizeGlobalState` for tests. Production callers go through
+    /// `VM::evaluate_query`, which constructs the state from a real block at the call site.
     fn sample_finalize_state(block_height: u32) -> FinalizeGlobalState {
-        FinalizeGlobalState::for_query(block_height)
+        // Use `from` to avoid the BHP hash done by `new`. The seed is irrelevant for these
+        // tests (no rand.chacha) and the round/timestamp aren't read either.
+        FinalizeGlobalState::from(block_height as u64, block_height, None, [0u8; 32])
     }
 
     #[test]
@@ -577,10 +587,10 @@ query fixed_value:
     }
 
     #[test]
-    fn test_query_rejects_block_timestamp_operand() -> Result<()> {
-        // A query that reads `block.timestamp`. Deployment must fail at type-check time —
-        // queries have no meaningful timestamp, so the runtime would otherwise bail with a
-        // confusing "not available until V12" error on every call.
+    fn test_query_can_read_block_timestamp() -> Result<()> {
+        // Queries get a real `FinalizeGlobalState` from the calling VM (built from the
+        // current/historic block), so `block.timestamp` is a valid operand inside a query body.
+        // Drive it directly here at the process layer with a synthetic state.
         let program = Program::<CurrentNetwork>::from_str(
             r"
 program qy_block_ts.aleo;
@@ -595,13 +605,18 @@ query reads_ts:
         )?;
 
         let process = Process::<CurrentNetwork>::load()?;
-        // `Stack::new` runs `FinalizeTypes::from_query` over every query at construction time,
-        // so the rejection surfaces here.
-        let err = match Stack::new(&process, &program) {
-            Ok(_) => panic!("expected stack construction to reject block.timestamp in a query"),
-            Err(err) => err.to_string(),
-        };
-        assert!(err.contains("block.timestamp"), "unexpected error message: {err}");
+        let stack = Stack::new(&process, &program)?;
+        let finalize_store = FinalizeStore::<_, FinalizeMemory<_>>::open(aleo_std::StorageMode::new_test(None))?;
+
+        // Build a state with a non-trivial timestamp, mimicking what a real VM would supply.
+        let state = FinalizeGlobalState::from(1, 1, Some(1234567890), [0u8; 32]);
+        let outputs = evaluate_query(state, &finalize_store, &stack, &Identifier::from_str("reads_ts")?, vec![])?;
+
+        assert_eq!(outputs.len(), 1);
+        match &outputs[0] {
+            Value::Plaintext(Plaintext::Literal(Literal::I64(v), _)) => assert_eq!(**v, 1234567890),
+            other => panic!("expected i64 plaintext, got: {other}"),
+        }
         Ok(())
     }
 
@@ -669,17 +684,15 @@ query lookup:
         // Sanity: confirmed/current state reflects the LAST write (V2 = 55). Historic queries
         // below must therefore return 11 (not 55) at heights ≤ 4, distinguishing the historic
         // path from any accidental fall-through to current speculative state.
-        let outputs = evaluate_query(
-            FinalizeGlobalState::for_query(5),
-            &finalize_store,
-            &stack,
-            &Identifier::from_str("lookup")?,
-            vec![Value::Plaintext(address_key.clone())],
-        )?;
+        let outputs =
+            evaluate_query(sample_finalize_state(5), &finalize_store, &stack, &Identifier::from_str("lookup")?, vec![
+                Value::Plaintext(address_key.clone()),
+            ])?;
         assert_eq!(extract(outputs), 55, "current state should reflect the most recent write");
 
         // Query at height 1 → V1.
         let outputs = evaluate_query_at_height(
+            sample_finalize_state(1),
             &finalize_store,
             &stack,
             &Identifier::from_str("lookup")?,
@@ -690,6 +703,7 @@ query lookup:
 
         // Query at height 5 → V2.
         let outputs = evaluate_query_at_height(
+            sample_finalize_state(5),
             &finalize_store,
             &stack,
             &Identifier::from_str("lookup")?,
@@ -701,6 +715,7 @@ query lookup:
         // Query at height 3 (between the two updates) → V1, since the binary-search picks
         // the most recent applicable height.
         let outputs = evaluate_query_at_height(
+            sample_finalize_state(3),
             &finalize_store,
             &stack,
             &Identifier::from_str("lookup")?,
