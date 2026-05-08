@@ -18,7 +18,7 @@ use console::{
     network::prelude::*,
     program::{Identifier, ProgramID, Value},
 };
-use snarkvm_ledger_store::{FinalizeStorage, FinalizeStore};
+use snarkvm_ledger_store::{FinalizeMode, FinalizeStorage, FinalizeStore, atomic_finalize};
 use snarkvm_synthesizer_program::{Command, FinalizeGlobalState, RegistersTrait, StackTrait};
 
 impl<N: Network> Process<N> {
@@ -49,7 +49,36 @@ impl<N: Network> Process<N> {
 ///
 /// This is the prototype query path. It is invoked by external callers only — query functions
 /// cannot be called from inside other program components in this prototype.
+///
+/// Isolation:
+/// The entire evaluation runs inside an `atomic_finalize!(DryRun)` batch over the finalize
+/// store. Two consequences:
+///   1. **Confirmed-state reads.** While the batch is open, the finalize store's
+///      `*_speculative` reads (used by `Get` / `Contains` / `GetOrUse`) only see this batch's
+///      state, which performs no writes — so each read transparently falls through to the
+///      confirmed map. A concurrent `finalize_atomic_batch` (block production / dry-run
+///      speculation) would otherwise expose pending writes via the same speculative path.
+///   2. **No store writes.** The DryRun batch is always aborted at the end, so even a future
+///      change that inadvertently introduces a write cannot reach the canonical store.
+///
+/// Cost: a query attempted while another atomic batch is in progress (block finalization, or
+/// another query) fails fast with the macro's standard error. snarkOS is expected to handle
+/// retry / rate-limiting at the RPC layer.
 pub fn evaluate_query<N: Network, P: FinalizeStorage<N>>(
+    state: FinalizeGlobalState,
+    store: &FinalizeStore<N, P>,
+    stack: &Stack<N>,
+    query_name: &Identifier<N>,
+    inputs: Vec<Value<N>>,
+) -> Result<Vec<Value<N>>> {
+    atomic_finalize!(store, FinalizeMode::DryRun, {
+        evaluate_query_inner(state, store, stack, query_name, inputs).map_err(|e| e.to_string())
+    })
+}
+
+/// Inner evaluation of a query. The outer wrapper enforces isolation via
+/// `atomic_finalize!(DryRun)` — see [`evaluate_query`] for the rationale.
+fn evaluate_query_inner<N: Network, P: FinalizeStorage<N>>(
     state: FinalizeGlobalState,
     store: &FinalizeStore<N, P>,
     stack: &Stack<N>,
@@ -366,6 +395,51 @@ query echo:
         };
         assert!(err.contains("future"), "unexpected error message: {err}");
         assert!(err.contains("plaintext"), "unexpected error message: {err}");
+        Ok(())
+    }
+
+    #[test]
+    fn test_evaluate_query_fails_when_atomic_batch_in_progress() -> Result<()> {
+        // If another atomic batch is in progress on the finalize store (e.g. block
+        // finalization), `evaluate_query`'s `atomic_finalize!(DryRun)` wrapper bails
+        // immediately rather than racing or seeing pending writes.
+        let program = Program::<CurrentNetwork>::from_str(
+            r"
+program qy_atomic_guard.aleo;
+
+function noop:
+    input r0 as u64.private;
+    output r0 as u64.private;
+
+query fixed_value:
+    add 0u64 1u64 into r0;
+    output r0 as u64.public;",
+        )?;
+
+        let process = Process::<CurrentNetwork>::load()?;
+        let stack = Stack::new(&process, &program)?;
+        let finalize_store = FinalizeStore::<_, FinalizeMemory<_>>::open(aleo_std::StorageMode::new_test(None))?;
+
+        // Simulate an in-flight atomic batch (the same condition produced by block finalization).
+        finalize_store.start_atomic();
+        assert!(finalize_store.is_atomic_in_progress());
+
+        let result = evaluate_query(
+            sample_finalize_state(1),
+            &finalize_store,
+            &stack,
+            &Identifier::from_str("fixed_value")?,
+            vec![],
+        );
+
+        // Cleanup before asserting so a panic doesn't leave the store in a bad state.
+        finalize_store.abort_atomic();
+
+        let err = match result {
+            Ok(_) => panic!("expected evaluate_query to bail when an atomic batch is in progress"),
+            Err(err) => err.to_string(),
+        };
+        assert!(err.contains("atomic batch"), "unexpected error message: {err}");
         Ok(())
     }
 
