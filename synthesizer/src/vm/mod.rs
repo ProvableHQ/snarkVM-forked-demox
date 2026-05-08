@@ -308,6 +308,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// cumulative weights, and the previous-block hash from the actual block — so any
     /// operand or opcode that reads from `FinalizeGlobalState` (block.height,
     /// block.timestamp, random_seed via rand.chacha, etc.) sees real values.
+    #[cfg(feature = "history")]
     fn finalize_state_for_block(&self, height: u32) -> Result<FinalizeGlobalState> {
         let block_hash =
             self.block_store().get_block_hash(height)?.ok_or_else(|| anyhow!("No block exists at height {height}"))?;
@@ -328,56 +329,26 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         )
     }
 
-    /// Evaluates a query function in the program identified by `program_id` against the
-    /// VM's current finalize state. Returns the block height the query was bound to,
-    /// together with the typed outputs.
+    /// Evaluates a query function against finalize-store state at the given block `height`.
+    /// Returns the typed outputs (no `(height, outputs)` tuple — the caller already supplied
+    /// the height).
     ///
-    /// This is the most ergonomic call site for query functions: the caller supplies only the
-    /// program ID, query name, and inputs. The block height, finalize store, and stack are all
-    /// resolved from the VM. Returning the block height alongside the outputs lets callers
-    /// (UIs, caches, indexers) attribute the answer to a specific chain state without a
-    /// follow-up `current_block_height()` call that could race chain progression.
-    /// Queries are a node-local lookup; no transaction is produced.
-    #[inline]
-    pub fn evaluate_query(
-        &self,
-        program_id: impl TryInto<ProgramID<N>>,
-        query_name: impl TryInto<Identifier<N>>,
-        inputs: Vec<Value<N>>,
-    ) -> Result<(u32, Vec<Value<N>>)> {
-        // Bind the query to the current block height and the corresponding `FinalizeGlobalState`
-        // (round / timestamp / cumulative weights / previous hash) — same shape as the
-        // consensus finalize path, so query operands reading those fields see real values.
-        let block_height = self.block_store().current_block_height();
-        let state = self.finalize_state_for_block(block_height)?;
-
-        // Delegate to `Process::evaluate_query`. `self.process` derefs through the `Arc`.
-        //
-        // We deliberately do NOT take `self.process.lock()` here. That guard is the same
-        // exclusive `Mutex` held for the entire duration of `finalize_atomic_batch`, so
-        // grabbing it for a query would (a) serialize all concurrent queries and (b) block
-        // chain advancement while any query runs. Instead, the query relies on:
-        //   - `Arc<Stack<N>>` immutability: once `Process::get_stack` returns an Arc, the
-        //     stack contents do not change for the lifetime of that Arc.
-        //   - The finalize store's own internal locking for each mapping read.
-        // A query interleaved with a `revert_stacks`/redeploy can briefly observe program
-        // metadata and finalize state from different boundaries; consumers that need stricter
-        // consistency should index/cache externally or rate-limit at the snarkOS layer.
-        let outputs = self.process.evaluate_query(state, self.finalize_store(), program_id, query_name, inputs)?;
-        Ok((block_height, outputs))
-    }
-
-    /// Evaluates a query function against historic finalize-store state at the given block
-    /// `height`. Returns the typed outputs (no `(height, outputs)` tuple — the caller already
-    /// supplied the height).
+    /// All mapping reads are pinned to `height` via the finalize store's per-key historical
+    /// update map (entries at any given height are immutable once written), so block production
+    /// advancing past `height` mid-evaluation cannot disturb the result. The
+    /// `FinalizeGlobalState` is also reconstructed from the block at `height`, so query operands
+    /// reading block metadata see that block's values.
     ///
-    /// Mapping reads route through the finalize store's historical update map, which is only
-    /// populated when snarkVM is built with `--features history`. The `FinalizeGlobalState`
-    /// passed to the evaluator is also reconstructed from the block at `height`, so query
-    /// operands that read block metadata see the metadata from that historic block.
+    /// snarkOS calls this with `current_block_height()` for "latest" semantics, or any earlier
+    /// height for historic queries. Available only when snarkVM is built with `--features history`
+    /// — the per-height update map that pins reads is only populated under that feature.
     ///
     /// `height` must satisfy `height <= current_block_height()`. Reading a future height
     /// returns "no block exists" rather than a misleading None.
+    ///
+    /// Concurrency: this call does NOT take `self.process.lock()` (which would serialize
+    /// queries against block production); it relies on `Arc<Stack<N>>` immutability and on the
+    /// fact that historic-table entries are immutable.
     #[cfg(feature = "history")]
     #[inline]
     pub fn evaluate_query_at_height(
@@ -387,9 +358,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         inputs: Vec<Value<N>>,
         height: u32,
     ) -> Result<Vec<Value<N>>> {
-        // Build the `FinalizeGlobalState` from the actual block at `height`, then route to
-        // the historic adapter inside `Process::evaluate_query_at_height`. Same isolation
-        // story as `evaluate_query`.
         let state = self.finalize_state_for_block(height)?;
         self.process.evaluate_query_at_height(state, self.finalize_store(), program_id, query_name, inputs, height)
     }

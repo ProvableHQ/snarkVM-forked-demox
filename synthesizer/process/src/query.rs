@@ -18,39 +18,25 @@ use console::{
     network::prelude::*,
     program::{Identifier, ProgramID, Value},
 };
-use snarkvm_ledger_store::{FinalizeMode, FinalizeStorage, FinalizeStore, atomic_finalize};
+use snarkvm_ledger_store::{FinalizeStorage, FinalizeStore};
 use snarkvm_synthesizer_program::{FinalizeGlobalState, FinalizeStoreTrait, RegistersTrait, StackTrait};
 
 impl<N: Network> Process<N> {
-    /// Evaluates a query function in the program identified by `program_id` and returns its outputs.
-    ///
-    /// This is the public-facing query API: callers pass a program ID and query function name,
-    /// not a `&Stack<N>`. It mirrors the shape of `Process::authorize` / `Process::execute`,
-    /// minus the proof stage. **No transitions are produced and no finalize-store writes occur** —
-    /// queries are read-only by construction (`add_command` rejects `set` / `remove` / `async` /
-    /// `await` / `call` / `rand.chacha` / record-touching ops).
-    #[inline]
-    pub fn evaluate_query<P: FinalizeStorage<N>>(
-        &self,
-        state: FinalizeGlobalState,
-        store: &FinalizeStore<N, P>,
-        program_id: impl TryInto<ProgramID<N>>,
-        query_name: impl TryInto<Identifier<N>>,
-        inputs: Vec<Value<N>>,
-    ) -> Result<Vec<Value<N>>> {
-        let program_id = program_id.try_into().map_err(|_| anyhow!("Invalid program ID"))?;
-        let query_name = query_name.try_into().map_err(|_| anyhow!("Invalid query function name"))?;
-        let stack = self.get_stack(program_id)?;
-        evaluate_query(state, store, &stack, &query_name, inputs)
-    }
-
     /// Evaluates a query function against historic finalize-store state at the given block
-    /// height. Mirrors [`evaluate_query`], but routes mapping reads through the finalize store's
-    /// historical update map. The caller (typically `VM::evaluate_query_at_height`) is responsible
-    /// for constructing `state` from the historic block at `height` so query operands reading
-    /// block metadata see the historic block's values. Available only when snarkVM is built
-    /// with `--features history`.
-    #[cfg(feature = "history")]
+    /// height. Routes mapping reads through the finalize store's historical update map (per-key
+    /// values keyed by `(program, mapping, key, height)`), so all reads in the query body are
+    /// pinned to `height` — block production advancing past `height` during evaluation cannot
+    /// disturb the result. The caller (typically `VM::evaluate_query_at_height`) constructs
+    /// `state` from the historic block at `height` so query operands reading block metadata
+    /// see the historic block's values.
+    ///
+    /// **No transitions are produced and no finalize-store writes occur** — queries are
+    /// read-only by construction (`add_command` rejects `set` / `remove` / `async` / `await` /
+    /// `call` / `rand.chacha` / record-touching ops), and the adapter additionally bails on
+    /// every write entry point.
+    ///
+    /// Available only when snarkVM is built with `--features history`. snarkOS calls this with
+    /// `current_block_height()` for "latest", or any earlier height for historic queries.
     #[inline]
     pub fn evaluate_query_at_height<P: FinalizeStorage<N>>(
         &self,
@@ -68,47 +54,20 @@ impl<N: Network> Process<N> {
     }
 }
 
-/// Evaluates a query function on a populated finalize store and returns the declared outputs.
-///
-/// This is the prototype query path. It is invoked by external callers only — query functions
-/// cannot be called from inside other program components in this prototype.
-///
-/// Isolation:
-/// The entire evaluation runs inside an `atomic_finalize!(DryRun)` batch over the finalize
-/// store. Two consequences:
-///   1. **Confirmed-state reads.** While the batch is open, the finalize store's
-///      `*_speculative` reads (used by `Get` / `Contains` / `GetOrUse`) only see this batch's
-///      state, which performs no writes — so each read transparently falls through to the
-///      confirmed map. A concurrent `finalize_atomic_batch` (block production / dry-run
-///      speculation) would otherwise expose pending writes via the same speculative path.
-///   2. **No store writes.** The DryRun batch is always aborted at the end, so even a future
-///      change that inadvertently introduces a write cannot reach the canonical store.
-///
-/// Cost: a query attempted while another atomic batch is in progress (block finalization, or
-/// another query) fails fast with the macro's standard error. snarkOS is expected to handle
-/// retry / rate-limiting at the RPC layer.
-pub fn evaluate_query<N: Network, P: FinalizeStorage<N>>(
-    state: FinalizeGlobalState,
-    store: &FinalizeStore<N, P>,
-    stack: &Stack<N>,
-    query_name: &Identifier<N>,
-    inputs: Vec<Value<N>>,
-) -> Result<Vec<Value<N>>> {
-    atomic_finalize!(store, FinalizeMode::DryRun, {
-        evaluate_query_inner(state, store, stack, query_name, inputs).map_err(|e| e.to_string())
-    })
-}
-
 /// Evaluates a query function against historic finalize-store state at the given block
 /// `height`. Mapping reads route through `FinalizeStore::get_historical_mapping_value`, which
-/// reconstructs the value applicable at `height` from the per-key update log.
+/// reconstructs the value applicable at `height` from the per-key update log (a confirmed-only
+/// table — entries are only written during finalize, never modified). Pinning every read to
+/// `height` therefore gives true snapshot semantics: block production advancing past `height`
+/// during evaluation cannot disturb the result, and we don't need to take an atomic batch on
+/// the store (so this path doesn't contend with block finalization either).
 ///
 /// `state` is supplied by the caller — typically `VM::evaluate_query_at_height` constructs it
 /// from the historic block at `height` so query operands reading block metadata
 /// (`block.height`, `block.timestamp`, the random seed) reflect that block.
 ///
-/// Available only when snarkVM is built with `--features history`.
-#[cfg(feature = "history")]
+/// Available only when snarkVM is built with `--features history`. snarkOS calls this with
+/// `current_block_height()` for "latest", or any earlier height for historic queries.
 pub fn evaluate_query_at_height<N: Network, P: FinalizeStorage<N>>(
     state: FinalizeGlobalState,
     store: &FinalizeStore<N, P>,
@@ -118,22 +77,18 @@ pub fn evaluate_query_at_height<N: Network, P: FinalizeStorage<N>>(
     height: u32,
 ) -> Result<Vec<Value<N>>> {
     let historic = HistoricFinalizeStore { store, height };
-    atomic_finalize!(store, FinalizeMode::DryRun, {
-        evaluate_query_inner(state, &historic, stack, query_name, inputs).map_err(|e| e.to_string())
-    })
+    evaluate_query_inner(state, &historic, stack, query_name, inputs)
 }
 
 /// Read-only `FinalizeStoreTrait` adapter that routes mapping reads through the finalize
 /// store's historical update map at a fixed `height`. Writes bail — they are unreachable on
 /// the query path (queries reject `set` / `remove` at construction), but bailing here
 /// preserves that invariant if the adapter is ever passed to other code.
-#[cfg(feature = "history")]
 struct HistoricFinalizeStore<'a, N: Network, P: FinalizeStorage<N>> {
     store: &'a FinalizeStore<N, P>,
     height: u32,
 }
 
-#[cfg(feature = "history")]
 impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for HistoricFinalizeStore<'_, N, P> {
     fn contains_mapping_confirmed(
         &self,
@@ -205,13 +160,9 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for HistoricFinali
     }
 }
 
-/// Inner evaluation of a query. The outer wrapper enforces isolation via
-/// `atomic_finalize!(DryRun)` — see [`evaluate_query`] for the rationale.
-///
-/// Generic over the store so that `evaluate_query` (current state) and
-/// `evaluate_query_at_height` (historic state via the `--history` feature) can share the
-/// loop body. The historic path passes a read-only adapter that routes to
-/// `FinalizeStore::get_historical_mapping_value`.
+/// Inner evaluation of a query. Generic over the store; the public path
+/// ([`evaluate_query_at_height`]) wraps the underlying `FinalizeStore` in a
+/// [`HistoricFinalizeStore`] adapter that pins reads to a fixed height.
 fn evaluate_query_inner<N: Network>(
     state: FinalizeGlobalState,
     store: &impl FinalizeStoreTrait<N>,
@@ -385,13 +336,15 @@ query total_balance:
             Value::Plaintext(Plaintext::from(Literal::U64(U64::new(2)))),
         )?;
 
-        // Evaluate the query.
-        let outputs = evaluate_query(
-            sample_finalize_state(1),
+        // Evaluate the query at height 0 (the default `current_block_height` for the in-memory
+        // store; `update_key_value` records the historic entries at that height).
+        let outputs = evaluate_query_at_height(
+            sample_finalize_state(0),
             &finalize_store,
             &stack,
             &Identifier::from_str("total_balance")?,
             vec![Value::Plaintext(address_key.clone())],
+            0,
         )?;
 
         // Expect a single u64 output equal to 42.
@@ -436,12 +389,13 @@ query fetch_balance:
         let address = console::account::Address::try_from(&private_key)?;
         let address_key = Plaintext::from(Literal::Address(address));
 
-        let outputs = evaluate_query(
-            sample_finalize_state(1),
+        let outputs = evaluate_query_at_height(
+            sample_finalize_state(0),
             &finalize_store,
             &stack,
             &Identifier::from_str("fetch_balance")?,
             vec![Value::Plaintext(address_key)],
+            0,
         )?;
 
         assert_eq!(outputs.len(), 1);
@@ -486,12 +440,13 @@ query fetch_balance:
         let address = console::account::Address::try_from(&private_key)?;
         let address_key = Plaintext::from(Literal::Address(address));
 
-        let result = evaluate_query(
-            sample_finalize_state(1),
+        let result = evaluate_query_at_height(
+            sample_finalize_state(0),
             &finalize_store,
             &stack,
             &Identifier::from_str("fetch_balance")?,
             vec![Value::Plaintext(address_key)],
+            0,
         );
 
         let err = result.expect_err("expected error when mapping is not initialized").to_string();
@@ -527,10 +482,14 @@ query echo:
         let future_value =
             Value::Future(console::program::Future::new(*program.id(), Identifier::from_str("noop")?, vec![]));
 
-        let result =
-            evaluate_query(sample_finalize_state(1), &finalize_store, &stack, &Identifier::from_str("echo")?, vec![
-                future_value,
-            ]);
+        let result = evaluate_query_at_height(
+            sample_finalize_state(0),
+            &finalize_store,
+            &stack,
+            &Identifier::from_str("echo")?,
+            vec![future_value],
+            0,
+        );
 
         let err = match result {
             Ok(_) => panic!("expected error for non-plaintext input"),
@@ -542,47 +501,77 @@ query echo:
     }
 
     #[test]
-    fn test_evaluate_query_fails_when_atomic_batch_in_progress() -> Result<()> {
-        // If another atomic batch is in progress on the finalize store (e.g. block
-        // finalization), `evaluate_query`'s `atomic_finalize!(DryRun)` wrapper bails
-        // immediately rather than racing or seeing pending writes.
+    fn test_evaluate_query_ignores_pending_writes() -> Result<()> {
+        // The query path uses the `ConfirmedFinalizeStore` adapter, so reads bypass the
+        // atomic-batch pending state. This test simulates an in-flight finalize batch by
+        // staging a write inside an atomic batch (without committing) and then querying:
+        // the pending write must NOT be visible to the query.
         let program = Program::<CurrentNetwork>::from_str(
             r"
-program qy_atomic_guard.aleo;
+program qy_pending_isolate.aleo;
+
+mapping balances:
+    key as address.public;
+    value as u64.public;
 
 function noop:
     input r0 as u64.private;
     output r0 as u64.private;
 
-query fixed_value:
-    add 0u64 1u64 into r0;
-    output r0 as u64.public;",
+query lookup:
+    input r0 as address.public;
+    get.or_use balances[r0] 0u64 into r1;
+    output r1 as u64.public;",
         )?;
 
         let process = Process::<CurrentNetwork>::load()?;
         let stack = Stack::new(&process, &program)?;
         let finalize_store = FinalizeStore::<_, FinalizeMemory<_>>::open(aleo_std::StorageMode::new_test(None))?;
 
-        // Simulate an in-flight atomic batch (the same condition produced by block finalization).
+        let program_id = *program.id();
+        let mapping_name = Identifier::from_str("balances")?;
+        finalize_store.initialize_mapping(program_id, mapping_name)?;
+
+        // Pick a deterministic address.
+        let mut rng = console::prelude::TestRng::default();
+        let private_key = PrivateKey::<CurrentNetwork>::new(&mut rng)?;
+        let address = console::account::Address::try_from(&private_key)?;
+        let address_key = Plaintext::from(Literal::Address(address));
+
+        // Stage a pending write inside an atomic batch — DO NOT commit it. Mirrors the
+        // mid-finalize-batch state a concurrent block-production thread would produce.
         finalize_store.start_atomic();
+        finalize_store.update_key_value(
+            program_id,
+            mapping_name,
+            address_key.clone(),
+            Value::Plaintext(Plaintext::from(Literal::U64(U64::new(99)))),
+        )?;
         assert!(finalize_store.is_atomic_in_progress());
 
-        let result = evaluate_query(
-            sample_finalize_state(1),
+        // Query with the batch still open: the historic adapter reads from the per-height
+        // update map via `get_confirmed`, which skips pending atomic-batch writes. So the
+        // query sees the mapping's default (0), not the pending 99.
+        let outputs = evaluate_query_at_height(
+            sample_finalize_state(0),
             &finalize_store,
             &stack,
-            &Identifier::from_str("fixed_value")?,
-            vec![],
-        );
+            &Identifier::from_str("lookup")?,
+            vec![Value::Plaintext(address_key)],
+            0,
+        )?;
 
-        // Cleanup before asserting so a panic doesn't leave the store in a bad state.
+        // Abort the batch (cleanup; the pending write was a fixture, not a real commit).
         finalize_store.abort_atomic();
 
-        let err = match result {
-            Ok(_) => panic!("expected evaluate_query to bail when an atomic batch is in progress"),
-            Err(err) => err.to_string(),
-        };
-        assert!(err.contains("atomic batch"), "unexpected error message: {err}");
+        assert_eq!(outputs.len(), 1);
+        match &outputs[0] {
+            Value::Plaintext(Plaintext::Literal(Literal::U64(v), _)) => assert_eq!(
+                **v, 0,
+                "query should observe confirmed state (default 0), not the pending in-batch write (99)"
+            ),
+            other => panic!("unexpected output: {other}"),
+        }
         Ok(())
     }
 
@@ -610,7 +599,8 @@ query reads_ts:
 
         // Build a state with a non-trivial timestamp, mimicking what a real VM would supply.
         let state = FinalizeGlobalState::from(1, 1, Some(1234567890), [0u8; 32]);
-        let outputs = evaluate_query(state, &finalize_store, &stack, &Identifier::from_str("reads_ts")?, vec![])?;
+        let outputs =
+            evaluate_query_at_height(state, &finalize_store, &stack, &Identifier::from_str("reads_ts")?, vec![], 1)?;
 
         assert_eq!(outputs.len(), 1);
         match &outputs[0] {
@@ -622,7 +612,6 @@ query reads_ts:
 
     /// Drives a value through two updates at different block heights and asserts that
     /// `evaluate_query_at_height` returns the value applicable at each height.
-    #[cfg(feature = "history")]
     #[test]
     fn test_evaluate_query_at_height_returns_historic_value() -> Result<()> {
         use std::sync::atomic::Ordering;
@@ -681,13 +670,17 @@ query lookup:
             other => panic!("expected u64, got: {other}"),
         };
 
-        // Sanity: confirmed/current state reflects the LAST write (V2 = 55). Historic queries
-        // below must therefore return 11 (not 55) at heights ≤ 4, distinguishing the historic
-        // path from any accidental fall-through to current speculative state.
-        let outputs =
-            evaluate_query(sample_finalize_state(5), &finalize_store, &stack, &Identifier::from_str("lookup")?, vec![
-                Value::Plaintext(address_key.clone()),
-            ])?;
+        // Sanity: querying at the latest height (5) reflects the LAST write (V2 = 55). Historic
+        // queries below must therefore return 11 (not 55) at heights ≤ 4, distinguishing the
+        // historic path from any accidental fall-through to current state.
+        let outputs = evaluate_query_at_height(
+            sample_finalize_state(5),
+            &finalize_store,
+            &stack,
+            &Identifier::from_str("lookup")?,
+            vec![Value::Plaintext(address_key.clone())],
+            5,
+        )?;
         assert_eq!(extract(outputs), 55, "current state should reflect the most recent write");
 
         // Query at height 1 → V1.

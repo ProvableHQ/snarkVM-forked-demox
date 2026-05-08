@@ -21,9 +21,11 @@
 
 use super::*;
 
+#[cfg(feature = "history")]
 use console::program::{Literal, Plaintext};
 
 /// Convenience: extract a single `u64` from a single-output query result.
+#[cfg(feature = "history")]
 fn expect_u64(outputs: &[Value<CurrentNetwork>]) -> u64 {
     assert_eq!(outputs.len(), 1, "expected exactly one output, got {}", outputs.len());
     match &outputs[0] {
@@ -34,6 +36,7 @@ fn expect_u64(outputs: &[Value<CurrentNetwork>]) -> u64 {
 
 /// Full lifecycle: deploy a program with a query function, run a transition that updates a
 /// mapping via finalize, then evaluate the query and observe the new value.
+#[cfg(feature = "history")]
 #[test]
 fn test_evaluate_query_reflects_finalize_state() -> Result<()> {
     let rng = &mut TestRng::default();
@@ -82,9 +85,13 @@ fn test_evaluate_query_reflects_finalize_state() -> Result<()> {
     add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
 
     // Read against an untouched mapping should return the default (0).
-    let (height, outputs) =
-        vm.evaluate_query("qy_lifecycle.aleo", "total_balance", vec![Value::from_str(&caller_address.to_string())?])?;
-    assert_eq!(height, vm.block_store().current_block_height());
+    let height = vm.block_store().current_block_height();
+    let outputs = vm.evaluate_query_at_height(
+        "qy_lifecycle.aleo",
+        "total_balance",
+        vec![Value::from_str(&caller_address.to_string())?],
+        height,
+    )?;
     assert_eq!(expect_u64(&outputs), 0);
 
     // Execute increment(addr, 10).
@@ -93,9 +100,13 @@ fn test_evaluate_query_reflects_finalize_state() -> Result<()> {
     add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
 
     // Read should now reflect the finalize-set value.
-    let (height, outputs) =
-        vm.evaluate_query("qy_lifecycle.aleo", "total_balance", vec![Value::from_str(&caller_address.to_string())?])?;
-    assert_eq!(height, vm.block_store().current_block_height());
+    let height = vm.block_store().current_block_height();
+    let outputs = vm.evaluate_query_at_height(
+        "qy_lifecycle.aleo",
+        "total_balance",
+        vec![Value::from_str(&caller_address.to_string())?],
+        height,
+    )?;
     assert_eq!(expect_u64(&outputs), 10);
 
     // Increment again by 32. New total: 42.
@@ -103,15 +114,20 @@ fn test_evaluate_query_reflects_finalize_state() -> Result<()> {
     let tx = vm.execute(&caller_private_key, ("qy_lifecycle.aleo", "increment"), inputs.iter(), None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
 
-    let (height, outputs) =
-        vm.evaluate_query("qy_lifecycle.aleo", "total_balance", vec![Value::from_str(&caller_address.to_string())?])?;
-    assert_eq!(height, vm.block_store().current_block_height());
+    let height = vm.block_store().current_block_height();
+    let outputs = vm.evaluate_query_at_height(
+        "qy_lifecycle.aleo",
+        "total_balance",
+        vec![Value::from_str(&caller_address.to_string())?],
+        height,
+    )?;
     assert_eq!(expect_u64(&outputs), 42);
 
     Ok(())
 }
 
 /// Read with multiple outputs returns each in declaration order.
+#[cfg(feature = "history")]
 #[test]
 fn test_evaluate_query_multi_output() -> Result<()> {
     let rng = &mut TestRng::default();
@@ -148,8 +164,12 @@ fn test_evaluate_query_multi_output() -> Result<()> {
     let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
 
-    let (_, outputs) =
-        vm.evaluate_query("qy_multi_output.aleo", "summary", vec![Value::from_str(&caller_address.to_string())?])?;
+    let outputs = vm.evaluate_query_at_height(
+        "qy_multi_output.aleo",
+        "summary",
+        vec![Value::from_str(&caller_address.to_string())?],
+        vm.block_store().current_block_height(),
+    )?;
 
     // Default 0u64 for the unknown key, then +1 and *2.
     assert_eq!(outputs.len(), 3);
@@ -160,6 +180,7 @@ fn test_evaluate_query_multi_output() -> Result<()> {
 }
 
 /// Read with multiple inputs computes a typed return.
+#[cfg(feature = "history")]
 #[test]
 fn test_evaluate_query_multi_input() -> Result<()> {
     let rng = &mut TestRng::default();
@@ -192,11 +213,12 @@ fn test_evaluate_query_multi_input() -> Result<()> {
     let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
 
-    let (_, outputs) = vm.evaluate_query("qy_multi_in.aleo", "add3", vec![
-        Value::from_str("10u64")?,
-        Value::from_str("20u64")?,
-        Value::from_str("12u64")?,
-    ])?;
+    let outputs = vm.evaluate_query_at_height(
+        "qy_multi_in.aleo",
+        "add3",
+        vec![Value::from_str("10u64")?, Value::from_str("20u64")?, Value::from_str("12u64")?],
+        vm.block_store().current_block_height(),
+    )?;
     assert_eq!(expect_u64(&outputs), 42);
     Ok(())
 }
@@ -207,6 +229,7 @@ fn test_evaluate_query_multi_input() -> Result<()> {
 /// the doubling step runs and writes `r2`. Either way the query's declared output
 /// references `r1`, which is always written. This proves the query evaluator handles
 /// `branch.eq` without crashing under both taken and not-taken paths.
+#[cfg(feature = "history")]
 #[test]
 fn test_evaluate_query_with_branch() -> Result<()> {
     let rng = &mut TestRng::default();
@@ -239,16 +262,27 @@ fn test_evaluate_query_with_branch() -> Result<()> {
     add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
 
     // r0 = 0: branch is taken, doubling is skipped.
-    let (_, outputs) = vm.evaluate_query("qy_branch.aleo", "maybe_extra", vec![Value::from_str("0u64")?])?;
+    let outputs = vm.evaluate_query_at_height(
+        "qy_branch.aleo",
+        "maybe_extra",
+        vec![Value::from_str("0u64")?],
+        vm.block_store().current_block_height(),
+    )?;
     assert_eq!(expect_u64(&outputs), 10);
 
     // r0 = 5: branch is NOT taken, the unused r2 destination is written but we still output r1.
-    let (_, outputs) = vm.evaluate_query("qy_branch.aleo", "maybe_extra", vec![Value::from_str("5u64")?])?;
+    let outputs = vm.evaluate_query_at_height(
+        "qy_branch.aleo",
+        "maybe_extra",
+        vec![Value::from_str("5u64")?],
+        vm.block_store().current_block_height(),
+    )?;
     assert_eq!(expect_u64(&outputs), 15);
     Ok(())
 }
 
 /// Read with no inputs (queries a fixed-key mapping or just returns a constant).
+#[cfg(feature = "history")]
 #[test]
 fn test_evaluate_query_zero_inputs() -> Result<()> {
     let rng = &mut TestRng::default();
@@ -276,12 +310,14 @@ fn test_evaluate_query_zero_inputs() -> Result<()> {
     let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
 
-    let (_, outputs) = vm.evaluate_query("qy_zeroin.aleo", "fixed_value", vec![])?;
+    let outputs =
+        vm.evaluate_query_at_height("qy_zeroin.aleo", "fixed_value", vec![], vm.block_store().current_block_height())?;
     assert_eq!(expect_u64(&outputs), 1234);
     Ok(())
 }
 
 /// Calling evaluate_query with the wrong input arity returns an error.
+#[cfg(feature = "history")]
 #[test]
 fn test_evaluate_query_arity_mismatch() -> Result<()> {
     let rng = &mut TestRng::default();
@@ -312,23 +348,30 @@ fn test_evaluate_query_arity_mismatch() -> Result<()> {
     add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
 
     // Too few inputs.
-    let result = vm.evaluate_query("qy_arity.aleo", "takes_two", vec![Value::from_str("1u64")?]);
+    let result = vm.evaluate_query_at_height(
+        "qy_arity.aleo",
+        "takes_two",
+        vec![Value::from_str("1u64")?],
+        vm.block_store().current_block_height(),
+    );
     assert!(result.is_err(), "expected error for too few inputs");
     let err = result.unwrap_err().to_string();
     assert!(err.contains("expects 2"), "error should mention input count: {err}");
 
     // Too many inputs.
-    let result = vm.evaluate_query("qy_arity.aleo", "takes_two", vec![
-        Value::from_str("1u64")?,
-        Value::from_str("2u64")?,
-        Value::from_str("3u64")?,
-    ]);
+    let result = vm.evaluate_query_at_height(
+        "qy_arity.aleo",
+        "takes_two",
+        vec![Value::from_str("1u64")?, Value::from_str("2u64")?, Value::from_str("3u64")?],
+        vm.block_store().current_block_height(),
+    );
     assert!(result.is_err(), "expected error for too many inputs");
 
     Ok(())
 }
 
 /// Calling a query that does not exist on a deployed program returns a "not defined" error.
+#[cfg(feature = "history")]
 #[test]
 fn test_evaluate_query_unknown_query() -> Result<()> {
     let rng = &mut TestRng::default();
@@ -356,18 +399,21 @@ fn test_evaluate_query_unknown_query() -> Result<()> {
     let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
 
-    let result = vm.evaluate_query("qy_unknown.aleo", "missing", vec![]);
+    let result =
+        vm.evaluate_query_at_height("qy_unknown.aleo", "missing", vec![], vm.block_store().current_block_height());
     assert!(result.is_err(), "expected error for unknown query");
     Ok(())
 }
 
 /// Calling evaluate_query against a program that was never deployed returns a "no such program" error.
+#[cfg(feature = "history")]
 #[test]
 fn test_evaluate_query_unknown_program() {
     let rng = &mut TestRng::default();
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
 
-    let result = vm.evaluate_query("never_deployed.aleo", "anything", vec![]);
+    let result =
+        vm.evaluate_query_at_height("never_deployed.aleo", "anything", vec![], vm.block_store().current_block_height());
     assert!(result.is_err(), "expected error for unknown program");
 }
 
