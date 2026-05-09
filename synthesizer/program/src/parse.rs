@@ -334,6 +334,61 @@ query uses_call:
     }
 
     #[test]
+    fn test_program_rejects_duplicate_query_names() {
+        let result = Program::<CurrentNetwork>::from_str(
+            r"
+program dup_query.aleo;
+
+query foo:
+    add 0u64 1u64 into r0;
+    output r0 as u64.public;
+
+query foo:
+    add 0u64 2u64 into r0;
+    output r0 as u64.public;",
+        );
+        assert!(result.is_err(), "expected program parse to fail with two queries named 'foo'");
+    }
+
+    #[test]
+    fn test_program_rejects_query_name_colliding_with_function() {
+        let result = Program::<CurrentNetwork>::from_str(
+            r"
+program qf_collision.aleo;
+
+function foo:
+    input r0 as u64.private;
+    output r0 as u64.private;
+
+query foo:
+    add 0u64 1u64 into r0;
+    output r0 as u64.public;",
+        );
+        assert!(result.is_err(), "expected program parse to fail when a query reuses a function name");
+    }
+
+    #[test]
+    fn test_program_rejects_query_name_colliding_with_closure() {
+        let result = Program::<CurrentNetwork>::from_str(
+            r"
+program qc_collision.aleo;
+
+closure foo:
+    input r0 as field;
+    output r0 as field;
+
+function noop:
+    input r0 as u64.private;
+    output r0 as u64.private;
+
+query foo:
+    add 0u64 1u64 into r0;
+    output r0 as u64.public;",
+        );
+        assert!(result.is_err(), "expected program parse to fail when a query reuses a closure name");
+    }
+
+    #[test]
     fn test_program_parse_function_zero_inputs() -> Result<()> {
         // Initialize a new program.
         let (string, program) = Program::<CurrentNetwork>::parse(

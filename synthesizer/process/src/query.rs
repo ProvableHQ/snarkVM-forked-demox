@@ -55,19 +55,17 @@ impl<N: Network> Process<N> {
 }
 
 /// Evaluates a query function against historic finalize-store state at the given block
-/// `height`. Mapping reads route through `FinalizeStore::get_historical_mapping_value`, which
-/// reconstructs the value applicable at `height` from the per-key update log (a confirmed-only
-/// table — entries are only written during finalize, never modified). Pinning every read to
-/// `height` therefore gives true snapshot semantics: block production advancing past `height`
-/// during evaluation cannot disturb the result, and we don't need to take an atomic batch on
-/// the store (so this path doesn't contend with block finalization either).
+/// `height`. Mapping reads route through `FinalizeStore::get_historical_mapping_value` and
+/// are snapshot-consistent at `height` without contending with block finalization.
 ///
-/// `state` is supplied by the caller — typically `VM::evaluate_query_at_height` constructs it
-/// from the historic block at `height` so query operands reading block metadata
-/// (`block.height`, `block.timestamp`, the random seed) reflect that block.
+/// `state` is supplied by the caller — typically built from the historic block at `height`
+/// so block-metadata operands reflect that block.
 ///
-/// Available only when snarkVM is built with `--features history`. snarkOS calls this with
-/// `current_block_height()` for "latest", or any earlier height for historic queries.
+/// Caveat: the live `Stack` has interior mutability, so a concurrent redeploy of the same
+/// program could perturb its structural caches mid-query. Mapping values are pinned at
+/// `height`; program structure is not. Known gap — see `VM::evaluate_query_at_height`.
+///
+/// Available only with `--features history`.
 pub fn evaluate_query_at_height<N: Network, P: FinalizeStorage<N>>(
     state: FinalizeGlobalState,
     store: &FinalizeStore<N, P>,
