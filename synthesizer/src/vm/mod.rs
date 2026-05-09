@@ -331,25 +331,19 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     }
 
     /// Evaluates a query function against finalize-store state at the given block `height`.
-    /// Returns the typed outputs (no `(height, outputs)` tuple — the caller already supplied
-    /// the height).
+    /// Returns the typed outputs.
     ///
-    /// All mapping reads are pinned to `height` via the finalize store's per-key historical
-    /// update map (entries at any given height are immutable once written), so block production
-    /// advancing past `height` mid-evaluation cannot disturb the result. The
-    /// `FinalizeGlobalState` is also reconstructed from the block at `height`, so query operands
-    /// reading block metadata see that block's values.
+    /// Mapping reads are pinned to `height` via the per-key historical update map, and the
+    /// `FinalizeGlobalState` is reconstructed from the block at `height`. Available only with
+    /// `--features history`.
     ///
-    /// snarkOS calls this with `current_block_height()` for "latest" semantics, or any earlier
-    /// height for historic queries. Available only when snarkVM is built with `--features history`
-    /// — the per-height update map that pins reads is only populated under that feature.
+    /// snarkOS calls this with `current_block_height()` for "latest", or any earlier height
+    /// for historic queries. `height` must satisfy `height <= current_block_height()`.
     ///
-    /// `height` must satisfy `height <= current_block_height()`. Reading a future height
-    /// returns "no block exists" rather than a misleading None.
-    ///
-    /// Concurrency: this call does NOT take `self.process.lock()` (which would serialize
-    /// queries against block production); it relies on `Arc<Stack<N>>` immutability and on the
-    /// fact that historic-table entries are immutable.
+    /// Caveat: the `Stack` itself uses interior mutability, so a concurrent redeploy of the
+    /// same program could perturb its structural caches mid-query. Mapping values are
+    /// snapshot-consistent at `height`; program structure is not. Known gap; a future
+    /// `StackSnapshot`-style fix would close it.
     #[cfg(feature = "history")]
     #[inline]
     pub fn evaluate_query_at_height(
