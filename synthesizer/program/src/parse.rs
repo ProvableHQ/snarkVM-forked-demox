@@ -27,6 +27,7 @@ impl<N: Network> Parser for ProgramCore<N> {
             R(RecordType<N>),
             C(ClosureCore<N>),
             F(FunctionCore<N>),
+            Q(QueryCore<N>),
         }
 
         // Parse the imports from the string.
@@ -60,6 +61,8 @@ impl<N: Network> Parser for ProgramCore<N> {
                 map(ClosureCore::parse, |closure| P::<N>::C(closure))(string)
             } else if string.starts_with(FunctionCore::<N>::type_name()) {
                 map(FunctionCore::parse, |function| P::<N>::F(function))(string)
+            } else if string.starts_with(QueryCore::<N>::type_name()) {
+                map(QueryCore::parse, |query| P::<N>::Q(query))(string)
             } else {
                 Err(Err::Error(make_error(string, ErrorKind::Alt)))
             }
@@ -99,6 +102,7 @@ impl<N: Network> Parser for ProgramCore<N> {
                 P::R(record) => program.add_record(record),
                 P::C(closure) => program.add_closure(closure),
                 P::F(function) => program.add_function(function),
+                P::Q(query) => program.add_query(query),
             };
 
             match result {
@@ -189,6 +193,10 @@ impl<N: Network> Display for ProgramCore<N> {
                         Some(function) => writeln!(f, "{function}")?,
                         None => return Err(fmt::Error),
                     },
+                    ProgramDefinition::Query => match self.queries.get(identifier) {
+                        Some(query) => writeln!(f, "{query}")?,
+                        None => return Err(fmt::Error),
+                    },
                 },
             }
 
@@ -235,6 +243,94 @@ function compute:
         assert!(program.contains_function(&Identifier::from_str("compute")?));
 
         Ok(())
+    }
+
+    #[test]
+    fn test_program_parse_with_query_zero_inputs() -> Result<()> {
+        let program = Program::<CurrentNetwork>::from_str(
+            r"
+program qy_zeroin.aleo;
+
+function noop:
+    input r0 as u64.private;
+    output r0 as u64.private;
+
+query fixed_value:
+    add 0u64 1234u64 into r0;
+    output r0 as u64.public;",
+        )?;
+        assert_eq!(program.queries().len(), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn test_program_parse_with_query() -> Result<()> {
+        let (string, program) = Program::<CurrentNetwork>::parse(
+            r"
+program token_with_query.aleo;
+
+mapping balances:
+    key as address.public;
+    value as u64.public;
+
+function noop:
+    input r0 as u64.private;
+    output r0 as u64.private;
+
+query total_balance:
+    input r0 as address.public;
+    get.or_use balances[r0] 0u64 into r1;
+    output r1 as u64.public;",
+        )
+        .unwrap();
+        assert!(string.is_empty(), "Parser did not consume all of the string: '{string}'");
+
+        // The program should expose the query by name.
+        let query_name = Identifier::from_str("total_balance")?;
+        assert!(program.contains_query(&query_name));
+        assert_eq!(1, program.queries().len());
+        let query = program.get_query_ref(&query_name)?;
+        assert_eq!(1, query.inputs().len());
+        assert_eq!(1, query.commands().len());
+        assert_eq!(1, query.outputs().len());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_program_query_rejects_writes() {
+        let result = Program::<CurrentNetwork>::from_str(
+            r"
+program bad_query.aleo;
+
+mapping balances:
+    key as address.public;
+    value as u64.public;
+
+query mutate:
+    input r0 as address.public;
+    set 1u64 into balances[r0];
+    output r0 as address.public;",
+        );
+        assert!(result.is_err(), "expected program parse to fail when query contains 'set'");
+    }
+
+    #[test]
+    fn test_program_query_rejects_call() {
+        let result = Program::<CurrentNetwork>::from_str(
+            r"
+program bad_query.aleo;
+
+closure helper:
+    input r0 as field;
+    output r0 as field;
+
+query uses_call:
+    input r0 as field.public;
+    call helper r0 into r1;
+    output r1 as field.public;",
+        );
+        assert!(result.is_err(), "expected program parse to fail when query contains 'call'");
     }
 
     #[test]

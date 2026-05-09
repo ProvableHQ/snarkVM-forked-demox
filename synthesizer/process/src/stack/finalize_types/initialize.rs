@@ -32,12 +32,51 @@ impl<N: Network> FinalizeTypes<N> {
         for command in constructor.commands() {
             // Ensure the command is not a call instruction.
             ensure!(!command.is_call(), "`call` commands are not allowed in constructors.");
-            // Ensure the command is not a cast to record instruction.
-            ensure!(!command.is_cast_to_record(), "`cast` (to record) commands are not allowed in constructors.");
+            // Ensure the command does not operate on a record (cast-to-record or `get.record.dynamic`).
+            ensure!(!command.is_instruction_for_record(), "Record operations are not allowed in constructors.");
             // Ensure the command is not an await command.
             ensure!(!command.is_await(), "`await` commands are not allowed in constructors.");
             // Check the command opcode, operands, and destinations.
             finalize_types.check_command(stack, constructor.positions(), command)?;
+        }
+
+        Ok(finalize_types)
+    }
+
+    /// Initializes a new instance of `FinalizeTypes` for the given query function.
+    /// Checks that the given query is well-formed for the given stack.
+    ///
+    /// Queries share the finalize register/command shape, but cannot await futures and cannot
+    /// produce side effects. The forbidden-command list (writes, async, await, call, rand.chacha)
+    /// is enforced at `QueryCore` construction; this function only needs to type-check the body.
+    #[inline]
+    pub(super) fn initialize_finalize_types_from_query(
+        stack: &Stack<N>,
+        query: &snarkvm_synthesizer_program::QueryCore<N>,
+    ) -> Result<Self> {
+        let mut finalize_types = Self { inputs: IndexMap::new(), destinations: IndexMap::new() };
+
+        // Type-check the inputs. Query inputs are guaranteed to be plaintext at construction time.
+        for input in query.inputs() {
+            finalize_types.check_input(stack, input.register(), input.finalize_type())?;
+        }
+
+        // Type-check the commands.
+        for command in query.commands() {
+            finalize_types.check_command(stack, query.positions(), command)?;
+        }
+
+        // Type-check the outputs: each output operand must resolve and match the declared type.
+        for output in query.outputs() {
+            let actual = finalize_types.get_type_from_operand(stack, output.operand())?;
+            if &actual != output.finalize_type() {
+                bail!(
+                    "Query output type mismatch: declared '{}' but operand '{}' has type '{}'",
+                    output.finalize_type(),
+                    output.operand(),
+                    actual,
+                );
+            }
         }
 
         Ok(finalize_types)

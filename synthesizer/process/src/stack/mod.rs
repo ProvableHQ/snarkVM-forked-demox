@@ -379,6 +379,13 @@ impl<N: Network> Stack<N> {
             }
         }
 
+        // Type-check every query function. The result is not cached on the stack here;
+        // it is recomputed by the query evaluator. This is acceptable for the prototype
+        // and ensures that ill-typed queries are rejected at deploy time.
+        for query in self.program.queries().values() {
+            let _ = FinalizeTypes::from_query(self, query)?;
+        }
+
         // Drop the locks since the types have been initialized.
         drop(constructor_types);
         drop(register_types);

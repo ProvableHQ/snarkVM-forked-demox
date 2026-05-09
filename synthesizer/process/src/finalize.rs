@@ -15,7 +15,7 @@
 
 use super::*;
 use console::program::{FinalizeType, Future, Register};
-use snarkvm_synthesizer_program::{Await, FinalizeRegistersState, Operand, RegistersTrait};
+use snarkvm_synthesizer_program::{Await, FinalizeRegistersState, FinalizeStoreTrait, Operand, RegistersTrait};
 use snarkvm_utilities::try_vm_runtime;
 
 use std::collections::HashSet;
@@ -332,7 +332,8 @@ fn finalize_constructor<N: Network, P: FinalizeStorage<N>>(
     let constructor_types = stack.get_constructor_types()?.clone();
 
     // Initialize the finalize registers.
-    let mut registers = FinalizeRegisters::new(state, transition_id, *program_id.name(), constructor_types, nonce);
+    let mut registers =
+        FinalizeRegisters::new(state, Some(transition_id), *program_id.name(), constructor_types, Some(nonce));
 
     // Determine the scope name.
     let scope_name = Identifier::<N>::from_str("constructor")?;
@@ -447,8 +448,13 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
                     // Otherwise, query the call graph for the child transition ID corresponding to the future that is being awaited.
                     let consensus_version = N::CONSENSUS_VERSION(state.block_height())?;
                     let transition_id = if (ConsensusVersion::V1..=ConsensusVersion::V2).contains(&consensus_version) {
-                        // Get the current transition ID.
-                        let transition_id = registers.transition_id();
+                        // Get the current transition ID. The finalize path always initializes
+                        // registers with `Some(transition_id)`; only the query path uses `None`,
+                        // and `await` is forbidden on the query path, so this is unreachable
+                        // there. Treat `None` as a logic error.
+                        let transition_id = registers
+                            .transition_id()
+                            .ok_or_else(|| anyhow!("Cannot resolve a child transition ID without a transition ID"))?;
                         // Get the child transition ID.
                         match call_graph.get(transition_id) {
                             Some(transitions) => match transitions.get(call_counter) {
@@ -570,10 +576,10 @@ fn initialize_finalize_state<N: Network>(
     // Initialize the registers.
     let mut registers = FinalizeRegisters::new(
         state,
-        transition_id,
+        Some(transition_id),
         *future.function_name(),
         stack.get_finalize_types(future.function_name())?.clone(),
-        nonce,
+        Some(nonce),
     );
 
     // Store the inputs. The argument count is guaranteed to match the finalize's declared inputs
@@ -589,9 +595,12 @@ fn initialize_finalize_state<N: Network>(
 }
 
 // A helper function to finalize all commands except `await`, updating the finalize operations and the counter.
+//
+// Generic over the store so the query evaluator (which passes either the canonical
+// `FinalizeStore` or a read-only historic adapter) can reuse this dispatch.
 #[inline]
-fn finalize_command_except_await<N: Network>(
-    store: &FinalizeStore<N, impl FinalizeStorage<N>>,
+pub(crate) fn finalize_command_except_await<N: Network>(
+    store: &impl FinalizeStoreTrait<N>,
     stack: &impl StackTrait<N>,
     registers: &mut FinalizeRegisters<N>,
     positions: &HashMap<Identifier<N>, usize>,

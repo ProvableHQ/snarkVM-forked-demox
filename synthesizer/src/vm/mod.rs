@@ -302,6 +302,67 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         self.store.transaction_store()
     }
 
+    /// Builds a `FinalizeGlobalState` from the block at the given `height`.
+    ///
+    /// Returns an error if no block exists at `height`. Queries reuse the same shape that
+    /// the consensus path uses in `add_next_block_inner`, populating round, timestamp, the
+    /// cumulative weights, and the previous-block hash from the actual block — so any
+    /// operand or opcode that reads from `FinalizeGlobalState` (block.height,
+    /// block.timestamp, random_seed via rand.chacha, etc.) sees real values.
+    #[cfg(feature = "history")]
+    fn finalize_state_for_block(&self, height: u32) -> Result<FinalizeGlobalState> {
+        let block_hash =
+            self.block_store().get_block_hash(height)?.ok_or_else(|| anyhow!("No block exists at height {height}"))?;
+        let block = self
+            .block_store()
+            .get_block(&block_hash)?
+            .ok_or_else(|| anyhow!("Block hash for height {height} resolved but the block could not be loaded"))?;
+        // Match the consensus path's gating: the timestamp is only included from V12 onward.
+        let block_timestamp = (block.height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
+            .then_some(block.timestamp());
+        FinalizeGlobalState::new::<N>(
+            block.round(),
+            block.height(),
+            block_timestamp,
+            block.cumulative_weight(),
+            block.cumulative_proof_target(),
+            block.previous_hash(),
+        )
+    }
+
+    /// Evaluates a query function against finalize-store state at the given block `height`.
+    /// Returns the typed outputs (no `(height, outputs)` tuple — the caller already supplied
+    /// the height).
+    ///
+    /// All mapping reads are pinned to `height` via the finalize store's per-key historical
+    /// update map (entries at any given height are immutable once written), so block production
+    /// advancing past `height` mid-evaluation cannot disturb the result. The
+    /// `FinalizeGlobalState` is also reconstructed from the block at `height`, so query operands
+    /// reading block metadata see that block's values.
+    ///
+    /// snarkOS calls this with `current_block_height()` for "latest" semantics, or any earlier
+    /// height for historic queries. Available only when snarkVM is built with `--features history`
+    /// — the per-height update map that pins reads is only populated under that feature.
+    ///
+    /// `height` must satisfy `height <= current_block_height()`. Reading a future height
+    /// returns "no block exists" rather than a misleading None.
+    ///
+    /// Concurrency: this call does NOT take `self.process.lock()` (which would serialize
+    /// queries against block production); it relies on `Arc<Stack<N>>` immutability and on the
+    /// fact that historic-table entries are immutable.
+    #[cfg(feature = "history")]
+    #[inline]
+    pub fn evaluate_query_at_height(
+        &self,
+        program_id: impl TryInto<ProgramID<N>>,
+        query_name: impl TryInto<Identifier<N>>,
+        inputs: Vec<Value<N>>,
+        height: u32,
+    ) -> Result<Vec<Value<N>>> {
+        let state = self.finalize_state_for_block(height)?;
+        self.process.evaluate_query_at_height(state, self.finalize_store(), program_id, query_name, inputs, height)
+    }
+
     /// Returns the transition store.
     #[inline]
     pub fn transition_store(&self) -> &TransitionStore<N, C::TransitionStorage> {

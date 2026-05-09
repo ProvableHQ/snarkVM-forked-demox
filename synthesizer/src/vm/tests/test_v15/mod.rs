@@ -24,6 +24,12 @@ mod commit_raw;
 // Additional test for cost estimation without a private key.
 mod cost_for_call;
 
+// Tests for the externally-callable `query` function prototype.
+mod queries;
+
+// Tests for restricted keywords at V15.
+mod restricted_keywords;
+
 use super::*;
 
 use crate::vm::test_helpers::{sample_vm_at_height, *};

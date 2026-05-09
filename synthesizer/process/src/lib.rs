@@ -36,6 +36,10 @@ mod deploy;
 mod evaluate;
 mod execute;
 mod finalize;
+#[cfg(feature = "history")]
+mod query;
+#[cfg(feature = "history")]
+pub use query::evaluate_query_at_height;
 mod verify_deployment;
 mod verify_execution;
 mod verify_fee;

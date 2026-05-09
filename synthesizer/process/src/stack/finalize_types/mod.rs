@@ -87,6 +87,13 @@ impl<N: Network> FinalizeTypes<N> {
         Self::initialize_finalize_types_from_finalize(stack, finalize)
     }
 
+    /// Initializes a new instance of `FinalizeTypes` for the given query function.
+    /// Checks that the given query is well-formed for the given stack.
+    #[inline]
+    pub fn from_query(stack: &Stack<N>, query: &snarkvm_synthesizer_program::QueryCore<N>) -> Result<Self> {
+        Self::initialize_finalize_types_from_query(stack, query)
+    }
+
     /// Returns `true` if the given register exists.
     pub fn contains(&self, register: &Register<N>) -> bool {
         // Retrieve the register locator.
