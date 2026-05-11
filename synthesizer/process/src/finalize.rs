@@ -16,7 +16,7 @@
 use super::*;
 use console::program::{FinalizeType, Future, Identifier, Register};
 use snarkvm_synthesizer_error::{FinalizeError, IndexedFinalizeError, IntoIndexedFinalize, indexed_finalize_bail};
-use snarkvm_synthesizer_program::{Await, FinalizeRegistersState, Operand, RegistersTrait};
+use snarkvm_synthesizer_program::{Await, FinalizeRegistersState, FinalizeStoreTrait, Operand, RegistersTrait};
 use snarkvm_utilities::try_vm_runtime;
 
 use std::collections::HashSet;
@@ -275,12 +275,12 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
                 for transition in execution.transitions() {
                     execution_stacks.insert(*transition.program_id(), self.process.get_stack(transition.program_id())?);
                 }
-                self.construct_call_graph(execution_stacks).into_indexed(
-		    Some((transition_program_id, *stack.program_edition())),
-		    Some(transition_function_name),
-		    None::<(usize, Command<N>)>,
-                }
-            )?,
+                Process::construct_call_graph(execution.transitions(), &execution_stacks).into_indexed(
+                    Some((transition_program_id, *stack.program_edition())),
+                    Some(transition_function_name),
+                    None::<(usize, Command<N>)>,
+                )?
+            }
             // If the height is greater than or equal to `ConsensusVersion::V3`, then provide an empty call graph, as it is no longer used during finalization.
             false => HashMap::new(),
         };
@@ -736,6 +736,8 @@ fn initialize_finalize_state<N: Network>(
 // `FinalizeStore` or a read-only historic adapter) can reuse this dispatch.
 #[inline]
 pub(crate) fn finalize_command_except_await<N: Network>(
+    program_id: Option<(ProgramID<N>, u16)>,
+    resource: Option<Identifier<N>>,
     store: &impl FinalizeStoreTrait<N>,
     stack: &impl StackTrait<N>,
     registers: &mut FinalizeRegisters<N>,

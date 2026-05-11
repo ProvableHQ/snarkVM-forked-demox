@@ -1186,12 +1186,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     })
                     .collect::<Result<HashSet<_>>>()
                     .into_indexed(
-                        Some((program_id, self.process().read().get_latest_edition_for_program(&program_id))),
+                        Some((program_id, self.process().get_latest_edition_for_program(&program_id))),
                         Some(committee_mapping),
                         None::<(usize, Command<N>)>,
                     )?;
                 // Retrieve the latest edition for error context.
-                let program_edition = self.process().read().get_latest_edition_for_program(&program_id);
+                let program_edition = self.process().get_latest_edition_for_program(&program_id);
                 // Get the number of new validators being bonded to.
                 let num_new_validators =
                     bond_validator_addresses.into_iter().filter(|address| !committee_members.contains(address)).count();

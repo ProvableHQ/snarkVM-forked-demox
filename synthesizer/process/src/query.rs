@@ -19,7 +19,13 @@ use console::{
     program::{Identifier, ProgramID, Value},
 };
 use snarkvm_ledger_store::{FinalizeStorage, FinalizeStore};
-use snarkvm_synthesizer_program::{FinalizeGlobalState, FinalizeStoreTrait, RegistersTrait, StackTrait};
+use snarkvm_synthesizer_program::{
+    FinalizeGlobalState,
+    FinalizeRegistersState,
+    FinalizeStoreTrait,
+    RegistersTrait,
+    StackTrait,
+};
 
 impl<N: Network> Process<N> {
     /// Evaluates a query function against historic finalize-store state at the given block
@@ -231,6 +237,8 @@ fn evaluate_query_inner<N: Network>(
     while counter < query.commands().len() {
         let command = &query.commands()[counter];
         crate::finalize::finalize_command_except_await(
+            Some((*stack.program_id(), *stack.program_edition())),
+            Some(*registers.function_name()),
             store,
             stack,
             &mut registers,
