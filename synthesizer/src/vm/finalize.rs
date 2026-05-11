@@ -286,7 +286,13 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let max_aborted_transactions = Transactions::<N>::max_aborted_transactions();
 
         // Clear out any pending rejection reasons in case of errors in the previous iteration.
-        self.pending_rejected_reasons.write().clear();
+        {
+            let mut rejected_reasons = self.pending_rejected_reasons.write();
+            if !rejected_reasons.is_empty() {
+                error!("There are pending rejection reasons, clearing them up: {rejected_reasons:?}");
+            }
+            rejected_reasons.clear();
+        }
 
         // Update the block height used for the purposes of historical mapping accounting.
         #[cfg(feature = "history")]
