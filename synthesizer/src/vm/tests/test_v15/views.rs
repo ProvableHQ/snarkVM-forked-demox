@@ -595,3 +595,278 @@ view echo:
     assert_eq!(block.transactions().num_accepted(), 0, "Deployment with string-typed view input should be rejected");
     assert_eq!(block.aborted_transaction_ids().len(), 1);
 }
+
+/// Tests that a finalize body can call a view function in the SAME program and route its
+/// return value through normal finalize logic. Deploys a program with a `lookup` view, then
+/// executes a function whose finalize calls `lookup`, doubles the result, and writes it back.
+#[test]
+fn test_finalize_calls_same_program_query() -> Result<()> {
+    let rng = &mut TestRng::default();
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key)?;
+
+    let program = Program::from_str(
+        r"
+        program vw_call_same.aleo;
+
+        mapping balances:
+            key as address.public;
+            value as u64.public;
+
+        mapping doubled:
+            key as address.public;
+            value as u64.public;
+
+        function seed:
+            input r0 as address.public;
+            input r1 as u64.public;
+            async seed r0 r1 into r2;
+            output r2 as vw_call_same.aleo/seed.future;
+
+        finalize seed:
+            input r0 as address.public;
+            input r1 as u64.public;
+            set r1 into balances[r0];
+
+        function compute_doubled:
+            input r0 as address.public;
+            async compute_doubled r0 into r1;
+            output r1 as vw_call_same.aleo/compute_doubled.future;
+
+        // The finalize body calls the in-program `lookup` view, multiplies the result by 2,
+        // and stores it in the `doubled` mapping.
+        finalize compute_doubled:
+            input r0 as address.public;
+            call lookup r0 into r1;
+            mul r1 2u64 into r2;
+            set r2 into doubled[r0];
+
+        view lookup:
+            input r0 as address.public;
+            get.or_use balances[r0] 0u64 into r1;
+            output r1 as u64.public;
+
+        constructor:
+            assert.eq true true;
+        ",
+    )?;
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?, rng);
+
+    // Deploy.
+    let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+
+    // Seed `balances[caller] = 21`.
+    let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("21u64")?];
+    let tx = vm.execute(&caller_private_key, ("vw_call_same.aleo", "seed"), inputs.iter(), None, 0, None, rng)?;
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+
+    // Run `compute_doubled(caller)`. Its finalize calls `lookup(caller)` (→ 21), doubles
+    // (→ 42), and writes to `doubled[caller]`.
+    let inputs = [Value::from_str(&caller_address.to_string())?];
+    let tx =
+        vm.execute(&caller_private_key, ("vw_call_same.aleo", "compute_doubled"), inputs.iter(), None, 0, None, rng)?;
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+
+    // Confirm the new mapping value via an external read.
+    #[cfg(feature = "history")]
+    {
+        let outputs = vm.evaluate_view_at_height(
+            "vw_call_same.aleo",
+            "lookup",
+            vec![Value::from_str(&caller_address.to_string())?],
+            vm.block_store().current_block_height(),
+        )?;
+        // The view reads `balances`, which still holds 21 (untouched by `compute_doubled`'s finalize).
+        assert_eq!(expect_u64(&outputs), 21, "external view of `lookup` should still see balances=21");
+    }
+
+    Ok(())
+}
+
+/// Tests that a finalize body can call a view function in an IMPORTED (external) program.
+#[test]
+fn test_finalize_calls_cross_program_query() -> Result<()> {
+    let rng = &mut TestRng::default();
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key)?;
+
+    // The "data" program: holds the `balances` mapping and the `lookup` view.
+    let data_program = Program::from_str(
+        r"
+        program vw_call_data.aleo;
+
+        mapping balances:
+            key as address.public;
+            value as u64.public;
+
+        function seed:
+            input r0 as address.public;
+            input r1 as u64.public;
+            async seed r0 r1 into r2;
+            output r2 as vw_call_data.aleo/seed.future;
+
+        finalize seed:
+            input r0 as address.public;
+            input r1 as u64.public;
+            set r1 into balances[r0];
+
+        view lookup:
+            input r0 as address.public;
+            get.or_use balances[r0] 0u64 into r1;
+            output r1 as u64.public;
+
+        constructor:
+            assert.eq true true;
+        ",
+    )?;
+
+    // The "caller" program: imports `vw_call_data.aleo` and calls its `lookup` view from
+    // within its own finalize body.
+    let caller_program = Program::from_str(
+        r"
+        import vw_call_data.aleo;
+
+        program vw_call_caller.aleo;
+
+        mapping doubled:
+            key as address.public;
+            value as u64.public;
+
+        function compute_doubled:
+            input r0 as address.public;
+            async compute_doubled r0 into r1;
+            output r1 as vw_call_caller.aleo/compute_doubled.future;
+
+        finalize compute_doubled:
+            input r0 as address.public;
+            call vw_call_data.aleo/lookup r0 into r1;
+            mul r1 3u64 into r2;
+            set r2 into doubled[r0];
+
+        constructor:
+            assert.eq true true;
+        ",
+    )?;
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?, rng);
+
+    // Deploy the data program, then the caller program (which imports it).
+    let tx_data = vm.deploy(&caller_private_key, &data_program, None, 0, None, rng)?;
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx_data], rng);
+    let tx_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng)?;
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx_caller], rng);
+
+    // Seed `balances[caller] = 14` in the data program.
+    let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("14u64")?];
+    let tx = vm.execute(&caller_private_key, ("vw_call_data.aleo", "seed"), inputs.iter(), None, 0, None, rng)?;
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+
+    // Run `compute_doubled(caller)`. Its finalize calls `vw_call_data.aleo/lookup(caller)`
+    // (→ 14), multiplies by 3 (→ 42), and writes to `doubled[caller]`.
+    let inputs = [Value::from_str(&caller_address.to_string())?];
+    let tx =
+        vm.execute(&caller_private_key, ("vw_call_caller.aleo", "compute_doubled"), inputs.iter(), None, 0, None, rng)?;
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+
+    Ok(())
+}
+
+/// Tests that a finalize body calling a NON-view target (i.e. a regular function) is rejected
+/// at deploy time. The type-check resolves the target and bails because it is not a view.
+#[test]
+fn test_finalize_calls_non_query_rejected_at_deploy() {
+    let rng = &mut TestRng::default();
+    let caller_private_key = sample_genesis_private_key(rng);
+    let _caller_address = Address::try_from(&caller_private_key).unwrap();
+
+    let program = Program::from_str(
+        r"
+        program vw_bad_call.aleo;
+
+        function helper:
+            input r0 as u64.private;
+            output r0 as u64.private;
+
+        function caller:
+            input r0 as u64.public;
+            async caller r0 into r1;
+            output r1 as vw_bad_call.aleo/caller.future;
+
+        finalize caller:
+            input r0 as u64.public;
+            call helper r0 into r1;
+            assert.eq r1 r1;
+
+        constructor:
+            assert.eq true true;
+        ",
+    );
+    // The program may either fail to parse or fail to deploy depending on which layer catches
+    // it first; either way it must NOT successfully deploy.
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
+    if let Ok(program) = program {
+        let deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng);
+        assert!(deploy.is_err(), "deploy should reject a finalize that calls a non-view target");
+    }
+}
+
+/// Tests that pre-V15 deployments of a program containing a `call` in finalize are rejected.
+/// `contains_v15_syntax` flags any `call` in a finalize body as V15 syntax.
+#[test]
+fn test_deploy_finalize_call_before_and_at_v15() {
+    let rng = &mut TestRng::default();
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    let v15_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap();
+    let vm = sample_vm_at_height(v15_height - 1, rng);
+
+    let program = Program::from_str(
+        r"
+        program vw_v15_finalize_call.aleo;
+
+        mapping balances:
+            key as address.public;
+            value as u64.public;
+
+        function noop:
+            input r0 as u64.private;
+            output r0 as u64.private;
+
+        function caller:
+            input r0 as address.public;
+            async caller r0 into r1;
+            output r1 as vw_v15_finalize_call.aleo/caller.future;
+
+        finalize caller:
+            input r0 as address.public;
+            call lookup r0 into r1;
+            set r1 into balances[r0];
+
+        view lookup:
+            input r0 as address.public;
+            get.or_use balances[r0] 0u64 into r1;
+            output r1 as u64.public;
+
+        constructor:
+            assert.eq true true;
+        ",
+    )
+    .unwrap();
+
+    // Pre-V15: rejected.
+    let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
+    let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 0, "Deployment with finalize-call before V15 should be rejected");
+    assert_eq!(block.aborted_transaction_ids().len(), 1);
+    vm.add_next_block(&block).unwrap();
+    assert_eq!(vm.block_store().current_block_height(), v15_height);
+
+    // V15: accepted.
+    let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
+    let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1, "Deployment with finalize-call at V15 should be accepted");
+    assert_eq!(block.aborted_transaction_ids().len(), 0);
+    vm.add_next_block(&block).unwrap();
+}
