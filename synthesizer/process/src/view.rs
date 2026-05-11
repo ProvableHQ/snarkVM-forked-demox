@@ -13,14 +13,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{FinalizeRegisters, FinalizeTypes, Process, Stack};
+#[cfg(feature = "history")]
+use crate::Process;
+use crate::{FinalizeRegisters, Stack};
+#[cfg(feature = "history")]
+use console::program::ProgramID;
 use console::{
     network::prelude::*,
-    program::{Identifier, ProgramID, Value},
+    program::{Identifier, Value},
 };
+#[cfg(feature = "history")]
 use snarkvm_ledger_store::{FinalizeStorage, FinalizeStore};
-use snarkvm_synthesizer_program::{FinalizeGlobalState, FinalizeStoreTrait, RegistersTrait, StackTrait};
+use snarkvm_synthesizer_program::{
+    FinalizeGlobalState,
+    FinalizeRegistersState,
+    FinalizeStoreTrait,
+    RegistersTrait,
+    StackTrait,
+};
 
+#[cfg(feature = "history")]
 impl<N: Network> Process<N> {
     /// Evaluates a view function against historic finalize-store state at the given block
     /// height. Routes mapping reads through the finalize store's historical update map (per-key
@@ -66,6 +78,7 @@ impl<N: Network> Process<N> {
 /// `height`; program structure is not. Known gap — see `VM::evaluate_view_at_height`.
 ///
 /// Available only with `--features history`.
+#[cfg(feature = "history")]
 pub fn evaluate_view_at_height<N: Network, P: FinalizeStorage<N>>(
     state: FinalizeGlobalState,
     store: &FinalizeStore<N, P>,
@@ -82,11 +95,13 @@ pub fn evaluate_view_at_height<N: Network, P: FinalizeStorage<N>>(
 /// store's historical update map at a fixed `height`. Writes bail — they are unreachable on
 /// the view path (views reject `set` / `remove` at construction), but bailing here
 /// preserves that invariant if the adapter is ever passed to other code.
+#[cfg(feature = "history")]
 struct HistoricFinalizeStore<'a, N: Network, P: FinalizeStorage<N>> {
     store: &'a FinalizeStore<N, P>,
     height: u32,
 }
 
+#[cfg(feature = "history")]
 impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for HistoricFinalizeStore<'_, N, P> {
     fn contains_mapping_confirmed(
         &self,
@@ -171,8 +186,8 @@ fn evaluate_view_inner<N: Network>(
     // Resolve the view function in the stack's program.
     let view = stack.program().get_view_ref(view_name)?;
 
-    // Compute the register types for the view body.
-    let types = FinalizeTypes::from_view(stack, view)?;
+    // Use the cached view types (computed once at `Stack::new`).
+    let types = stack.get_view_types(view_name)?;
 
     // Views are read-only and externally-callable: no transition is associated. Pass `None`
     // for `transition_id` and `nonce` — the only consumer (rand.chacha) is rejected by
@@ -254,7 +269,73 @@ fn evaluate_view_inner<N: Network>(
     Ok(outputs)
 }
 
-#[cfg(test)]
+/// In-block call from a `finalize` body to a view function.
+///
+/// Loads inputs from the caller's registers, runs the view body against the caller's live
+/// `FinalizeGlobalState` and finalize `store` (the view sees pending finalize state for the
+/// in-flight transaction, which is the correct semantics for an in-block call), and writes
+/// the view's outputs into the caller's destination registers.
+///
+/// Views are leaves — their own bodies reject `is_call` at construction — so this call
+/// never recurses through `Command::finalize` back into another view call.
+pub(crate) fn evaluate_call_to_view<N: Network>(
+    call: &snarkvm_synthesizer_program::Call<N>,
+    stack: &Stack<N>,
+    store: &impl snarkvm_synthesizer_program::FinalizeStoreTrait<N>,
+    caller_registers: &mut FinalizeRegisters<N>,
+) -> Result<()> {
+    use snarkvm_synthesizer_program::CallOperator;
+    match call.operator() {
+        CallOperator::Locator(locator) => {
+            let external_stack = stack.get_external_stack(locator.program_id())?;
+            run_view_call(call, stack, &external_stack, locator.resource(), store, caller_registers)
+        }
+        CallOperator::Resource(name) => run_view_call(call, stack, stack, name, store, caller_registers),
+    }
+}
+
+/// Inner helper for [`evaluate_call_to_view`]. Splits same-program vs. cross-program at the
+/// caller (so the target `Stack` is a plain `&Stack<N>` here regardless of source).
+fn run_view_call<N: Network>(
+    call: &snarkvm_synthesizer_program::Call<N>,
+    caller_stack: &Stack<N>,
+    target_stack: &Stack<N>,
+    view_name: &Identifier<N>,
+    store: &impl snarkvm_synthesizer_program::FinalizeStoreTrait<N>,
+    caller_registers: &mut FinalizeRegisters<N>,
+) -> Result<()> {
+    // Load inputs from the caller's registers (operands are resolved against the caller's stack).
+    let inputs: Vec<Value<N>> =
+        call.operands().iter().map(|op| caller_registers.load(caller_stack, op)).collect::<Result<_>>()?;
+
+    // Inherit the global state from the caller. Views reject `rand.chacha` at construction,
+    // so the (unused-by-views) `transition_id` / `nonce` slots are left as `None`.
+    let state = *caller_registers.state();
+
+    // Evaluate the view body against the target stack and the live store.
+    let outputs = evaluate_view_inner(state, store, target_stack, view_name, inputs)?;
+
+    // Type-check at deploy time guarantees this match, but we sanity-check at runtime as well.
+    ensure!(
+        call.destinations().len() == outputs.len(),
+        "View '{}/{}' returned {} outputs but the call expects {}",
+        target_stack.program_id(),
+        view_name,
+        outputs.len(),
+        call.destinations().len(),
+    );
+
+    // Write the view's outputs into the caller's destination registers.
+    for (dest, value) in call.destinations().iter().zip(outputs.into_iter()) {
+        caller_registers.store(caller_stack, dest, value)?;
+    }
+    Ok(())
+}
+
+// All existing view tests exercise the external `evaluate_view_at_height` path, which is
+// gated on `--features history`. Tests for the new in-block call path live at the v15 VM-tests
+// level (where deploying a program with a finalize-calling-view function is straightforward).
+#[cfg(all(test, feature = "history"))]
 mod tests {
     use super::*;
     use crate::Process;

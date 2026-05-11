@@ -597,11 +597,13 @@ fn initialize_finalize_state<N: Network>(
 // A helper function to finalize all commands except `await`, updating the finalize operations and the counter.
 //
 // Generic over the store so the view evaluator (which passes either the canonical
-// `FinalizeStore` or a read-only historic adapter) can reuse this dispatch.
+// `FinalizeStore` or a read-only historic adapter) can reuse this dispatch. The stack must be
+// the concrete `Stack<N>` so we can resolve `Call`-to-view targets and read their cached
+// `FinalizeTypes` (the in-block call path needs concrete access).
 #[inline]
 pub(crate) fn finalize_command_except_await<N: Network>(
     store: &impl FinalizeStoreTrait<N>,
-    stack: &impl StackTrait<N>,
+    stack: &Stack<N>,
     registers: &mut FinalizeRegisters<N>,
     positions: &HashMap<Identifier<N>, usize>,
     command: &Command<N>,
@@ -637,6 +639,19 @@ pub(crate) fn finalize_command_except_await<N: Network>(
         }
         Command::Await(_) => {
             bail!("Cannot use `finalize_command_except_await` with an 'await' command")
+        }
+        Command::Instruction(Instruction::Call(call)) => {
+            // `call` from a finalize body is permitted only when the target resolves to a
+            // view function (enforced at `Stack::new` time by `check_instruction_opcode`).
+            // Defer to the in-block view-call helper, which loads inputs from `registers`,
+            // runs the view body against the same `store`, and writes outputs back.
+            let result = try_vm_runtime!(|| crate::view::evaluate_call_to_view(call, stack, store, registers));
+            match result {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => bail!("'{scope_name}' failed to evaluate command ({command}): {error}"),
+                Err(_) => bail!("'{scope_name}' failed to evaluate command ({command})"),
+            }
+            *counter += 1;
         }
         _ => {
             let result = try_vm_runtime!(|| command.finalize(stack, store, registers));

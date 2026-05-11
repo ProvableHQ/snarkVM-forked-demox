@@ -167,8 +167,10 @@ impl<N: Network> FinalizeCore<N> {
 
         // Ensure the command is not an async instruction.
         ensure!(!command.is_async(), "Forbidden operation: Finalize cannot invoke an 'async' instruction");
-        // Ensure the command is not a call instruction.
-        ensure!(!command.is_call(), "Forbidden operation: Finalize cannot invoke a 'call'");
+        // Allow `call` only when the target resolves to a `view` function (enforced later by the
+        // type-check at `Stack::new`). `call.dynamic` remains forbidden because its target type
+        // is determined at runtime and would let arbitrary functions be invoked from finalize.
+        ensure!(!command.is_dynamic_call(), "Forbidden operation: Finalize cannot invoke a 'call.dynamic'");
         // Ensure the command does not operate on a record (cast-to-record or `get.record.dynamic`).
         ensure!(!command.is_instruction_for_record(), "Forbidden operation: Finalize cannot operate on records");
 

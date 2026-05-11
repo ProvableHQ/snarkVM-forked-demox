@@ -873,7 +873,40 @@ impl<N: Network> FinalizeTypes<N> {
                 bail!("Instruction 'async' is not allowed in 'finalize' or 'constructor'.");
             }
             Opcode::Call(_) => {
-                bail!("Instruction 'call' is not allowed in 'finalize' or 'constructor'.");
+                // `call` is permitted in finalize only when the target resolves to a view
+                // function. (Constructors and views themselves reject `call` at construction
+                // time via their `add_command` guards, so the only commands reaching here are
+                // from finalize bodies.) Resolve the target and bail if it is not a view.
+                let call = match instruction {
+                    Instruction::Call(call) => call,
+                    _ => bail!("Instruction '{instruction}' is not a 'call' operation."),
+                };
+                let (target_program, target_name) = match call.operator() {
+                    snarkvm_synthesizer_program::CallOperator::Locator(locator) => {
+                        // Cross-program: resolve the external stack and use its program.
+                        if stack.program_id() == locator.program_id() {
+                            bail!("Locator '{locator}' does not reference an external view.");
+                        }
+                        if !stack.program().imports().keys().contains(locator.program_id()) {
+                            bail!(
+                                "External program '{}' is not imported by '{}'.",
+                                locator.program_id(),
+                                stack.program_id()
+                            );
+                        }
+                        let external_stack = stack.get_external_stack(locator.program_id())?;
+                        let target_program = external_stack.program().clone();
+                        (target_program, *locator.resource())
+                    }
+                    snarkvm_synthesizer_program::CallOperator::Resource(name) => (stack.program().clone(), *name),
+                };
+                if target_program.get_view_ref(&target_name).is_err() {
+                    bail!(
+                        "Instruction 'call' in finalize must target a view; '{}/{}' is not a view.",
+                        target_program.id(),
+                        target_name
+                    );
+                }
             }
             Opcode::Cast(opcode) => match opcode {
                 "cast" => {

@@ -16,7 +16,7 @@
 use crate::{Opcode, Operand, RegistersCircuit, RegistersTrait, StackTrait};
 use console::{
     network::prelude::*,
-    program::{Identifier, Locator, Register, RegisterType},
+    program::{FinalizeType, Identifier, Locator, Register, RegisterType},
 };
 
 /// The operator references a function name or closure name.
@@ -210,6 +210,39 @@ impl<N: Network> Call<N> {
                 (false, stack.program(), resource)
             }
         };
+
+        // If the operator is a view function, retrieve the view and compute the output types.
+        // Views are externally-callable and declared as `FinalizeType::Plaintext(_)` for both
+        // inputs and outputs (enforced by `ViewCore::add_input`/`add_output`); we therefore
+        // pattern-match `FinalizeType::Plaintext` directly when constructing the `RegisterType`.
+        if let Ok(view) = program.get_view_ref(name) {
+            if view.inputs().len() != self.operands.len() {
+                bail!("Expected {} inputs, found {}", view.inputs().len(), self.operands.len())
+            }
+            if view.inputs().len() != input_types.len() {
+                bail!("Expected {} input types, found {}", view.inputs().len(), input_types.len())
+            }
+            if view.outputs().len() != self.destinations.len() {
+                bail!("Expected {} outputs, found {}", view.outputs().len(), self.destinations.len())
+            }
+            return view
+                .outputs()
+                .iter()
+                .map(|output| match output.finalize_type() {
+                    FinalizeType::Plaintext(plaintext_type) => Ok(RegisterType::Plaintext(plaintext_type.clone())),
+                    FinalizeType::Future(_) | FinalizeType::DynamicFuture => {
+                        bail!("View '{name}' output must be a plaintext type")
+                    }
+                })
+                .map(|result| {
+                    result.map(
+                        |register_type| {
+                            if is_external { register_type.qualify(*program.id()) } else { register_type }
+                        },
+                    )
+                })
+                .collect::<Result<Vec<_>>>();
+        }
 
         // If the operator is a closure, retrieve the closure and compute the output types.
         if let Ok(closure) = program.get_closure(name) {

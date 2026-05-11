@@ -105,6 +105,11 @@ impl<N: Network> Command<N> {
         matches!(self, Command::Instruction(Instruction::Call(_) | Instruction::CallDynamic(_)))
     }
 
+    /// Returns `true` if the command is specifically a dynamic call instruction.
+    pub fn is_dynamic_call(&self) -> bool {
+        matches!(self, Command::Instruction(Instruction::CallDynamic(_)))
+    }
+
     /// Returns `true` if the command is a cast-to-record instruction. Covers all three
     /// record cast variants: static `record`, `external_record`, and `dynamic.record`.
     pub fn is_cast_to_record(&self) -> bool {
