@@ -600,7 +600,7 @@ view echo:
 /// return value through normal finalize logic. Deploys a program with a `lookup` view, then
 /// executes a function whose finalize calls `lookup`, doubles the result, and writes it back.
 #[test]
-fn test_finalize_calls_same_program_query() -> Result<()> {
+fn test_finalize_calls_same_program_view() -> Result<()> {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
     let caller_address = Address::try_from(&caller_private_key)?;
@@ -687,7 +687,7 @@ fn test_finalize_calls_same_program_query() -> Result<()> {
 
 /// Tests that a finalize body can call a view function in an IMPORTED (external) program.
 #[test]
-fn test_finalize_calls_cross_program_query() -> Result<()> {
+fn test_finalize_calls_cross_program_view() -> Result<()> {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
     let caller_address = Address::try_from(&caller_private_key)?;
@@ -776,7 +776,7 @@ fn test_finalize_calls_cross_program_query() -> Result<()> {
 /// Tests that a finalize body calling a NON-view target (i.e. a regular function) is rejected
 /// at deploy time. The type-check resolves the target and bails because it is not a view.
 #[test]
-fn test_finalize_calls_non_query_rejected_at_deploy() {
+fn test_finalize_calls_non_view_rejected_at_deploy() {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
     let _caller_address = Address::try_from(&caller_private_key).unwrap();
@@ -992,6 +992,561 @@ fn test_finalize_multiple_calls_and_interleaved_writes() -> Result<()> {
             vm.block_store().current_block_height(),
         )?;
         assert_eq!(expect_u64(&outputs), 55, "final balance after `compute` must be 55");
+    }
+
+    Ok(())
+}
+
+/// Cross-program negative: an importing program's finalize body calls a regular `function` in an
+/// imported program (not a view). Same shape as the same-program negative test, but goes through
+/// the `CallOperator::Locator` resolution path. Must be rejected at deploy time.
+#[test]
+fn test_finalize_calls_cross_program_non_view_rejected_at_deploy() {
+    let rng = &mut TestRng::default();
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
+
+    // Imported program: exposes a regular `function` (no view).
+    let data_program = Program::from_str(
+        r"
+        program vw_bad_cross_data.aleo;
+
+        function helper:
+            input r0 as u64.public;
+            output r0 as u64.public;
+
+        constructor:
+            assert.eq true true;
+        ",
+    )
+    .unwrap();
+
+    // Caller: tries to `call vw_bad_cross_data.aleo/helper` from within its finalize body.
+    let caller_program = Program::from_str(
+        r"
+        import vw_bad_cross_data.aleo;
+
+        program vw_bad_cross_caller.aleo;
+
+        function caller:
+            input r0 as u64.public;
+            async caller r0 into r1;
+            output r1 as vw_bad_cross_caller.aleo/caller.future;
+
+        finalize caller:
+            input r0 as u64.public;
+            call vw_bad_cross_data.aleo/helper r0 into r1;
+            assert.eq r1 r1;
+
+        constructor:
+            assert.eq true true;
+        ",
+    );
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
+    let tx_data = vm.deploy(&caller_private_key, &data_program, None, 0, None, rng).unwrap();
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx_data], rng);
+
+    // Either parse or deploy must reject — same pattern as the same-program negative test.
+    if let Ok(caller_program) = caller_program {
+        let deploy = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng);
+        assert!(deploy.is_err(), "deploy should reject a finalize that calls a non-view target in an imported program");
+    }
+}
+
+/// Negative: deploy is rejected when the call's operand count does not match the view's input
+/// arity. Exercises the arity check in `Call::output_types`.
+#[test]
+fn test_finalize_call_arity_mismatch_rejected_at_deploy() {
+    let rng = &mut TestRng::default();
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    // `lookup` declares one input, but the caller passes two.
+    let program = Program::from_str(
+        r"
+        program vw_call_arity.aleo;
+
+        mapping balances:
+            key as address.public;
+            value as u64.public;
+
+        function caller:
+            input r0 as address.public;
+            async caller r0 into r1;
+            output r1 as vw_call_arity.aleo/caller.future;
+
+        finalize caller:
+            input r0 as address.public;
+            call lookup r0 r0 into r1;
+            assert.eq r1 r1;
+
+        view lookup:
+            input r0 as address.public;
+            get.or_use balances[r0] 0u64 into r1;
+            output r1 as u64.public;
+
+        constructor:
+            assert.eq true true;
+        ",
+    );
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
+    if let Ok(program) = program {
+        let deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng);
+        assert!(deploy.is_err(), "deploy should reject a finalize-call with wrong arity");
+    }
+}
+
+/// Negative: deploy is rejected when a destination of a finalize-call is consumed downstream as
+/// a type that does not match the view's declared output type. Proves that `Call::output_types`
+/// propagates the view's output types into the surrounding finalize type-check.
+#[test]
+fn test_finalize_call_destination_type_mismatch_rejected_at_deploy() {
+    let rng = &mut TestRng::default();
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    // `lookup` outputs `u64`, but the caller treats `r1` as `u32` in the following `add`.
+    let program = Program::from_str(
+        r"
+        program vw_call_type_mismatch.aleo;
+
+        mapping balances:
+            key as address.public;
+            value as u64.public;
+
+        function caller:
+            input r0 as address.public;
+            async caller r0 into r1;
+            output r1 as vw_call_type_mismatch.aleo/caller.future;
+
+        finalize caller:
+            input r0 as address.public;
+            call lookup r0 into r1;
+            add r1 1u32 into r2;
+            assert.eq r2 r2;
+
+        view lookup:
+            input r0 as address.public;
+            get.or_use balances[r0] 0u64 into r1;
+            output r1 as u64.public;
+
+        constructor:
+            assert.eq true true;
+        ",
+    );
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
+    if let Ok(program) = program {
+        let deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng);
+        assert!(deploy.is_err(), "deploy should reject when call destination type conflicts with downstream use");
+    }
+}
+
+/// Construction-time rejection: a `call` inside a view body is rejected. Views are leaves in
+/// the call graph — `ViewCore::add_command` rejects `is_call()` so a view cannot invoke another
+/// view (or any function), preventing recursion at the structural level.
+#[test]
+fn test_view_rejects_call_command_at_parse() {
+    let result = Program::<CurrentNetwork>::from_str(
+        r"
+        program vw_bad_call_in_view.aleo;
+
+        mapping balances:
+            key as address.public;
+            value as u64.public;
+
+        function noop:
+            input r0 as u64.private;
+            output r0 as u64.private;
+
+        constructor:
+            assert.eq true true;
+
+        view inner:
+            input r0 as address.public;
+            get.or_use balances[r0] 0u64 into r1;
+            output r1 as u64.public;
+
+        view outer:
+            input r0 as address.public;
+            call inner r0 into r1;
+            output r1 as u64.public;
+        ",
+    );
+    assert!(result.is_err(), "expected parse error for a view body containing `call`");
+}
+
+/// Negative: a finalize body that uses a `Locator` form to call its own program (instead of
+/// the `Resource` form) is rejected at deploy. Same-program calls must use the bare resource
+/// name; a self-locator is treated as an error since the locator form is reserved for external
+/// programs.
+#[test]
+fn test_finalize_call_self_locator_rejected_at_deploy() {
+    let rng = &mut TestRng::default();
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    let program = Program::from_str(
+        r"
+        program vw_self_locator.aleo;
+
+        mapping balances:
+            key as address.public;
+            value as u64.public;
+
+        function caller:
+            input r0 as address.public;
+            async caller r0 into r1;
+            output r1 as vw_self_locator.aleo/caller.future;
+
+        finalize caller:
+            input r0 as address.public;
+            call vw_self_locator.aleo/lookup r0 into r1;
+            assert.eq r1 r1;
+
+        view lookup:
+            input r0 as address.public;
+            get.or_use balances[r0] 0u64 into r1;
+            output r1 as u64.public;
+
+        constructor:
+            assert.eq true true;
+        ",
+    );
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
+    if let Ok(program) = program {
+        let deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng);
+        assert!(deploy.is_err(), "deploy should reject a finalize-call using a self-locator");
+    }
+}
+
+/// Negative: a finalize body that calls into an external program which is not declared in
+/// `import` is rejected at deploy. The target program is deployed independently, but the caller
+/// never imports it — the explicit import check in the finalize type-check fires before the
+/// external stack lookup.
+#[test]
+fn test_finalize_call_missing_import_rejected_at_deploy() {
+    let rng = &mut TestRng::default();
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
+
+    // Target program with a view (deployed first). Includes a noop function so the program
+    // has at least one deployable function alongside the view.
+    let data_program = Program::from_str(
+        r"
+        program vw_no_import_data.aleo;
+
+        mapping balances:
+            key as address.public;
+            value as u64.public;
+
+        function noop:
+            input r0 as u64.private;
+            output r0 as u64.private;
+
+        view lookup:
+            input r0 as address.public;
+            get.or_use balances[r0] 0u64 into r1;
+            output r1 as u64.public;
+
+        constructor:
+            assert.eq true true;
+        ",
+    )
+    .unwrap();
+
+    // Caller that references `vw_no_import_data.aleo/lookup` from finalize but does NOT include
+    // `import vw_no_import_data.aleo;`.
+    let caller_program = Program::from_str(
+        r"
+        program vw_no_import_caller.aleo;
+
+        function caller:
+            input r0 as address.public;
+            async caller r0 into r1;
+            output r1 as vw_no_import_caller.aleo/caller.future;
+
+        finalize caller:
+            input r0 as address.public;
+            call vw_no_import_data.aleo/lookup r0 into r1;
+            assert.eq r1 r1;
+
+        constructor:
+            assert.eq true true;
+        ",
+    );
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
+    let tx_data = vm.deploy(&caller_private_key, &data_program, None, 0, None, rng).unwrap();
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx_data], rng);
+
+    if let Ok(caller_program) = caller_program {
+        let deploy = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng);
+        assert!(deploy.is_err(), "deploy should reject a finalize-call into a program that is not imported");
+    }
+}
+
+/// Construction-time rejection: `call.dynamic` is forbidden inside a finalize body. The
+/// `Finalize::add_command` guard rejects `is_dynamic_call`, so parsing the program must fail.
+#[test]
+fn test_finalize_rejects_call_dynamic_at_parse() {
+    let result = Program::<CurrentNetwork>::from_str(
+        r"
+        program vw_bad_call_dynamic.aleo;
+
+        function caller:
+            input r0 as field.public;
+            input r1 as field.public;
+            input r2 as field.public;
+            async caller r0 r1 r2 into r3;
+            output r3 as vw_bad_call_dynamic.aleo/caller.future;
+
+        finalize caller:
+            input r0 as field.public;
+            input r1 as field.public;
+            input r2 as field.public;
+            call.dynamic r0 r1 r2 into r3 (as u64.public);
+            assert.eq r3 r3;
+
+        constructor:
+            assert.eq true true;
+        ",
+    );
+    assert!(result.is_err(), "expected parse error for `call.dynamic` inside a finalize body");
+}
+
+/// Behavioral: a single finalize-to-view call returns multiple primitive values of different
+/// types, each routed into its own destination register and written to a distinct mapping. This
+/// exercises:
+///   - the destination-zip path in `Call::output_types` for N>1 outputs,
+///   - per-destination type propagation when output types differ (u64, boolean, address),
+///   - end-to-end storage of each typed value via `set`.
+#[test]
+fn test_finalize_call_multi_output_multi_type() -> Result<()> {
+    let rng = &mut TestRng::default();
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key)?;
+
+    let program = Program::from_str(
+        r"
+        program vw_multi_type.aleo;
+
+        mapping balances:
+            key as address.public;
+            value as u64.public;
+
+        mapping flags:
+            key as address.public;
+            value as boolean.public;
+
+        mapping owners:
+            key as address.public;
+            value as address.public;
+
+        function compute:
+            input r0 as address.public;
+            async compute r0 into r1;
+            output r1 as vw_multi_type.aleo/compute.future;
+
+        finalize compute:
+            input r0 as address.public;
+            call summary r0 into r1 r2 r3;
+            set r1 into balances[r0];
+            set r2 into flags[r0];
+            set r3 into owners[r0];
+
+        view summary:
+            input r0 as address.public;
+            get.or_use balances[r0] 0u64 into r1;
+            add r1 7u64 into r2;
+            gt r2 5u64 into r3;
+            output r2 as u64.public;
+            output r3 as boolean.public;
+            output r0 as address.public;
+
+        constructor:
+            assert.eq true true;
+        ",
+    )?;
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?, rng);
+
+    // Deploy.
+    let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+
+    // Run `compute(caller)`. The view observes balances[caller]=0, returns (7u64, true, caller),
+    // and the finalize routes each output into its respective mapping.
+    let inputs = [Value::from_str(&caller_address.to_string())?];
+    let tx = vm.execute(&caller_private_key, ("vw_multi_type.aleo", "compute"), inputs.iter(), None, 0, None, rng)?;
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+
+    // Verify each destination received the expected typed value.
+    #[cfg(feature = "history")]
+    {
+        let height = vm.block_store().current_block_height();
+        let key = console::program::Plaintext::from(console::program::Literal::Address(caller_address));
+        let program_id = *program.id();
+
+        let balances_value = vm
+            .finalize_store()
+            .get_historical_mapping_value(
+                program_id,
+                console::program::Identifier::from_str("balances")?,
+                key.clone(),
+                height,
+            )?
+            .expect("balances should be set");
+        match &*balances_value {
+            Value::Plaintext(console::program::Plaintext::Literal(console::program::Literal::U64(v), _)) => {
+                assert_eq!(**v, 7u64, "balances[caller] must equal the view's u64 output (0 + 7)");
+            }
+            other => panic!("expected u64 plaintext for balances, got {other:?}"),
+        }
+
+        let flags_value = vm
+            .finalize_store()
+            .get_historical_mapping_value(
+                program_id,
+                console::program::Identifier::from_str("flags")?,
+                key.clone(),
+                height,
+            )?
+            .expect("flags should be set");
+        match &*flags_value {
+            Value::Plaintext(console::program::Plaintext::Literal(console::program::Literal::Boolean(v), _)) => {
+                assert!(**v, "flags[caller] must equal the view's boolean output (7 > 5)");
+            }
+            other => panic!("expected boolean plaintext for flags, got {other:?}"),
+        }
+
+        let owners_value = vm
+            .finalize_store()
+            .get_historical_mapping_value(program_id, console::program::Identifier::from_str("owners")?, key, height)?
+            .expect("owners should be set");
+        match &*owners_value {
+            Value::Plaintext(console::program::Plaintext::Literal(console::program::Literal::Address(v), _)) => {
+                assert_eq!(*v, caller_address, "owners[caller] must equal the view's address output");
+            }
+            other => panic!("expected address plaintext for owners, got {other:?}"),
+        }
+    }
+
+    Ok(())
+}
+
+/// Behavioral: a view in one program returns a struct value, and an importing program's
+/// finalize body calls into it, extracts a struct field from the destination, and stores it.
+/// Exercises `RegisterType::qualify` on a struct type crossing the program boundary: the
+/// destination is typed as `vw_struct_data.aleo/Summary` in the caller, and downstream field
+/// access (`r1.total`) must resolve against the external struct definition.
+#[test]
+fn test_finalize_call_struct_return_cross_program() -> Result<()> {
+    let rng = &mut TestRng::default();
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key)?;
+
+    let data_program = Program::from_str(
+        r"
+        program vw_struct_data.aleo;
+
+        struct Summary:
+            total as u64;
+            flag as boolean;
+
+        mapping balances:
+            key as address.public;
+            value as u64.public;
+
+        function seed:
+            input r0 as address.public;
+            input r1 as u64.public;
+            async seed r0 r1 into r2;
+            output r2 as vw_struct_data.aleo/seed.future;
+
+        finalize seed:
+            input r0 as address.public;
+            input r1 as u64.public;
+            set r1 into balances[r0];
+
+        view summarize:
+            input r0 as address.public;
+            get.or_use balances[r0] 0u64 into r1;
+            gt r1 50u64 into r2;
+            cast r1 r2 into r3 as Summary;
+            output r3 as Summary.public;
+
+        constructor:
+            assert.eq true true;
+        ",
+    )?;
+
+    let caller_program = Program::from_str(
+        r"
+        import vw_struct_data.aleo;
+
+        program vw_struct_caller.aleo;
+
+        mapping totals:
+            key as address.public;
+            value as u64.public;
+
+        function compute:
+            input r0 as address.public;
+            async compute r0 into r1;
+            output r1 as vw_struct_caller.aleo/compute.future;
+
+        finalize compute:
+            input r0 as address.public;
+            call vw_struct_data.aleo/summarize r0 into r1;
+            add r1.total 0u64 into r2;
+            set r2 into totals[r0];
+
+        constructor:
+            assert.eq true true;
+        ",
+    )?;
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?, rng);
+
+    // Deploy data then caller (caller imports data).
+    let tx_data = vm.deploy(&caller_private_key, &data_program, None, 0, None, rng)?;
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx_data], rng);
+    let tx_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng)?;
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx_caller], rng);
+
+    // Seed balances[caller] = 77 in the data program.
+    let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("77u64")?];
+    let tx = vm.execute(&caller_private_key, ("vw_struct_data.aleo", "seed"), inputs.iter(), None, 0, None, rng)?;
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+
+    // Run `compute(caller)`. The finalize calls `summarize` which returns Summary{total: 77,
+    // flag: true}, extracts the `total` field, and stores it in `totals`.
+    let inputs = [Value::from_str(&caller_address.to_string())?];
+    let tx =
+        vm.execute(&caller_private_key, ("vw_struct_caller.aleo", "compute"), inputs.iter(), None, 0, None, rng)?;
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+
+    // Verify totals[caller] = 77 (the extracted .total field of the returned struct).
+    #[cfg(feature = "history")]
+    {
+        let height = vm.block_store().current_block_height();
+        let key = console::program::Plaintext::from(console::program::Literal::Address(caller_address));
+        let totals_value = vm
+            .finalize_store()
+            .get_historical_mapping_value(
+                *caller_program.id(),
+                console::program::Identifier::from_str("totals")?,
+                key,
+                height,
+            )?
+            .expect("totals should be set");
+        match &*totals_value {
+            Value::Plaintext(console::program::Plaintext::Literal(console::program::Literal::U64(v), _)) => {
+                assert_eq!(**v, 77u64, "totals[caller] must equal the .total field of the cross-program struct return");
+            }
+            other => panic!("expected u64 plaintext, got {other:?}"),
+        }
     }
 
     Ok(())

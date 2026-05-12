@@ -225,8 +225,7 @@ impl<N: Network> Call<N> {
             if view.outputs().len() != self.destinations.len() {
                 bail!("Expected {} outputs, found {}", view.outputs().len(), self.destinations.len())
             }
-            view
-                .outputs()
+            view.outputs()
                 .iter()
                 .map(|output| match output.finalize_type() {
                     FinalizeType::Plaintext(plaintext_type) => Ok(RegisterType::Plaintext(plaintext_type.clone())),
