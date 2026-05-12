@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - 'staging'
+      - 'copilot/reduce-snarkvm-ci-benchmark-scope'
   workflow_dispatch:
 
 jobs:
