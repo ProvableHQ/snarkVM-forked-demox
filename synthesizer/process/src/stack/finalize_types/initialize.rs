@@ -876,11 +876,15 @@ impl<N: Network> FinalizeTypes<N> {
                 // `call` is permitted in finalize only when the target resolves to a view
                 // function. (Constructors and views themselves reject `call` at construction
                 // time via their `add_command` guards, so the only commands reaching here are
-                // from finalize bodies.) Resolve the target and bail if it is not a view.
+                // from finalize bodies. `Instruction::CallDynamic` is rejected at construction
+                // by `Finalize::add_command`, so the `_` arm below is unreachable in practice.)
                 let call = match instruction {
                     Instruction::Call(call) => call,
                     _ => bail!("Instruction '{instruction}' is not a 'call' operation."),
                 };
+                // Hold the external stack (if any) in this binding so the borrowed
+                // `target_program` reference stays valid for the view check below.
+                let external_stack;
                 let (target_program, target_name) = match call.operator() {
                     snarkvm_synthesizer_program::CallOperator::Locator(locator) => {
                         // Cross-program: resolve the external stack and use its program.
@@ -894,11 +898,10 @@ impl<N: Network> FinalizeTypes<N> {
                                 stack.program_id()
                             );
                         }
-                        let external_stack = stack.get_external_stack(locator.program_id())?;
-                        let target_program = external_stack.program().clone();
-                        (target_program, *locator.resource())
+                        external_stack = stack.get_external_stack(locator.program_id())?;
+                        (external_stack.program(), *locator.resource())
                     }
-                    snarkvm_synthesizer_program::CallOperator::Resource(name) => (stack.program().clone(), *name),
+                    snarkvm_synthesizer_program::CallOperator::Resource(name) => (stack.program(), *name),
                 };
                 if target_program.get_view_ref(&target_name).is_err() {
                     bail!(

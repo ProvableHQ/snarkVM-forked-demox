@@ -553,7 +553,7 @@ pub fn cost_per_command<N: Network>(
             match call.operator() {
                 CallOperator::Locator(locator) => {
                     let external_stack = stack.get_external_stack(locator.program_id())?;
-                    view_cost_for_single_view(&external_stack, locator.resource(), consensus_fee_version)
+                    view_cost_for_single_view(&*external_stack, locator.resource(), consensus_fee_version)
                 }
                 CallOperator::Resource(name) => view_cost_for_single_view(stack, name, consensus_fee_version),
             }

@@ -326,7 +326,7 @@ fn run_view_call<N: Network>(
     );
 
     // Write the view's outputs into the caller's destination registers.
-    for (dest, value) in call.destinations().iter().zip(outputs.into_iter()) {
+    for (dest, value) in call.destinations().iter().zip_eq(outputs.into_iter()) {
         caller_registers.store(caller_stack, dest, value)?;
     }
     Ok(())

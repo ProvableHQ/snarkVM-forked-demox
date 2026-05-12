@@ -225,7 +225,7 @@ impl<N: Network> Call<N> {
             if view.outputs().len() != self.destinations.len() {
                 bail!("Expected {} outputs, found {}", view.outputs().len(), self.destinations.len())
             }
-            return view
+            view
                 .outputs()
                 .iter()
                 .map(|output| match output.finalize_type() {
@@ -241,11 +241,10 @@ impl<N: Network> Call<N> {
                         },
                     )
                 })
-                .collect::<Result<Vec<_>>>();
+                .collect::<Result<Vec<_>>>()
         }
-
         // If the operator is a closure, retrieve the closure and compute the output types.
-        if let Ok(closure) = program.get_closure(name) {
+        else if let Ok(closure) = program.get_closure(name) {
             // Ensure the number of operands matches the number of input statements.
             if closure.inputs().len() != self.operands.len() {
                 bail!("Expected {} inputs, found {}", closure.inputs().len(), self.operands.len())
