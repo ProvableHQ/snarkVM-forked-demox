@@ -776,9 +776,8 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         &self.is_finalize_mode
     }
 
-    /// Returns the current block height for Slipstream plugin notifications.
-    #[cfg(feature = "slipstream-plugins")]
-    pub fn slipstream_block_height(&self) -> &AtomicU32 {
+    /// Returns the current block height.
+    pub fn block_height(&self) -> &AtomicU32 {
         &self.block_height
     }
 
@@ -977,7 +976,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for FinalizeStore<
         // Notify plugins of the update if in canonical finalize mode.
         #[cfg(feature = "slipstream-plugins")]
         if let Some((pid, mname, k, v)) = plugin_data {
-            let height = self.slipstream_block_height().load(Ordering::SeqCst);
+            let height = self.block_height().load(Ordering::SeqCst);
             let spm_guard = self.slipstream_plugin_manager.read();
             if let Some(mgr) = spm_guard.as_ref() {
                 mgr.broadcast(BroadcastEvent::MappingUpdate {
@@ -1053,7 +1052,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         // Notify plugins of each updated key-value pair if in canonical finalize mode.
         #[cfg(feature = "slipstream-plugins")]
         if let Some(data) = plugin_data {
-            let height = self.slipstream_block_height().load(Ordering::SeqCst);
+            let height = self.block_height().load(Ordering::SeqCst);
             let spm_guard = self.slipstream_plugin_manager.read();
             if let Some(mgr) = spm_guard.as_ref() {
                 for (k, v) in &data.entries {
