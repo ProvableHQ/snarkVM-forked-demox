@@ -3739,7 +3739,7 @@ finalize compute:
         }
     }
 
-    #[test]
+    #[cfg_attr(any(feature = "test", test), test)]
     fn test_rejection_reason_storage() {
         let rng = &mut TestRng::default();
 

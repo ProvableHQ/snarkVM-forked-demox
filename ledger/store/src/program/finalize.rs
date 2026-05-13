@@ -1157,7 +1157,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
     pub fn insert_rejected_reason(&self, transaction_id: Field<N>, reason: RejectedReason<N>) -> Result<()> {
         let height = self.block_height.load(std::sync::atomic::Ordering::SeqCst);
         let consensus_version = N::CONSENSUS_VERSION(height)?;
-        if cfg!(feature = "history") || consensus_version >= ConsensusVersion::V15 {
+        if cfg!(any(feature = "history", feature = "test")) || consensus_version >= ConsensusVersion::V15 {
             self.storage.rejected_reason_map().insert(transaction_id, reason)
         } else {
             Ok(())
