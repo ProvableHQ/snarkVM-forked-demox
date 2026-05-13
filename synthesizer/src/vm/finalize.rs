@@ -893,7 +893,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
                                 if let Some(rejected_reason) = self.pending_rejected_reasons.write().remove(fee_tx_id) {
                                     store.insert_rejected_reason(**fee_tx_id, rejected_reason.clone()).map_err(
-                                        |_| "Couldn't store the reason behind a rejected deployment".to_string(),
+                                        |_| "Couldn't store the reason behind a rejected execute".to_string(),
                                     )?;
                                 }
                             }
@@ -1144,7 +1144,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Performs precondition checks on the transaction prior to execution.
     ///
     /// This method is used to check the following conditions:
-    /// - If the transaction contains a `credits.aleo/bond_public` transition,
+    /// - If the transaction contains a `credits.aleo/bond_validator` transition,
     ///   then the outcome should not exceed the maximum committee size.
     #[inline]
     fn prepare_for_execution(

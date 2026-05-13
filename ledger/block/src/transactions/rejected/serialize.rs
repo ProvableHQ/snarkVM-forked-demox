@@ -21,7 +21,6 @@ impl<N: Network> Serialize for Rejected<N> {
         match serializer.is_human_readable() {
             true => match self {
                 Self::Deployment(program_owner, deployment) => {
-                    // Determine the number of fields based on whether the rejected reason is present.
                     let mut object = serializer.serialize_struct("Rejected", 3)?;
                     object.serialize_field("type", "deployment")?;
                     object.serialize_field("program_owner", program_owner)?;
@@ -29,7 +28,6 @@ impl<N: Network> Serialize for Rejected<N> {
                     object.end()
                 }
                 Self::Execution(execution) => {
-                    // Determine the number of fields based on whether the rejected reason is present.
                     let mut object = serializer.serialize_struct("Rejected", 2)?;
                     object.serialize_field("type", "execution")?;
                     object.serialize_field("execution", execution)?;

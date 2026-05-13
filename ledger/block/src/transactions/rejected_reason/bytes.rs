@@ -31,7 +31,7 @@ impl<N: Network> FromBytes for RejectedReason<N> {
                 let resource = Identifier::<N>::read_le(&mut reader)?;
                 let index = u32::read_le(&mut reader)? as usize;
                 let command = Command::<N>::read_le(&mut reader)?;
-                Ok(Self::Finalize(program_id, edition, resource, index, Box::new(command)))
+                Ok(Self::Finalize { program_id, edition, resource, index, command: Box::new(command) })
             }
             2 => {
                 // Read the optional program ID and edition.
@@ -65,7 +65,7 @@ impl<N: Network> ToBytes for RejectedReason<N> {
                 0u8.write_le(&mut writer)?;
                 program_id.write_le(&mut writer)
             }
-            Self::Finalize(program_id, edition, resource, index, command) => {
+            Self::Finalize { program_id, edition, resource, index, command } => {
                 1u8.write_le(&mut writer)?;
                 program_id.write_le(&mut writer)?;
                 edition.write_le(&mut writer)?;

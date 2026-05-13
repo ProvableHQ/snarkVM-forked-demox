@@ -28,7 +28,7 @@ pub enum RejectedReason<N: Network> {
     /// The transaction was rejected due to a failed finalize command. (program ID, edition, resource, index, command).
     /// Note: We do not log the actual error message from the finalize command, as it may contain
     /// sensitive information or lead to DOS vectors by storing string representations of large structs.
-    Finalize(ProgramID<N>, u16, Identifier<N>, usize, Box<Command<N>>),
+    Finalize { program_id: ProgramID<N>, edition: u16, resource: Identifier<N>, index: usize, command: Box<Command<N>> },
 
     /// The transaction was rejected due to a VM error not captured by a finalize command.
     /// The programID and resource are logged if they are available.
@@ -48,8 +48,8 @@ impl<N: Network> RejectedReason<N> {
             Some((index, command)) => {
                 // Parse the command from its display string. Falls back to NonFinalize on failure.
                 match (program_id, resource, command.to_string().parse::<Command<N>>()) {
-                    (Some((pid, edition)), Some(resource), Ok(command)) => {
-                        Self::Finalize(pid, edition, resource, index, Box::new(command))
+                    (Some((program_id, edition)), Some(resource), Ok(command)) => {
+                        Self::Finalize { program_id, edition, resource, index, command: Box::new(command) }
                     }
                     (program_id, resource, _) => Self::NonFinalize(program_id, resource),
                 }
