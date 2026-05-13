@@ -686,10 +686,9 @@ pub struct FinalizeStore<N: Network, P: FinalizeStorage<N>> {
     /// When `true`, storage writes notify registered Slipstream plugins.
     #[cfg(feature = "slipstream-plugins")]
     is_finalize_mode: Arc<AtomicBool>,
-    /// Tracks the current block height for Slipstream plugin notifications.
+    /// Tracks the current block height.
     /// Updated by the VM at the start of each canonical finalize
-    #[cfg(feature = "slipstream-plugins")]
-    slipstream_block_height: Arc<AtomicU32>,
+    block_height: Arc<AtomicU32>,
     /// Optional plugin manager for streaming canonical mapping and staking updates.
     /// Wrapped in `Arc` so that all clones of `FinalizeStore` share the same instance;
     /// the `RwLock` allows installation from a shared reference after construction.
@@ -711,8 +710,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
             _phantom: PhantomData,
             #[cfg(feature = "slipstream-plugins")]
             is_finalize_mode: Arc::new(AtomicBool::new(false)),
-            #[cfg(feature = "slipstream-plugins")]
-            slipstream_block_height: Arc::new(AtomicU32::new(0)),
+            block_height: Arc::new(AtomicU32::new(0)),
             #[cfg(feature = "slipstream-plugins")]
             slipstream_plugin_manager: Arc::new(RwLock::new(None)),
         })
@@ -781,7 +779,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
     /// Returns the current block height for Slipstream plugin notifications.
     #[cfg(feature = "slipstream-plugins")]
     pub fn slipstream_block_height(&self) -> &AtomicU32 {
-        &self.slipstream_block_height
+        &self.block_height
     }
 
     /// Installs a Slipstream plugin manager to receive canonical mapping and staking updates.
@@ -1160,7 +1158,13 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
 impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
     /// Stores the rejection reason for the given transaction ID.
     pub fn insert_rejected_reason(&self, transaction_id: Field<N>, reason: RejectedReason<N>) -> Result<()> {
-        self.storage.rejected_reason_map().insert(transaction_id, reason)
+        let height = self.block_height.load(std::sync::atomic::Ordering::SeqCst);
+        let consensus_version = N::CONSENSUS_VERSION(height)?;
+        if cfg!(feature = "history") || consensus_version >= ConsensusVersion::V15 {
+            self.storage.rejected_reason_map().insert(transaction_id, reason)
+        } else {
+            Ok(())
+        }
     }
 
     /// Returns the rejection reason for the given transaction ID.
