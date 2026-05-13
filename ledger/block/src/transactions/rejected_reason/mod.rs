@@ -73,7 +73,13 @@ pub mod test_helpers {
         let command = Command::<N>::from_str("assert.eq r0 r1;").unwrap();
         vec![
             RejectedReason::DuplicateProgramID(program),
-            RejectedReason::Finalize(credits, 1, transfer, 3, Box::new(command)),
+            RejectedReason::Finalize {
+                program_id: credits,
+                edition: 1,
+                resource: transfer,
+                index: 3,
+                command: Box::new(command),
+            },
             RejectedReason::NonFinalize(Some((credits, 0u16)), Some(bond)),
             RejectedReason::NonFinalize(None, Some(bond)),
             RejectedReason::NonFinalize(Some((credits, 0u16)), None),

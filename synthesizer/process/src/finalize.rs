@@ -221,14 +221,6 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
             Some(transition_function_name),
             None::<(usize, Command<N>)>,
         )?;
-        // if minimum_number_of_calls != execution.len() {
-        //     indexed_finalize_bail!(
-        //         Some((transition_program_id, *stack.program_edition())),
-        //         Some(transition_function_name),
-        //         "The number of transitions in the execution is incorrect. Expected {number_of_calls}, but found {}",
-        //         execution.len()
-        //     );
-        // }
         // If the root transition contains a dynamic call,
         // - ensure that the number of calls is less than or equal to the number of transitions.
         // - otherwise, ensure that the number of calls matches the number of transitions.
