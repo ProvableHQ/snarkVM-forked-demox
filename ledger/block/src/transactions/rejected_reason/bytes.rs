@@ -50,7 +50,7 @@ impl<N: Network> FromBytes for RejectedReason<N> {
                     1 => Some(Identifier::<N>::read_le(&mut reader)?),
                     flag => return Err(error(format!("Invalid resource presence flag {flag}"))),
                 };
-                Ok(Self::NonFinalize(program_id, resource))
+                Ok(Self::VM(program_id, resource))
             }
             3.. => Err(error(format!("Failed to decode rejected reason variant {variant}"))),
         }
@@ -73,7 +73,7 @@ impl<N: Network> ToBytes for RejectedReason<N> {
                 u32::try_from(*index).map_err(|_| error("Command index exceeds u32::MAX"))?.write_le(&mut writer)?;
                 command.write_le(&mut writer)
             }
-            Self::NonFinalize(program_id, resource) => {
+            Self::VM(program_id, resource) => {
                 2u8.write_le(&mut writer)?;
                 // Write the optional program ID and edition.
                 match program_id {

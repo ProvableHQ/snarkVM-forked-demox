@@ -37,7 +37,7 @@ impl<N: Network> Serialize for RejectedReason<N> {
                     object.serialize_field("command", &command.to_string())?;
                     object.end()
                 }
-                Self::NonFinalize(program_id, resource) => {
+                Self::VM(program_id, resource) => {
                     // Only include fields that are present.
                     let mut object = serializer.serialize_struct(
                         "RejectedReason",
@@ -98,7 +98,7 @@ impl<'de, N: Network> Deserialize<'de> for RejectedReason<N> {
                             Some(s) => Some(Identifier::<N>::from_str(s).map_err(de::Error::custom)?),
                             None => None,
                         };
-                        Ok(Self::NonFinalize(program_id, resource))
+                        Ok(Self::VM(program_id, resource))
                     }
                     _ => Err(de::Error::custom("Invalid rejected reason type")),
                 }

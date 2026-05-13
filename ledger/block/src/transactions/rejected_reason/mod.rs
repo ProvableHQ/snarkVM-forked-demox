@@ -32,7 +32,7 @@ pub enum RejectedReason<N: Network> {
 
     /// The transaction was rejected due to a VM error not captured by a finalize command.
     /// The programID and resource are logged if they are available.
-    NonFinalize(Option<(ProgramID<N>, u16)>, Option<Identifier<N>>),
+    VM(Option<(ProgramID<N>, u16)>, Option<Identifier<N>>),
 }
 
 impl<N: Network> RejectedReason<N> {
@@ -40,21 +40,21 @@ impl<N: Network> RejectedReason<N> {
     ///
     /// `C` may be any type whose `Display` output is a valid `Command<N>` string (e.g. `Command<N>`
     /// itself or `String`). If the command string cannot be re-parsed, the reason falls back to
-    /// `NonFinalize` so that a bad string never causes a panic in consensus code.
+    /// `VM` so that a bad string never causes a panic in consensus code.
     pub fn from_indexed_finalize_error<C: ToString>(error: IndexedFinalizeError<N, C>) -> Self {
         let program_id = error.program_id;
         let resource = error.resource;
         match error.command.map(|b| *b) {
             Some((index, command)) => {
-                // Parse the command from its display string. Falls back to NonFinalize on failure.
+                // Parse the command from its display string. Falls back to VM on failure.
                 match (program_id, resource, command.to_string().parse::<Command<N>>()) {
                     (Some((program_id, edition)), Some(resource), Ok(command)) => {
                         Self::Finalize { program_id, edition, resource, index, command: Box::new(command) }
                     }
-                    (program_id, resource, _) => Self::NonFinalize(program_id, resource),
+                    (program_id, resource, _) => Self::VM(program_id, resource),
                 }
             }
-            None => Self::NonFinalize(program_id, resource),
+            None => Self::VM(program_id, resource),
         }
     }
 }
@@ -80,10 +80,10 @@ pub mod test_helpers {
                 index: 3,
                 command: Box::new(command),
             },
-            RejectedReason::NonFinalize(Some((credits, 0u16)), Some(bond)),
-            RejectedReason::NonFinalize(None, Some(bond)),
-            RejectedReason::NonFinalize(Some((credits, 0u16)), None),
-            RejectedReason::NonFinalize(None, None),
+            RejectedReason::VM(Some((credits, 0u16)), Some(bond)),
+            RejectedReason::VM(None, Some(bond)),
+            RejectedReason::VM(Some((credits, 0u16)), None),
+            RejectedReason::VM(None, None),
         ]
     }
 }
