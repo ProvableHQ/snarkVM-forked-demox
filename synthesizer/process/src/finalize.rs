@@ -226,12 +226,22 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
         // - otherwise, ensure that the number of calls matches the number of transitions.
         if stack.contains_dynamic_call(transition.function_name())? {
             if minimum_number_of_calls > execution.len() {
-                return Err(anyhow!("The number of transitions in the execution is incorrect. Expected at least {minimum_number_of_calls}, but found {}",
-                execution.len()).into());
+                indexed_finalize_bail!(
+                    Some((transition_program_id, *stack.program_edition())),
+                    Some(transition_function_name),
+                    "The number of transitions in the execution is incorrect. \
+                    Expected at least {minimum_number_of_calls}, but found {}",
+                    execution.len()
+                );
             }
         } else if minimum_number_of_calls != execution.len() {
-            return Err(anyhow!("The number of transitions in the execution is incorrect. Expected {minimum_number_of_calls}, but found {}",
-            execution.len()).into());
+            indexed_finalize_bail!(
+                Some((transition_program_id, *stack.program_edition())),
+                Some(transition_function_name),
+                "The number of transitions in the execution is incorrect. \
+                Expected {minimum_number_of_calls}, but found {}",
+                execution.len()
+            );
         }
         lap!(timer, "Verify the number of transitions");
 
