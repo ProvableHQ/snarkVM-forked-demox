@@ -39,12 +39,10 @@ use parking_lot::RwLock;
 #[cfg(feature = "slipstream-plugins")]
 use snarkvm_slipstream_plugin_manager::{BroadcastEvent, BroadcastEventKind, SlipstreamPluginManager};
 #[cfg(feature = "slipstream-plugins")]
-use std::sync::{Arc, atomic::AtomicBool};
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, atomic::AtomicU32};
 #[cfg(any(feature = "history", feature = "history-staking-rewards", feature = "slipstream-plugins"))]
-use std::{
-    borrow::Cow,
-    sync::atomic::{AtomicU32, Ordering},
-};
+use std::{borrow::Cow, sync::atomic::Ordering};
 
 /// Serialized form of a mapping replacement, captured before storage consumes the entries.
 #[cfg(feature = "slipstream-plugins")]
