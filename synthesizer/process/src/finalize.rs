@@ -445,12 +445,12 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
 
                     // Get the transition ID used to initialize the finalize registers.
                     // If the block height is greater than or equal to `ConsensusVersion::V3`, then use the top-level transition ID.
-                    // Otherwise, query the call graph for the child transition ID corresponding to the future that is being awaited.
+                    // Otherwise, view the call graph for the child transition ID corresponding to the future that is being awaited.
                     let consensus_version = N::CONSENSUS_VERSION(state.block_height())?;
                     let transition_id = if (ConsensusVersion::V1..=ConsensusVersion::V2).contains(&consensus_version) {
                         // Get the current transition ID. The finalize path always initializes
-                        // registers with `Some(transition_id)`; only the query path uses `None`,
-                        // and `await` is forbidden on the query path, so this is unreachable
+                        // registers with `Some(transition_id)`; only the view path uses `None`,
+                        // and `await` is forbidden on the view path, so this is unreachable
                         // there. Treat `None` as a logic error.
                         let transition_id = registers
                             .transition_id()
@@ -596,7 +596,7 @@ fn initialize_finalize_state<N: Network>(
 
 // A helper function to finalize all commands except `await`, updating the finalize operations and the counter.
 //
-// Generic over the store so the query evaluator (which passes either the canonical
+// Generic over the store so the view evaluator (which passes either the canonical
 // `FinalizeStore` or a read-only historic adapter) can reuse this dispatch.
 #[inline]
 pub(crate) fn finalize_command_except_await<N: Network>(
