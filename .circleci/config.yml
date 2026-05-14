@@ -884,7 +884,7 @@ jobs:
     steps:
       - run_test:
           workspace_member: snarkvm-synthesizer
-          flags: --features test --lib --bins -- --test-threads 16
+          flags: --lib --bins -- --test-threads 16
           no_output_timeout: 20m
           timeout: 30m
 
