@@ -36,6 +36,9 @@ type LedgerType = snarkvm_ledger_store::helpers::memory::ConsensusMemory<Mainnet
 #[cfg(feature = "rocks")]
 type LedgerType = snarkvm_ledger_store::helpers::rocksdb::ConsensusDB<MainnetV0>;
 
+/// Fixed RNG seed so benchmark inputs are reproducible across CI runs.
+const BENCH_RNG_SEED: u64 = 0xB34D_CAFE_CDEC_0123;
+
 fn initialize_vm<R: Rng + CryptoRng>(
     private_key: &PrivateKey<MainnetV0>,
     rng: &mut R,
@@ -60,7 +63,7 @@ fn initialize_vm<R: Rng + CryptoRng>(
 }
 
 fn deploy(c: &mut Criterion) {
-    let rng = &mut TestRng::default();
+    let rng = &mut TestRng::fixed(BENCH_RNG_SEED);
 
     // Sample a new private key and address.
     let private_key = PrivateKey::<MainnetV0>::new(rng).unwrap();
@@ -93,7 +96,7 @@ function hello:
 }
 
 fn execute(c: &mut Criterion) {
-    let rng = &mut TestRng::default();
+    let rng = &mut TestRng::fixed(BENCH_RNG_SEED ^ 1);
 
     // Sample a new private key and address.
     let private_key = PrivateKey::<MainnetV0>::new(rng).unwrap();
@@ -135,8 +138,12 @@ fn execute(c: &mut Criterion) {
 
         // Bench the Transaction.write_le method using the LimitedWriter.
         c.bench_function("LimitedWriter::new - transfer_public", |b| {
+            let max = MainnetV0::LATEST_MAX_TRANSACTION_SIZE();
             let mut buffer = Vec::with_capacity(3000);
-            b.iter(|| transaction.write_le(LimitedWriter::new(&mut buffer, MainnetV0::LATEST_MAX_TRANSACTION_SIZE())))
+            b.iter(|| {
+                buffer.clear();
+                transaction.write_le(LimitedWriter::new(&mut buffer, max))
+            })
         });
 
         // Bench the execution of transfer_public.
@@ -181,8 +188,12 @@ fn execute(c: &mut Criterion) {
 
         // Bench the Transaction.write_le method using the LimitedWriter.
         c.bench_function("LimitedWriter::new - transfer_private", |b| {
+            let max = MainnetV0::LATEST_MAX_TRANSACTION_SIZE();
             let mut buffer = Vec::with_capacity(3000);
-            b.iter(|| transaction.write_le(LimitedWriter::new(&mut buffer, MainnetV0::LATEST_MAX_TRANSACTION_SIZE())))
+            b.iter(|| {
+                buffer.clear();
+                transaction.write_le(LimitedWriter::new(&mut buffer, max))
+            })
         });
 
         // Bench the check_transaction method.
@@ -270,21 +281,24 @@ function main:
 
         // Bench the Transaction.write_le method using the LimitedWriter.
         c.bench_function("LimitedWriter::new - too_big.aleo", |b| {
-            let mut buffer = Vec::with_capacity(MainnetV0::LATEST_MAX_TRANSACTION_SIZE());
-            b.iter(|| transaction.write_le(LimitedWriter::new(&mut buffer, MainnetV0::LATEST_MAX_TRANSACTION_SIZE())))
+            let max = MainnetV0::LATEST_MAX_TRANSACTION_SIZE();
+            let mut buffer = Vec::with_capacity(max);
+            b.iter(|| {
+                buffer.clear();
+                transaction.write_le(LimitedWriter::new(&mut buffer, max))
+            })
         });
 
-        // Bench the check_transaction method.
-        c.bench_function("Transaction::Execute(too_big.aleo) - verify", |b| {
-            b.iter(|| vm.check_transaction(&transaction, None, rng))
+        // At genesis height the active cap is V1 (128 KiB); this transaction exceeds it and rejects before full verification.
+        c.bench_function("Transaction::Execute(too_big.aleo) - oversize_reject", |b| {
+            b.iter(|| {
+                vm.check_transaction(&transaction, None, rng)
+                    .expect_err("transaction must exceed V1 MAX_TRANSACTION_SIZE at genesis height");
+            })
         });
     }
 }
 
-criterion_group! {
-    name = transaction;
-    config = Criterion::default().sample_size(10);
-    targets = deploy, execute
-}
+criterion_group!(transaction, deploy, execute);
 
 criterion_main!(transaction);
