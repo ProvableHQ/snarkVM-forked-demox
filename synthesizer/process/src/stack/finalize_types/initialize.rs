@@ -821,8 +821,14 @@ impl<N: Network> FinalizeTypes<N> {
             operand_types.push(RegisterType::from(self.get_type_from_operand(stack, operand)?));
         }
 
-        // Compute the destination register types.
-        let destination_types = instruction.output_types(stack, &operand_types)?;
+        // Compute the destination register types. In a finalize context, `Call` only ever
+        // targets a view function (gated by `check_instruction_opcode`), so we route it to the
+        // dedicated `output_types_for_view` helper rather than the transition-only
+        // `Call::output_types`.
+        let destination_types = match instruction {
+            Instruction::Call(call) => call.output_types_for_view(stack, &operand_types)?,
+            _ => instruction.output_types(stack, &operand_types)?,
+        };
 
         // Insert the destination register.
         for (destination, destination_type) in
