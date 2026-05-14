@@ -45,11 +45,8 @@ impl<N: Network> FromBytes for ViewCore<N> {
             commands.push(Command::read_le(&mut reader)?);
         }
 
-        // Read the outputs.
+        // Read the outputs. Zero outputs are permitted (guard views).
         let num_outputs = u16::read_le(&mut reader)?;
-        if num_outputs.is_zero() {
-            return Err(error("Failed to deserialize view: needs at least one output".to_string()));
-        }
         if num_outputs > u16::try_from(N::MAX_OUTPUTS).map_err(error)? {
             return Err(error(format!("Failed to deserialize view: too many outputs ({num_outputs})")));
         }
@@ -95,9 +92,9 @@ impl<N: Network> ToBytes for ViewCore<N> {
             command.write_le(&mut writer)?;
         }
 
-        // Write the number of outputs.
+        // Write the number of outputs. Zero outputs are permitted (guard views).
         let num_outputs = self.outputs.len();
-        match 0 < num_outputs && num_outputs <= N::MAX_OUTPUTS {
+        match num_outputs <= N::MAX_OUTPUTS {
             true => u16::try_from(num_outputs).map_err(error)?.write_le(&mut writer)?,
             false => return Err(error(format!("Failed to write {num_outputs} outputs as bytes"))),
         }

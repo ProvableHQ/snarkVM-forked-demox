@@ -37,7 +37,13 @@ impl<N: Network> Parser for ViewCore<N> {
         // Parse the commands from the string.
         let (string, commands) = many1(Command::<N>::parse)(string)?;
         // Parse the outputs from the string.
-        let (string, outputs) = many1(Output::parse)(string)?;
+        //
+        // Zero-output views are permitted: their purpose is purely assertional (the body's
+        // `assert.eq` etc. either succeeds, allowing the caller to continue, or fails, rejecting
+        // the caller's transaction). These are the Aleo analogue of Solidity `view` functions
+        // that don't return anything (`function require_member(address) external view { ... }`).
+        // The trailing parser keeps `many0` symmetric with `function` and `closure`.
+        let (string, outputs) = many0(Output::parse)(string)?;
 
         map_res(take(0usize), move |_| {
             let mut view = Self::new(name);
@@ -152,15 +158,6 @@ view foo
             )
             .is_err()
         );
-        // Missing output (a view must have at least one).
-        assert!(
-            ViewCore::<CurrentNetwork>::from_str(
-                r"
-view foo:
-    add 1u64 2u64 into r0;"
-            )
-            .is_err()
-        );
         // Missing commands (a view must have at least one).
         assert!(
             ViewCore::<CurrentNetwork>::from_str(
@@ -181,5 +178,23 @@ view foo:
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn test_view_parse_no_outputs_guard() {
+        // A guard view: asserts a precondition and returns nothing. Callers observe success
+        // via tx acceptance and failure (assertion fails) via tx rejection.
+        let view = ViewCore::<CurrentNetwork>::parse(
+            r"
+view require_zero:
+    input r0 as u64.public;
+    assert.eq r0 0u64;",
+        )
+        .unwrap()
+        .1;
+        assert_eq!("require_zero", view.name().to_string());
+        assert_eq!(1, view.inputs().len());
+        assert_eq!(1, view.commands().len());
+        assert_eq!(0, view.outputs().len());
     }
 }

@@ -2077,3 +2077,151 @@ fn test_finalize_cross_program_multiple_calls() -> Result<()> {
 
     Ok(())
 }
+
+/// Guard-view lifecycle (zero-output view): a view that has no outputs serves as a precondition
+/// check. Calling it from a finalize body with `call vw/require_zero r0;` (no `into`) is valid;
+/// when the assertion in the view body holds, the caller's finalize continues; when it fails,
+/// the entire transaction is finalize-rejected. This is the Aleo analogue of Solidity's
+/// `function require_member(address) external view { require(...); }` pattern.
+#[test]
+fn test_finalize_call_zero_output_guard_view() -> Result<()> {
+    let rng = &mut TestRng::default();
+    let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key)?;
+
+    // `require_zero` is a guard view: it asserts that its input is `0u64` and returns nothing.
+    // The caller's finalize calls it, then writes a marker to `out[r0]` so that we can
+    // distinguish the success path (write happens) from the failure path (tx rejected, no write).
+    let program = Program::from_str(
+        r"
+        program vw_guard.aleo;
+
+        mapping out:
+            key as address.public;
+            value as u64.public;
+
+        function caller:
+            input r0 as address.public;
+            input r1 as u64.public;
+            async caller r0 r1 into r2;
+            output r2 as vw_guard.aleo/caller.future;
+
+        finalize caller:
+            input r0 as address.public;
+            input r1 as u64.public;
+            call require_zero r1;
+            set 1u64 into out[r0];
+
+        view require_zero:
+            input r0 as u64.public;
+            assert.eq r0 0u64;
+
+        constructor:
+            assert.eq true true;
+        ",
+    )?;
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15)?, rng);
+
+    // Deploy succeeds — a zero-output view is now a valid program element.
+    let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+
+    // Happy path: pass `0u64`. The guard's `assert.eq` holds, the finalize body continues and
+    // writes `out[caller] = 1`.
+    let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("0u64")?];
+    let tx = vm.execute(&caller_private_key, ("vw_guard.aleo", "caller"), inputs.iter(), None, 0, None, rng)?;
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+
+    #[cfg(feature = "history")]
+    {
+        let height = vm.block_store().current_block_height();
+        let key = console::program::Plaintext::from(console::program::Literal::Address(caller_address));
+        let value = vm
+            .finalize_store()
+            .get_historical_mapping_value(
+                console::program::ProgramID::from_str("vw_guard.aleo")?,
+                console::program::Identifier::from_str("out")?,
+                key.clone(),
+                height,
+            )?
+            .expect("out should be set after the guard passes");
+        match &*value {
+            Value::Plaintext(console::program::Plaintext::Literal(console::program::Literal::U64(v), _)) => {
+                assert_eq!(**v, 1u64, "guard pass: caller's finalize should have written 1");
+            }
+            other => panic!("expected u64 plaintext, got {other:?}"),
+        }
+
+        // Failure path: pass `1u64`. The guard's `assert.eq` fails, the finalize is rejected,
+        // and `out[caller]` retains the value from the previous run (still `1u64`, not a new write).
+        let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("1u64")?];
+        let tx = vm.execute(&caller_private_key, ("vw_guard.aleo", "caller"), inputs.iter(), None, 0, None, rng)?;
+        let block = sample_next_block(&vm, &caller_private_key, &[tx], rng)?;
+        assert_eq!(block.transactions().num_accepted(), 0, "guard fail: tx must not be accepted");
+        assert_eq!(block.transactions().num_rejected(), 1, "guard fail: tx must be finalize-rejected");
+        assert_eq!(block.aborted_transaction_ids().len(), 0);
+        vm.add_next_block(&block)?;
+
+        // out[caller] is still 1 (the rejected tx didn't write 1 again — but, more importantly,
+        // didn't apply any state change). We re-read to confirm the value is unchanged from the
+        // happy-path write above.
+        let height = vm.block_store().current_block_height();
+        let value = vm
+            .finalize_store()
+            .get_historical_mapping_value(
+                console::program::ProgramID::from_str("vw_guard.aleo")?,
+                console::program::Identifier::from_str("out")?,
+                key,
+                height,
+            )?
+            .expect("out should still be set from the earlier successful run");
+        match &*value {
+            Value::Plaintext(console::program::Plaintext::Literal(console::program::Literal::U64(v), _)) => {
+                assert_eq!(**v, 1u64, "rejected tx must not have mutated state");
+            }
+            other => panic!("expected u64 plaintext, got {other:?}"),
+        }
+    }
+
+    Ok(())
+}
+
+/// Negative: a finalize-call that binds destinations to a zero-output guard view must be
+/// rejected at deploy. The `view.outputs().len() != self.destinations.len()` check in
+/// `Call::output_types_for_view` should bail (0 outputs vs. 1 destination).
+#[test]
+fn test_finalize_call_zero_output_view_with_destinations_rejected_at_deploy() {
+    let rng = &mut TestRng::default();
+    let caller_private_key = sample_genesis_private_key(rng);
+
+    // The caller mistakenly binds `r1` for the guard view's (nonexistent) return value.
+    let program = Program::from_str(
+        r"
+        program vw_guard_bad.aleo;
+
+        function caller:
+            input r0 as u64.public;
+            async caller r0 into r1;
+            output r1 as vw_guard_bad.aleo/caller.future;
+
+        finalize caller:
+            input r0 as u64.public;
+            call require_zero r0 into r1;
+            assert.eq r1 r1;
+
+        view require_zero:
+            input r0 as u64.public;
+            assert.eq r0 0u64;
+
+        constructor:
+            assert.eq true true;
+        ",
+    );
+
+    let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
+    if let Ok(program) = program {
+        let deploy = vm.deploy(&caller_private_key, &program, None, 0, None, rng);
+        assert!(deploy.is_err(), "deploy should reject binding destinations to a zero-output view");
+    }
+}

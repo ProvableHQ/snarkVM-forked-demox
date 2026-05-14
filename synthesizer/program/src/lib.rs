@@ -849,9 +849,10 @@ impl<N: Network> ProgramCore<N> {
         ensure!(!Self::is_reserved_opcode(&view_name.to_string()), "'{view_name}' is a reserved opcode.");
         ensure!(!Self::is_reserved_keyword(&view_name), "'{view_name}' is a reserved keyword.");
 
-        // Views must have at least one command and at least one output.
+        // Views must have at least one command. Zero outputs are permitted (guard views: the
+        // body asserts and the caller observes success via tx acceptance, failure via tx
+        // rejection; mirrors Solidity's zero-return `view` functions).
         ensure!(!view.commands().is_empty(), "Cannot evaluate a view function without commands");
-        ensure!(!view.outputs().is_empty(), "A view function must declare at least one output");
         ensure!(view.inputs().len() <= N::MAX_INPUTS, "View exceeds maximum number of inputs");
         ensure!(view.outputs().len() <= N::MAX_OUTPUTS, "View exceeds maximum number of outputs");
 
