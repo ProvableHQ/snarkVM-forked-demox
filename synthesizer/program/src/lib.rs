@@ -1423,6 +1423,12 @@ impl<N: Network> ProgramCore<N> {
 
         // Detect `call` instructions inside finalize bodies. Pre-V15 finalize forbade `call`
         // entirely, so any deployed program with one is necessarily V15+ syntax.
+        //
+        // Intentionally matches only `Instruction::Call` — `CallDynamic` in a finalize body is
+        // rejected at parse time by `Finalize::add_command`, so it can never reach a deployed
+        // program. If `call.dynamic` is ever permitted in finalize, this clause must be widened
+        // (and `Finalize::add_command`, `cost::cost_per_command`, and the finalize
+        // type-checker's `Opcode::Call` arm need re-review at the same time).
         let finalize_has_call = cfg_iter!(self.functions())
             .filter_map(|(_, function)| function.finalize_logic())
             .flat_map(|finalize| finalize.commands())

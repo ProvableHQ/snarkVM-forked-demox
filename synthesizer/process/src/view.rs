@@ -259,9 +259,14 @@ fn evaluate_view_inner<N: Network>(
         )?;
     }
     // Defensive: views reject all write-producing commands at construction, so no finalize
-    // operations should ever be emitted. Catches any future regression that allows a write
-    // through the type-check path.
-    debug_assert!(finalize_operations.is_empty(), "view produced finalize operations: {finalize_operations:?}");
+    // operations should ever be emitted. Fail closed in release builds too — a regression that
+    // allows a write through the type-check path must not silently leak side effects from the
+    // view path, where some callers (e.g. RPC views) discard `finalize_operations` entirely.
+    ensure!(
+        finalize_operations.is_empty(),
+        "view '{}' produced finalize operations: {finalize_operations:?}",
+        view.name()
+    );
 
     // Load the outputs.
     let mut outputs = Vec::with_capacity(view.outputs().len());
@@ -328,7 +333,7 @@ fn run_view_call<N: Network>(
     );
 
     // Write the view's outputs into the caller's destination registers.
-    for (dest, value) in call.destinations().iter().zip_eq(outputs.into_iter()) {
+    for (dest, value) in call.destinations().iter().zip_eq(outputs) {
         caller_registers.store(caller_stack, dest, value)?;
     }
     Ok(())

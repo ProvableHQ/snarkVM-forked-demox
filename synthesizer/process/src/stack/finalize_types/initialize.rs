@@ -824,9 +824,12 @@ impl<N: Network> FinalizeTypes<N> {
         // Compute the destination register types. In a finalize context, `Call` only ever
         // targets a view function (gated by `check_instruction_opcode`), so we route it to the
         // dedicated `output_types_for_view` helper rather than the transition-only
-        // `Call::output_types`.
+        // `Call::output_types`. `CallDynamic` is rejected by `Finalize::add_command` and so is
+        // unreachable here; we bail explicitly to keep the assumption checked in code rather
+        // than relying solely on the upstream guard.
         let destination_types = match instruction {
             Instruction::Call(call) => call.output_types_for_view(stack, &operand_types)?,
+            Instruction::CallDynamic(_) => bail!("'call.dynamic' is not allowed in finalize"),
             _ => instruction.output_types(stack, &operand_types)?,
         };
 
@@ -888,6 +891,13 @@ impl<N: Network> FinalizeTypes<N> {
                     Instruction::Call(call) => call,
                     _ => bail!("Instruction '{instruction}' is not a 'call' operation."),
                 };
+                // The self-locator and import-existence checks here intentionally mirror the
+                // transition-context `Opcode::Call` arm in
+                // `register_types/initialize.rs::check_instruction_opcode`. The two arms
+                // diverge on what they allow as a target (views here vs. functions/closures
+                // there), but the locator-resolution preamble must remain in sync — keep
+                // both sites updated together when changing imports/locator semantics.
+                //
                 // Hold the external stack (if any) in this binding so the borrowed
                 // `target_program` reference stays valid for the view check below.
                 let external_stack;

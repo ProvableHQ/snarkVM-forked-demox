@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Opcode, Operand, RegistersCircuit, RegistersTrait, StackTrait};
+use crate::{Opcode, Operand, RegistersCircuit, RegistersTrait, StackTrait, register_types_equivalent};
 use console::{
     network::prelude::*,
     program::{FinalizeType, Identifier, Locator, Register, RegisterType},
@@ -296,19 +296,41 @@ impl<N: Network> Call<N> {
         if view.outputs().len() != self.destinations.len() {
             bail!("Expected {} outputs, found {}", view.outputs().len(), self.destinations.len())
         }
-        view.outputs()
-            .iter()
-            .map(|output| match output.finalize_type() {
-                FinalizeType::Plaintext(plaintext_type) => Ok(RegisterType::Plaintext(plaintext_type.clone())),
+
+        // Per-operand type-equivalence check, against the view's declared input types. View
+        // inputs are `FinalizeType::Plaintext` by construction (`ViewCore::add_input`); for a
+        // cross-program target, `qualify` rewrites local struct references to `ExternalStruct`
+        // locators so `register_types_equivalent` resolves them through the target stack.
+        for (index, (operand_type, input)) in input_types.iter().zip(view.inputs().iter()).enumerate() {
+            let plaintext_type = match input.finalize_type() {
+                FinalizeType::Plaintext(plaintext_type) => plaintext_type.clone(),
+                FinalizeType::Future(_) | FinalizeType::DynamicFuture => {
+                    bail!("View '{name}' input '{index}' must be a plaintext type")
+                }
+            };
+            let mut expected_type = RegisterType::Plaintext(plaintext_type);
+            if is_external {
+                expected_type = expected_type.qualify(*program.id());
+            }
+            if !register_types_equivalent(stack, &expected_type, stack, operand_type)? {
+                bail!("Input '{index}' of view '{name}' expects '{expected_type}', found '{operand_type}'");
+            }
+        }
+
+        let mut output_types = Vec::with_capacity(view.outputs().len());
+        for output in view.outputs() {
+            let mut register_type = match output.finalize_type() {
+                FinalizeType::Plaintext(plaintext_type) => RegisterType::Plaintext(plaintext_type.clone()),
                 FinalizeType::Future(_) | FinalizeType::DynamicFuture => {
                     bail!("View '{name}' output must be a plaintext type")
                 }
-            })
-            .map(|result| {
-                result
-                    .map(|register_type| if is_external { register_type.qualify(*program.id()) } else { register_type })
-            })
-            .collect::<Result<Vec<_>>>()
+            };
+            if is_external {
+                register_type = register_type.qualify(*program.id());
+            }
+            output_types.push(register_type);
+        }
+        Ok(output_types)
     }
 }
 

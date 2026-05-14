@@ -549,6 +549,11 @@ pub fn cost_per_command<N: Network>(
             // body cost into the caller's finalize cost, mirroring how function-to-function
             // call costs already aggregate. Same-program targets reuse the current stack;
             // cross-program targets resolve through the external stack.
+            //
+            // Recursion bound: `view_cost_for_single_view` re-enters `cost_per_command` on the
+            // view's body, but views reject `is_call()` at construction (`ViewCore::add_command`)
+            // and again at deploy via `FinalizeTypes::from_view`. So this recursion is at most
+            // one level deep — a Call in a finalize body, never a Call inside a view body.
             use snarkvm_synthesizer_program::CallOperator;
             match call.operator() {
                 CallOperator::Locator(locator) => {
