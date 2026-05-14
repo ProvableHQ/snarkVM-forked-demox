@@ -36,10 +36,6 @@ mod deploy;
 mod evaluate;
 mod execute;
 mod finalize;
-// The view module is unconditionally compiled because finalize bodies can call views
-// in-block (which routes through `evaluate_call_to_view` and `evaluate_view_inner` regardless
-// of feature flags). The external `evaluate_view_at_height` API and its historic-table reader
-// are gated on `--features history` inside the module itself.
 mod view;
 #[cfg(feature = "history")]
 pub use view::evaluate_view_at_height;
