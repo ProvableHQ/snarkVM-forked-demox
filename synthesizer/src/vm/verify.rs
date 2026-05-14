@@ -988,11 +988,11 @@ mod tests {
     use crate::vm::test_helpers::sample_finalize_state;
     use console::account::ViewKey;
 
+    use console::{account::Address, types::Field};
     #[cfg(feature = "test")]
-    use console::algorithms::{ECDSASignature, Keccak256};
     use console::{
-        account::Address,
-        types::{Field, U8},
+        algorithms::{ECDSASignature, Keccak256},
+        types::U8,
     };
     use snarkvm_ledger_block::{Block, Header, Metadata, Transaction, Transition};
     #[cfg(feature = "test")]

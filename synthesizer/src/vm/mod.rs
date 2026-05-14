@@ -25,7 +25,7 @@ mod verify;
 #[cfg(test)]
 mod tests;
 
-use crate::{Restrictions, Stack, cast_mut_ref, cast_ref, convert, process};
+use crate::{Command, Restrictions, Stack, cast_mut_ref, cast_ref, convert, process};
 use console::{
     account::{Address, PrivateKey},
     network::prelude::*,
@@ -57,6 +57,7 @@ use snarkvm_ledger_block::{
     Ratifications,
     Ratify,
     Rejected,
+    RejectedReason,
     Solutions,
     Transaction,
     Transactions,
@@ -106,7 +107,7 @@ use lru::LruCache;
 use parking_lot::{Mutex, RwLock};
 use rand::{SeedableRng, rngs::StdRng};
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     num::NonZeroUsize,
     sync::{Arc, mpsc},
     thread,
@@ -133,6 +134,9 @@ pub struct VM<N: Network, C: ConsensusStorage<N>> {
     partially_verified_transactions: Arc<RwLock<LruCache<TransactionCacheKey<N>, N::TransmissionChecksum>>>,
     /// The restrictions list.
     restrictions: Restrictions<N>,
+    /// The list of rejection reasons for pending confirmed transactions.
+    /// TODO: it would be cleaner if these are passed along as an argument to `add_next_block`, but this requires a bigger refactor.
+    pending_rejected_reasons: Arc<RwLock<HashMap<N::TransactionID, RejectedReason<N>>>>,
     /// A sender to the channel for operations that must be performed sequentially.
     sequential_ops_tx: Arc<RwLock<Option<mpsc::Sender<SequentialOperationRequest<N>>>>>,
     /// The handle to the thread which processes operations sequentially.
@@ -235,6 +239,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             ))),
             restrictions: Restrictions::load()?,
             sequential_ops_tx: Default::default(),
+            pending_rejected_reasons: Default::default(),
             sequential_ops_thread: Default::default(),
         };
 
@@ -979,8 +984,15 @@ function compute:
             FinalizeGlobalState::from(next_block_height as u64, next_block_height, next_timestamp, [0u8; 32]);
 
         // Speculate on the ratifications, solutions, and transactions.
-        let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) =
-            vm.speculate(finalize_state, time_since_last_block, None, vec![], &None.into(), transactions.iter(), rng)?;
+        let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = vm.speculate(
+            finalize_state,
+            time_since_last_block,
+            Some(0u64),
+            vec![],
+            &None.into(),
+            transactions.iter(),
+            rng,
+        )?;
 
         // Construct the metadata associated with the block.
         let metadata = Metadata::new(
