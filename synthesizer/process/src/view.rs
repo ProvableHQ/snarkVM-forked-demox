@@ -246,6 +246,8 @@ fn evaluate_view_inner<N: Network>(
     while counter < view.commands().len() {
         let command = &view.commands()[counter];
         crate::finalize::finalize_command_except_await(
+            Some((*stack.program_id(), *stack.program_edition())),
+            Some(*registers.function_name()),
             store,
             stack,
             &mut registers,
