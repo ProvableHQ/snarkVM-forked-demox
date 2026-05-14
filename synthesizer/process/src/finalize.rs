@@ -551,7 +551,7 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
                     // Get the transition ID used to initialize the finalize registers.
                     // If the block height is greater than or equal to `ConsensusVersion::V3`, then use the top-level transition ID.
                     // Otherwise, view the call graph for the child transition ID corresponding to the future that is being awaited.
-                    let consensus_version = N::CONSENSUS_VERSION(state.block_height())).into_indexed(
+                    let consensus_version = N::CONSENSUS_VERSION(state.block_height()).into_indexed(
                         Some((finalize_program_id, finalize_edition)),
                         Some(finalize_resource),
                         Some((counter, command.clone())),
