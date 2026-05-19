@@ -183,17 +183,12 @@ impl<N: Network> Subdag<N> {
     #[allow(clippy::cast_possible_truncation)]
     pub fn spend_limit(&self, block_height: u32) -> Option<u64> {
         if block_height >= N::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap() {
-            // One full round of consensus has a runtime budget of 5 seconds.
-            let credits_per_5_seconds_runtime =
-                5_f64 * consensus_config_value!(N, CREDITS_PER_SECOND_OF_RUNTIME, block_height).unwrap() as f64;
-            // A certificate therefore has a runtime budget of 5 seconds / MAX_CERTIFICATES.
-            let credits_per_certificate = credits_per_5_seconds_runtime
-                / consensus_config_value!(N, MAX_CERTIFICATES, block_height).unwrap() as f64;
             // Compute the number of certificates in the subdag.
-            let subdag_certificates_count =
-                self.values().map(|certificates| certificates.len() as u64).sum::<u64>() as f64;
-            // The spend limit is the number of certificates times the runtime budget per certificate.
-            Some((credits_per_certificate * subdag_certificates_count) as u64)
+            let subdag_certificates_count = self.values().map(|certificates| certificates.len() as u64).sum::<u64>();
+            // Compute the batch spend limit.
+            let batch_spend_limit = BatchHeader::<N>::batch_spend_limit(block_height);
+            // For each certificate in the subdag, we can spend up to the batch spend limit.
+            Some(subdag_certificates_count.saturating_mul(batch_spend_limit))
         } else {
             None
         }
