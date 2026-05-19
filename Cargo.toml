@@ -133,6 +133,7 @@ history = [ "snarkvm-synthesizer/history" ]
 history-staking-rewards = [ "snarkvm-synthesizer/history-staking-rewards" ]
 slipstream-plugins = [ "snarkvm-synthesizer/slipstream-plugins", "dep:snarkvm-slipstream-plugin-interface", "dep:snarkvm-slipstream-plugin-manager" ]
 parameters_no_std_out = [ "snarkvm-parameters/no_std_out" ]
+skip-srs-embed = [ "snarkvm-parameters/skip-srs-embed" ]
 locktick = [
   "snarkvm-console?/locktick",
   "snarkvm-algorithms?/locktick",
