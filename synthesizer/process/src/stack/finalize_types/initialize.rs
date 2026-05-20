@@ -821,14 +821,10 @@ impl<N: Network> FinalizeTypes<N> {
             operand_types.push(RegisterType::from(self.get_type_from_operand(stack, operand)?));
         }
 
-        // Compute the destination register types. In a finalize context, `Call` only ever
-        // targets a view function (gated by `check_instruction_opcode`), so we route it to the
-        // dedicated `output_types_for_view` helper rather than the transition-only
-        // `Call::output_types`. `CallDynamic` is rejected by `Finalize::add_command` and so is
-        // unreachable here; we bail explicitly to keep the assumption checked in code rather
-        // than relying solely on the upstream guard.
+        // Compute the destination register types. `CallDynamic` is rejected by
+        // `Finalize::add_command` and so is unreachable here; we bail explicitly to keep the
+        // assumption checked in code rather than relying solely on the upstream guard.
         let destination_types = match instruction {
-            Instruction::Call(call) => call.output_types_for_view(stack, &operand_types)?,
             Instruction::CallDynamic(_) => bail!("'call.dynamic' is not allowed in finalize"),
             _ => instruction.output_types(stack, &operand_types)?,
         };
