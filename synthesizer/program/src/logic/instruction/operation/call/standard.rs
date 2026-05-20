@@ -13,10 +13,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Opcode, Operand, RegistersCircuit, RegistersTrait, StackTrait, register_types_equivalent};
+use crate::{
+    FinalizeRegistersState,
+    FinalizeStoreTrait,
+    Opcode,
+    Operand,
+    RegistersCircuit,
+    RegistersTrait,
+    StackTrait,
+    register_types_equivalent,
+};
 use console::{
     network::prelude::*,
-    program::{FinalizeType, Identifier, Locator, Register, RegisterType},
+    program::{FinalizeType, Identifier, Locator, Register, RegisterType, Value},
 };
 
 /// The operator references a function name or closure name.
@@ -181,9 +190,51 @@ impl<N: Network> Call<N> {
     }
 
     /// Finalizes the instruction.
+    ///
+    /// In a finalize context, the only legal `call` target is a view function (gated at
+    /// deploy time by `check_instruction_opcode`). Loads operand values from `caller_registers`,
+    /// dispatches the view body through `StackTrait::evaluate_view` against the appropriate
+    /// target stack (same-program for `CallOperator::Resource`, external for `Locator`), and
+    /// writes outputs back into the caller's destination registers.
     #[inline]
-    pub fn finalize(&self, _stack: &impl StackTrait<N>, _registers: &mut impl RegistersTrait<N>) -> Result<()> {
-        bail!("Forbidden operation: Finalize cannot invoke a 'call' directly. Use 'call' in 'Stack' instead.")
+    pub fn finalize(
+        &self,
+        stack: &impl StackTrait<N>,
+        store: &impl FinalizeStoreTrait<N>,
+        caller_registers: &mut impl FinalizeRegistersState<N>,
+    ) -> Result<()> {
+        // Load inputs from the caller's registers (operands resolve against the caller's stack).
+        let inputs: Vec<Value<N>> =
+            self.operands.iter().map(|op| caller_registers.load(stack, op)).collect::<Result<_>>()?;
+
+        // Inherit the caller's global finalize state for the view body.
+        let state = *caller_registers.state();
+
+        // Dispatch to the target stack (external for locator-typed targets, current stack for
+        // resource-typed targets). Views are leaves — their bodies reject `is_call` at
+        // construction — so this never recurses through `Command::finalize` back into another
+        // view call.
+        let outputs = match &self.operator {
+            CallOperator::Locator(locator) => {
+                let external_stack = stack.get_external_stack(locator.program_id())?;
+                external_stack.evaluate_view(state, store, locator.resource(), inputs)?
+            }
+            CallOperator::Resource(name) => stack.evaluate_view(state, store, name, inputs)?,
+        };
+
+        // Type-check at deploy time guarantees this match, but we sanity-check at runtime too.
+        ensure!(
+            self.destinations.len() == outputs.len(),
+            "View returned {} outputs but the call expects {}",
+            outputs.len(),
+            self.destinations.len(),
+        );
+
+        // Write the view's outputs into the caller's destination registers.
+        for (dest, value) in self.destinations.iter().zip_eq(outputs) {
+            caller_registers.store(stack, dest, value)?;
+        }
+        Ok(())
     }
 
     /// Returns the output type from the given program and input types.

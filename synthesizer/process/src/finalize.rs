@@ -810,31 +810,6 @@ pub(crate) fn finalize_command_except_await<N: Network>(
                 "Cannot use `finalize_command_except_await` with an 'await' command"
             )
         }
-        Command::Instruction(Instruction::Call(call)) => {
-            // `call` from a finalize body is permitted only when the target resolves to a
-            // view function (enforced at `Stack::new` time by `check_instruction_opcode`).
-            // Defer to the in-block view-call helper, which loads inputs from `registers`,
-            // runs the view body against the same `store`, and writes outputs back.
-            let result = try_vm_runtime!(|| crate::view::evaluate_call_to_view(call, stack, store, registers));
-            match result {
-                Ok(Ok(())) => {}
-                Ok(Err(error)) => indexed_finalize_bail!(
-                    program_id,
-                    resource,
-                    *counter,
-                    command.clone(),
-                    "'{scope_name}' failed to evaluate command: {error}"
-                ),
-                Err(_) => indexed_finalize_bail!(
-                    program_id,
-                    resource,
-                    *counter,
-                    command.clone(),
-                    "'{scope_name}' failed to evaluate command"
-                ),
-            }
-            *counter += 1;
-        }
         _ => {
             let result = try_vm_runtime!(|| command.finalize(stack, store, registers));
             match result {

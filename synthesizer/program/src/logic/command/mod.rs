@@ -214,7 +214,7 @@ impl<N: Network> Command<N> {
     ) -> Result<Option<FinalizeOperation<N>>, FinalizeError> {
         match self {
             // Finalize the instruction, and return no finalize operation.
-            Command::Instruction(instruction) => instruction.finalize(stack, registers).map(|_| None),
+            Command::Instruction(instruction) => instruction.finalize(stack, store, registers).map(|_| None),
             // `await` commands are processed by the caller of this method.
             Command::Await(_) => Err(FinalizeError::Anyhow(anyhow!("`await` commands cannot be finalized directly."))),
             // Finalize the 'contains' command, and return no finalize operation.

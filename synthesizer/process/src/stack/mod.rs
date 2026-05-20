@@ -74,6 +74,8 @@ use snarkvm_synthesizer_error::*;
 use snarkvm_synthesizer_program::{
     CallOperator,
     Closure,
+    FinalizeGlobalState,
+    FinalizeStoreTrait,
     Function,
     Instruction,
     Operand,

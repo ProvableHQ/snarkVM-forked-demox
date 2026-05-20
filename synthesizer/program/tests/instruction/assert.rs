@@ -15,7 +15,7 @@
 
 include!("../helpers/macros.rs");
 
-use crate::helpers::sample::{sample_finalize_registers, sample_registers};
+use crate::helpers::sample::{NoopFinalizeStore, sample_finalize_registers, sample_registers};
 
 use circuit::AleoV0;
 use console::{
@@ -162,7 +162,7 @@ fn check_assert<const VARIANT: u8>(
             Plaintext::from(literal_a),
         ])
         .unwrap();
-        let result_c = operation.finalize(&stack, &mut registers);
+        let result_c = operation.finalize(&stack, &NoopFinalizeStore, &mut registers);
 
         // Ensure the result is correct.
         match VARIANT {
@@ -237,7 +237,7 @@ fn check_assert<const VARIANT: u8>(
             Plaintext::from(literal_b),
         ])
         .unwrap();
-        let result_c = operation.finalize(&stack, &mut registers);
+        let result_c = operation.finalize(&stack, &NoopFinalizeStore, &mut registers);
 
         // Ensure the result is correct.
         match VARIANT {

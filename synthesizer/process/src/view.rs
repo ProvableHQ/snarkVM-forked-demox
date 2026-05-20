@@ -176,7 +176,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for HistoricFinali
 /// Inner evaluation of a view. Generic over the store; the public path
 /// ([`evaluate_view_at_height`]) wraps the underlying `FinalizeStore` in a
 /// [`HistoricFinalizeStore`] adapter that pins reads to a fixed height.
-fn evaluate_view_inner<N: Network>(
+pub(crate) fn evaluate_view_inner<N: Network>(
     state: FinalizeGlobalState,
     store: &impl FinalizeStoreTrait<N>,
     stack: &Stack<N>,
@@ -274,69 +274,6 @@ fn evaluate_view_inner<N: Network>(
         outputs.push(registers.load(stack, output.operand())?);
     }
     Ok(outputs)
-}
-
-/// In-block call from a `finalize` body to a view function.
-///
-/// Loads inputs from the caller's registers, runs the view body against the caller's live
-/// `FinalizeGlobalState` and finalize `store` (the view sees pending finalize state for the
-/// in-flight transaction, which is the correct semantics for an in-block call), and writes
-/// the view's outputs into the caller's destination registers.
-///
-/// Views are leaves — their own bodies reject `is_call` at construction — so this call
-/// never recurses through `Command::finalize` back into another view call.
-pub(crate) fn evaluate_call_to_view<N: Network>(
-    call: &snarkvm_synthesizer_program::Call<N>,
-    stack: &Stack<N>,
-    store: &impl snarkvm_synthesizer_program::FinalizeStoreTrait<N>,
-    caller_registers: &mut FinalizeRegisters<N>,
-) -> Result<()> {
-    use snarkvm_synthesizer_program::CallOperator;
-    match call.operator() {
-        CallOperator::Locator(locator) => {
-            let external_stack = stack.get_external_stack(locator.program_id())?;
-            run_view_call(call, stack, &external_stack, locator.resource(), store, caller_registers)
-        }
-        CallOperator::Resource(name) => run_view_call(call, stack, stack, name, store, caller_registers),
-    }
-}
-
-/// Inner helper for [`evaluate_call_to_view`]. Splits same-program vs. cross-program at the
-/// caller (so the target `Stack` is a plain `&Stack<N>` here regardless of source).
-fn run_view_call<N: Network>(
-    call: &snarkvm_synthesizer_program::Call<N>,
-    caller_stack: &Stack<N>,
-    target_stack: &Stack<N>,
-    view_name: &Identifier<N>,
-    store: &impl snarkvm_synthesizer_program::FinalizeStoreTrait<N>,
-    caller_registers: &mut FinalizeRegisters<N>,
-) -> Result<()> {
-    // Load inputs from the caller's registers (operands are resolved against the caller's stack).
-    let inputs: Vec<Value<N>> =
-        call.operands().iter().map(|op| caller_registers.load(caller_stack, op)).collect::<Result<_>>()?;
-
-    // Inherit the global state from the caller. Views reject `rand.chacha` at construction,
-    // so the (unused-by-views) `transition_id` / `nonce` slots are left as `None`.
-    let state = *caller_registers.state();
-
-    // Evaluate the view body against the target stack and the live store.
-    let outputs = evaluate_view_inner(state, store, target_stack, view_name, inputs)?;
-
-    // Type-check at deploy time guarantees this match, but we sanity-check at runtime as well.
-    ensure!(
-        call.destinations().len() == outputs.len(),
-        "View '{}/{}' returned {} outputs but the call expects {}",
-        target_stack.program_id(),
-        view_name,
-        outputs.len(),
-        call.destinations().len(),
-    );
-
-    // Write the view's outputs into the caller's destination registers.
-    for (dest, value) in call.destinations().iter().zip_eq(outputs) {
-        caller_registers.store(caller_stack, dest, value)?;
-    }
-    Ok(())
 }
 
 // All existing view tests exercise the external `evaluate_view_at_height` path, which is
