@@ -4,13 +4,15 @@ on:
   push:
     branches:
       - 'staging'
+      - 'copilot/reduce-snarkvm-ci-benchmark-scope'
   workflow_dispatch:
 
 jobs:
   # Run benchmarks and stores the output to a file
   benchmark:
     name: Benchmark
-    runs-on: ubuntu-latest
+    # Pin to a specific image to reduce runner-image drift between comparisons.
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
