@@ -188,10 +188,10 @@ pub trait StackTrait<N: Network> {
     /// is the cross-crate hook that lets `Call::finalize` (in `snarkvm-synthesizer-program`)
     /// dispatch view-call evaluation into `snarkvm-synthesizer-process` without depending on
     /// concrete `Stack` / `FinalizeRegisters` types.
-    fn evaluate_view<S: FinalizeStoreTrait<N>>(
+    fn evaluate_view(
         &self,
         state: FinalizeGlobalState,
-        store: &S,
+        store: &dyn FinalizeStoreTrait<N>,
         view_name: &Identifier<N>,
         inputs: Vec<Value<N>>,
     ) -> Result<Vec<Value<N>>>;

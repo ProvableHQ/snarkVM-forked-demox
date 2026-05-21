@@ -623,7 +623,7 @@ impl<N: Network> Instruction<N> {
     pub fn finalize(
         &self,
         stack: &impl StackTrait<N>,
-        store: &impl FinalizeStoreTrait<N>,
+        store: Option<&dyn FinalizeStoreTrait<N>>,
         registers: &mut impl FinalizeRegistersState<N>,
     ) -> Result<(), FinalizeError> {
         instruction!(self, |instruction| instruction.finalize(stack, store, registers).map_err(Into::into))

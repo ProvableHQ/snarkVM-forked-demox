@@ -165,7 +165,7 @@ impl<N: Network> SignatureVerification<N> {
     pub fn finalize(
         &self,
         stack: &impl StackTrait<N>,
-        _store: &impl FinalizeStoreTrait<N>,
+        _store: Option<&dyn FinalizeStoreTrait<N>>,
         registers: &mut impl FinalizeRegistersState<N>,
     ) -> Result<()> {
         self.evaluate(stack, registers)

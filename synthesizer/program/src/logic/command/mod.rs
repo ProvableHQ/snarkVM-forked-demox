@@ -209,12 +209,12 @@ impl<N: Network> Command<N> {
     pub fn finalize(
         &self,
         stack: &impl StackTrait<N>,
-        store: &impl FinalizeStoreTrait<N>,
+        store: &dyn FinalizeStoreTrait<N>,
         registers: &mut impl FinalizeRegistersState<N>,
     ) -> Result<Option<FinalizeOperation<N>>, FinalizeError> {
         match self {
             // Finalize the instruction, and return no finalize operation.
-            Command::Instruction(instruction) => instruction.finalize(stack, store, registers).map(|_| None),
+            Command::Instruction(instruction) => instruction.finalize(stack, Some(store), registers).map(|_| None),
             // `await` commands are processed by the caller of this method.
             Command::Await(_) => Err(FinalizeError::Anyhow(anyhow!("`await` commands cannot be finalized directly."))),
             // Finalize the 'contains' command, and return no finalize operation.

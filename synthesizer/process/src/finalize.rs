@@ -742,7 +742,7 @@ fn initialize_finalize_state<N: Network>(
 pub(crate) fn finalize_command_except_await<N: Network>(
     program_id: Option<(ProgramID<N>, u16)>,
     resource: Option<Identifier<N>>,
-    store: &impl FinalizeStoreTrait<N>,
+    store: &dyn FinalizeStoreTrait<N>,
     stack: &Stack<N>,
     registers: &mut FinalizeRegisters<N>,
     positions: &HashMap<Identifier<N>, usize>,

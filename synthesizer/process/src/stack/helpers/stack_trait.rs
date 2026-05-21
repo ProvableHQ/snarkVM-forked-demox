@@ -457,10 +457,10 @@ impl<N: Network> StackTrait<N> for Stack<N> {
         self.sample_record(burner_address, record_name, record_nonce, rng)
     }
 
-    fn evaluate_view<S: FinalizeStoreTrait<N>>(
+    fn evaluate_view(
         &self,
         state: FinalizeGlobalState,
-        store: &S,
+        store: &dyn FinalizeStoreTrait<N>,
         view_name: &Identifier<N>,
         inputs: Vec<Value<N>>,
     ) -> Result<Vec<Value<N>>> {

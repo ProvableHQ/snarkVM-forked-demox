@@ -17,16 +17,10 @@ use circuit::AleoV0;
 use console::{
     network::MainnetV0,
     prelude::*,
-    program::{Identifier, Plaintext, ProgramID, Register, Value},
+    program::{Identifier, Plaintext, Register, Value},
 };
 use snarkvm_synthesizer_process::{Authorization, CallStack, FinalizeRegisters, Registers, Stack};
-use snarkvm_synthesizer_program::{
-    FinalizeGlobalState,
-    FinalizeOperation,
-    FinalizeStoreTrait,
-    RegistersCircuit as _,
-    RegistersTrait as _,
-};
+use snarkvm_synthesizer_program::{FinalizeGlobalState, RegistersCircuit as _, RegistersTrait as _};
 
 type CurrentNetwork = MainnetV0;
 type CurrentAleo = AleoV0;
@@ -86,74 +80,4 @@ pub fn sample_finalize_registers(
     }
 
     Ok(finalize_registers)
-}
-
-/// Bailing `FinalizeStoreTrait` for tests of instructions that don't touch the finalize store.
-/// `Instruction::finalize` requires a store argument; instructions like `assert`, `cast`, `hash`,
-/// etc. ignore it, so the harness can use this no-op shim instead of building a real store.
-pub struct NoopFinalizeStore;
-
-impl FinalizeStoreTrait<CurrentNetwork> for NoopFinalizeStore {
-    fn contains_mapping_confirmed(
-        &self,
-        _program_id: &ProgramID<CurrentNetwork>,
-        _mapping_name: &Identifier<CurrentNetwork>,
-    ) -> Result<bool> {
-        bail!("NoopFinalizeStore: contains_mapping_confirmed is unsupported")
-    }
-
-    fn contains_mapping_speculative(
-        &self,
-        _program_id: &ProgramID<CurrentNetwork>,
-        _mapping_name: &Identifier<CurrentNetwork>,
-    ) -> Result<bool> {
-        bail!("NoopFinalizeStore: contains_mapping_speculative is unsupported")
-    }
-
-    fn contains_key_speculative(
-        &self,
-        _program_id: ProgramID<CurrentNetwork>,
-        _mapping_name: Identifier<CurrentNetwork>,
-        _key: &Plaintext<CurrentNetwork>,
-    ) -> Result<bool> {
-        bail!("NoopFinalizeStore: contains_key_speculative is unsupported")
-    }
-
-    fn get_value_speculative(
-        &self,
-        _program_id: ProgramID<CurrentNetwork>,
-        _mapping_name: Identifier<CurrentNetwork>,
-        _key: &Plaintext<CurrentNetwork>,
-    ) -> Result<Option<Value<CurrentNetwork>>> {
-        bail!("NoopFinalizeStore: get_value_speculative is unsupported")
-    }
-
-    fn insert_key_value(
-        &self,
-        _program_id: ProgramID<CurrentNetwork>,
-        _mapping_name: Identifier<CurrentNetwork>,
-        _key: Plaintext<CurrentNetwork>,
-        _value: Value<CurrentNetwork>,
-    ) -> Result<FinalizeOperation<CurrentNetwork>> {
-        bail!("NoopFinalizeStore: insert_key_value is unsupported")
-    }
-
-    fn update_key_value(
-        &self,
-        _program_id: ProgramID<CurrentNetwork>,
-        _mapping_name: Identifier<CurrentNetwork>,
-        _key: Plaintext<CurrentNetwork>,
-        _value: Value<CurrentNetwork>,
-    ) -> Result<FinalizeOperation<CurrentNetwork>> {
-        bail!("NoopFinalizeStore: update_key_value is unsupported")
-    }
-
-    fn remove_key_value(
-        &self,
-        _program_id: ProgramID<CurrentNetwork>,
-        _mapping_name: Identifier<CurrentNetwork>,
-        _key: &Plaintext<CurrentNetwork>,
-    ) -> Result<Option<FinalizeOperation<CurrentNetwork>>> {
-        bail!("NoopFinalizeStore: remove_key_value is unsupported")
-    }
 }

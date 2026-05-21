@@ -322,7 +322,7 @@ impl<N: Network> GetRecordDynamic<N> {
     pub fn finalize(
         &self,
         _stack: &impl StackTrait<N>,
-        _store: &impl FinalizeStoreTrait<N>,
+        _store: Option<&dyn FinalizeStoreTrait<N>>,
         _registers: &mut impl FinalizeRegistersState<N>,
     ) -> Result<()> {
         bail!("Forbidden operation: Finalize cannot invoke 'get.record.dynamic'.")

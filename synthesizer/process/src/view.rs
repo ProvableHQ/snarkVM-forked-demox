@@ -178,7 +178,7 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for HistoricFinali
 /// [`HistoricFinalizeStore`] adapter that pins reads to a fixed height.
 pub(crate) fn evaluate_view_inner<N: Network>(
     state: FinalizeGlobalState,
-    store: &impl FinalizeStoreTrait<N>,
+    store: &dyn FinalizeStoreTrait<N>,
     stack: &Stack<N>,
     view_name: &Identifier<N>,
     inputs: Vec<Value<N>>,

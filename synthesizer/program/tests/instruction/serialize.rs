@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::helpers::sample::{NoopFinalizeStore, sample_finalize_registers, sample_registers};
+use crate::helpers::sample::{sample_finalize_registers, sample_registers};
 
 use circuit::{AleoV0, Eject};
 use console::{
@@ -149,7 +149,7 @@ fn check_serialize<const VARIANT: u8>(
 
         // Attempt to finalize the valid operand case.
         let mut finalize_registers = sample_finalize_registers(&stack, &function_name, &[plaintext]).unwrap();
-        let result_c = operation.finalize(&stack, &NoopFinalizeStore, &mut finalize_registers);
+        let result_c = operation.finalize(&stack, None, &mut finalize_registers);
 
         // Check that either all operations failed, or all operations succeeded.
         let all_failed = result_a.is_err() && result_b.is_err() && result_c.is_err();

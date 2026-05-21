@@ -200,9 +200,13 @@ impl<N: Network> Call<N> {
     pub fn finalize(
         &self,
         stack: &impl StackTrait<N>,
-        store: &impl FinalizeStoreTrait<N>,
+        store: Option<&dyn FinalizeStoreTrait<N>>,
         caller_registers: &mut impl FinalizeRegistersState<N>,
     ) -> Result<()> {
+        // A finalize-context `call` actually executes a view body, which reads from the
+        // finalize store; reject the storeless dispatch path explicitly.
+        let store = store.ok_or_else(|| anyhow!("`call` from a finalize context requires a finalize store"))?;
+
         // Load inputs from the caller's registers (operands resolve against the caller's stack).
         let inputs: Vec<Value<N>> =
             self.operands.iter().map(|op| caller_registers.load(stack, op)).collect::<Result<_>>()?;

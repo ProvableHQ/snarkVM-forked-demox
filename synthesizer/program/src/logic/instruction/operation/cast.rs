@@ -647,7 +647,7 @@ impl<N: Network, const VARIANT: u8> CastOperation<N, VARIANT> {
     pub fn finalize(
         &self,
         stack: &impl StackTrait<N>,
-        _store: &impl FinalizeStoreTrait<N>,
+        _store: Option<&dyn FinalizeStoreTrait<N>>,
         registers: &mut impl FinalizeRegistersState<N>,
     ) -> Result<()> {
         // If the variant is `cast.lossy`, then check that the `cast_type` is a `PlaintextType::Literal`.
