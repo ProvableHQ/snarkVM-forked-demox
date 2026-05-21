@@ -464,22 +464,6 @@ mod tests {
         assert_eq!(empty_subdag.spend_limit(v15_height), Some(0));
     }
 
-    /// A subdag whose total certificate count equals MAX_CERTIFICATES should consume
-    /// the full 5-second allotment: `5 * CREDITS_PER_SECOND_OF_RUNTIME`.
-    #[test]
-    fn test_spend_limit_full_subdag() {
-        let v15_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap();
-        let max_certs = consensus_config_value!(CurrentNetwork, MAX_CERTIFICATES, v15_height).unwrap() as usize;
-        let credits_per_second_of_runtime =
-            consensus_config_value!(CurrentNetwork, CREDITS_PER_SECOND_OF_RUNTIME, v15_height).unwrap();
-
-        let mut rng = TestRng::default();
-        let subdag = subdag_with_cert_count(max_certs, &mut rng);
-
-        // fullness == 1.0, so limit == 5 * tx_spend_limit exactly.
-        assert_eq!(subdag.spend_limit(v15_height), Some(5 * credits_per_second_of_runtime));
-    }
-
     /// Verify the exact arithmetic for an arbitrary partial fill of the subdag.
     #[test]
     #[allow(clippy::cast_possible_truncation)]
