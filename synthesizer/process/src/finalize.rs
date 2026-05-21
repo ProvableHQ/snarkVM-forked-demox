@@ -299,8 +299,10 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
             // Check that the total number of `Await` commands evaluated during
             // finalization matches the number of `Future`s defined in the
             // execution's transitions' outputs.
-            let total_futures =
-                execution.transitions().filter(|t| t.outputs().iter().any(|o| o.future().is_some())).count();
+            let total_futures = execution
+                .transitions()
+                .filter(|t| t.outputs().last().and_then(|output| output.future()).is_some())
+                .count();
             let expected_total_awaits = total_futures.saturating_sub(1);
             if total_awaits != expected_total_awaits {
                 indexed_finalize_bail!(
@@ -377,9 +379,17 @@ fn finalize_fee_transition<N: Network, P: FinalizeStorage<N>>(
         false => HashMap::new(),
     };
 
-    // Finalize the transition. The fee path has no awaits, so the total_awaits count is unused here.
-    let (finalize_operations, _total_awaits) =
+    // Finalize the transition.
+    let (finalize_operations, total_awaits) =
         finalize_transition(state, store, stack, fee, call_graph, Default::default())?;
+    // Create IndexedFinalizeError if the fee path has awaits.
+    if total_awaits != 0 {
+        indexed_finalize_bail!(
+            Some((*fee.program_id(), *stack.program_edition())),
+            Some(*fee.function_name()),
+            "Fees must not have any awaits"
+        );
+    }
     Ok(finalize_operations)
 }
 
