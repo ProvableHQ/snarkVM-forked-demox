@@ -24,6 +24,12 @@ mod cost_for_call;
 // Tests for quorum block compute spend limits.
 mod block_spend_limit;
 
+// Tests for the externally-callable `view` function prototype.
+mod views;
+
+// Tests for restricted keywords at V15.
+mod restricted_keywords;
+
 use super::*;
 
 use crate::vm::test_helpers::{sample_vm_at_height, *};

@@ -44,6 +44,7 @@ wasm = [
   "snarkvm-synthesizer-snark/wasm"
 ]
 test = [ "snarkvm-console/test", "snarkvm-circuit/test" ]
+history = [ "snarkvm-ledger-store/history" ]
 timer = [ "aleo-std/timer" ]
 dev-print = [ "snarkvm-utilities/dev-print" ]
 dev_skip_checks = [ ]
@@ -89,6 +90,9 @@ workspace = true
 workspace = true
 
 [dependencies.snarkvm-utilities]
+workspace = true
+
+[dependencies.anyhow]
 workspace = true
 
 [dependencies.aleo-std]
