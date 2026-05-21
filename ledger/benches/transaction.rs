@@ -85,12 +85,13 @@ function hello:
     )
     .unwrap();
 
-    c.bench_function("Transaction::Deploy", |b| {
-        b.iter(|| vm.deploy(&private_key, &program, Some(records[0].clone()), 600000, None, rng).unwrap())
-    });
+    // c.bench_function("Transaction::Deploy", |b| {
+    //     b.iter(|| vm.deploy(&private_key, &program, Some(records[0].clone()), 600000, None, rng).unwrap())
+    // });
+
+    let transaction = vm.deploy(&private_key, &program, Some(records[0].clone()), 600000, None, rng).unwrap();
 
     c.bench_function("Transaction::Deploy - verify", |b| {
-        let transaction = vm.deploy(&private_key, &program, Some(records[0].clone()), 600000, None, rng).unwrap();
         b.iter(|| vm.check_transaction(&transaction, None, rng).unwrap())
     });
 }
@@ -120,17 +121,17 @@ fn execute(c: &mut Criterion) {
         // Authorize the fee.
         let fee_authorization = vm.authorize_fee_public(&private_key, 300000, 1000, execution_id, rng).unwrap();
 
-        c.bench_function("Transaction::Execute(transfer_public)", |b| {
-            b.iter(|| {
-                vm.execute_authorization(
-                    execute_authorization.replicate(),
-                    Some(fee_authorization.replicate()),
-                    None,
-                    rng,
-                )
-                .unwrap();
-            })
-        });
+        // c.bench_function("Transaction::Execute(transfer_public)", |b| {
+        //     b.iter(|| {
+        //         vm.execute_authorization(
+        //             execute_authorization.replicate(),
+        //             Some(fee_authorization.replicate()),
+        //             None,
+        //             rng,
+        //         )
+        //         .unwrap();
+        //     })
+        // });
 
         let transaction = vm
             .execute_authorization(execute_authorization.replicate(), Some(fee_authorization.replicate()), None, rng)
@@ -170,17 +171,17 @@ fn execute(c: &mut Criterion) {
         let fee_authorization = vm.authorize_fee_public(&private_key, 300000, 1000, execution_id, rng).unwrap();
 
         // Bench the execution of transfer_private.
-        c.bench_function("Transaction::Execute(transfer_private)", |b| {
-            b.iter(|| {
-                vm.execute_authorization(
-                    execute_authorization.replicate(),
-                    Some(fee_authorization.replicate()),
-                    None,
-                    rng,
-                )
-                .unwrap();
-            })
-        });
+        // c.bench_function("Transaction::Execute(transfer_private)", |b| {
+        //     b.iter(|| {
+        //         vm.execute_authorization(
+        //             execute_authorization.replicate(),
+        //             Some(fee_authorization.replicate()),
+        //             None,
+        //             rng,
+        //         )
+        //         .unwrap();
+        //     })
+        // });
 
         let transaction = vm
             .execute_authorization(execute_authorization.replicate(), Some(fee_authorization.replicate()), None, rng)
