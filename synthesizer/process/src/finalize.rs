@@ -21,6 +21,8 @@ use snarkvm_utilities::try_vm_runtime;
 
 use std::collections::HashSet;
 
+type TotalAwaits = usize;
+
 impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
     /// Finalizes the deployment and fee.
     /// This method assumes the given deployment **is valid**.
@@ -291,8 +293,23 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
             // Finalize the root transition.
             // Note that this will result in all the remaining transitions being finalized, since the number
             // of calls matches the number of transitions.
-            let mut finalize_operations =
+            let (mut finalize_operations, total_awaits) =
                 finalize_transition(state, store, &stack, transition, call_graph, dynamic_future_to_future)?;
+
+            // Check that the total number of `Await` commands evaluated during
+            // finalization matches the number of `Future`s defined in the
+            // execution's transitions' outputs.
+            let total_futures =
+                execution.transitions().filter(|t| t.outputs().iter().any(|o| o.future().is_some())).count();
+            let expected_total_awaits = total_futures.saturating_sub(1);
+            if total_awaits != expected_total_awaits {
+                indexed_finalize_bail!(
+                    Some((transition_program_id, *stack.program_edition())),
+                    Some(transition_function_name),
+                    "The number of 'await' calls during finalization is incorrect. \
+                    Expected {expected_total_awaits}, but found {total_awaits}"
+                );
+            }
 
             /* Finalize the fee. */
             if let Some(fee) = fee {
@@ -360,8 +377,10 @@ fn finalize_fee_transition<N: Network, P: FinalizeStorage<N>>(
         false => HashMap::new(),
     };
 
-    // Finalize the transition.
-    finalize_transition(state, store, stack, fee, call_graph, Default::default())
+    // Finalize the transition. The fee path has no awaits, so the total_awaits count is unused here.
+    let (finalize_operations, _total_awaits) =
+        finalize_transition(state, store, stack, fee, call_graph, Default::default())?;
+    Ok(finalize_operations)
 }
 
 /// Finalizes the constructor.
@@ -453,7 +472,7 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
     transition: &Transition<N>,
     call_graph: HashMap<N::TransitionID, Vec<N::TransitionID>>,
     dynamic_future_to_future: HashMap<(Field<N>, Field<N>, Field<N>, Field<N>), &Future<N>>,
-) -> Result<Vec<FinalizeOperation<N>>, IndexedFinalizeError<N, Command<N>>> {
+) -> Result<(Vec<FinalizeOperation<N>>, TotalAwaits), IndexedFinalizeError<N, Command<N>>> {
     // Retrieve the program ID.
     let program_id = transition.program_id();
     // Retrieve the function name.
@@ -465,7 +484,7 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
     // If the last output of the transition is a future, retrieve and finalize it. Otherwise, there are no operations to finalize.
     let future = match transition.outputs().last().and_then(|output| output.future()) {
         Some(future) => future,
-        _ => return Ok(Vec::new()),
+        _ => return Ok((Vec::new(), 0)),
     };
 
     // Check that the program ID and function name of the transition match those in the future.
@@ -495,6 +514,9 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
         Some(*function_name),
         None::<(usize, Command<N>)>,
     )?);
+
+    // Track the total number of `Await` commands evaluated across all `FinalizeState`s.
+    let mut total_awaits: TotalAwaits = 0;
 
     // While there are active finalize states, finalize them.
     'outer: while let Some(FinalizeState { mut counter, mut registers, stack, mut call_counter, mut awaited }) =
@@ -622,6 +644,8 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
 
                     // Increment the call counter.
                     call_counter += 1;
+                    // Increment the total number of `Await` commands evaluated.
+                    total_awaits += 1;
                     // Increment the counter.
                     counter += 1;
                     // Add the awaited register to the tracked set.
@@ -670,8 +694,8 @@ fn finalize_transition<N: Network, P: FinalizeStorage<N>>(
         }
     }
 
-    // Return the finalize operations.
-    Ok(finalize_operations)
+    // Return the finalize operations and the total number of `Await` commands evaluated.
+    Ok((finalize_operations, total_awaits))
 }
 
 // A helper struct to track the execution of a finalize scope.
