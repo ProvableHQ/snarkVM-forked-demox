@@ -24,6 +24,9 @@ mod commit_raw;
 // Additional test for cost estimation without a private key.
 mod cost_for_call;
 
+// Tests for increased program size limits.
+mod program_size;
+
 // Tests for the externally-callable `view` function prototype.
 mod views;
 
