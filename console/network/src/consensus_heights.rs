@@ -57,6 +57,7 @@ pub enum ConsensusVersion {
     /// V15: Introduces the record-existence check and `commit.*.raw` instruction variants.
     ///      Increase the anchor time to 35.
     ///      Unconditionally stores transaction rejection reasons.
+    ///      Increase the program size limit to 1024 kB and the transaction size limit to 1280 kB.
     V15 = 15,
 }
 
