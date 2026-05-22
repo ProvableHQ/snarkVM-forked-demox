@@ -44,7 +44,9 @@ pub fn deployment_cost<N: Network>(
     deployment: &Deployment<N>,
     consensus_version: ConsensusVersion,
 ) -> Result<(MinimumCost, DeployCostDetails)> {
-    if consensus_version >= ConsensusVersion::V10 {
+    if consensus_version >= ConsensusVersion::V15 {
+        deployment_cost_v3(process, deployment)
+    } else if consensus_version >= ConsensusVersion::V10 {
         deployment_cost_v2(process, deployment)
     } else {
         deployment_cost_v1(process, deployment)
@@ -213,6 +215,79 @@ pub fn execute_compute_cost_in_microcredits(
             .ok_or(anyhow!("The storage and finalize cost computation overflowed for an execution"))?
     };
     Ok(cost_to_check)
+}
+
+/// Returns the minimum cost in microcredits to publish the given deployment (V3).
+///
+/// Identical to V2 except that the storage cost scales quadratically for programs larger
+/// than 512 kB (the V14 limit). Programs at or below that threshold are priced identically
+/// to V2, so this function is only routed to at consensus V15+.
+pub fn deployment_cost_v3<N: Network>(
+    process: &Process<N>,
+    deployment: &Deployment<N>,
+) -> Result<(MinimumCost, DeployCostDetails)> {
+    // Determine the number of bytes in the deployment.
+    let size_in_bytes = deployment.size_in_bytes()?;
+    // Retrieve the program ID.
+    let program_id = deployment.program_id();
+    // Determine the number of characters in the program ID.
+    let num_characters = u32::try_from(program_id.name().to_string().len())?;
+    // Compute the number of combined variables in the program.
+    let num_combined_variables = deployment.num_combined_variables()?;
+    // Compute the number of combined constraints in the program.
+    let num_combined_constraints = deployment.num_combined_constraints()?;
+
+    // Compute the storage cost in microcredits, with a quadratic penalty above 512 kB.
+    let storage_cost = deployment_storage_cost::<N>(size_in_bytes)?;
+
+    // Compute the synthesis cost in microcredits.
+    let synthesis_cost = num_combined_variables.saturating_add(num_combined_constraints) * N::SYNTHESIS_FEE_MULTIPLIER
+        / N::ARC_0005_COMPUTE_DISCOUNT;
+
+    // Compute a Stack for the deployment.
+    let stack = Stack::new(process, deployment.program())?;
+
+    // Compute the constructor cost in microcredits.
+    let constructor_cost = constructor_cost_in_microcredits_v2(&stack)?;
+
+    // Check that the functions are valid.
+    for function in deployment.program().functions().values() {
+        // Get the finalize cost.
+        let finalize_cost = minimum_cost_in_microcredits_v3(&stack, function.name())?;
+        // Check that the finalize cost does not exceed the maximum.
+        ensure!(
+            finalize_cost <= N::TRANSACTION_SPEND_LIMIT[1].1,
+            "Finalize block '{}' has a cost '{finalize_cost}' which exceeds the transaction spend limit '{}'",
+            function.name(),
+            N::TRANSACTION_SPEND_LIMIT[1].1
+        );
+    }
+
+    // Bound each view function's worst-case compute.
+    for view in deployment.program().views().values() {
+        let view_cost = view_cost_for_single_view(&stack, view.name(), ConsensusFeeVersion::V3)?;
+        ensure!(
+            view_cost <= N::TRANSACTION_SPEND_LIMIT[1].1,
+            "View '{}' has a cost '{view_cost}' which exceeds the transaction spend limit '{}'",
+            view.name(),
+            N::TRANSACTION_SPEND_LIMIT[1].1
+        );
+    }
+
+    // Compute the namespace cost in microcredits: 10^(10 - num_characters) * 1e6
+    let namespace_cost = 10u64
+        .checked_pow(10u32.saturating_sub(num_characters))
+        .ok_or(anyhow!("The namespace cost computation overflowed for a deployment"))?
+        .saturating_mul(1_000_000); // 1 microcredit = 1e-6 credits.
+
+    // Compute the minimum cost in microcredits.
+    let minimum_cost = storage_cost
+        .checked_add(synthesis_cost)
+        .and_then(|x| x.checked_add(constructor_cost))
+        .and_then(|x| x.checked_add(namespace_cost))
+        .ok_or(anyhow!("The total cost computation overflowed for a deployment"))?;
+
+    Ok((minimum_cost, (storage_cost, synthesis_cost, constructor_cost, namespace_cost)))
 }
 
 /// Returns the *minimum* cost in microcredits to publish the given deployment using the ARC_0005_COMPUTE_DISCOUNT.
@@ -420,6 +495,29 @@ fn execution_storage_cost<N: Network>(size_in_bytes: u64) -> u64 {
         size_in_bytes.saturating_mul(size_in_bytes).saturating_div(N::EXECUTION_STORAGE_FEE_SCALING_FACTOR)
     } else {
         size_in_bytes
+    }
+}
+
+/// The size threshold in bytes above which deployment storage costs scale quadratically.
+/// Corresponds to the V14 maximum program size (512 kB).
+const DEPLOYMENT_STORAGE_PENALTY_THRESHOLD: u64 = 512_000;
+
+/// Returns the storage cost in microcredits for a program deployment.
+///
+/// Below 512 kB the cost is linear: `size * DEPLOYMENT_FEE_MULTIPLIER`.
+/// Above 512 kB the cost scales quadratically, calibrated to be continuous at the threshold:
+/// `size^2 * DEPLOYMENT_FEE_MULTIPLIER / DEPLOYMENT_STORAGE_PENALTY_THRESHOLD`.
+fn deployment_storage_cost<N: Network>(size_in_bytes: u64) -> Result<u64> {
+    if size_in_bytes <= DEPLOYMENT_STORAGE_PENALTY_THRESHOLD {
+        size_in_bytes
+            .checked_mul(N::DEPLOYMENT_FEE_MULTIPLIER)
+            .ok_or_else(|| anyhow!("The storage cost computation overflowed for a deployment"))
+    } else {
+        size_in_bytes
+            .checked_mul(size_in_bytes)
+            .and_then(|x| x.checked_mul(N::DEPLOYMENT_FEE_MULTIPLIER))
+            .and_then(|x| x.checked_div(DEPLOYMENT_STORAGE_PENALTY_THRESHOLD))
+            .ok_or_else(|| anyhow!("The storage cost computation overflowed for a deployment"))
     }
 }
 
@@ -1249,6 +1347,27 @@ function over_five_thousand:
         // Ensure storage costs compute correctly.
         assert_eq!(storage_cost_under_5000, execution_storage_cost::<MainnetV0>(execution_size_under_5000));
         assert_eq!(storage_cost_over_5000, execution_storage_cost::<MainnetV0>(execution_size_over_5000));
+    }
+
+    #[test]
+    fn test_deployment_storage_cost_bounds() {
+        // Below threshold: linear at DEPLOYMENT_FEE_MULTIPLIER microcredits per byte.
+        assert_eq!(deployment_storage_cost::<MainnetV0>(0).unwrap(), 0);
+        assert_eq!(deployment_storage_cost::<MainnetV0>(1).unwrap(), MainnetV0::DEPLOYMENT_FEE_MULTIPLIER);
+        // One byte below threshold: still linear.
+        let below = DEPLOYMENT_STORAGE_PENALTY_THRESHOLD - 1;
+        assert_eq!(deployment_storage_cost::<MainnetV0>(below).unwrap(), below * MainnetV0::DEPLOYMENT_FEE_MULTIPLIER);
+        // At threshold: linear and quadratic formulas agree (continuity check).
+        let t = DEPLOYMENT_STORAGE_PENALTY_THRESHOLD;
+        assert_eq!(deployment_storage_cost::<MainnetV0>(t).unwrap(), t * MainnetV0::DEPLOYMENT_FEE_MULTIPLIER);
+        // One byte above threshold: quadratic formula kicks in.
+        let above = DEPLOYMENT_STORAGE_PENALTY_THRESHOLD + 1;
+        let expected_above =
+            above * above * MainnetV0::DEPLOYMENT_FEE_MULTIPLIER / DEPLOYMENT_STORAGE_PENALTY_THRESHOLD;
+        assert_eq!(deployment_storage_cost::<MainnetV0>(above).unwrap(), expected_above);
+        // At the V15 max program size (1024 kB): cost is exactly 2x the linear cost.
+        let max = 1_024_000u64;
+        assert_eq!(deployment_storage_cost::<MainnetV0>(max).unwrap(), 2 * max * MainnetV0::DEPLOYMENT_FEE_MULTIPLIER);
     }
 
     #[test]
