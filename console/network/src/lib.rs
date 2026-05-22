@@ -215,7 +215,7 @@ pub trait Network:
     const MAX_PROGRAM_SIZE: [(ConsensusVersion, usize); 3] = [
         (ConsensusVersion::V1, 100_000),    // 100 kB
         (ConsensusVersion::V14, 512_000),   // 512 kB
-        (ConsensusVersion::V15, 1_024_000), // 1024 mB
+        (ConsensusVersion::V15, 1_024_000), // 1024 kB
     ];
     /// The maximum number of mappings in a program.
     const MAX_MAPPINGS: usize = 31;
