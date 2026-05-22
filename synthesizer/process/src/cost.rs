@@ -1185,6 +1185,7 @@ function over_five_thousand:
     // Storage cost for an execution transaction at the maximum transaction size.
     const V1_STORAGE_COST_MAX: u64 = 3_276_800;
     const V14_STORAGE_COST_MAX: u64 = 117_964_800;
+    const V15_STORAGE_COST_MAX: u64 = 327_680_000;
 
     fn test_storage_cost_bounds<N: Network>() {
         // Calculate the bounds directly above and below the size threshold.
@@ -1204,6 +1205,9 @@ function over_five_thousand:
         let v14_max_tx_size =
             consensus_config_value_by_version!(N, MAX_TRANSACTION_SIZE, ConsensusVersion::V14).unwrap();
         assert_eq!(execution_storage_cost::<N>(v14_max_tx_size as u64), V14_STORAGE_COST_MAX);
+        let v15_max_tx_size =
+            consensus_config_value_by_version!(N, MAX_TRANSACTION_SIZE, ConsensusVersion::V15).unwrap();
+        assert_eq!(execution_storage_cost::<N>(v15_max_tx_size as u64), V15_STORAGE_COST_MAX);
     }
 
     #[test]
