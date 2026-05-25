@@ -36,7 +36,6 @@ mod deploy;
 mod evaluate;
 mod execute;
 mod finalize;
-#[cfg(feature = "history")]
 mod view;
 #[cfg(feature = "history")]
 pub use view::evaluate_view_at_height;
