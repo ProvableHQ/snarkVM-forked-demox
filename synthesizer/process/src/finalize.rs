@@ -296,21 +296,23 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
             let (mut finalize_operations, total_awaits) =
                 finalize_transition(state, store, &stack, transition, call_graph, dynamic_future_to_future)?;
 
-            // Check that the total number of `Await` commands evaluated during
-            // finalization matches the number of `Future`s defined in the
-            // execution's transitions' outputs.
-            let total_futures = execution
-                .transitions()
-                .filter(|t| t.outputs().last().and_then(|output| output.future()).is_some())
-                .count();
-            let expected_total_awaits = total_futures.saturating_sub(1);
-            if total_awaits != expected_total_awaits {
-                indexed_finalize_bail!(
-                    Some((transition_program_id, *stack.program_edition())),
-                    Some(transition_function_name),
-                    "The number of 'await' calls during finalization is incorrect. \
-                    Expected {expected_total_awaits}, but found {total_awaits}"
-                );
+            if consensus_version >= ConsensusVersion::V15 {
+                // Check that the total number of `Await` commands evaluated during
+                // finalization matches the number of `Future`s defined in the
+                // execution's transitions' outputs.
+                let total_futures = execution
+                    .transitions()
+                    .filter(|t| t.outputs().last().and_then(|output| output.future()).is_some())
+                    .count();
+                let expected_total_awaits = total_futures.saturating_sub(1);
+                if total_awaits != expected_total_awaits {
+                    indexed_finalize_bail!(
+                        Some((transition_program_id, *stack.program_edition())),
+                        Some(transition_function_name),
+                        "The number of 'await' calls during finalization is incorrect. \
+                        Expected {expected_total_awaits}, but found {total_awaits}"
+                    );
+                }
             }
 
             /* Finalize the fee. */
@@ -383,7 +385,7 @@ fn finalize_fee_transition<N: Network, P: FinalizeStorage<N>>(
     let (finalize_operations, total_awaits) =
         finalize_transition(state, store, stack, fee, call_graph, Default::default())?;
     // Create IndexedFinalizeError if the fee path has awaits.
-    if total_awaits != 0 {
+    if consensus_version >= ConsensusVersion::V15 && total_awaits != 0 {
         indexed_finalize_bail!(
             Some((*fee.program_id(), *stack.program_edition())),
             Some(*fee.function_name()),
