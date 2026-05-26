@@ -1476,6 +1476,20 @@ function dummy:",
                     )
                 )
             );
+            // V3 uses quadratic storage above 512 kB; this program is well below that threshold,
+            // so the storage cost equals the v2 linear cost and all other components are identical.
+            assert_eq!(
+                deployment_cost_v3(&process, &deployment_0).unwrap(),
+                (
+                    expected_total_cost,
+                    (
+                        expected_storage_cost,
+                        expected_synthesis_cost,
+                        expected_constructor_cost,
+                        expected_namespace_cost
+                    )
+                )
+            );
 
             let mut deployment_1 = process.deploy::<A, _>(&program_1, rng).unwrap();
             deployment_1.set_program_checksum_raw(Some(deployment_1.program().to_checksum()));
@@ -1504,6 +1518,18 @@ function dummy:",
                 expected_storage_cost + expected_synthesis_cost + expected_constructor_cost + expected_namespace_cost;
             assert_eq!(
                 deployment_cost_v2(&process, &deployment_1).unwrap(),
+                (
+                    expected_total_cost,
+                    (
+                        expected_storage_cost,
+                        expected_synthesis_cost,
+                        expected_constructor_cost,
+                        expected_namespace_cost
+                    )
+                )
+            );
+            assert_eq!(
+                deployment_cost_v3(&process, &deployment_1).unwrap(),
                 (
                     expected_total_cost,
                     (
@@ -1552,6 +1578,18 @@ function dummy:",
                     )
                 )
             );
+            assert_eq!(
+                deployment_cost_v3(&process, &deployment_2).unwrap(),
+                (
+                    expected_total_cost,
+                    (
+                        expected_storage_cost,
+                        expected_synthesis_cost,
+                        expected_constructor_cost,
+                        expected_namespace_cost
+                    )
+                )
+            );
 
             let mut deployment_3 = process.deploy::<A, _>(&program_3, rng).unwrap();
             deployment_3.set_program_checksum_raw(Some(deployment_3.program().to_checksum()));
@@ -1590,12 +1628,69 @@ function dummy:",
                     )
                 )
             );
+            assert_eq!(
+                deployment_cost_v3(&process, &deployment_3).unwrap(),
+                (
+                    expected_total_cost,
+                    (
+                        expected_storage_cost,
+                        expected_synthesis_cost,
+                        expected_constructor_cost,
+                        expected_namespace_cost
+                    )
+                )
+            );
         }
 
         // Run the tests for all networks.
         run_test::<CanaryV0, AleoCanaryV0>();
         run_test::<MainnetV0, AleoV0>();
         run_test::<TestnetV0, AleoTestnetV0>();
+    }
+
+    #[test]
+    fn test_deployment_cost_v3_dispatch_and_quadratic_storage() {
+        // Verify that `deployment_cost` with ConsensusVersion::V15 dispatches to `deployment_cost_v3`,
+        // and that v3 applies the quadratic storage penalty above DEPLOYMENT_STORAGE_PENALTY_THRESHOLD.
+        let process = Process::<MainnetV0>::load().unwrap();
+        let rng = &mut TestRng::default();
+
+        let program = Program::from_str(
+            r"
+program dispatch_test.aleo;
+
+function noop:",
+        )
+        .unwrap();
+
+        let mut deployment = process.deploy::<AleoV0, _>(&program, rng).unwrap();
+        deployment.set_program_checksum_raw(Some(deployment.program().to_checksum()));
+        deployment.set_program_owner_raw(Some(Address::rand(rng)));
+
+        // `deployment_cost` must dispatch to v3 for ConsensusVersion::V15.
+        assert_eq!(
+            deployment_cost(&process, &deployment, ConsensusVersion::V15).unwrap(),
+            deployment_cost_v3(&process, &deployment).unwrap(),
+        );
+
+        // For programs below DEPLOYMENT_STORAGE_PENALTY_THRESHOLD, v3 and v2 produce equal costs.
+        let (v2_total, (v2_storage, _, _, _)) = deployment_cost_v2(&process, &deployment).unwrap();
+        let (v3_total, (v3_storage, _, _, _)) = deployment_cost_v3(&process, &deployment).unwrap();
+        let size_in_bytes = deployment.size_in_bytes().unwrap();
+        assert!(
+            size_in_bytes < DEPLOYMENT_STORAGE_PENALTY_THRESHOLD,
+            "Program must be below the storage penalty threshold for this assertion to hold"
+        );
+        assert_eq!(v2_storage, v3_storage);
+        assert_eq!(v2_total, v3_total);
+
+        // For sizes above the threshold, the quadratic formula makes v3 storage exceed v2 storage.
+        // At 2x the threshold: quadratic gives 4x the linear base, which is 2x the v2 cost.
+        let above = 2 * DEPLOYMENT_STORAGE_PENALTY_THRESHOLD;
+        let v2_storage_above = above * MainnetV0::DEPLOYMENT_FEE_MULTIPLIER;
+        let v3_storage_above = deployment_storage_cost::<MainnetV0>(above).unwrap();
+        assert!(v3_storage_above > v2_storage_above, "v3 storage must exceed v2 storage above the penalty threshold");
+        assert_eq!(v3_storage_above, 2 * v2_storage_above);
     }
 
     // Test program with finalize blocks for cost comparison test
