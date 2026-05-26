@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-synthesizer"
-version = "4.6.3"
+version = "4.6.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Synthesizer for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -33,8 +33,9 @@ locktick = [
 ]
 async = [ "snarkvm-ledger-query/async", "snarkvm-synthesizer-process/async" ]
 cuda = [ "snarkvm-algorithms/cuda" ]
-history = [ "snarkvm-ledger-store/history" ]
+history = [ "snarkvm-ledger-store/history", "snarkvm-synthesizer-process/history" ]
 history-staking-rewards = [ "snarkvm-ledger-store/history-staking-rewards" ]
+slipstream-plugins = [ "snarkvm-ledger-store/slipstream-plugins" ]
 rocks = [ "snarkvm-ledger-store/rocks" ]
 serial = [
   "snarkvm-console/serial",
@@ -47,7 +48,7 @@ serial = [
   "snarkvm-synthesizer-snark/serial"
 ]
 setup = [ ]
-test = [ "snarkvm-console/test", "snarkvm-synthesizer-process/test" ]
+test = [ "snarkvm-console/test", "snarkvm-ledger-store/test", "snarkvm-synthesizer-process/test" ]
 timer = [ "aleo-std/timer" ]
 wasm = [
   "snarkvm-console/wasm",
@@ -174,9 +175,7 @@ workspace = true
 workspace = true
 
 [dev-dependencies.k256]
-version = "0.13"
-features = [ "digest", "ecdsa" ]
-default-features = false
+workspace = true
 
 [dev-dependencies.snarkvm-console]
 workspace = true

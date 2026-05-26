@@ -13,7 +13,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Opcode, Operand, RegistersCircuit, RegistersTrait, StackTrait};
+use crate::{
+    FinalizeRegistersState,
+    FinalizeStoreTrait,
+    Opcode,
+    Operand,
+    RegistersCircuit,
+    RegistersTrait,
+    StackTrait,
+};
 use console::{
     network::prelude::*,
     program::{Identifier, Literal, LiteralType, Locator, Plaintext, PlaintextType, Register, RegisterType, Value},
@@ -641,7 +649,12 @@ impl<N: Network, const VARIANT: u8> HashInstruction<N, VARIANT> {
 
     /// Finalizes the instruction.
     #[inline]
-    pub fn finalize(&self, stack: &impl StackTrait<N>, registers: &mut impl RegistersTrait<N>) -> Result<()> {
+    pub fn finalize(
+        &self,
+        stack: &impl StackTrait<N>,
+        _store: Option<&dyn FinalizeStoreTrait<N>>,
+        registers: &mut impl FinalizeRegistersState<N>,
+    ) -> Result<()> {
         self.evaluate(stack, registers)
     }
 
@@ -898,7 +911,7 @@ mod tests {
                 .map(|_| {
                     PlaintextType::Array(
                         ArrayType::new(PlaintextType::Literal(LiteralType::Boolean), vec![U32::new(
-                            u32::try_from(rng.gen_range(1..=CurrentNetwork::LATEST_MAX_ARRAY_ELEMENTS())).unwrap(),
+                            u32::try_from(rng.random_range(1..=CurrentNetwork::LATEST_MAX_ARRAY_ELEMENTS())).unwrap(),
                         )])
                         .unwrap(),
                     )

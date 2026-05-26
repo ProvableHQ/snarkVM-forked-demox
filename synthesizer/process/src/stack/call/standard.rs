@@ -113,7 +113,25 @@ impl<N: Network> CallTrait<N> for Call<N> {
                 requests.push(request.clone());
                 // Add the request to the authorization.
                 authorization.push(request.clone())?;
-            };
+            }
+
+            // In AuthorizeMocked mode, we need to compute the mocked request and push it onto the call stack.
+            if let CallStack::AuthorizeMocked(requests, address, authorization) = &mut call_stack {
+                // Compute the mocked request.
+                let request = Request::sample(
+                    *address,
+                    *substack.program_id(),
+                    *function.name(),
+                    inputs.iter(),
+                    &function.input_types(),
+                    false,
+                    rng,
+                )?;
+                // Add the request to the requests.
+                requests.push(request.clone());
+                // Add the request to the authorization.
+                authorization.push(request.clone())?;
+            }
 
             // Set the (console) caller.
             let console_caller = Some(*stack.program_id());
@@ -283,6 +301,10 @@ impl<N: Network> CallTrait<N> for Call<N> {
 
                         // Return the request and response.
                         (request, response)
+                    }
+                    // If the circuit is in authorize mocked mode, throw an error.
+                    CallStack::AuthorizeMocked(..) => {
+                        return Err(anyhow!("Cannot 'execute' a function in 'authorize mocked' mode.").into());
                     }
                     // If the proving key is missing, build real sub-circuit.
                     CallStack::Synthesize(_, private_key, ..) if pk_missing => {

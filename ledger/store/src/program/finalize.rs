@@ -18,24 +18,39 @@ use crate::{
     helpers::{Map, MapRead, NestedMap, NestedMapRead},
     program::{CommitteeStorage, CommitteeStore},
 };
-#[cfg(feature = "history-staking-rewards")]
+#[cfg(any(feature = "history-staking-rewards", feature = "slipstream-plugins"))]
 use console::types::Address;
 use console::{
     network::prelude::*,
     program::{Identifier, Plaintext, ProgramID, Value},
     types::Field,
 };
+use snarkvm_ledger_block::RejectedReason;
 use snarkvm_synthesizer_program::{FinalizeOperation, FinalizeStoreTrait};
 
 use aleo_std_storage::StorageMode;
 use anyhow::Result;
 use core::marker::PhantomData;
 use indexmap::IndexSet;
-#[cfg(feature = "history")]
-use std::{
-    borrow::Cow,
-    sync::atomic::{AtomicU32, Ordering},
-};
+#[cfg(all(feature = "slipstream-plugins", feature = "locktick"))]
+use locktick::parking_lot::RwLock;
+#[cfg(all(feature = "slipstream-plugins", not(feature = "locktick")))]
+use parking_lot::RwLock;
+#[cfg(feature = "slipstream-plugins")]
+use snarkvm_slipstream_plugin_manager::{BroadcastEvent, BroadcastEventKind, SlipstreamPluginManager};
+#[cfg(feature = "slipstream-plugins")]
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, atomic::AtomicU32};
+#[cfg(any(feature = "history", feature = "history-staking-rewards", feature = "slipstream-plugins"))]
+use std::{borrow::Cow, sync::atomic::Ordering};
+
+/// Serialized form of a mapping replacement, captured before storage consumes the entries.
+#[cfg(feature = "slipstream-plugins")]
+struct SerializedMappingEntries {
+    program_id: Vec<u8>,
+    mapping_name: Vec<u8>,
+    entries: Vec<(Vec<u8>, Vec<u8>)>,
+}
 
 /// TODO (howardwu): Remove this.
 /// Returns the mapping ID for the given `program ID` and `mapping name`.
@@ -83,6 +98,8 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
     type ProgramIDMap: for<'a> Map<'a, ProgramID<N>, IndexSet<Identifier<N>>>;
     /// The mapping of `(program ID, mapping name)` to `[(key, value)]`.
     type KeyValueMap: for<'a> NestedMap<'a, (ProgramID<N>, Identifier<N>), Plaintext<N>, Value<N>>;
+    /// The mapping of `transaction ID` to `rejection reason`.
+    type RejectedReasonMap: for<'a> Map<'a, Field<N>, RejectedReason<N>>;
     /// The mapping of `(program ID, mapping name, key, height)` to `value`.
     #[cfg(feature = "history")]
     type MappingUpdateMap: for<'a> Map<'a, (ProgramID<N>, Identifier<N>, Plaintext<N>, u32), Value<N>>;
@@ -102,6 +119,8 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
     fn program_id_map(&self) -> &Self::ProgramIDMap;
     /// Returns the key-value map.
     fn key_value_map(&self) -> &Self::KeyValueMap;
+    /// Returns the rejection reason map.
+    fn rejected_reason_map(&self) -> &Self::RejectedReasonMap;
     /// Returns the historical mapping value map.
     #[cfg(feature = "history")]
     fn mapping_update_map(&self) -> &Self::MappingUpdateMap;
@@ -120,6 +139,7 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.committee_store().start_atomic();
         self.program_id_map().start_atomic();
         self.key_value_map().start_atomic();
+        self.rejected_reason_map().start_atomic();
         #[cfg(feature = "history")]
         {
             self.mapping_update_map().start_atomic();
@@ -133,7 +153,8 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
     fn is_atomic_in_progress(&self) -> bool {
         let ret = self.committee_store().is_atomic_in_progress()
             || self.program_id_map().is_atomic_in_progress()
-            || self.key_value_map().is_atomic_in_progress();
+            || self.key_value_map().is_atomic_in_progress()
+            || self.rejected_reason_map().is_atomic_in_progress();
         #[cfg(feature = "history")]
         let ret = ret
             || self.mapping_update_map().is_atomic_in_progress()
@@ -149,6 +170,7 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.committee_store().atomic_checkpoint();
         self.program_id_map().atomic_checkpoint();
         self.key_value_map().atomic_checkpoint();
+        self.rejected_reason_map().atomic_checkpoint();
         #[cfg(feature = "history")]
         {
             self.mapping_update_map().atomic_checkpoint();
@@ -163,6 +185,7 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.committee_store().clear_latest_checkpoint();
         self.program_id_map().clear_latest_checkpoint();
         self.key_value_map().clear_latest_checkpoint();
+        self.rejected_reason_map().clear_latest_checkpoint();
         #[cfg(feature = "history")]
         {
             self.mapping_update_map().clear_latest_checkpoint();
@@ -177,6 +200,7 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.committee_store().atomic_rewind();
         self.program_id_map().atomic_rewind();
         self.key_value_map().atomic_rewind();
+        self.rejected_reason_map().atomic_rewind();
         #[cfg(feature = "history")]
         {
             self.mapping_update_map().atomic_rewind();
@@ -191,6 +215,7 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.committee_store().abort_atomic();
         self.program_id_map().abort_atomic();
         self.key_value_map().abort_atomic();
+        self.rejected_reason_map().abort_atomic();
         #[cfg(feature = "history")]
         {
             self.mapping_update_map().abort_atomic();
@@ -205,6 +230,7 @@ pub trait FinalizeStorage<N: Network>: 'static + Clone + Send + Sync {
         self.committee_store().finish_atomic()?;
         self.program_id_map().finish_atomic()?;
         self.key_value_map().finish_atomic()?;
+        self.rejected_reason_map().finish_atomic()?;
         #[cfg(feature = "history")]
         {
             self.mapping_update_map().finish_atomic()?;
@@ -654,6 +680,18 @@ pub struct FinalizeStore<N: Network, P: FinalizeStorage<N>> {
     storage: P,
     /// PhantomData.
     _phantom: PhantomData<N>,
+    /// Indicates that canonical finalize is currently in progress.
+    /// When `true`, storage writes notify registered Slipstream plugins.
+    #[cfg(feature = "slipstream-plugins")]
+    is_finalize_mode: Arc<AtomicBool>,
+    /// Tracks the current block height.
+    /// Updated by the VM at the start of each canonical finalize
+    block_height: Arc<AtomicU32>,
+    /// Optional plugin manager for streaming canonical mapping and staking updates.
+    /// Wrapped in `Arc` so that all clones of `FinalizeStore` share the same instance;
+    /// the `RwLock` allows installation from a shared reference after construction.
+    #[cfg(feature = "slipstream-plugins")]
+    slipstream_plugin_manager: Arc<RwLock<Option<SlipstreamPluginManager>>>,
 }
 
 impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
@@ -665,7 +703,15 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
     /// Initializes a finalize store from storage.
     pub fn from(storage: P) -> Result<Self> {
         // Return the finalize store.
-        Ok(Self { storage, _phantom: PhantomData })
+        Ok(Self {
+            storage,
+            _phantom: PhantomData,
+            #[cfg(feature = "slipstream-plugins")]
+            is_finalize_mode: Arc::new(AtomicBool::new(false)),
+            block_height: Arc::new(AtomicU32::new(0)),
+            #[cfg(feature = "slipstream-plugins")]
+            slipstream_plugin_manager: Arc::new(RwLock::new(None)),
+        })
     }
 
     /// Starts an atomic batch write operation.
@@ -708,10 +754,84 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         self.storage.storage_mode()
     }
 
+    /// Returns the rejection reason map.
+    pub fn rejected_reason_map(&self) -> &P::RejectedReasonMap {
+        self.storage.rejected_reason_map()
+    }
+
     /// Returns the current block height.
     #[cfg(feature = "history")]
     pub fn current_block_height(&self) -> &AtomicU32 {
         self.storage.current_block_height()
+    }
+
+    /// Returns a reference to the canonical finalize mode flag.
+    ///
+    /// When `true`, storage writes notify registered Slipstream plugins.
+    /// Set to `true` by the VM before canonical finalize runs and reset to `false` afterwards.
+    #[cfg(feature = "slipstream-plugins")]
+    pub fn is_finalize_mode(&self) -> &Arc<AtomicBool> {
+        &self.is_finalize_mode
+    }
+
+    /// Returns the current block height.
+    pub fn block_height(&self) -> &AtomicU32 {
+        &self.block_height
+    }
+
+    /// Installs a Slipstream plugin manager to receive canonical mapping and staking updates.
+    ///
+    /// May be called from a shared reference. Logs a warning if called more than once.
+    #[cfg(feature = "slipstream-plugins")]
+    pub fn set_slipstream_plugin_manager(&self, manager: SlipstreamPluginManager) {
+        let mut guard = self.slipstream_plugin_manager.write();
+        if guard.is_some() {
+            tracing::warn!("Slipstream plugin manager is already set; ignoring subsequent call.");
+            return;
+        }
+        *guard = Some(manager);
+    }
+
+    /// Returns a handle to the Slipstream plugin manager cell.
+    ///
+    /// The returned `Arc` is a lightweight additional handle to the same shared instance;
+    /// acquire a read or write lock on it to inspect or replace the manager.
+    #[cfg(feature = "slipstream-plugins")]
+    pub fn slipstream_plugin_manager(&self) -> Arc<RwLock<Option<SlipstreamPluginManager>>> {
+        Arc::clone(&self.slipstream_plugin_manager)
+    }
+
+    /// Notifies all interested plugins of a staking reward, if canonical finalize is active.
+    ///
+    /// Errors from plugin calls are logged but never propagated.
+    #[cfg(feature = "slipstream-plugins")]
+    pub fn notify_staking_reward(
+        &self,
+        staker: &Address<N>,
+        validator: &Address<N>,
+        reward: u64,
+        new_stake: u64,
+        block_height: u32,
+    ) {
+        if !self.is_finalize_mode.load(Ordering::SeqCst) {
+            return;
+        }
+
+        let spm_guard = self.slipstream_plugin_manager.read();
+        if let Some(mgr) = spm_guard.as_ref() {
+            if mgr.has_subscribers(BroadcastEventKind::StakingReward) {
+                // Address serializes to a fixed 32-byte array; this cannot fail.
+                let staker_bytes = staker.to_bytes_le().expect("Address::to_bytes_le is infallible");
+                let validator_bytes = validator.to_bytes_le().expect("Address::to_bytes_le is infallible");
+                mgr.broadcast(BroadcastEvent::StakingReward {
+                    staker: &staker_bytes,
+                    validator: &validator_bytes,
+                    reward,
+                    new_stake,
+                    block_height,
+                });
+            }
+        }
     }
 
     /// Returns the historical value of a mapping.
@@ -827,7 +947,46 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStoreTrait<N> for FinalizeStore<
         key: Plaintext<N>,
         value: Value<N>,
     ) -> Result<FinalizeOperation<N>> {
-        self.storage.update_key_value(program_id, mapping_name, key, value)
+        // Serialize before moving, if a plugin notification may be needed.
+        #[cfg(feature = "slipstream-plugins")]
+        let plugin_data = if self.is_finalize_mode.load(Ordering::SeqCst) {
+            let spm_guard = self.slipstream_plugin_manager.read();
+            if let Some(mgr) = spm_guard.as_ref() {
+                if mgr.has_subscribers(BroadcastEventKind::MappingUpdate) {
+                    Some((
+                        program_id.to_bytes_le()?,
+                        mapping_name.to_bytes_le()?,
+                        key.to_bytes_le()?,
+                        value.to_bytes_le()?,
+                    ))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let result = self.storage.update_key_value(program_id, mapping_name, key, value)?;
+
+        // Notify plugins of the update if in canonical finalize mode.
+        #[cfg(feature = "slipstream-plugins")]
+        if let Some((pid, mname, k, v)) = plugin_data {
+            let height = self.block_height().load(Ordering::SeqCst);
+            let spm_guard = self.slipstream_plugin_manager.read();
+            if let Some(mgr) = spm_guard.as_ref() {
+                mgr.broadcast(BroadcastEvent::MappingUpdate {
+                    program_id: &pid,
+                    mapping_name: &mname,
+                    key: &k,
+                    value: &v,
+                    block_height: height,
+                });
+            }
+        }
+        Ok(result)
     }
 
     /// Removes the key-value pair for the given `program ID`, `mapping name`, and `key` from storage.
@@ -860,7 +1019,53 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
         mapping_name: Identifier<N>,
         entries: Vec<(Plaintext<N>, Value<N>)>,
     ) -> Result<FinalizeOperation<N>> {
-        self.storage.replace_mapping(program_id, mapping_name, entries)
+        // Serialize mapping identity and all entries before moving them into storage,
+        // so they are available for plugin notification after the storage call.
+        #[cfg(feature = "slipstream-plugins")]
+        let plugin_data: Option<SerializedMappingEntries> = if self.is_finalize_mode.load(Ordering::SeqCst) {
+            let spm_guard = self.slipstream_plugin_manager.read();
+            if let Some(mgr) = spm_guard.as_ref() {
+                if mgr.has_subscribers(BroadcastEventKind::MappingUpdate) {
+                    let mut entries_bytes = Vec::with_capacity(entries.len());
+                    for (key, value) in &entries {
+                        entries_bytes.push((key.to_bytes_le()?, value.to_bytes_le()?));
+                    }
+                    Some(SerializedMappingEntries {
+                        program_id: program_id.to_bytes_le()?,
+                        mapping_name: mapping_name.to_bytes_le()?,
+                        entries: entries_bytes,
+                    })
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let result = self.storage.replace_mapping(program_id, mapping_name, entries)?;
+
+        // Notify plugins of each updated key-value pair if in canonical finalize mode.
+        #[cfg(feature = "slipstream-plugins")]
+        if let Some(data) = plugin_data {
+            let height = self.block_height().load(Ordering::SeqCst);
+            let spm_guard = self.slipstream_plugin_manager.read();
+            if let Some(mgr) = spm_guard.as_ref() {
+                for (k, v) in &data.entries {
+                    mgr.broadcast(BroadcastEvent::MappingUpdate {
+                        program_id: &data.program_id,
+                        mapping_name: &data.mapping_name,
+                        key: k,
+                        value: v,
+                        block_height: height,
+                    });
+                }
+            }
+        }
+
+        Ok(result)
     }
 
     /// Removes the mapping for the given `program ID` and `mapping name` from storage,
@@ -944,6 +1149,32 @@ impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
     /// Returns the confirmed checksum of the finalize store.
     pub fn get_checksum_confirmed(&self) -> Result<Field<N>> {
         self.storage.get_checksum_confirmed()
+    }
+}
+
+impl<N: Network, P: FinalizeStorage<N>> FinalizeStore<N, P> {
+    /// Stores the rejection reason for the given transaction ID.
+    pub fn insert_rejected_reason(&self, transaction_id: Field<N>, reason: RejectedReason<N>) -> Result<()> {
+        let height = self.block_height.load(std::sync::atomic::Ordering::SeqCst);
+        let consensus_version = N::CONSENSUS_VERSION(height)?;
+        if cfg!(any(feature = "history", feature = "test")) || consensus_version >= ConsensusVersion::V15 {
+            self.storage.rejected_reason_map().insert(transaction_id, reason)
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Returns the rejection reason for the given transaction ID.
+    pub fn get_rejected_reason(&self, transaction_id: &Field<N>) -> Result<Option<RejectedReason<N>>> {
+        match self.storage.rejected_reason_map().get_speculative(transaction_id)? {
+            Some(reason) => Ok(Some(reason.into_owned())),
+            None => Ok(None),
+        }
+    }
+
+    /// Returns `true` if a rejection reason exists for the given transaction ID.
+    pub fn contains_rejected_reason(&self, transaction_id: &Field<N>) -> Result<bool> {
+        self.storage.rejected_reason_map().contains_key_speculative(transaction_id)
     }
 }
 
@@ -1520,7 +1751,7 @@ mod tests {
             }
 
             // Prepare the key and value.
-            let item: u64 = rng.r#gen();
+            let item: u64 = rng.random();
             let key = Plaintext::from(Literal::Field(Field::from_u64(item)));
             let value = Value::from(Literal::U64(U64::new(item)));
 

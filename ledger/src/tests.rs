@@ -17,13 +17,7 @@ use crate::{
     Ledger,
     RecordsFilter,
     advance::split_candidate_solutions,
-    test_helpers::{
-        CurrentAleo,
-        CurrentConsensusStorage,
-        CurrentLedger,
-        CurrentNetwork,
-        chain_builder::GenerateBlockOptions,
-    },
+    test_helpers::{CurrentAleo, CurrentLedger, CurrentNetwork, chain_builder::GenerateBlockOptions},
 };
 
 use aleo_std::StorageMode;
@@ -43,8 +37,8 @@ use snarkvm_ledger_store::helpers::MapRead;
 #[cfg(feature = "history-staking-rewards")]
 use snarkvm_synthesizer::bonded_map_into_stakers;
 use snarkvm_synthesizer::{
-    program::{Program, StackTrait},
-    vm::VM,
+    program::Program,
+    vm::{TransactionCacheKey, VM},
 };
 use snarkvm_utilities::try_vm_runtime;
 
@@ -77,19 +71,16 @@ fn extract_transmissions(
     transmissions
 }
 
-// A helper function to create the cache key for a transaction in the partially-verified transactions cache.
+/// Creates the cache key for a transaction in the partially-verified transactions cache.
 fn create_cache_key(
-    vm: &VM<CurrentNetwork, CurrentConsensusStorage>,
+    vm: &VM<CurrentNetwork, LedgerType>,
     transaction: &Transaction<CurrentNetwork>,
-) -> (<CurrentNetwork as Network>::TransactionID, Vec<U16<CurrentNetwork>>) {
-    // Get the program editions.
-    let program_editions = transaction
-        .transitions()
-        .map(|transition| vm.process().read().get_stack(transition.program_id()).map(|stack| stack.program_edition()))
-        .collect::<Result<Vec<_>>>()
-        .unwrap();
-    // Return the cache key.
-    (transaction.id(), program_editions)
+) -> Result<TransactionCacheKey<CurrentNetwork>> {
+    let mut execution_stacks = IndexMap::new();
+    for transition in transaction.transitions() {
+        execution_stacks.insert(*transition.program_id(), vm.process().get_stack(transition.program_id())?);
+    }
+    VM::<CurrentNetwork, LedgerType>::create_cache_key_with_stacks(transaction, &execution_stacks)
 }
 
 #[test]
@@ -979,9 +970,9 @@ fn test_aborted_solution_ids() -> Result<()> {
     let minimum_proof_target = ledger.latest_proof_target();
 
     // Create a solution that is less than the minimum proof target.
-    let mut invalid_solution = puzzle.prove(latest_epoch_hash, address, rng.r#gen(), None).unwrap();
+    let mut invalid_solution = puzzle.prove(latest_epoch_hash, address, rng.random(), None).unwrap();
     while puzzle.get_proof_target(&invalid_solution).unwrap() >= minimum_proof_target {
-        invalid_solution = puzzle.prove(latest_epoch_hash, address, rng.r#gen(), None).unwrap();
+        invalid_solution = puzzle.prove(latest_epoch_hash, address, rng.random(), None).unwrap();
     }
 
     // Create a valid transaction for the block.
@@ -1060,7 +1051,7 @@ fn test_execute_duplicate_input_ids() {
             .execute(&private_key, ("credits.aleo", "transfer_private"), inputs.clone().iter(), None, 0, None, rng)
             .unwrap();
         execution_ids.push(execution.id());
-        execution_cache_keys.push(create_cache_key(ledger.vm(), &execution));
+        execution_cache_keys.push(create_cache_key(ledger.vm(), &execution).unwrap());
         executions.push(execution);
         // Deploy.
         let program_id = ProgramID::<CurrentNetwork>::from_str(&format!("dummy_program_{i}.aleo")).unwrap();
@@ -1079,7 +1070,7 @@ finalize foo:
         let deployment =
             ledger.vm.deploy(&private_key, &program, Some(record_deployment.clone()), 0, None, rng).unwrap();
         deployment_ids.push(deployment.id());
-        deployment_cache_keys.push(create_cache_key(ledger.vm(), &deployment));
+        deployment_cache_keys.push(create_cache_key(ledger.vm(), &deployment).unwrap());
         deployments.push(deployment);
     }
 
@@ -1098,7 +1089,7 @@ finalize foo:
         )
         .unwrap();
     execution_ids.push(execution.id());
-    execution_cache_keys.push(create_cache_key(ledger.vm(), &execution));
+    execution_cache_keys.push(create_cache_key(ledger.vm(), &execution).unwrap());
     executions.push(execution);
 
     // Select a transaction to mutate by a malicious validator.
@@ -1133,14 +1124,14 @@ finalize foo:
     // Create a mutated transaction.
     let mutated_transaction = Transaction::from_execution(mutated_execution, Some(fee)).unwrap();
     execution_ids.push(mutated_transaction.id());
-    execution_cache_keys.push(create_cache_key(ledger.vm(), &mutated_transaction));
+    execution_cache_keys.push(create_cache_key(ledger.vm(), &mutated_transaction).unwrap());
     executions.push(mutated_transaction);
 
     // Create a mutated execution which just takes the fee transition, resulting in a different transaction id.
     // This simulates a malicious validator transforming a transaction to a fee transaction.
     let mutated_transaction = Transaction::from_fee(transaction_to_mutate.fee_transition().unwrap()).unwrap();
     execution_ids.push(mutated_transaction.id());
-    execution_cache_keys.push(create_cache_key(ledger.vm(), &mutated_transaction));
+    execution_cache_keys.push(create_cache_key(ledger.vm(), &mutated_transaction).unwrap());
     executions.push(mutated_transaction);
 
     // Create a block.
@@ -1197,7 +1188,7 @@ finalize foo:
         .execute(&private_key, ("credits.aleo", "transfer_public"), inputs.into_iter(), None, 0, None, rng)
         .unwrap();
     let transfer_id = transfer.id();
-    let transfer_cache_key = create_cache_key(ledger.vm(), &transfer);
+    let transfer_cache_key = create_cache_key(ledger.vm(), &transfer).unwrap();
 
     // Create a block.
     let block = ledger
@@ -1370,17 +1361,17 @@ function create_duplicate_record:
     // Create the first transfer.
     let transfer_1 = create_execution_with_duplicate_output_id(1);
     let transfer_1_id = transfer_1.id();
-    let transfer_1_cache_key = create_cache_key(ledger.vm(), &transfer_1);
+    let transfer_1_cache_key = create_cache_key(ledger.vm(), &transfer_1).unwrap();
 
     // Create a second transfer with the same output id.
     let transfer_2 = create_execution_with_duplicate_output_id(2);
     let transfer_2_id = transfer_2.id();
-    let transfer_2_cache_key = create_cache_key(ledger.vm(), &transfer_2);
+    let transfer_2_cache_key = create_cache_key(ledger.vm(), &transfer_2).unwrap();
 
     // Create a third transfer with the same output id.
     let transfer_3 = create_execution_with_duplicate_output_id(3);
     let transfer_3_id = transfer_3.id();
-    let transfer_3_cache_key = create_cache_key(ledger.vm(), &transfer_3);
+    let transfer_3_cache_key = create_cache_key(ledger.vm(), &transfer_3).unwrap();
 
     // Ensure that each transaction has a duplicate output id.
     let tx_1_output_id = transfer_1.output_ids().next().unwrap();
@@ -1392,17 +1383,17 @@ function create_duplicate_record:
     // Create the first deployment.
     let deployment_1 = create_deployment_with_duplicate_output_id(1);
     let deployment_1_id = deployment_1.id();
-    let deployment_1_cache_key = create_cache_key(ledger.vm(), &deployment_1);
+    let deployment_1_cache_key = create_cache_key(ledger.vm(), &deployment_1).unwrap();
 
     // Create a second deployment with the same output id.
     let deployment_2 = create_deployment_with_duplicate_output_id(2);
     let deployment_2_id = deployment_2.id();
-    let deployment_2_cache_key = create_cache_key(ledger.vm(), &deployment_2);
+    let deployment_2_cache_key = create_cache_key(ledger.vm(), &deployment_2).unwrap();
 
     // Create a third deployment with the same output id.
     let deployment_3 = create_deployment_with_duplicate_output_id(3);
     let deployment_3_id = deployment_3.id();
-    let deployment_3_cache_key = create_cache_key(ledger.vm(), &deployment_3);
+    let deployment_3_cache_key = create_cache_key(ledger.vm(), &deployment_3).unwrap();
 
     // Ensure that each transaction has a duplicate output id.
     let deployment_1_output_id = deployment_1.output_ids().next().unwrap();
@@ -1447,7 +1438,7 @@ function create_duplicate_record:
         .execute(&private_key, ("credits.aleo", "transfer_public"), inputs.into_iter(), None, 0, None, rng)
         .unwrap();
     let transfer_4_id = transfer_4.id();
-    let transfer_4_cache_key = create_cache_key(ledger.vm(), &transfer_4);
+    let transfer_4_cache_key = create_cache_key(ledger.vm(), &transfer_4).unwrap();
 
     // Create a block.
     let block = ledger
@@ -1584,17 +1575,17 @@ function empty_function:
     // Create the first transaction.
     let transaction_1 = create_transaction_with_duplicate_transition_id();
     let transaction_1_id = transaction_1.id();
-    let transaction_1_cache_key = create_cache_key(ledger.vm(), &transaction_1);
+    let transaction_1_cache_key = create_cache_key(ledger.vm(), &transaction_1).unwrap();
 
     // Create a second transaction with the same transition id.
     let transaction_2 = create_transaction_with_duplicate_transition_id();
     let transaction_2_id = transaction_2.id();
-    let transaction_2_cache_key = create_cache_key(ledger.vm(), &transaction_2);
+    let transaction_2_cache_key = create_cache_key(ledger.vm(), &transaction_2).unwrap();
 
     // Create a third transaction with the same transition_id
     let transaction_3 = create_transaction_with_duplicate_transition_id();
     let transaction_3_id = transaction_3.id();
-    let transaction_3_cache_key = create_cache_key(ledger.vm(), &transaction_3);
+    let transaction_3_cache_key = create_cache_key(ledger.vm(), &transaction_3).unwrap();
 
     // Ensure that each transaction has a duplicate transition id.
     let tx_1_transition_id = transaction_1.transition_ids().next().unwrap();
@@ -1631,7 +1622,7 @@ function empty_function:
         .execute(&private_key, ("credits.aleo", "transfer_public"), inputs.into_iter(), None, 0, None, rng)
         .unwrap();
     let transfer_transaction_id = transfer_transaction.id();
-    let transfer_cache_key = create_cache_key(ledger.vm(), &transfer_transaction);
+    let transfer_cache_key = create_cache_key(ledger.vm(), &transfer_transaction).unwrap();
 
     // Create a block.
     let block = ledger
@@ -1732,17 +1723,17 @@ function simple_output:
     // Create the first transaction.
     let transaction_1 = create_transaction_with_duplicate_tpk("empty_function");
     let transaction_1_id = transaction_1.id();
-    let transaction_1_cache_key = create_cache_key(ledger.vm(), &transaction_1);
+    let transaction_1_cache_key = create_cache_key(ledger.vm(), &transaction_1).unwrap();
 
     // Create a second transaction with the same tpk and tcm.
     let transaction_2 = create_transaction_with_duplicate_tpk("simple_output");
     let transaction_2_id = transaction_2.id();
-    let transaction_2_cache_key = create_cache_key(ledger.vm(), &transaction_2);
+    let transaction_2_cache_key = create_cache_key(ledger.vm(), &transaction_2).unwrap();
 
     // Create a third transaction with the same tpk and tcm.
     let transaction_3 = create_transaction_with_duplicate_tpk("simple_output");
     let transaction_3_id = transaction_3.id();
-    let transaction_3_cache_key = create_cache_key(ledger.vm(), &transaction_3);
+    let transaction_3_cache_key = create_cache_key(ledger.vm(), &transaction_3).unwrap();
 
     // Ensure that each transaction has a duplicate tcm and tpk.
     let tx_1_tpk = transaction_1.transitions().next().unwrap().tpk();
@@ -1785,7 +1776,7 @@ function simple_output:
         .execute(&private_key, ("credits.aleo", "transfer_public"), inputs.into_iter(), None, 0, None, rng)
         .unwrap();
     let transfer_transaction_id = transfer_transaction.id();
-    let transfer_transaction_cache_key = create_cache_key(ledger.vm(), &transfer_transaction);
+    let transfer_transaction_cache_key = create_cache_key(ledger.vm(), &transfer_transaction).unwrap();
 
     // Create a block.
     let block = ledger
@@ -1844,12 +1835,12 @@ function empty_function:
     // Create a deployment transaction for the first program with the same public payer.
     let deployment_1 = ledger.vm.deploy(&private_key, &program_1, None, 0, None, rng).unwrap();
     let deployment_1_id = deployment_1.id();
-    let deployment_1_cache_key = create_cache_key(ledger.vm(), &deployment_1);
+    let deployment_1_cache_key = create_cache_key(ledger.vm(), &deployment_1).unwrap();
 
     // Create a deployment transaction for the second program with the same public payer.
     let deployment_2 = ledger.vm.deploy(&private_key, &program_2, None, 0, None, rng).unwrap();
     let deployment_2_id = deployment_2.id();
-    let deployment_2_cache_key = create_cache_key(ledger.vm(), &deployment_2);
+    let deployment_2_cache_key = create_cache_key(ledger.vm(), &deployment_2).unwrap();
 
     // Create a block.
     let block = ledger
@@ -2084,8 +2075,8 @@ fn test_split_candidate_solutions() {
     const ITERATIONS: usize = 1_000;
 
     for _ in 0..ITERATIONS {
-        let num_candidates = rng.gen_range(0..max_solutions * 2);
-        let candidate_solutions: Vec<u8> = rng.sample_iter(Standard).take(num_candidates).collect();
+        let num_candidates = rng.random_range(0..max_solutions * 2);
+        let candidate_solutions: Vec<u8> = rng.sample_iter(StandardUniform).take(num_candidates).collect();
 
         let (_accepted, _aborted) =
             split_candidate_solutions(candidate_solutions, max_solutions, |candidate| *candidate % 2 == 0);
@@ -2478,7 +2469,7 @@ finalize foo:
         aborted_transactions.shuffle(rng);
 
         // Randomly insert the aborted transactions.
-        let start_position = rng.gen_range(0..=transactions.len());
+        let start_position = rng.random_range(0..=transactions.len());
         for (index, element) in aborted_transactions.iter().enumerate() {
             transactions.insert(start_position + index, element.clone());
         }
@@ -2666,7 +2657,7 @@ function foo:
             };
             let deployment = deployment_tx.deployment().unwrap().clone();
             for _ in 0..ITERATIONS {
-                let result = match try_vm_runtime!(|| process.read().verify_deployment::<CurrentAleo, _>(
+                let result = match try_vm_runtime!(|| process.verify_deployment::<CurrentAleo, _>(
                     ConsensusVersion::V8,
                     &deployment,
                     rng
@@ -2767,14 +2758,14 @@ mod valid_solutions {
         let minimum_proof_target = ledger.latest_proof_target();
 
         // Create a solution that is greater than the minimum proof target.
-        let mut valid_solution = puzzle.prove(latest_epoch_hash, prover_address, rng.r#gen(), None).unwrap();
+        let mut valid_solution = puzzle.prove(latest_epoch_hash, prover_address, rng.random(), None).unwrap();
         while puzzle.get_proof_target(&valid_solution).unwrap() < minimum_proof_target {
             println!(
                 "Solution is invalid: {} < {}",
                 puzzle.get_proof_target(&valid_solution).unwrap(),
                 minimum_proof_target
             );
-            valid_solution = puzzle.prove(latest_epoch_hash, prover_address, rng.r#gen(), None).unwrap();
+            valid_solution = puzzle.prove(latest_epoch_hash, prover_address, rng.random(), None).unwrap();
         }
 
         // Create a valid transaction for the block.
@@ -2855,7 +2846,7 @@ mod valid_solutions {
             let latest_proof_target = ledger.latest_proof_target();
 
             // Sample the number of solutions to generate.
-            let num_solutions = rng.gen_range(1..=CurrentNetwork::MAX_SOLUTIONS);
+            let num_solutions = rng.random_range(1..=CurrentNetwork::MAX_SOLUTIONS);
 
             // Initialize a vector for valid solutions for this block.
             let mut solutions = Vec::with_capacity(num_solutions);
@@ -2863,7 +2854,7 @@ mod valid_solutions {
             // Loop through proofs until two that meet the threshold are found.
             loop {
                 if let Ok(solution) =
-                    puzzle.prove(latest_epoch_hash, prover_address, rng.r#gen(), Some(latest_proof_target))
+                    puzzle.prove(latest_epoch_hash, prover_address, rng.random(), Some(latest_proof_target))
                 {
                     // Get the proof target.
                     let proof_target = puzzle.get_proof_target(&solution).unwrap();
@@ -2978,7 +2969,7 @@ mod valid_solutions {
             let latest_proof_target = ledger.latest_proof_target();
 
             // Sample the number of solutions to generate.
-            let num_solutions = rng.gen_range(1..=CurrentNetwork::MAX_SOLUTIONS);
+            let num_solutions = rng.random_range(1..=CurrentNetwork::MAX_SOLUTIONS);
 
             // Initialize a vector for valid solutions for this block.
             let mut solutions = Vec::with_capacity(num_solutions);
@@ -2986,7 +2977,7 @@ mod valid_solutions {
             // Loop through proofs until two that meet the threshold are found.
             loop {
                 if let Ok(solution) =
-                    puzzle.prove(latest_epoch_hash, prover_address, rng.r#gen(), Some(latest_proof_target))
+                    puzzle.prove(latest_epoch_hash, prover_address, rng.random(), Some(latest_proof_target))
                 {
                     // Get the proof target.
                     let proof_target = puzzle.get_proof_target(&solution).unwrap();
@@ -3062,7 +3053,7 @@ mod valid_solutions {
 
         // Create solutions that are greater than the minimum proof target.
         let valid_solution = loop {
-            let solution = puzzle.prove(latest_epoch_hash, prover_address, rng.r#gen(), None).unwrap();
+            let solution = puzzle.prove(latest_epoch_hash, prover_address, rng.random(), None).unwrap();
             if puzzle.get_proof_target(&solution).unwrap() >= minimum_proof_target {
                 break solution;
             }
@@ -3156,7 +3147,7 @@ mod valid_solutions {
         let mut valid_solutions = Vec::with_capacity(2);
         // Create solutions that are greater than the minimum proof target.
         while valid_solutions.len() < 2 {
-            let solution = puzzle.prove(latest_epoch_hash, prover_address, rng.r#gen(), None).unwrap();
+            let solution = puzzle.prove(latest_epoch_hash, prover_address, rng.random(), None).unwrap();
             if puzzle.get_proof_target(&solution).unwrap() >= minimum_proof_target {
                 valid_solutions.push(solution);
             }
@@ -3219,7 +3210,7 @@ mod valid_solutions {
 
         // Create solutions that are greater than the minimum proof target.
         while valid_solutions.len() < NUM_VALID_SOLUTIONS {
-            let solution = puzzle.prove(latest_epoch_hash, prover_address, rng.r#gen(), None).unwrap();
+            let solution = puzzle.prove(latest_epoch_hash, prover_address, rng.random(), None).unwrap();
             if puzzle.get_proof_target(&solution).unwrap() < minimum_proof_target {
                 if invalid_solutions.len() < NUM_INVALID_SOLUTIONS {
                     invalid_solutions.push(solution);
@@ -3230,7 +3221,7 @@ mod valid_solutions {
         }
         // Create the remaining solutions that are less than the minimum proof target.
         while invalid_solutions.len() < NUM_INVALID_SOLUTIONS {
-            let solution = puzzle.prove(latest_epoch_hash, prover_address, rng.r#gen(), None).unwrap();
+            let solution = puzzle.prove(latest_epoch_hash, prover_address, rng.random(), None).unwrap();
             if puzzle.get_proof_target(&solution).unwrap() < minimum_proof_target {
                 invalid_solutions.push(solution);
             }
@@ -3309,7 +3300,7 @@ mod valid_solutions {
 
         // Create solutions that are greater than the minimum proof target.
         while valid_solutions.len() < NUM_VALID_SOLUTIONS {
-            let solution = puzzle.prove(latest_epoch_hash, prover_address, rng.r#gen(), None).unwrap();
+            let solution = puzzle.prove(latest_epoch_hash, prover_address, rng.random(), None).unwrap();
             if puzzle.get_proof_target(&solution).unwrap() >= minimum_proof_target {
                 valid_solutions.push(solution);
             }
@@ -3382,7 +3373,7 @@ mod valid_solutions {
         // Initialize a valid solution object.
         let mut valid_solution = None;
         while valid_solution.is_none() {
-            let solution = puzzle.prove(latest_epoch_hash, prover_address, rng.r#gen(), None).unwrap();
+            let solution = puzzle.prove(latest_epoch_hash, prover_address, rng.random(), None).unwrap();
             if puzzle.get_proof_target(&solution).unwrap() >= minimum_proof_target {
                 valid_solution = Some(solution);
             }
@@ -3470,7 +3461,7 @@ mod valid_solutions {
         // Initialize a valid solution object.
         let mut invalid_solution = None;
         while invalid_solution.is_none() {
-            let solution = puzzle.prove(latest_epoch_hash, prover_address, rng.r#gen(), None).unwrap();
+            let solution = puzzle.prove(latest_epoch_hash, prover_address, rng.random(), None).unwrap();
             if puzzle.get_proof_target(&solution).unwrap() < minimum_proof_target {
                 invalid_solution = Some(solution);
             }
@@ -3568,7 +3559,7 @@ mod valid_solutions {
 
         // Create solutions that are greater than the minimum proof target.
         let valid_solution = loop {
-            let solution = puzzle.prove(latest_epoch_hash, address, rng.r#gen(), None).unwrap();
+            let solution = puzzle.prove(latest_epoch_hash, address, rng.random(), None).unwrap();
             if puzzle.get_proof_target(&solution).unwrap() >= minimum_proof_target {
                 break solution;
             }
@@ -3642,14 +3633,14 @@ fn test_forged_block_subdags() -> Result<()> {
             .prepare_advance_to_next_quorum_block(
                 block_3_subdag.clone(),
                 block_3_transmissions.clone(),
-                &mut rand::thread_rng(),
+                &mut rand::rng(),
             )
             .unwrap();
 
         assert_ne!(forged_block_2, block_2);
 
         // Attempt to verify the forged block.
-        assert!(ledger.check_next_block(&forged_block_2, &mut rand::thread_rng()).is_err());
+        assert!(ledger.check_next_block(&forged_block_2, &mut rand::rng()).is_err());
     }
 
     ////////////////////////////////////////////////////////////////////////////
@@ -3674,14 +3665,14 @@ fn test_forged_block_subdags() -> Result<()> {
             .prepare_advance_to_next_quorum_block(
                 Subdag::from(combined_subdag).unwrap(),
                 combined_transmissions,
-                &mut rand::thread_rng(),
+                &mut rand::rng(),
             )
             .unwrap();
 
         assert_ne!(forged_block_2_from_both_subdags, block_1);
 
         // Attempt to verify the forged block.
-        assert!(ledger.check_next_block(&forged_block_2_from_both_subdags, &mut rand::thread_rng()).is_err());
+        assert!(ledger.check_next_block(&forged_block_2_from_both_subdags, &mut rand::rng()).is_err());
     }
 
     ////////////////////////////////////////////////////////////////////////////
@@ -3708,13 +3699,13 @@ fn test_forged_block_subdags() -> Result<()> {
 
         // Forge the block.
         let forged_block_2 = ledger
-            .prepare_advance_to_next_quorum_block(Subdag::from(subdag).unwrap(), transmissions, &mut rand::thread_rng())
+            .prepare_advance_to_next_quorum_block(Subdag::from(subdag).unwrap(), transmissions, &mut rand::rng())
             .unwrap();
 
         assert_ne!(forged_block_2, block_1);
 
         // Attempt to verify the forged block.
-        assert!(ledger.check_next_block(&forged_block_2, &mut rand::thread_rng()).is_err());
+        assert!(ledger.check_next_block(&forged_block_2, &mut rand::rng()).is_err());
     }
 
     Ok(())
@@ -3795,13 +3786,13 @@ fn test_subdag_with_gc_length() -> Result<()> {
         let forged_block = ledger.prepare_advance_to_next_quorum_block(
             Subdag::from(forged_subdag).unwrap(),
             transmissions,
-            &mut rand::thread_rng(),
+            &mut rand::rng(),
         )?;
 
         assert_ne!(forged_block, block);
 
         // Attempt to verify the forged block.
-        assert!(ledger.check_next_block(&forged_block, &mut rand::thread_rng()).is_err());
+        assert!(ledger.check_next_block(&forged_block, &mut rand::rng()).is_err());
     }
 
     // Ensure it is still accepted

@@ -25,7 +25,7 @@ use snarkvm_synthesizer_process::{Process, Stack};
 use snarkvm_synthesizer_program::{Program, StackTrait};
 
 use criterion::{BatchSize, Criterion};
-use rand::{Rng as _, distributions::Alphanumeric};
+use rand::{RngExt as _, distr::Alphanumeric};
 use snarkvm_circuit::prelude::bail;
 use snarkvm_console::{network::Network, prelude::SizeInDataBits};
 use snarkvm_utilities::TestRng;
@@ -150,7 +150,7 @@ fn add_program_at_depth(process: &mut Process<CurrentNetwork>, depth: usize) {
     };
 
     // Add the program to the process.
-    process.add_program(&program).unwrap();
+    process.lock().add_program(&program).unwrap();
 }
 
 // Samples a random identifier as a string.

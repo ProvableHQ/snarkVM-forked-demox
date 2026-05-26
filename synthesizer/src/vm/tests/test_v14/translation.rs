@@ -165,6 +165,8 @@ fn test_translation(
         call.dynamic {program_a_name_field} {network_field} {get_external_liters_function_field}
             with r0 (as dynamic.record)
             into r1 (as u64.public);
+
+        call.dynamic {program_b_name_field} {network_field} {static_gas_leak_function_field} with r0 (as dynamic.record) into r2 (as dynamic.record);
         
         output r1 as u64.public;
 
@@ -191,6 +193,11 @@ fn test_translation(
         call.dynamic {program_a_name_field} {network_field} {gas_pipe_function_field}
             with r0 (as dynamic.record)
             into r1 (as dynamic.record);
+
+        // Needed to pass the record-existence check (r0 must materialize)
+        call.dynamic {program_b_name_field} {network_field} {static_gas_leak_function_field}
+            with r0 (as dynamic.record)
+            into r2 (as dynamic.record);
     
     // Consume a gas record and produce a new one containing 10 fewer liters
     function static_gas_leak:
@@ -216,11 +223,11 @@ fn test_translation(
     // Deploy the programs.
     println!("Deploying program {program_b_name_str}...");
     let transaction_b = vm.deploy(caller_private_key, &program_b, None, 0, None, rng).unwrap();
-    add_and_test(&vm, caller_private_key, &[transaction_b], rng);
+    add_and_test_with_costs(&vm, caller_private_key, &caller_address, None, &[transaction_b], rng);
 
     println!("Deploying program {program_a_name_str}...");
     let transaction_a = vm.deploy(caller_private_key, &program_a, None, 0, None, rng).unwrap();
-    add_and_test(&vm, caller_private_key, &[transaction_a], rng);
+    add_and_test_with_costs(&vm, caller_private_key, &caller_address, None, &[transaction_a], rng);
 
     assert!(
         input_values.is_none() || gas_to_mint.is_none(),
@@ -272,7 +279,7 @@ fn test_translation(
         .execute(
             caller_private_key,
             (root_program_name, root_function_name),
-            computed_input_values.into_iter(),
+            computed_input_values.iter(),
             None,
             0,
             None,
@@ -281,7 +288,14 @@ fn test_translation(
         .unwrap();
 
     println!("Verifying transaction...");
-    add_and_test(&vm, caller_private_key, &[transaction.clone()], rng);
+    add_and_test_with_costs(
+        &vm,
+        caller_private_key,
+        &caller_address,
+        Some(&[&computed_input_values]),
+        &[transaction.clone()],
+        rng,
+    );
 
     if let Some(expected_public_outputs) = expected_public_outputs {
         println!("Asserting output correctness on {} expected public outputs...", expected_public_outputs.len());
@@ -312,6 +326,7 @@ fn test_translation_output_non_external_dynamic_content() {
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     let provider_name_str = "gas_pump_provider";
     let caller_name_str = "gas_pump_caller";
@@ -369,11 +384,11 @@ fn test_translation_output_non_external_dynamic_content() {
 
     println!("Deploying {provider_name_str}.aleo...");
     let deploy_provider = vm.deploy(&caller_private_key, &provider_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_provider], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_provider], rng);
 
     println!("Deploying {caller_name_str}.aleo...");
     let deploy_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_caller], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_caller], rng);
 
     // Execute pump_and_read; it creates a record internally so no pre-minted record is needed.
     println!("Executing {caller_name_str}.aleo/pump_and_read...");
@@ -403,7 +418,7 @@ fn test_translation_output_non_external_dynamic_content() {
         root_transition.outputs()
     );
 
-    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&[]]), &[transaction], rng);
 }
 
 // Verifies that the dynamic→external-static input translation preserves record content.
@@ -422,8 +437,11 @@ fn test_translation_input_external_dynamic_content() {
     let provider_name_str = "ext_dyn_provider";
 
     let provider_field = Identifier::<CurrentNetwork>::from_str(provider_name_str).unwrap().to_field().unwrap();
+    let caller_name_field = Identifier::<CurrentNetwork>::from_str(caller_name_str).unwrap().to_field().unwrap();
     let network_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
     let get_liters_field = Identifier::<CurrentNetwork>::from_str("get_liters").unwrap().to_field().unwrap();
+    let consume_container_function_field =
+        Identifier::<CurrentNetwork>::from_str("consume_container").unwrap().to_field().unwrap();
 
     let expected_liters = 77u64;
     let expected_active = true;
@@ -439,18 +457,27 @@ fn test_translation_input_external_dynamic_content() {
         liters as u64.public;
         active as boolean.private;
 
+    function consume_container:
+        input r0 as container.record;
+
     function mint_container:
         input r0 as address.private;
         input r1 as u64.public;
         input r2 as boolean.private;
+        
         cast r0 r1 r2 into r3 as container.record;
+        
         output r3 as container.record;
 
     function pipe_and_read:
         input r0 as dynamic.record;
+        
         call.dynamic {provider_field} {network_field} {get_liters_field}
             with r0 (as dynamic.record)
             into r1 r2 (as u64.public boolean.public);
+
+        call.dynamic {caller_name_field} {network_field} {consume_container_function_field} with r0 (as dynamic.record);
+        
         output r1 as u64.public;
         output r2 as boolean.public;
 
@@ -488,24 +515,24 @@ fn test_translation_input_external_dynamic_content() {
     // Deploy caller first because provider imports it.
     println!("Deploying {caller_name_str}.aleo...");
     let deploy_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_caller], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_caller], rng);
 
     println!("Deploying {provider_name_str}.aleo...");
     let deploy_provider = vm.deploy(&caller_private_key, &provider_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_provider], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_provider], rng);
 
+    let inputs = vec![
+        Value::from_str(&caller_address.to_string()).unwrap(),
+        Value::from_str(&format!("{expected_liters}u64")).unwrap(),
+        Value::from_str(&format!("{expected_active}")).unwrap(),
+    ];
     // Mint a container record with known liters and active values and add it to the ledger.
     println!("Minting container record with {expected_liters} liters and active = {expected_active}...");
     let mint_tx = vm
         .execute(
             &caller_private_key,
             (format!("{caller_name_str}.aleo"), "mint_container"),
-            vec![
-                Value::from_str(&caller_address.to_string()).unwrap(),
-                Value::from_str(&format!("{expected_liters}u64")).unwrap(),
-                Value::from_str(&format!("{expected_active}")).unwrap(),
-            ]
-            .into_iter(),
+            inputs.iter(),
             None,
             0,
             None,
@@ -525,10 +552,12 @@ fn test_translation_input_external_dynamic_content() {
         })
         .unwrap();
 
-    add_and_test(&vm, &caller_private_key, &[mint_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[mint_tx], rng);
 
     // Convert the minted record to a dynamic record for the call.
     let dynamic_record = DynamicRecord::from_record(&minted_record).unwrap();
+
+    let inputs = vec![Value::DynamicRecord(dynamic_record)];
 
     // Execute pipe_and_read; the dynamic record is translated to an external static record
     // inside provider.aleo/get_liters, and both liters and active fields are returned.
@@ -537,7 +566,7 @@ fn test_translation_input_external_dynamic_content() {
         .execute(
             &caller_private_key,
             (format!("{caller_name_str}.aleo"), "pipe_and_read"),
-            vec![Value::DynamicRecord(dynamic_record)].into_iter(),
+            inputs.iter(),
             None,
             0,
             None,
@@ -559,7 +588,7 @@ fn test_translation_input_external_dynamic_content() {
         root_transition.outputs()
     );
 
-    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[transaction], rng);
 }
 
 // Tests translation of a dynamic record input to a non-external static record.
@@ -892,7 +921,7 @@ fn test_translation_traversal_consistency() {
 
     // Deploy the program.
     let transaction = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[transaction], rng);
 
     let mut mint_record = |function_name: &str| {
         println!("Executing {function_name}...");
@@ -927,28 +956,28 @@ fn test_translation_traversal_consistency() {
     let (transaction_mint_b_1, dynamic_record_b_1) = mint_record("mint_b");
     let (transaction_mint_b_2, dynamic_record_b_2) = mint_record("mint_b");
 
-    add_and_test(&vm, &caller_private_key, &[transaction_mint_a, transaction_mint_b_1, transaction_mint_b_2], rng);
+    add_and_test_with_costs(
+        &vm,
+        &caller_private_key,
+        &caller_address,
+        Some(&[&[], &[], &[]]),
+        &[transaction_mint_a, transaction_mint_b_1, transaction_mint_b_2],
+        rng,
+    );
+
+    let inputs = vec![
+        Value::DynamicRecord(dynamic_record_a),
+        Value::DynamicRecord(dynamic_record_b_1),
+        Value::DynamicRecord(dynamic_record_b_2),
+    ];
 
     let transaction = vm
-        .execute(
-            &caller_private_key,
-            ("quotes.aleo", "quadruple_caller"),
-            [
-                Value::DynamicRecord(dynamic_record_a),
-                Value::DynamicRecord(dynamic_record_b_1),
-                Value::DynamicRecord(dynamic_record_b_2),
-            ]
-            .into_iter(),
-            None,
-            0,
-            None,
-            rng,
-        )
+        .execute(&caller_private_key, ("quotes.aleo", "quadruple_caller"), inputs.iter(), None, 0, None, rng)
         .unwrap();
 
     // This indeed results of three batches for translation proving/verification:
     // one of size 3 for a.record, one of size 8 for b.record, and one of size 2 for c.record.
-    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[transaction], rng);
 }
 
 // Tests that stripping or altering `dynamic_id` from `RecordWithDynamicID` inputs causes verification failure.
@@ -1022,10 +1051,10 @@ fn test_malicious_dynamic_id_tampering() {
 
     // Deploy the programs.
     let transaction_b = vm.deploy(&caller_private_key, &program_b, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[transaction_b], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[transaction_b], rng);
 
     let transaction_a = vm.deploy(&caller_private_key, &program_a, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[transaction_a], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[transaction_a], rng);
 
     // Mint a gas_container record.
     let transaction_mint = vm
@@ -1158,9 +1187,12 @@ fn test_malicious_external_record_dynamic_id_tampering() {
     let program_a_name_str = "flow_external";
     let program_b_name_str = "gas_manager_external";
     let program_a_name_field = Identifier::<CurrentNetwork>::from_str(program_a_name_str).unwrap().to_field().unwrap();
+    let program_b_name_field = Identifier::<CurrentNetwork>::from_str(program_b_name_str).unwrap().to_field().unwrap();
     let network_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
     let get_external_liters_function_field =
         Identifier::<CurrentNetwork>::from_str("get_external_liters").unwrap().to_field().unwrap();
+    let consume_gas_container_function_field =
+        Identifier::<CurrentNetwork>::from_str("consume_gas_container").unwrap().to_field().unwrap();
 
     // Define program_a which accepts an external record from program_b.
     let program_a_str = format!(
@@ -1190,6 +1222,9 @@ fn test_malicious_external_record_dynamic_id_tampering() {
         liters as u64.public;
         flammable as boolean.private;
 
+    function consume_gas_container:
+        input r0 as gas_container.record;
+
     function hardcoded_gas_pump:
         cast {gas_owner} 100u64 false into r0 as gas_container.record;
         output r0 as gas_container.record;
@@ -1201,6 +1236,9 @@ fn test_malicious_external_record_dynamic_id_tampering() {
         call.dynamic {program_a_name_field} {network_field} {get_external_liters_function_field}
             with r0 (as dynamic.record)
             into r1 (as u64.public);
+
+        // Needed to pass the record-existence check (r0 must materialize)
+        call.dynamic {program_b_name_field} {network_field} {consume_gas_container_function_field} with r0 (as dynamic.record);
 
         output r1 as u64.public;
 
@@ -1217,10 +1255,10 @@ fn test_malicious_external_record_dynamic_id_tampering() {
 
     // Deploy both programs (program_b first since program_a imports it).
     let transaction_b = vm.deploy(&caller_private_key, &program_b, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[transaction_b], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[transaction_b], rng);
 
     let transaction_a = vm.deploy(&caller_private_key, &program_a, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[transaction_a], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[transaction_a], rng);
 
     // Mint a gas_container record.
     let transaction_mint = vm
@@ -1413,20 +1451,21 @@ fn test_differing_keys() {
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
     // Deploy the programs.
     let transaction_a = vm.deploy(&caller_private_key, &program_a, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[transaction_a], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[transaction_a], rng);
 
     let transaction_b = vm.deploy(&caller_private_key, &program_b, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[transaction_b], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[transaction_b], rng);
 
     // Displaying the keys associated to each translation circuit for easier
     // identification with snark-print
     for program_name in ["program_a.aleo", "program_b.aleo"] {
-        let stack = vm.process().read().get_stack(program_name).unwrap();
+        let stack = vm.process().get_stack(program_name).unwrap();
         println!("{program_name} translation keys:");
         for record_name in ["record_a", "record_b"] {
             let record_identifier = Identifier::<CurrentNetwork>::from_str(record_name).unwrap();
@@ -1449,7 +1488,7 @@ fn test_differing_keys() {
             rng,
         )
         .unwrap();
-    add_and_test(&vm, &caller_private_key, &[transaction_mint_all], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&[]]), &[transaction_mint_all], rng);
 }
 
 // Tests translation with a record containing exactly 32 entries (MAX_DATA_ENTRIES boundary).
@@ -1460,6 +1499,7 @@ fn test_translation_max_entries_record() {
 
     let caller_private_key = sample_genesis_private_key(rng);
     let caller_view_key = ViewKey::<CurrentNetwork>::try_from(caller_private_key).unwrap();
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     let program_name_field = Identifier::<CurrentNetwork>::from_str("max_entries").unwrap().to_field().unwrap();
     let network_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
@@ -1519,7 +1559,7 @@ fn test_translation_max_entries_record() {
     // Deploy the program
     println!("Deploying max_entries.aleo with 32-entry record...");
     let deploy_tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_tx], rng);
 
     // Mint a max_record
     println!("Minting max_record with 32 entries...");
@@ -1543,25 +1583,19 @@ fn test_translation_max_entries_record() {
         _ => panic!("Expected a record output"),
     };
 
-    add_and_test(&vm, &caller_private_key, &[mint_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&[]]), &[mint_tx], rng);
 
     // Convert to dynamic record and test translation
     println!("Testing translation of 32-entry record...");
     let dynamic_record = DynamicRecord::from_record(&max_record).unwrap();
 
+    let inputs = vec![Value::DynamicRecord(dynamic_record)];
+
     let consume_tx = vm
-        .execute(
-            &caller_private_key,
-            ("max_entries.aleo", "dynamic_consume_max"),
-            vec![Value::<CurrentNetwork>::DynamicRecord(dynamic_record)].into_iter(),
-            None,
-            0,
-            None,
-            rng,
-        )
+        .execute(&caller_private_key, ("max_entries.aleo", "dynamic_consume_max"), inputs.iter(), None, 0, None, rng)
         .unwrap();
 
     // Verify the transaction succeeds (sum of 0+1+2+...+31 = 496)
-    add_and_test(&vm, &caller_private_key, &[consume_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[consume_tx], rng);
     println!("Successfully translated 32-entry record (MAX_DATA_ENTRIES boundary)");
 }

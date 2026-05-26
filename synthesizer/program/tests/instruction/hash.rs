@@ -97,7 +97,7 @@ fn sample_valid_input_types<N: Network, R: CryptoRng + Rng>(
         | HashVariant::HashSha3_384NativeRaw
         | HashVariant::HashSha3_512NativeRaw => (0..10)
             .map(|_| {
-                let length = rng.gen_range(1..=(CurrentNetwork::LATEST_MAX_ARRAY_ELEMENTS() / 8)) * 8;
+                let length = rng.random_range(1..=(CurrentNetwork::LATEST_MAX_ARRAY_ELEMENTS() / 8)) * 8;
                 PlaintextType::Array(
                     ArrayType::new(PlaintextType::Literal(LiteralType::Boolean), vec![U32::new(
                         u32::try_from(length).unwrap(),
@@ -273,7 +273,7 @@ fn check_hash<const VARIANT: u8>(
 
     // Attempt to finalize the valid operand case.
     let mut finalize_registers = sample_finalize_registers(&stack, &function_name, &[input]).unwrap();
-    let result_c = operation.finalize(&stack, &mut finalize_registers);
+    let result_c = operation.finalize(&stack, None, &mut finalize_registers);
 
     // Check that either all operations failed, or all operations succeeded.
     let all_failed = result_a.is_err() && result_b.is_err() && result_c.is_err();

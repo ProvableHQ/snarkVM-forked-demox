@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-ledger"
-version = "4.6.3"
+version = "4.6.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A node ledger for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -70,6 +70,10 @@ history-staking-rewards = [
   "snarkvm-ledger-store/history-staking-rewards",
   "snarkvm-synthesizer/history-staking-rewards",
 ]
+slipstream-plugins = [
+  "snarkvm-ledger-store/slipstream-plugins",
+  "snarkvm-synthesizer/slipstream-plugins",
+]
 locktick = [
   "dep:locktick",
   "snarkvm-ledger-puzzle/locktick",
@@ -77,6 +81,7 @@ locktick = [
   "snarkvm-synthesizer/locktick"
 ]
 metrics = [ "snarkvm-ledger-committee/metrics" ]
+prop-tests = [ "snarkvm-ledger-committee/prop-tests" ]
 rocks = [ "snarkvm-ledger-store/rocks" ]
 serial = [
   "snarkvm-console/serial",

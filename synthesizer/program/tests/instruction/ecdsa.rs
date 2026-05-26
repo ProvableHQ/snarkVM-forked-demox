@@ -51,7 +51,10 @@ use snarkvm_synthesizer_program::{
     RegistersTrait as _,
 };
 
-use k256::ecdsa::{SigningKey, VerifyingKey, signature::hazmat::PrehashSigner};
+use k256::{
+    ecdsa::{SigningKey, VerifyingKey, signature::hazmat::PrehashSigner},
+    elliptic_curve::Generate,
+};
 use snarkvm_utilities::bytes_from_bits_le;
 
 type CurrentNetwork = MainnetV0;
@@ -177,10 +180,10 @@ pub fn sample_ecdsa_finalize_registers(
     // Initialize the registers.
     let mut finalize_registers = FinalizeRegisters::<CurrentNetwork>::new(
         FinalizeGlobalState::from(1, 1, None, [0; 32]),
-        <CurrentNetwork as Network>::TransitionID::default(),
+        Some(<CurrentNetwork as Network>::TransitionID::default()),
         *function_name,
         stack.get_finalize_types(function_name)?.clone(),
-        0u64,
+        Some(0u64),
     );
 
     // Initialize the signature.
@@ -228,7 +231,7 @@ fn check_ecdsa<const VARIANT: u8, H: Hash<Input = bool, Output = Vec<bool>>>(
     rng: &mut TestRng,
 ) {
     // Generate the ecdsa signing keys.
-    let signing_key = SigningKey::random(rng);
+    let signing_key = SigningKey::generate_from_rng(rng);
     let verifying_key = VerifyingKey::from(&signing_key);
 
     let (expected_length, vk) = if matches!(VARIANT, 1 | 4 | 7 | 10 | 13 | 16 | 19) || opcode.ends_with("eth") {
@@ -236,7 +239,7 @@ fn check_ecdsa<const VARIANT: u8, H: Hash<Input = bool, Output = Vec<bool>>>(
         (20, ECDSASignature::ethereum_address_from_public_key(&verifying_key).unwrap().to_vec())
     } else {
         // Non-Ethereum address variant expects a compressed verifying key.
-        (ECDSASignature::VERIFYING_KEY_SIZE_IN_BYTES, verifying_key.to_encoded_point(true).as_bytes().to_vec())
+        (ECDSASignature::VERIFYING_KEY_SIZE_IN_BYTES, verifying_key.to_sec1_point(true).as_bytes().to_vec())
     };
 
     println!("Checking '{opcode}' for message type '{message_type}.{mode}'");
@@ -287,7 +290,7 @@ fn check_ecdsa<const VARIANT: u8, H: Hash<Input = bool, Output = Vec<bool>>>(
         message.clone(),
     )
     .unwrap();
-    let result_a = operation.finalize(&stack, &mut finalize_registers);
+    let result_a = operation.finalize(&stack, None, &mut finalize_registers);
     // Enforce that the signature verifies successfully.
     assert!(result_a.is_ok(), "The finalization should succeed for a valid operand");
     let output = finalize_registers.load(&stack, &destination_operand).unwrap();
@@ -310,7 +313,7 @@ fn check_ecdsa<const VARIANT: u8, H: Hash<Input = bool, Output = Vec<bool>>>(
         message,
     )
     .unwrap();
-    let result_b = operation.finalize(&stack, &mut finalize_registers);
+    let result_b = operation.finalize(&stack, None, &mut finalize_registers);
     // Enforce that the signature verification fails.
     assert!(result_b.is_ok(), "The finalization should succeed for the operand");
     let output = finalize_registers.load(&stack, &destination_operand).unwrap();

@@ -25,7 +25,7 @@ pub use operation::*;
 mod bytes;
 mod parse;
 
-use crate::{RegistersCircuit, RegistersSigner, RegistersTrait, StackTrait, instruction};
+use crate::{FinalizeRegistersState, FinalizeStoreTrait, RegistersCircuit, RegistersSigner, StackTrait, instruction};
 use console::{
     network::Network,
     prelude::{
@@ -93,6 +93,18 @@ pub enum Instruction<N: Network> {
     CommitPED64(CommitPED64<N>),
     /// Performs a Pedersen commitment on up to a 128-bit input.
     CommitPED128(CommitPED128<N>),
+    /// Performs a BHP commitment on the input's raw bits in 256-bit chunks.
+    CommitBHP256Raw(CommitBHP256Raw<N>),
+    /// Performs a BHP commitment on the input's raw bits in 512-bit chunks.
+    CommitBHP512Raw(CommitBHP512Raw<N>),
+    /// Performs a BHP commitment on the input's raw bits in 768-bit chunks.
+    CommitBHP768Raw(CommitBHP768Raw<N>),
+    /// Performs a BHP commitment on the input's raw bits in 1024-bit chunks.
+    CommitBHP1024Raw(CommitBHP1024Raw<N>),
+    /// Performs a Pedersen commitment on the input's raw bits up to a 64-bit input.
+    CommitPED64Raw(CommitPED64Raw<N>),
+    /// Performs a Pedersen commitment on the input's raw bits up to a 128-bit input.
+    CommitPED128Raw(CommitPED128Raw<N>),
     /// Deserializes the bits into a value.
     DeserializeBits(DeserializeBits<N>),
     /// Deserializes the raw bits into a value.
@@ -462,6 +474,14 @@ macro_rules! instruction {
             SnarkVerify,
             SnarkVerifyBatch,
 
+            // New opcodes added in `ConsensusVersion::V15`
+            CommitBHP256Raw,
+            CommitBHP512Raw,
+            CommitBHP768Raw,
+            CommitBHP1024Raw,
+            CommitPED64Raw,
+            CommitPED128Raw,
+
             // New opcodes should be added here, with a comment on which consensus version they were added in.
         }}
     };
@@ -603,9 +623,10 @@ impl<N: Network> Instruction<N> {
     pub fn finalize(
         &self,
         stack: &impl StackTrait<N>,
-        registers: &mut impl RegistersTrait<N>,
+        store: Option<&dyn FinalizeStoreTrait<N>>,
+        registers: &mut impl FinalizeRegistersState<N>,
     ) -> Result<(), FinalizeError> {
-        instruction!(self, |instruction| instruction.finalize(stack, registers).map_err(Into::into))
+        instruction!(self, |instruction| instruction.finalize(stack, store, registers).map_err(Into::into))
     }
 
     /// Returns the output type from the given input types.
@@ -685,7 +706,7 @@ mod tests {
         // Sanity check the number of instructions is unchanged.
         // Note that the number of opcodes **MUST NOT** exceed u16::MAX.
         assert_eq!(
-            123,
+            129,
             Instruction::<CurrentNetwork>::OPCODES.len(),
             "Update me if the number of instructions changes."
         );
