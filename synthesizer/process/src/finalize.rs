@@ -771,13 +771,15 @@ fn initialize_finalize_state<N: Network>(
 // A helper function to finalize all commands except `await`, updating the finalize operations and the counter.
 //
 // Generic over the store so the view evaluator (which passes either the canonical
-// `FinalizeStore` or a read-only historic adapter) can reuse this dispatch.
+// `FinalizeStore` or a read-only historic adapter) can reuse this dispatch. The stack must be
+// the concrete `Stack<N>` so we can resolve `Call`-to-view targets and read their cached
+// `FinalizeTypes` (the in-block call path needs concrete access).
 #[inline]
 pub(crate) fn finalize_command_except_await<N: Network>(
     program_id: Option<(ProgramID<N>, u16)>,
     resource: Option<Identifier<N>>,
-    store: &impl FinalizeStoreTrait<N>,
-    stack: &impl StackTrait<N>,
+    store: &dyn FinalizeStoreTrait<N>,
+    stack: &Stack<N>,
     registers: &mut FinalizeRegisters<N>,
     positions: &HashMap<Identifier<N>, usize>,
     command: &Command<N>,
