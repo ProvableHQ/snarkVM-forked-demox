@@ -267,12 +267,12 @@ fn test_deploy_large_program_v14_serialization() {
 // This test verifies that:
 // - programs using syntax introduced in `V14` cannot be deployed before `V14`.
 // - programs using syntax introduced in `V14` can be deployed at and after `V14`.
-// - a program with an array larger than 2048 can be deployed after `V14`.
+// - a program with an array up to 2048 elements can be deployed after `V14`.
 #[test]
 fn test_deployments_for_v14_features() {
     // Define the programs.
     let programs = vec![
-        // A program with an array larger than 2048 elements.
+        // A program with an array with 2048 elements.
         r"
 program uses_large_arrays.aleo;
 

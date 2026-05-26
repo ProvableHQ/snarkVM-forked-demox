@@ -15,7 +15,7 @@
 
 use super::*;
 
-/// Generates a large program string that exceeds the V14 size limit (512KB) but fits within V14 (1024KB).
+/// Generates a large program string that exceeds the V14 size limit (512KB) but fits within V15 (1024KB).
 fn generate_large_program() -> String {
     let mut program = String::from(
         "program large_program_generated.aleo;
@@ -66,7 +66,7 @@ fn test_deploy_large_program_v15() {
     let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
     let vm = crate::vm::test_helpers::sample_vm_at_height(v14_height, rng);
 
-    // Ensure that the program is too large to be deployed at V43.
+    // Ensure that the program is too large to be deployed at V14.
     let deployment = vm.deploy(&caller_private_key, &large_program, None, 0, None, rng).unwrap();
     let deployment_id = deployment.id();
     assert!(vm.check_transaction(&deployment, None, rng).is_err());
