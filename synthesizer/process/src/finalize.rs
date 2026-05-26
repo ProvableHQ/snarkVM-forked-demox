@@ -385,7 +385,7 @@ fn finalize_fee_transition<N: Network, P: FinalizeStorage<N>>(
     let (finalize_operations, total_awaits) =
         finalize_transition(state, store, stack, fee, call_graph, Default::default())?;
     // Create IndexedFinalizeError if the fee path has awaits.
-    if total_awaits != 0 {
+    if consensus_version >= ConsensusVersion::V15 && total_awaits != 0 {
         indexed_finalize_bail!(
             Some((*fee.program_id(), *stack.program_edition())),
             Some(*fee.function_name()),
