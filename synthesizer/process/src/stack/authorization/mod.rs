@@ -17,11 +17,11 @@ mod bytes;
 mod serialize;
 mod string;
 
-use crate::{Output, Process};
+use crate::Output;
 
 use console::{
     network::prelude::*,
-    program::{Request, ValueType},
+    program::{ProgramID, Request, ValueType},
     types::Field,
 };
 use snarkvm_ledger_block::{Input, Transaction, Transition};
@@ -307,13 +307,15 @@ impl<N: Network> Authorization<N> {
     /// given `Transition`s as well as the number of translations for each such
     /// circuit.
     pub fn translation_batch_sizes<'a>(
-        process: &Process<N>,
         transitions: impl ExactSizeIterator<Item = &'a Transition<N>>,
+        execution_stacks: &IndexMap<ProgramID<N>, Arc<crate::Stack<N>>>,
     ) -> Result<Vec<usize>> {
         let mut batches = HashMap::new();
 
         for transition in transitions {
-            let stack = process.get_stack(transition.program_id())?;
+            let stack = execution_stacks
+                .get(transition.program_id())
+                .ok_or_else(|| anyhow!("Missing stack for program '{}'", transition.program_id()))?;
             let function = stack.get_function(transition.function_name())?;
 
             let input_types = function.input_types();
@@ -450,9 +452,9 @@ pub(crate) mod test_helpers {
         // Sample a private key.
         let private_key = PrivateKey::new(rng).unwrap();
         // Sample a base fee in microcredits.
-        let base_fee_in_microcredits = rng.gen_range(1_000_000..u64::MAX / 2);
+        let base_fee_in_microcredits = rng.random_range(1_000_000..u64::MAX / 2);
         // Sample a priority fee in microcredits.
-        let priority_fee_in_microcredits = rng.gen_range(0..u64::MAX / 2);
+        let priority_fee_in_microcredits = rng.random_range(0..u64::MAX / 2);
         // Sample a deployment or execution ID.
         let deployment_or_execution_id = Field::rand(rng);
 

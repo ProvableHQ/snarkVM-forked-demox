@@ -54,6 +54,10 @@ pub enum ConsensusVersion {
     ///      Introduces `aleo::GENERATOR`, `aleo::GENERATOR_POWERS`, `snark.verify` opcodes,
     ///      and dynamic dispatch, and identifier literal types.
     V14 = 14,
+    /// V15: Introduces the record-existence check and `commit.*.raw` instruction variants.
+    ///      Increase the anchor time to 35.
+    ///      Unconditionally stores transaction rejection reasons.
+    V15 = 15,
 }
 
 impl ToBytes for ConsensusVersion {
@@ -80,6 +84,7 @@ impl FromBytes for ConsensusVersion {
             12 => Ok(Self::V12),
             13 => Ok(Self::V13),
             14 => Ok(Self::V14),
+            15 => Ok(Self::V15),
             _ => Err(io_error("Invalid consensus version")),
         }
     }
@@ -117,6 +122,7 @@ pub const CANARY_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CON
     (ConsensusVersion::V12, 10_030_000),
     (ConsensusVersion::V13, 10_881_000),
     (ConsensusVersion::V14, 11_960_000),
+    (ConsensusVersion::V15, u32::MAX),
 ];
 
 /// The consensus version height for `MainnetV0`.
@@ -134,7 +140,8 @@ pub const MAINNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V11, 12_870_000),
     (ConsensusVersion::V12, 13_815_000),
     (ConsensusVersion::V13, 16_850_000),
-    (ConsensusVersion::V14, u32::MAX),
+    (ConsensusVersion::V14, 17_700_000),
+    (ConsensusVersion::V15, u32::MAX),
 ];
 
 /// The consensus version heights for `TestnetV0`.
@@ -152,7 +159,8 @@ pub const TESTNET_V0_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CO
     (ConsensusVersion::V11, 11_952_000),
     (ConsensusVersion::V12, 12_669_000),
     (ConsensusVersion::V13, 14_906_000),
-    (ConsensusVersion::V14, u32::MAX),
+    (ConsensusVersion::V14, 15_370_000),
+    (ConsensusVersion::V15, u32::MAX),
 ];
 
 /// The consensus version heights when the `test_consensus_heights` feature is enabled.
@@ -171,6 +179,7 @@ pub const TEST_CONSENSUS_VERSION_HEIGHTS: [(ConsensusVersion, u32); NUM_CONSENSU
     (ConsensusVersion::V12, 15),
     (ConsensusVersion::V13, 16),
     (ConsensusVersion::V14, 17),
+    (ConsensusVersion::V15, 18),
 ];
 
 #[cfg(any(test, feature = "test", feature = "test_consensus_heights"))]
@@ -340,6 +349,11 @@ mod tests {
             assert!(*version > previous_version);
             previous_version = *version;
         }
+        let mut previous_version = N::ANCHOR_TIMES.first().unwrap().0;
+        for (version, _) in N::ANCHOR_TIMES.iter().skip(1) {
+            assert!(*version > previous_version);
+            previous_version = *version;
+        }
     }
 
     /// Ensure that consensus *heights* are unique and incrementing.
@@ -393,6 +407,10 @@ mod tests {
             // Double-check that consensus_config_value returns the correct value.
             assert_eq!(consensus_config_value!(N, MAX_WRITES, height).unwrap(), *value);
         }
+        for (version, value) in N::ANCHOR_TIMES.iter() {
+            let height = N::CONSENSUS_VERSION_HEIGHTS().iter().find(|(c_version, _)| c_version == version).unwrap().1;
+            assert_eq!(consensus_config_value!(N, ANCHOR_TIMES, height).unwrap(), *value);
+        }
     }
 
     /// Ensure that consensus_config_value returns a valid value for all consensus versions.
@@ -404,6 +422,7 @@ mod tests {
             assert!(consensus_config_value!(N, MAX_PROGRAM_SIZE, *height).is_some());
             assert!(consensus_config_value!(N, MAX_TRANSACTION_SIZE, *height).is_some());
             assert!(consensus_config_value!(N, MAX_WRITES, *height).is_some());
+            assert!(consensus_config_value!(N, ANCHOR_TIMES, *height).is_some());
         }
     }
 
@@ -453,6 +472,7 @@ mod tests {
         let _ = [N1::MAX_PROGRAM_SIZE, N2::MAX_PROGRAM_SIZE, N3::MAX_PROGRAM_SIZE];
         let _ = [N1::MAX_TRANSACTION_SIZE, N2::MAX_TRANSACTION_SIZE, N3::MAX_TRANSACTION_SIZE];
         let _ = [N1::MAX_WRITES, N2::MAX_WRITES, N3::MAX_WRITES];
+        let _ = [N1::ANCHOR_TIMES, N2::ANCHOR_TIMES, N3::ANCHOR_TIMES];
     }
 
     /// Ensure that `LATEST_MAX_*` functions return valid values without panicking.
@@ -526,5 +546,12 @@ mod tests {
         let invalid_bytes = u16::MAX.to_bytes_le().unwrap();
         let result = ConsensusVersion::from_bytes_le(&invalid_bytes);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_reward_anchor_time() {
+        assert_eq!(MainnetV0::REWARD_ANCHOR_TIME, MainnetV0::ANCHOR_TIMES.first().unwrap().1);
+        assert_eq!(TestnetV0::REWARD_ANCHOR_TIME, TestnetV0::ANCHOR_TIMES.first().unwrap().1);
+        assert_eq!(CanaryV0::REWARD_ANCHOR_TIME, CanaryV0::ANCHOR_TIMES.first().unwrap().1);
     }
 }

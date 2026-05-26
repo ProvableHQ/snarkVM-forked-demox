@@ -15,8 +15,6 @@
 
 use super::*;
 
-use super::add_and_test;
-
 // Tests related to the cast variant that casts a static record (whether external or not) into a dynamic one.
 
 // Tests that `circuit::DynamicRecord::from_record` is consistent with `console::DynamicRecord::from_record`.
@@ -45,7 +43,7 @@ fn test_circuit_dynamic_record_from_record() {
         let reported_on_year = format!("{}u16", <u16 as Uniform>::rand(&mut rng));
         let reported_on_privacy = if Uniform::rand(&mut rng) { "public" } else { "private" };
         // Cap the array length to stay within MAX_DATA_SIZE_IN_FIELDS when serialized.
-        let jewels_len = rng.gen_range(1..512);
+        let jewels_len = rng.random_range(1..512);
         let jewel_privacy = if Uniform::rand(&mut rng) { "public" } else { "private" };
         let jewel_iter = (0..jewels_len)
             .map(|_| {
@@ -60,7 +58,7 @@ fn test_circuit_dynamic_record_from_record() {
             .collect::<Vec<_>>();
         let jewels = jewel_iter.join(", ");
         let nonce = <Group<CurrentNetwork> as Uniform>::rand(&mut rng);
-        let version = format!("{}u8", rng.gen_range(0..=1));
+        let version = format!("{}u8", rng.random_range(0..=1));
 
         let record_str = format!(
             r"{{
@@ -136,6 +134,9 @@ fn test_cast_simple() {
 
             output r3 as plant.record;
 
+        function consume_plant:
+            input r0 as plant.record;
+
         constructor:
             assert.eq true true;
         ";
@@ -190,6 +191,9 @@ fn test_cast_simple() {
             cast r0 into r1 as dynamic.record;
             get.record.dynamic r1.age_in_years into r2 as u16;
 
+            // Needed to pass the record-existence check (r0 must materialize)
+            call garden_center.aleo/consume_plant r0;
+
             output r2 as u16.public;
 
         constructor:
@@ -207,11 +211,11 @@ fn test_cast_simple() {
     // Deploy the programs.
     println!("Deploying program garden_center.aleo...");
     let transaction_a = vm.deploy(&caller_private_key, &program_a, None, 0, None, &mut rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[transaction_a], &mut rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[transaction_a], &mut rng);
 
     println!("Deploying program hatchery.aleo...");
     let transaction_b = vm.deploy(&caller_private_key, &program_b, None, 0, None, &mut rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[transaction_b], &mut rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[transaction_b], &mut rng);
 
     let fish_record_data = [("9183u32", "3u16"), ("221u32", "2u16")];
 
@@ -222,21 +226,13 @@ fn test_cast_simple() {
         .map(|(i, (species_id, age_in_years))| {
             println!("Calling hatchery.aleo/import_fish ({i})...");
 
+            let inputs = [
+                Value::from_str(&caller_address.to_string()).unwrap(),
+                Value::from_str(species_id).unwrap(),
+                Value::from_str(age_in_years).unwrap(),
+            ];
             let transaction_import = vm
-                .execute(
-                    &caller_private_key,
-                    ("hatchery.aleo", "import_fish"),
-                    [
-                        Value::from_str(&caller_address.to_string()).unwrap(),
-                        Value::from_str(species_id).unwrap(),
-                        Value::from_str(age_in_years).unwrap(),
-                    ]
-                    .into_iter(),
-                    None,
-                    0,
-                    None,
-                    &mut rng,
-                )
+                .execute(&caller_private_key, ("hatchery.aleo", "import_fish"), inputs.iter(), None, 0, None, &mut rng)
                 .unwrap();
 
             let record = match &transaction_import.transitions().next().unwrap().outputs()[0] {
@@ -246,7 +242,14 @@ fn test_cast_simple() {
                 _ => panic!("Expected output record is not a record"),
             };
 
-            add_and_test(&vm, &caller_private_key, &[transaction_import], &mut rng);
+            add_and_test_with_costs(
+                &vm,
+                &caller_private_key,
+                &caller_address,
+                Some(&[&inputs]),
+                &[transaction_import],
+                &mut rng,
+            );
 
             record
         })
@@ -254,11 +257,13 @@ fn test_cast_simple() {
 
     /*** Case 1: Correct cast of non-external record + dynamic.get.record ***/
     println!("Calling hatchery.aleo/get_age_in_years_by_casting...");
+    let fish_record = fish_records.pop().unwrap();
+    let inputs_get_age = [Value::<CurrentNetwork>::Record(fish_record)];
     let transaction_get_age = vm
         .execute(
             &caller_private_key,
             ("hatchery.aleo", "get_age_in_years_by_casting"),
-            [Value::<CurrentNetwork>::Record(fish_records.pop().unwrap())].into_iter(),
+            inputs_get_age.iter(),
             None,
             0,
             None,
@@ -274,7 +279,14 @@ fn test_cast_simple() {
         _ => panic!("Expected output plaintext is not a plaintext"),
     }
 
-    add_and_test(&vm, &caller_private_key, &[transaction_get_age], &mut rng);
+    add_and_test_with_costs(
+        &vm,
+        &caller_private_key,
+        &caller_address,
+        Some(&[&inputs_get_age]),
+        &[transaction_get_age],
+        &mut rng,
+    );
 
     /*********** Case 2: Incorrect cast usage (double consumption) ***********/
     println!("Calling hatchery.aleo/get_age_in_years_stat_caller...");
@@ -300,21 +312,13 @@ fn test_cast_simple() {
     /****** Case 3: Correct cast of external record + static.get.record ******/
     println!("Calling garden_center.aleo/sow...");
 
+    let inputs_sow = [
+        Value::from_str(&caller_address.to_string()).unwrap(),
+        Value::from_str("12u32").unwrap(),
+        Value::from_str("true").unwrap(),
+    ];
     let transaction_sow = vm
-        .execute(
-            &caller_private_key,
-            ("garden_center.aleo", "sow"),
-            [
-                Value::from_str(&caller_address.to_string()).unwrap(),
-                Value::from_str("12u32").unwrap(),
-                Value::from_str("true").unwrap(),
-            ]
-            .into_iter(),
-            None,
-            0,
-            None,
-            &mut rng,
-        )
+        .execute(&caller_private_key, ("garden_center.aleo", "sow"), inputs_sow.iter(), None, 0, None, &mut rng)
         .unwrap();
 
     let plant_record = match &transaction_sow.transitions().next().unwrap().outputs()[0] {
@@ -324,14 +328,22 @@ fn test_cast_simple() {
         _ => panic!("Expected output record is not a record"),
     };
 
-    add_and_test(&vm, &caller_private_key, &[transaction_sow], &mut rng);
+    add_and_test_with_costs(
+        &vm,
+        &caller_private_key,
+        &caller_address,
+        Some(&[&inputs_sow]),
+        &[transaction_sow],
+        &mut rng,
+    );
 
     println!("Calling hatchery.aleo/get_plant_age_by_casting...");
+    let inputs_get_plant_age = [Value::<CurrentNetwork>::Record(plant_record)];
     let transaction_get_plant_age = vm
         .execute(
             &caller_private_key,
             ("hatchery.aleo", "get_plant_age_by_casting"),
-            [Value::<CurrentNetwork>::Record(plant_record)].into_iter(),
+            inputs_get_plant_age.iter(),
             None,
             0,
             None,
@@ -340,12 +352,19 @@ fn test_cast_simple() {
         .unwrap();
 
     let expected_output = Plaintext::from_str("0u16").unwrap();
-    match &transaction_get_plant_age.transitions().next().unwrap().outputs()[0] {
+    match &transaction_get_plant_age.transitions().nth(1).unwrap().outputs()[0] {
         Output::Public(_, Some(plaintext)) => {
             assert_eq!(*plaintext, expected_output);
         }
         _ => panic!("Expected output plaintext is not a plaintext"),
     }
 
-    add_and_test(&vm, &caller_private_key, &[transaction_get_plant_age], &mut rng);
+    add_and_test_with_costs(
+        &vm,
+        &caller_private_key,
+        &caller_address,
+        Some(&[&inputs_get_plant_age]),
+        &[transaction_get_plant_age],
+        &mut rng,
+    );
 }

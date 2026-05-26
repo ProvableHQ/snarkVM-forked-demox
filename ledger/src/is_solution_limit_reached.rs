@@ -127,9 +127,6 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     }
 
     /// Returns `true` if the given prover address has reached their solution limit for the current epoch.
-    ///
-    /// # Locking
-    /// This function may deadlock if called while holding a write lock to the current block.
     pub fn is_solution_limit_reached(&self, prover_address: &Address<N>, additional_solutions_in_block: u64) -> bool {
         self.is_solution_limit_reached_at_timestamp(
             prover_address,
@@ -160,9 +157,9 @@ mod tests {
                 let (next_time, _) = window[1];
 
                 // Choose a time strictly between the steps.
-                let timestamp = rng.gen_range(prev_time..next_time);
+                let timestamp = rng.random_range(prev_time..next_time);
                 // Generate a random prover stake.
-                let prover_stake: u64 = rng.r#gen();
+                let prover_stake: u64 = rng.random();
                 let expected_num_solutions = prover_stake / stake_per_solution;
 
                 assert_eq!(
@@ -189,7 +186,10 @@ mod tests {
         // Check that before enforcement, the number of solutions is unrestricted for any prover stake.
         for _ in 0..ITERATIONS {
             assert_eq!(
-                maximum_allowed_solutions_per_epoch::<CurrentNetwork>(rng.r#gen(), rng.gen_range(0..time_before_first)),
+                maximum_allowed_solutions_per_epoch::<CurrentNetwork>(
+                    rng.random(),
+                    rng.random_range(0..time_before_first)
+                ),
                 u64::MAX
             );
         }
@@ -203,8 +203,8 @@ mod tests {
 
         // Check that all timestamps after the last one are treated as the last one.
         for _ in 0..ITERATIONS {
-            let prover_stake: u64 = rng.r#gen();
-            let time_after_last = rng.gen_range(last_timestamp..i64::MAX);
+            let prover_stake: u64 = rng.random();
+            let time_after_last = rng.random_range(last_timestamp..i64::MAX);
             let expected_num_solutions = prover_stake / stake_per_solution;
 
             assert_eq!(
@@ -220,7 +220,7 @@ mod tests {
         let stake_requirements = stake_requirements_per_solution::<CurrentNetwork>();
         // Check that the maximum allowed solutions per epoch is correct for each timestamp in the table.
         for &(timestamp, stake_per_solution) in stake_requirements.iter() {
-            let expected_num_solutions = rng.gen_range(1..=100);
+            let expected_num_solutions = rng.random_range(1..=100);
             let prover_stake = expected_num_solutions * stake_per_solution;
 
             assert_eq!(

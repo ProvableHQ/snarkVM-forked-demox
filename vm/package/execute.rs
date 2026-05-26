@@ -15,6 +15,7 @@
 
 use super::*;
 
+use crate::circuit::prelude::IndexMap;
 use anyhow::Context;
 
 impl<N: Network> Package<N> {
@@ -123,6 +124,18 @@ impl<N: Network> Package<N> {
         };
         // Prepare the trace.
         trace.prepare(&query)?;
+
+        // From ConsensusVersion::V15 onwards, ensure that, for each non-closure
+        // function in the execution, all DynamicRecords and ExternalRecords
+        // received as inputs or from callees exist on the ledger at the end of
+        // the execution (whether spent or not).
+        if consensus_version >= ConsensusVersion::V15 {
+            let mut execution_stacks = IndexMap::new();
+            for transition in trace.transitions().iter() {
+                execution_stacks.insert(*transition.program_id(), process.get_stack(transition.program_id())?);
+            }
+            Process::ensure_records_exist(trace.transitions().iter(), trace.call_graph(), &execution_stacks)?;
+        }
 
         // Prove the execution.
         let execution = trace.prove_execution::<A, R>(&locator.to_string(), varuna_version, rng)?;

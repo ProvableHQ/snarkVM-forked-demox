@@ -70,6 +70,7 @@ use console::{
     types::{Field, Group},
 };
 use snarkvm_ledger_block::{Deployment, Transaction, Transition};
+use snarkvm_synthesizer_error::*;
 use snarkvm_synthesizer_program::{
     CallOperator,
     Closure,
@@ -90,7 +91,7 @@ use indexmap::IndexMap;
 use locktick::parking_lot::RwLock;
 #[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
-use rand::{CryptoRng, Rng, SeedableRng, rngs::StdRng};
+use rand::{CryptoRng, RngExt as Rng, SeedableRng, rngs::StdRng};
 use std::{
     cell::OnceCell,
     sync::{Arc, Weak},
@@ -111,6 +112,8 @@ pub type Translations<N> = Arc<RwLock<Vec<Vec<(TranslationAssignment<N>, Proving
 pub enum CallStack<N: Network> {
     /// Authorize an `Execute` transaction.
     Authorize(Vec<Request<N>>, Option<PrivateKey<N>>, Authorization<N>),
+    /// Mock an evaluation for cost estimation.
+    AuthorizeMocked(Vec<Request<N>>, Address<N>, Authorization<N>),
     /// Synthesize a function circuit before a `Deploy` transaction.
     Synthesize(Vec<Request<N>>, PrivateKey<N>, Authorization<N>),
     /// Validate a `Deploy` transaction's function circuit.
@@ -128,6 +131,7 @@ impl<N: Network> CallStack<N> {
     fn type_as_string(&self) -> String {
         match self {
             CallStack::Authorize(..) => "Authorize".to_string(),
+            CallStack::AuthorizeMocked(..) => "Mock".to_string(),
             CallStack::Synthesize(..) => "Synthesize".to_string(),
             CallStack::CheckDeployment(..) => "CheckDeployment".to_string(),
             CallStack::Evaluate(..) => "Evaluate".to_string(),
@@ -160,6 +164,9 @@ impl<N: Network> CallStack<N> {
             CallStack::Authorize(requests, private_key, authorization) => {
                 CallStack::Authorize(requests.clone(), *private_key, authorization.replicate())
             }
+            CallStack::AuthorizeMocked(requests, address, authorization) => {
+                CallStack::AuthorizeMocked(requests.clone(), *address, authorization.replicate())
+            }
             CallStack::Synthesize(requests, private_key, authorization) => {
                 CallStack::Synthesize(requests.clone(), *private_key, authorization.replicate())
             }
@@ -188,6 +195,7 @@ impl<N: Network> CallStack<N> {
     pub fn push(&mut self, request: Request<N>) -> Result<()> {
         match self {
             CallStack::Authorize(requests, ..)
+            | CallStack::AuthorizeMocked(requests, ..)
             | CallStack::Synthesize(requests, ..)
             | CallStack::CheckDeployment(requests, ..)
             | CallStack::PackageRun(requests, ..) => {
@@ -210,6 +218,7 @@ impl<N: Network> CallStack<N> {
     pub fn pop(&mut self) -> Result<Request<N>> {
         match self {
             CallStack::Authorize(requests, ..)
+            | CallStack::AuthorizeMocked(requests, ..)
             | CallStack::Synthesize(requests, ..)
             | CallStack::CheckDeployment(requests, ..)
             | CallStack::PackageRun(requests, ..) => {
@@ -224,6 +233,7 @@ impl<N: Network> CallStack<N> {
     pub fn peek(&self) -> Result<Request<N>> {
         match self {
             CallStack::Authorize(requests, ..)
+            | CallStack::AuthorizeMocked(requests, ..)
             | CallStack::Synthesize(requests, ..)
             | CallStack::CheckDeployment(requests, ..)
             | CallStack::PackageRun(requests, ..) => {
@@ -261,6 +271,8 @@ pub struct Stack<N: Network> {
     program_checksum: [U8<N>; 32],
     /// The program edition.
     program_edition: U16<N>,
+    /// The number of amendments applied to the current program edition.
+    program_amendment_count: u64,
     /// The program owner.
     program_owner: Option<Address<N>>,
 }
@@ -365,6 +377,13 @@ impl<N: Network> Stack<N> {
                 // Add the finalize name and finalize types to the stack.
                 finalize_types.insert(*name, types);
             }
+        }
+
+        // Type-check every view function. The result is not cached on the stack here;
+        // it is recomputed by the view evaluator. This is acceptable for the prototype
+        // and ensures that ill-typed views are rejected at deploy time.
+        for view in self.program.views().values() {
+            let _ = FinalizeTypes::from_view(self, view)?;
         }
 
         // Drop the locks since the types have been initialized.
