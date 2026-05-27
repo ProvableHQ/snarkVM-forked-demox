@@ -3684,6 +3684,7 @@ dependencies = [
  "aleo-std-storage",
  "anyhow",
  "bincode",
+ "cfg-if",
  "criterion",
  "indexmap 2.14.0",
  "locktick",
