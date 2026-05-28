@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm"
-version = "4.6.0"
+version = "4.6.4"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -188,12 +188,12 @@ test_consensus_heights = [ "snarkvm-console/test_consensus_heights", "snarkvm-sy
 
 [workspace.dependencies.snarkvm-algorithms]
 path = "algorithms"
-version = "=4.6.0"
+version = "=4.6.4"
 default-features = false
 
 [workspace.dependencies.snarkvm-algorithms-cuda]
 path = "algorithms/cuda"
-version = "=4.6.0"
+version = "=4.6.4"
 
 [workspace.dependencies.snarkvm-circuit]
 path = "circuit"
@@ -217,12 +217,12 @@ version = "=4.6.4"
 
 [workspace.dependencies.snarkvm-circuit-environment-witness]
 path = "circuit/environment/witness"
-version = "=4.6.0"
+version = "=4.6.4"
 default-features = false
 
 [workspace.dependencies.snarkvm-circuit-network]
 path = "circuit/network"
-version = "=4.6.0"
+version = "=4.6.4"
 
 [workspace.dependencies.snarkvm-circuit-program]
 path = "circuit/program"
@@ -254,12 +254,12 @@ version = "=4.6.4"
 
 [workspace.dependencies.snarkvm-console]
 path = "console"
-version = "=4.6.0"
+version = "=4.6.4"
 default-features = false
 
 [workspace.dependencies.snarkvm-console-account]
 path = "console/account"
-version = "=4.6.0"
+version = "=4.6.4"
 
 [workspace.dependencies.snarkvm-console-algorithms]
 path = "console/algorithms"
@@ -283,12 +283,12 @@ version = "=4.6.4"
 
 [workspace.dependencies.snarkvm-console-types]
 path = "console/types"
-version = "=4.6.0"
+version = "=4.6.4"
 default-features = false
 
 [workspace.dependencies.snarkvm-console-types-address]
 path = "console/types/address"
-version = "=4.6.0"
+version = "=4.6.4"
 
 [workspace.dependencies.snarkvm-console-types-boolean]
 path = "console/types/boolean"
@@ -324,17 +324,17 @@ version = "=4.6.4"
 
 [workspace.dependencies.snarkvm-curves]
 path = "curves"
-version = "=4.6.0"
+version = "=4.6.4"
 default-features = false
 
 [workspace.dependencies.snarkvm-fields]
 path = "fields"
-version = "=4.6.0"
+version = "=4.6.4"
 default-features = false
 
 [workspace.dependencies.snarkvm-ledger]
 path = "ledger"
-version = "=4.6.0"
+version = "=4.6.4"
 
 [workspace.dependencies.snarkvm-ledger-authority]
 path = "ledger/authority"
@@ -346,12 +346,12 @@ version = "=4.6.4"
 
 [workspace.dependencies.snarkvm-ledger-committee]
 path = "ledger/committee"
-version = "=4.6.0"
+version = "=4.6.4"
 default-features = false
 
 [workspace.dependencies.snarkvm-ledger-narwhal]
 path = "ledger/narwhal"
-version = "=4.6.0"
+version = "=4.6.4"
 
 [workspace.dependencies.snarkvm-ledger-narwhal-data]
 path = "ledger/narwhal/data"
@@ -387,20 +387,20 @@ version = "=4.6.4"
 
 [workspace.dependencies.snarkvm-ledger-query]
 path = "ledger/query"
-version = "=4.6.0"
+version = "=4.6.4"
 default-features = false
 
 [workspace.dependencies.snarkvm-ledger-store]
 path = "ledger/store"
-version = "=4.6.0"
+version = "=4.6.4"
 
 [workspace.dependencies.snarkvm-slipstream-plugin-interface]
 path = "plugins/slipstream_plugin_interface"
-version = "=4.6.0"
+version = "=4.6.4"
 
 [workspace.dependencies.snarkvm-slipstream-plugin-manager]
 path = "plugins/slipstream_plugin_manager"
-version = "=4.6.0"
+version = "=4.6.4"
 
 [workspace.dependencies.snarkvm-ledger-test-helpers]
 path = "ledger/test-helpers"
@@ -416,7 +416,7 @@ version = "=4.6.4"
 
 [workspace.dependencies.snarkvm-synthesizer]
 path = "synthesizer"
-version = "=4.6.0"
+version = "=4.6.4"
 
 [workspace.dependencies.snarkvm-synthesizer-error]
 path = "synthesizer/error"
@@ -424,7 +424,7 @@ version = "=4.6.4"
 
 [workspace.dependencies.snarkvm-synthesizer-process]
 path = "synthesizer/process"
-version = "=4.6.0"
+version = "=4.6.4"
 
 [workspace.dependencies.snarkvm-synthesizer-program]
 path = "synthesizer/program"
@@ -444,7 +444,7 @@ version = "=4.6.4"
 
 [workspace.dependencies.snarkvm-wasm]
 path = "wasm"
-version = "=4.6.0"
+version = "=4.6.4"
 
 [workspace.dependencies.aleo-std]
 version = "1.0.1"
