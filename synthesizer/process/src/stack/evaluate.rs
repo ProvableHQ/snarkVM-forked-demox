@@ -139,6 +139,7 @@ impl<N: Network> Stack<N> {
         let (request, call_stack) =
             match &mut call_stack {
                 CallStack::Authorize(..) => (call_stack.pop()?, call_stack),
+                CallStack::AuthorizeMocked(..) => (call_stack.pop()?, call_stack),
                 CallStack::Evaluate(authorization) => (authorization.next()?, call_stack),
                 // If the evaluation is performed in the `Execute` mode, create a new `Evaluate` mode.
                 // This is done to ensure that evaluation during execution is performed consistently.
@@ -151,7 +152,7 @@ impl<N: Network> Stack<N> {
                     (request, call_stack)
                 }
                 _ => return Err(anyhow!(
-                    "Illegal operation: call stack must be `Authorize`, `Evaluate` or `Execute` in `evaluate_function`."
+                    "Illegal operation: call stack must be `Authorize`, `Evaluate`, `Execute` or `AuthorizeMocked` in `evaluate_function`."
                 )
                 .into()),
             };
@@ -192,6 +193,14 @@ impl<N: Network> Stack<N> {
         }
         lap!(timer, "Perform input checks");
 
+        // Ensure the request is well-formed (unless it has been mocked).
+        if !matches!(call_stack, CallStack::AuthorizeMocked(..))
+            && !request.verify(&function.input_types(), is_root, program_checksum)
+        {
+            return Err(anyhow!("[Evaluate] Request is invalid").into());
+        }
+        lap!(timer, "Verify the request");
+
         // Initialize the registers.
         let mut registers = Registers::<N, A>::new(call_stack, self.get_register_types(function.name())?.clone());
         // Set the transition signer.
@@ -207,12 +216,6 @@ impl<N: Network> Stack<N> {
             registers.set_root_tvk(tvk);
         }
         lap!(timer, "Initialize the registers");
-
-        // Ensure the request is well-formed.
-        if !request.verify(&function.input_types(), is_root, program_checksum) {
-            return Err(anyhow!("[Evaluate] Request is invalid").into());
-        }
-        lap!(timer, "Verify the request");
 
         // Store the inputs.
         function.inputs().iter().map(|i| i.register()).zip_eq(inputs).try_for_each(|(register, input)| {
@@ -321,13 +324,21 @@ impl<N: Network> Stack<N> {
         )?;
         finish!(timer);
 
-        // If the circuit is in `Authorize` mode, then save the transition.
+        // If the circuit is in `Authorize` or `AuthorizeMocked` mode, then save the transition.
         if let CallStack::Authorize(_, _, authorization) = registers.call_stack_ref() {
             // Construct the transition.
             let transition = Transition::from(&request, &response, &function.output_types(), &output_registers)?;
             // Add the transition to the authorization.
             authorization.insert_transition(transition)?;
             lap!(timer, "Save the transition");
+        }
+        if let CallStack::AuthorizeMocked(_, _, authorization) = registers.call_stack_ref() {
+            // Construct the transition without checking correctness of input IDs.
+            let transition =
+                Transition::from_unchecked(&request, &response, &function.output_types(), &output_registers)?;
+            // Add the transition to the authorization.
+            authorization.insert_transition(transition)?;
+            lap!(timer, "Save the mocked transition");
         }
 
         Ok(response)

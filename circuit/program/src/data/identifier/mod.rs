@@ -176,7 +176,7 @@ pub(crate) mod tests {
 
     use anyhow::{Result, bail};
     use core::str::FromStr;
-    use rand::distributions::Alphanumeric;
+    use rand::distr::Alphanumeric;
 
     /// Samples a random identifier.
     pub(crate) fn sample_console_identifier<A: Aleo>() -> Result<console::Identifier<A::Network>> {

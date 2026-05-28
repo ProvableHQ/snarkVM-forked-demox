@@ -1,7 +1,7 @@
 [package]
 name = "snarkvm-ledger-query"
-version = "4.6.4"
-authors = [ "The Aleo Team <hello@aleo.org>" ]
+version = "4.6.0"
+authors = ["The Aleo Team <hello@aleo.org>"]
 description = "A query for a decentralized virtual machine"
 homepage = "https://aleo.org"
 repository = "https://github.com/ProvableHQ/snarkVM"

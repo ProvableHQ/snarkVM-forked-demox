@@ -70,9 +70,12 @@ use console::{
     types::{Field, Group},
 };
 use snarkvm_ledger_block::{Deployment, Transaction, Transition};
+use snarkvm_synthesizer_error::*;
 use snarkvm_synthesizer_program::{
     CallOperator,
     Closure,
+    FinalizeGlobalState,
+    FinalizeStoreTrait,
     Function,
     Instruction,
     Operand,
@@ -90,7 +93,7 @@ use indexmap::IndexMap;
 use locktick::parking_lot::RwLock;
 #[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
-use rand::{CryptoRng, Rng, SeedableRng, rngs::StdRng};
+use rand::{CryptoRng, RngExt as Rng, SeedableRng, rngs::StdRng};
 use std::{
     cell::OnceCell,
     sync::{Arc, Weak},
@@ -111,6 +114,8 @@ pub type Translations<N> = Arc<RwLock<Vec<Vec<(TranslationAssignment<N>, Proving
 pub enum CallStack<N: Network> {
     /// Authorize an `Execute` transaction.
     Authorize(Vec<Request<N>>, Option<PrivateKey<N>>, Authorization<N>),
+    /// Mock an evaluation for cost estimation.
+    AuthorizeMocked(Vec<Request<N>>, Address<N>, Authorization<N>),
     /// Synthesize a function circuit before a `Deploy` transaction.
     Synthesize(Vec<Request<N>>, PrivateKey<N>, Authorization<N>),
     /// Validate a `Deploy` transaction's function circuit.
@@ -128,6 +133,7 @@ impl<N: Network> CallStack<N> {
     fn type_as_string(&self) -> String {
         match self {
             CallStack::Authorize(..) => "Authorize".to_string(),
+            CallStack::AuthorizeMocked(..) => "Mock".to_string(),
             CallStack::Synthesize(..) => "Synthesize".to_string(),
             CallStack::CheckDeployment(..) => "CheckDeployment".to_string(),
             CallStack::Evaluate(..) => "Evaluate".to_string(),
@@ -160,6 +166,9 @@ impl<N: Network> CallStack<N> {
             CallStack::Authorize(requests, private_key, authorization) => {
                 CallStack::Authorize(requests.clone(), *private_key, authorization.replicate())
             }
+            CallStack::AuthorizeMocked(requests, address, authorization) => {
+                CallStack::AuthorizeMocked(requests.clone(), *address, authorization.replicate())
+            }
             CallStack::Synthesize(requests, private_key, authorization) => {
                 CallStack::Synthesize(requests.clone(), *private_key, authorization.replicate())
             }
@@ -188,6 +197,7 @@ impl<N: Network> CallStack<N> {
     pub fn push(&mut self, request: Request<N>) -> Result<()> {
         match self {
             CallStack::Authorize(requests, ..)
+            | CallStack::AuthorizeMocked(requests, ..)
             | CallStack::Synthesize(requests, ..)
             | CallStack::CheckDeployment(requests, ..)
             | CallStack::PackageRun(requests, ..) => {
@@ -210,6 +220,7 @@ impl<N: Network> CallStack<N> {
     pub fn pop(&mut self) -> Result<Request<N>> {
         match self {
             CallStack::Authorize(requests, ..)
+            | CallStack::AuthorizeMocked(requests, ..)
             | CallStack::Synthesize(requests, ..)
             | CallStack::CheckDeployment(requests, ..)
             | CallStack::PackageRun(requests, ..) => {
@@ -224,6 +235,7 @@ impl<N: Network> CallStack<N> {
     pub fn peek(&self) -> Result<Request<N>> {
         match self {
             CallStack::Authorize(requests, ..)
+            | CallStack::AuthorizeMocked(requests, ..)
             | CallStack::Synthesize(requests, ..)
             | CallStack::CheckDeployment(requests, ..)
             | CallStack::PackageRun(requests, ..) => {
@@ -247,6 +259,8 @@ pub struct Stack<N: Network> {
     register_types: Arc<RwLock<IndexMap<Identifier<N>, RegisterTypes<N>>>>,
     /// The mapping of finalize names to their register types.
     finalize_types: Arc<RwLock<IndexMap<Identifier<N>, FinalizeTypes<N>>>>,
+    /// The mapping of view function names to their register types.
+    view_types: Arc<RwLock<IndexMap<Identifier<N>, FinalizeTypes<N>>>>,
     /// The universal SRS.
     universal_srs: UniversalSRS<N>,
     /// The mapping of function name or record name to proving key.
@@ -261,6 +275,8 @@ pub struct Stack<N: Network> {
     program_checksum: [U8<N>; 32],
     /// The program edition.
     program_edition: U16<N>,
+    /// The number of amendments applied to the current program edition.
+    program_amendment_count: u64,
     /// The program owner.
     program_owner: Option<Address<N>>,
 }
@@ -307,15 +323,17 @@ impl<N: Network> Stack<N> {
 
     /// Initializes and checks the register state and well-formedness of the stack, even if it has already been initialized.
     pub fn initialize_and_check(&self, process: &Process<N>) -> Result<()> {
-        // Acquire the locks for the constructor, register, and finalize types.
+        // Acquire the locks for the constructor, register, finalize, and view types.
         let mut constructor_types = self.constructor_types.write();
         let mut register_types = self.register_types.write();
         let mut finalize_types = self.finalize_types.write();
+        let mut view_types = self.view_types.write();
 
-        // Clear the existing constructor, closure, and function types.
+        // Clear the existing constructor, closure, function, and view types.
         constructor_types.take();
         register_types.clear();
         finalize_types.clear();
+        view_types.clear();
 
         // Add all the imports into the stack.
         for import in self.program.imports().keys() {
@@ -367,10 +385,21 @@ impl<N: Network> Stack<N> {
             }
         }
 
+        // Type-check every view function and cache the result. The cached types are read by
+        // both the external view path (`evaluate_view_at_height`) and the in-block call path
+        // when finalize calls a view, so we avoid recomputing them on every invocation.
+        for view in self.program.views().values() {
+            let name = view.name();
+            ensure!(!view_types.contains_key(name), "View '{name}' already exists");
+            let types = FinalizeTypes::from_view(self, view)?;
+            view_types.insert(*name, types);
+        }
+
         // Drop the locks since the types have been initialized.
         drop(constructor_types);
         drop(register_types);
         drop(finalize_types);
+        drop(view_types);
 
         // Check that the functions are valid.
         for function in self.program.functions().values() {
@@ -408,6 +437,15 @@ impl<N: Network> Stack<N> {
         match self.finalize_types.read().get(name) {
             Some(finalize_types) => Ok(finalize_types.clone()),
             None => bail!("Finalize types for '{name}' do not exist"),
+        }
+    }
+
+    /// Returns the register types for the given view function name.
+    #[inline]
+    pub fn get_view_types(&self, name: &Identifier<N>) -> Result<FinalizeTypes<N>> {
+        match self.view_types.read().get(name) {
+            Some(view_types) => Ok(view_types.clone()),
+            None => bail!("View types for '{name}' do not exist"),
         }
     }
 

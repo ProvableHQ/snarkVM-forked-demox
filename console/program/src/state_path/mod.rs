@@ -342,7 +342,7 @@ pub mod test_helpers {
         let transactions_path = transactions_tree.prove(0, &transaction_id.to_bits_le())?;
 
         // Prepare random header leaves.
-        let random_header_index = rng.gen_range(0..7);
+        let random_header_index = rng.random_range(0..7);
         let mut random_header_leaves = vec![Field::<N>::zero().to_bits_le(); (random_header_index + 1) as usize];
         let header_leaf = HeaderLeaf::<N>::new(random_header_index, *transactions_root);
         random_header_leaves[random_header_index as usize] = header_leaf.to_bits_le();

@@ -644,8 +644,8 @@ fn test_external_translation() {
     )
     .unwrap();
     let id_static = external_record_output_id;
-    let record_view_key = Uniform::rand(&mut rng);
-    let gamma = Uniform::rand(&mut rng);
+    let record_view_key = UniformExt::rand_option(&mut rng);
+    let gamma = UniformExt::rand_option(&mut rng);
 
     let translation_assignment = TranslationAssignment::<CurrentNetwork>::new(
         record_static,
