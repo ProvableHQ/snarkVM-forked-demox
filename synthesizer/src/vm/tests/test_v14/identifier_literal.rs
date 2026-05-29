@@ -372,6 +372,480 @@ finalize check_contains:
     vm.add_next_block(&block).unwrap();
 }
 
+/// Verifies that `is.eq`, `is.neq`, `assert.eq`, and `assert.neq` work with identifier literals
+/// in function scope.
+#[test]
+fn test_identifier_literal_equality_ops_in_function() {
+    let rng = &mut TestRng::default();
+
+    let private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+
+    // Initialize the VM at V14.
+    let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
+    let vm = crate::vm::test_helpers::sample_vm_at_height(v14_height, rng);
+
+    // Define a program exercising all equality/assertion ops on identifier literals.
+    let program = Program::<CurrentNetwork>::from_str(
+        r"
+program id_eq_fn.aleo;
+
+function test_is_eq:
+    input r0 as identifier.public;
+    input r1 as identifier.public;
+    is.eq r0 r1 into r2;
+    output r2 as boolean.public;
+
+function test_is_neq:
+    input r0 as identifier.public;
+    input r1 as identifier.public;
+    is.neq r0 r1 into r2;
+    output r2 as boolean.public;
+
+function test_assert_eq:
+    input r0 as identifier.public;
+    input r1 as identifier.public;
+    assert.eq r0 r1;
+
+function test_assert_neq:
+    input r0 as identifier.public;
+    input r1 as identifier.public;
+    assert.neq r0 r1;
+
+constructor:
+    assert.eq true true;
+    ",
+    )
+    .unwrap();
+
+    // Deploy the program.
+    let deployment = vm.deploy(&private_key, &program, None, 0, None, rng).unwrap();
+    let block = sample_next_block(&vm, &private_key, &[deployment], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    vm.add_next_block(&block).unwrap();
+
+    let hello = Value::<CurrentNetwork>::from_str("'hello'").unwrap();
+    let world = Value::<CurrentNetwork>::from_str("'world'").unwrap();
+    let program_id = program.id().to_string();
+
+    // is.eq with equal identifiers — should return true.
+    let tx = vm
+        .execute(
+            &private_key,
+            (&program_id, "test_is_eq"),
+            [hello.clone(), hello.clone()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    let block = sample_next_block(&vm, &private_key, &[tx], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    vm.add_next_block(&block).unwrap();
+
+    // is.eq with different identifiers — should return false.
+    let tx = vm
+        .execute(
+            &private_key,
+            (&program_id, "test_is_eq"),
+            [hello.clone(), world.clone()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    let block = sample_next_block(&vm, &private_key, &[tx], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    vm.add_next_block(&block).unwrap();
+
+    // is.neq with different identifiers — should return true.
+    let tx = vm
+        .execute(
+            &private_key,
+            (&program_id, "test_is_neq"),
+            [hello.clone(), world.clone()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    let block = sample_next_block(&vm, &private_key, &[tx], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    vm.add_next_block(&block).unwrap();
+
+    // is.neq with equal identifiers — should return false.
+    let tx = vm
+        .execute(
+            &private_key,
+            (&program_id, "test_is_neq"),
+            [hello.clone(), hello.clone()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    let block = sample_next_block(&vm, &private_key, &[tx], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    vm.add_next_block(&block).unwrap();
+
+    // assert.eq with equal identifiers — should succeed.
+    let tx = vm
+        .execute(
+            &private_key,
+            (&program_id, "test_assert_eq"),
+            [hello.clone(), hello.clone()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    let block = sample_next_block(&vm, &private_key, &[tx], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    vm.add_next_block(&block).unwrap();
+
+    // assert.eq with different identifiers — execution should fail.
+    let result = vm.execute(
+        &private_key,
+        (&program_id, "test_assert_eq"),
+        [hello.clone(), world.clone()].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    );
+    assert!(result.is_err(), "assert.eq on different identifiers should fail");
+
+    // assert.neq with different identifiers — should succeed.
+    let tx = vm
+        .execute(
+            &private_key,
+            (&program_id, "test_assert_neq"),
+            [hello.clone(), world.clone()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    let block = sample_next_block(&vm, &private_key, &[tx], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    vm.add_next_block(&block).unwrap();
+
+    // assert.neq with equal identifiers — execution should fail.
+    let result = vm.execute(
+        &private_key,
+        (&program_id, "test_assert_neq"),
+        [hello.clone(), hello.clone()].into_iter(),
+        None,
+        0,
+        None,
+        rng,
+    );
+    assert!(result.is_err(), "assert.neq on equal identifiers should fail");
+}
+
+/// Verifies that `cast`, `is.eq`, `is.neq`, `assert.eq`, `assert.neq`, `serialize.bits`,
+/// `serialize.bits.raw`, `deserialize.bits`, and `deserialize.bits.raw` work with identifier
+/// literals in finalize scope.
+#[test]
+fn test_identifier_literal_ops_in_finalize() {
+    let rng = &mut TestRng::default();
+
+    let private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+
+    // Initialize the VM at V14.
+    let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
+    let vm = crate::vm::test_helpers::sample_vm_at_height(v14_height, rng);
+
+    // Define a program exercising identifier literal ops in finalize blocks.
+    let program = Program::<CurrentNetwork>::from_str(
+        r"
+program id_fin_ops.aleo;
+
+// Cast round-trip in finalize.
+function test_cast_finalize:
+    input r0 as identifier.public;
+    async test_cast_finalize r0 into r1;
+    output r1 as id_fin_ops.aleo/test_cast_finalize.future;
+finalize test_cast_finalize:
+    input r0 as identifier.public;
+    cast r0 into r1 as field;
+    cast r1 into r2 as identifier;
+    assert.eq r0 r2;
+
+// is.eq in finalize.
+function test_is_eq_finalize:
+    input r0 as identifier.public;
+    input r1 as identifier.public;
+    async test_is_eq_finalize r0 r1 into r2;
+    output r2 as id_fin_ops.aleo/test_is_eq_finalize.future;
+finalize test_is_eq_finalize:
+    input r0 as identifier.public;
+    input r1 as identifier.public;
+    is.eq r0 r1 into r2;
+    assert.eq r2 true;
+
+// is.neq in finalize.
+function test_is_neq_finalize:
+    input r0 as identifier.public;
+    input r1 as identifier.public;
+    async test_is_neq_finalize r0 r1 into r2;
+    output r2 as id_fin_ops.aleo/test_is_neq_finalize.future;
+finalize test_is_neq_finalize:
+    input r0 as identifier.public;
+    input r1 as identifier.public;
+    is.neq r0 r1 into r2;
+    assert.eq r2 true;
+
+// assert.eq in finalize.
+function test_assert_eq_finalize:
+    input r0 as identifier.public;
+    input r1 as identifier.public;
+    async test_assert_eq_finalize r0 r1 into r2;
+    output r2 as id_fin_ops.aleo/test_assert_eq_finalize.future;
+finalize test_assert_eq_finalize:
+    input r0 as identifier.public;
+    input r1 as identifier.public;
+    assert.eq r0 r1;
+
+// assert.neq in finalize.
+function test_assert_neq_finalize:
+    input r0 as identifier.public;
+    input r1 as identifier.public;
+    async test_assert_neq_finalize r0 r1 into r2;
+    output r2 as id_fin_ops.aleo/test_assert_neq_finalize.future;
+finalize test_assert_neq_finalize:
+    input r0 as identifier.public;
+    input r1 as identifier.public;
+    assert.neq r0 r1;
+
+// serialize.bits round-trip in finalize.
+function test_serialize_finalize:
+    input r0 as identifier.public;
+    async test_serialize_finalize r0 into r1;
+    output r1 as id_fin_ops.aleo/test_serialize_finalize.future;
+finalize test_serialize_finalize:
+    input r0 as identifier.public;
+    serialize.bits r0 (identifier) into r1 ([boolean; 274u32]);
+    deserialize.bits r1 ([boolean; 274u32]) into r2 (identifier);
+    assert.eq r0 r2;
+
+// serialize.bits.raw round-trip in finalize.
+function test_serialize_raw_finalize:
+    input r0 as identifier.public;
+    async test_serialize_raw_finalize r0 into r1;
+    output r1 as id_fin_ops.aleo/test_serialize_raw_finalize.future;
+finalize test_serialize_raw_finalize:
+    input r0 as identifier.public;
+    serialize.bits.raw r0 (identifier) into r1 ([boolean; 248u32]);
+    deserialize.bits.raw r1 ([boolean; 248u32]) into r2 (identifier);
+    assert.eq r0 r2;
+
+constructor:
+    assert.eq true true;
+    ",
+    )
+    .unwrap();
+
+    // Deploy the program.
+    let deployment = vm.deploy(&private_key, &program, None, 0, None, rng).unwrap();
+    let block = sample_next_block(&vm, &private_key, &[deployment], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    vm.add_next_block(&block).unwrap();
+
+    let hello = Value::<CurrentNetwork>::from_str("'hello'").unwrap();
+    let world = Value::<CurrentNetwork>::from_str("'world'").unwrap();
+    let program_id = program.id().to_string();
+
+    // Cast round-trip in finalize.
+    let tx = vm
+        .execute(&private_key, (&program_id, "test_cast_finalize"), [hello.clone()].into_iter(), None, 0, None, rng)
+        .unwrap();
+    let block = sample_next_block(&vm, &private_key, &[tx], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    vm.add_next_block(&block).unwrap();
+
+    // is.eq in finalize with equal identifiers.
+    let tx = vm
+        .execute(
+            &private_key,
+            (&program_id, "test_is_eq_finalize"),
+            [hello.clone(), hello.clone()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    let block = sample_next_block(&vm, &private_key, &[tx], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    vm.add_next_block(&block).unwrap();
+
+    // is.neq in finalize with different identifiers.
+    let tx = vm
+        .execute(
+            &private_key,
+            (&program_id, "test_is_neq_finalize"),
+            [hello.clone(), world.clone()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    let block = sample_next_block(&vm, &private_key, &[tx], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    vm.add_next_block(&block).unwrap();
+
+    // assert.eq in finalize with equal identifiers.
+    let tx = vm
+        .execute(
+            &private_key,
+            (&program_id, "test_assert_eq_finalize"),
+            [hello.clone(), hello.clone()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    let block = sample_next_block(&vm, &private_key, &[tx], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    vm.add_next_block(&block).unwrap();
+
+    // assert.neq in finalize with different identifiers.
+    let tx = vm
+        .execute(
+            &private_key,
+            (&program_id, "test_assert_neq_finalize"),
+            [hello.clone(), world.clone()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    let block = sample_next_block(&vm, &private_key, &[tx], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    vm.add_next_block(&block).unwrap();
+
+    // serialize.bits round-trip in finalize.
+    let tx = vm
+        .execute(
+            &private_key,
+            (&program_id, "test_serialize_finalize"),
+            [hello.clone()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    let block = sample_next_block(&vm, &private_key, &[tx], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    vm.add_next_block(&block).unwrap();
+
+    // serialize.bits.raw round-trip in finalize.
+    let tx = vm
+        .execute(
+            &private_key,
+            (&program_id, "test_serialize_raw_finalize"),
+            [hello.clone()].into_iter(),
+            None,
+            0,
+            None,
+            rng,
+        )
+        .unwrap();
+    let block = sample_next_block(&vm, &private_key, &[tx], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    vm.add_next_block(&block).unwrap();
+}
+
+/// Verifies that ternary operations on identifier literals are rejected in function scope.
+/// Ternary is not defined for the Identifier type, so deployment should fail.
+#[test]
+fn test_identifier_literal_ternary_rejected_in_function() {
+    let rng = &mut TestRng::default();
+
+    let private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+
+    // Initialize the VM at V14.
+    let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
+    let vm = crate::vm::test_helpers::sample_vm_at_height(v14_height, rng);
+
+    // Define a program that uses ternary on identifier literals in a function.
+    let program = Program::<CurrentNetwork>::from_str(
+        r"
+program ternary_id_fn.aleo;
+
+function test_ternary:
+    input r0 as boolean.public;
+    input r1 as identifier.public;
+    input r2 as identifier.public;
+    ternary r0 r1 r2 into r3;
+    output r3 as identifier.public;
+
+constructor:
+    assert.eq true true;
+    ",
+    )
+    .unwrap();
+
+    // Attempt to deploy — should fail because ternary does not support Identifier.
+    let result = vm.deploy(&private_key, &program, None, 0, None, rng);
+    assert!(result.is_err(), "ternary on identifier should be rejected in function scope");
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("ternary"), "error should mention the ternary instruction, got: {err}");
+}
+
+/// Verifies that ternary operations on identifier literals are rejected in finalize scope.
+/// Ternary is not defined for the Identifier type, so deployment should fail.
+#[test]
+fn test_identifier_literal_ternary_rejected_in_finalize() {
+    let rng = &mut TestRng::default();
+
+    let private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+
+    // Initialize the VM at V14.
+    let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
+    let vm = crate::vm::test_helpers::sample_vm_at_height(v14_height, rng);
+
+    // Define a program that uses ternary on identifier literals in a finalize block.
+    let program = Program::<CurrentNetwork>::from_str(
+        r"
+program ternary_id_fin.aleo;
+
+function test_ternary:
+    input r0 as boolean.public;
+    input r1 as identifier.public;
+    input r2 as identifier.public;
+    async test_ternary r0 r1 r2 into r3;
+    output r3 as ternary_id_fin.aleo/test_ternary.future;
+
+finalize test_ternary:
+    input r0 as boolean.public;
+    input r1 as identifier.public;
+    input r2 as identifier.public;
+    ternary r0 r1 r2 into r3;
+
+constructor:
+    assert.eq true true;
+    ",
+    )
+    .unwrap();
+
+    // Attempt to deploy — should fail because ternary does not support Identifier.
+    let result = vm.deploy(&private_key, &program, None, 0, None, rng);
+    assert!(result.is_err(), "ternary on identifier should be rejected in finalize scope");
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("ternary"), "error should mention the ternary instruction, got: {err}");
+}
+
 /// Verifies that `get.dynamic` and `get.or_use.dynamic` accept identifier literals as program
 /// name, network, and mapping name operands.
 #[cfg(feature = "test")]

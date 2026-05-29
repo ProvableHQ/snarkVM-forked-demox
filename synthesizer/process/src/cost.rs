@@ -17,10 +17,13 @@ use std::collections::HashMap;
 
 use crate::{Authorization, FinalizeTypes, Process, Stack, StackRef, StackTrait};
 
+use circuit::Aleo;
 use console::{
     prelude::*,
-    program::{FinalizeType, Identifier, LiteralType, PlaintextType},
+    program::{FinalizeType, Identifier, LiteralType, PlaintextType, ProgramID, Value},
+    types::Address,
 };
+use indexmap::IndexMap;
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
 use snarkvm_ledger_block::{Deployment, Execution, Transaction};
 use snarkvm_synthesizer_program::{CallDynamic, CastType, Command, GetRecordDynamic, Instruction, Operand};
@@ -75,7 +78,7 @@ fn execution_cost_given_size<N: Network>(
     }
 }
 
-/// Returns the execution cost in microcredits for a given `Authorization.
+/// Returns the execution cost in microcredits for a given `Authorization`.
 pub fn execution_cost_for_authorization<N: Network>(
     process: &Process<N>,
     authorization: &Authorization<N>,
@@ -119,9 +122,15 @@ pub fn execution_cost_for_authorization<N: Network>(
         batch_sizes.push(n_input_records);
     }
 
+    // Build the execution stacks once and reuse for translation batch sizing.
+    let mut execution_stacks = IndexMap::new();
+    for transition in authorization.transitions().values() {
+        execution_stacks.insert(*transition.program_id(), process.get_stack(transition.program_id())?);
+    }
+
     // Add the batches corresponding to translation tasks
     let translations_for_transaction =
-        Authorization::translation_batch_sizes(process, authorization.transitions().values())?;
+        Authorization::translation_batch_sizes(authorization.transitions().values(), &execution_stacks)?;
     batch_sizes.extend(translations_for_transaction);
 
     // Varuna is always run in hiding (i. e. ZK) mode when proving Executions.
@@ -139,6 +148,26 @@ pub fn execution_cost_for_authorization<N: Network>(
     ))?;
 
     execution_cost_given_size(process, &reconstructed_execution, execution_size, consensus_version)
+}
+
+/// Returns the execution cost in microcredits for a call to the given function with the given inputs.
+pub fn execution_cost_for_call<A: Aleo, R: Rng + CryptoRng>(
+    process: &Process<A::Network>,
+    address: Address<A::Network>,
+    program_id: ProgramID<A::Network>,
+    function_name: Identifier<A::Network>,
+    inputs: impl ExactSizeIterator<Item = impl TryInto<Value<A::Network>>>,
+    consensus_version: ConsensusVersion,
+    rng: &mut R,
+) -> Result<(MinimumCost, ExecuteCostDetails)> {
+    let stack = process.get_stack(program_id)?;
+
+    // Follow the evaluation flow for the given call, using correct input/output values and calls and mocking
+    // only the fields which cannot be computed (essentially: values depending on the private key, such as
+    // the signature)
+    let authorization = stack.sample_authorization::<A, R>(address, program_id, function_name, inputs, rng)?;
+
+    execution_cost_for_authorization(process, &authorization, consensus_version)
 }
 
 /// Returns the compute cost for a deployment in microcredits.
@@ -226,6 +255,20 @@ pub fn deployment_cost_v2<N: Network>(
             finalize_cost <= N::TRANSACTION_SPEND_LIMIT[1].1,
             "Finalize block '{}' has a cost '{finalize_cost}' which exceeds the transaction spend limit '{}'",
             function.name(),
+            N::TRANSACTION_SPEND_LIMIT[1].1
+        );
+    }
+
+    // Bound each view function's worst-case compute. Views are off-consensus and have no
+    // dedicated fee component beyond what is already counted in `storage_cost` (their bytes
+    // contribute to `size_in_bytes`). The bound below is purely a deploy-time sanity check
+    // to keep pathological views from being accepted.
+    for view in deployment.program().views().values() {
+        let view_cost = view_cost_for_single_view(&stack, view.name(), ConsensusFeeVersion::V3)?;
+        ensure!(
+            view_cost <= N::TRANSACTION_SPEND_LIMIT[1].1,
+            "View '{}' has a cost '{view_cost}' which exceeds the transaction spend limit '{}'",
+            view.name(),
             N::TRANSACTION_SPEND_LIMIT[1].1
         );
     }
@@ -500,7 +543,26 @@ pub fn cost_per_command<N: Network>(
         Command::Instruction(Instruction::AssertEq(_)) => Ok(500),
         Command::Instruction(Instruction::AssertNeq(_)) => Ok(500),
         Command::Instruction(Instruction::Async(_)) => bail!("'async' is not supported in finalize"),
-        Command::Instruction(Instruction::Call(_)) => bail!("'call' is not supported in finalize"),
+        Command::Instruction(Instruction::Call(call)) => {
+            // From a finalize body, `call` is permitted only when the target resolves to a
+            // view function (validated at `Stack::new`). Roll up the called view's worst-case
+            // body cost into the caller's finalize cost, mirroring how function-to-function
+            // call costs already aggregate. Same-program targets reuse the current stack;
+            // cross-program targets resolve through the external stack.
+            //
+            // Recursion bound: `view_cost_for_single_view` re-enters `cost_per_command` on the
+            // view's body, but views reject `is_call()` at construction (`ViewCore::add_command`)
+            // and again at deploy via `FinalizeTypes::from_view`. So this recursion is at most
+            // one level deep — a Call in a finalize body, never a Call inside a view body.
+            use snarkvm_synthesizer_program::CallOperator;
+            match call.operator() {
+                CallOperator::Locator(locator) => {
+                    let external_stack = stack.get_external_stack(locator.program_id())?;
+                    view_cost_for_single_view(&*external_stack, locator.resource(), consensus_fee_version)
+                }
+                CallOperator::Resource(name) => view_cost_for_single_view(stack, name, consensus_fee_version),
+            }
+        }
         Command::Instruction(Instruction::CallDynamic(_)) => {
             bail!("'{}' is not supported in finalize", CallDynamic::<N>::opcode())
         }
@@ -540,6 +602,24 @@ pub fn cost_per_command<N: Network>(
             cost_in_size(stack, finalize_types, commit.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
         Command::Instruction(Instruction::CommitPED128(commit)) => {
+            cost_in_size(stack, finalize_types, commit.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+        }
+        Command::Instruction(Instruction::CommitBHP256Raw(commit)) => {
+            cost_in_size(stack, finalize_types, commit.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
+        }
+        Command::Instruction(Instruction::CommitBHP512Raw(commit)) => {
+            cost_in_size(stack, finalize_types, commit.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
+        }
+        Command::Instruction(Instruction::CommitBHP768Raw(commit)) => {
+            cost_in_size(stack, finalize_types, commit.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
+        }
+        Command::Instruction(Instruction::CommitBHP1024Raw(commit)) => {
+            cost_in_size(stack, finalize_types, commit.operands(), HASH_BHP_PER_BYTE_COST, HASH_BHP_BASE_COST)
+        }
+        Command::Instruction(Instruction::CommitPED64Raw(commit)) => {
+            cost_in_size(stack, finalize_types, commit.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
+        }
+        Command::Instruction(Instruction::CommitPED128Raw(commit)) => {
             cost_in_size(stack, finalize_types, commit.operands(), HASH_PER_BYTE_COST, HASH_BASE_COST)
         }
         Command::Instruction(Instruction::DeserializeBits(deserialize)) => {
@@ -951,6 +1031,29 @@ fn finalize_cost_for_single_function_raw<N: Network>(
     }
 
     Ok(finalize_cost)
+}
+
+/// Returns the maximum compute cost (in microcredits) of a single view function's body.
+///
+/// Views do not run as part of consensus, so this cost is not paid by anyone — it is only
+/// used as a deploy-time sanity bound (mirrors the per-function `TRANSACTION_SPEND_LIMIT`
+/// check) to prevent deploying views whose worst-case compute is unreasonable.
+fn view_cost_for_single_view<N: Network>(
+    stack: &Stack<N>,
+    view_name: &Identifier<N>,
+    consensus_fee_version: ConsensusFeeVersion,
+) -> Result<u64> {
+    let view = stack.program().get_view_ref(view_name)?;
+    // Use the cached view types (computed once at `Stack::new`).
+    let view_types = stack.get_view_types(view_name)?;
+
+    let mut view_cost = 0u64;
+    for command in view.commands() {
+        view_cost = view_cost
+            .checked_add(cost_per_command(stack, &view_types, command, consensus_fee_version)?)
+            .ok_or(anyhow!("View cost overflowed"))?;
+    }
+    Ok(view_cost)
 }
 
 /// Returns the total finalize cost for an execution by iterating over all concrete transitions.
@@ -1516,7 +1619,7 @@ finalize call_child:
 
         // Build the process with both programs
         let mut process = crate::test_helpers::sample_process(&child_program);
-        process.add_program(&caller_program).unwrap();
+        process.lock().add_program(&caller_program).unwrap();
 
         let function_name = Identifier::from_str("call_child").unwrap();
 
@@ -1689,9 +1792,9 @@ finalize main:
 
         // Build the process with all programs
         let mut process = crate::test_helpers::sample_process(&leaf_program);
-        process.add_program(&level1_a_program).unwrap();
-        process.add_program(&level1_b_program).unwrap();
-        process.add_program(&root_program).unwrap();
+        process.lock().add_program(&level1_a_program).unwrap();
+        process.lock().add_program(&level1_b_program).unwrap();
+        process.lock().add_program(&root_program).unwrap();
 
         let function_name = Identifier::from_str("main").unwrap();
 

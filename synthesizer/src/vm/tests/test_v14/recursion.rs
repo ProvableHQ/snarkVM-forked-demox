@@ -81,6 +81,7 @@ fn test_fibonacci() {
 
     // Initialize a new caller.
     let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Initialize the VM at the V14 height.
     let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
@@ -89,7 +90,7 @@ fn test_fibonacci() {
     // Deploy the program
     println!("Deploying program {recursive_calls_program_name}.aleo...");
     let deployment = vm.deploy(&caller_private_key, &recursive_calls_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deployment], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deployment], rng);
 
     // Execute the fibonacci function for the given inputs, expected output, and expected number of transitions.
     #[rustfmt::skip]
@@ -102,11 +103,12 @@ fn test_fibonacci() {
     ];
     for (fibonnaci_index, expected_output, expected_num_transitions) in test_cases {
         println!("Executing {recursive_calls_program_name}.aleo/{fibonacci_name}...");
+        let inputs = vec![Value::from_str(&format!("{fibonnaci_index}u64")).unwrap()];
         let transaction = vm
             .execute(
                 &caller_private_key,
                 (format!("{recursive_calls_program_name}.aleo"), fibonacci_name),
-                vec![Value::from_str(&format!("{fibonnaci_index}u64")).unwrap()].into_iter(),
+                inputs.iter(),
                 None,
                 0,
                 None,
@@ -129,7 +131,7 @@ fn test_fibonacci() {
                 .unwrap(),
             &Plaintext::from_str(&format!("{expected_output}u64")).unwrap()
         );
-        add_and_test(&vm, &caller_private_key, &[transaction], rng);
+        add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[transaction], rng);
     }
 }
 
@@ -188,52 +190,8 @@ fn test_recursive_dynamic_record_calls() {
     let four_indexed_name = Identifier::<CurrentNetwork>::from_str("four_indexed").unwrap();
     let four_indexed_field = four_indexed_name.to_field().unwrap();
 
-    let basic_records_ops_program_str = format!(
-        r"
-program {basic_records_ops_program_name}.aleo;
-
-record Data:
-    owner as address.private;
-    data as u64.private;
-
-function mint:
-    input r0 as address.private;
-    input r1 as u64.private;
-    cast r0 r1 into r2 as Data.record;
-    output r2 as Data.record;
-
-function {one_name}:
-    input r0 as Data.record;
-    cast r0.owner r0.data into r1 as Data.record;
-    output r1 as Data.record;
-
-function {two_name}:
-    input r0 as Data.record;
-
-function {three_name}:
-    input r0 as dynamic.record;
-    output r0 as dynamic.record;
-
-function {four_name}:
-    input r0 as dynamic.record;
-
-function {two_indexed_name}:
-    input r0 as dynamic.record;
-    input r1 as u8.public;
-
-function {three_indexed_name}:
-    input r0 as dynamic.record;
-    input r1 as u8.public;
-    output r0 as dynamic.record;
-
-function {four_indexed_name}:
-    input r0 as dynamic.record;
-    input r1 as u8.public;
-
-constructor:
-    assert.eq true true;
-"
-    );
+    let consume_data_name = Identifier::<CurrentNetwork>::from_str("consume_data").unwrap();
+    let consume_data_field = consume_data_name.to_field().unwrap();
 
     // Define the second program that defines functions `five`, `six`, `seven`, `eight`, and `nine`.
     let test_functions_program_name = Identifier::<CurrentNetwork>::from_str("test_functions").unwrap();
@@ -255,6 +213,59 @@ constructor:
     let basic_records_ops_program_field = basic_records_ops_program_name.to_field().unwrap();
     let test_functions_program_field = test_functions_program_name.to_field().unwrap();
 
+    let basic_records_ops_program_str = format!(
+        r"
+program {basic_records_ops_program_name}.aleo;
+
+record Data:
+    owner as address.private;
+    data as u64.private;
+
+function mint:
+    input r0 as address.private;
+    input r1 as u64.private;
+    cast r0 r1 into r2 as Data.record;
+    output r2 as Data.record;
+
+function {consume_data_name}:
+    input r0 as Data.record;
+
+function {one_name}:
+    input r0 as Data.record;
+    cast r0.owner r0.data into r1 as Data.record;
+    output r1 as Data.record;
+
+function {two_name}:
+    input r0 as Data.record;
+
+function {three_name}:
+    input r0 as dynamic.record;
+    output r0 as dynamic.record;
+
+function {four_name}:
+    input r0 as dynamic.record;
+
+function {two_indexed_name}:
+    input r0 as dynamic.record;
+    input r1 as u8.public;
+
+    // Needed to pass the record-existence check (r0 must materialize)
+    call.dynamic {basic_records_ops_program_field} {aleo_field} {consume_data_field} with r0 (as dynamic.record);
+
+function {three_indexed_name}:
+    input r0 as dynamic.record;
+    input r1 as u8.public;
+    output r0 as dynamic.record;
+
+function {four_indexed_name}:
+    input r0 as dynamic.record;
+    input r1 as u8.public;
+
+constructor:
+    assert.eq true true;
+"
+    );
+
     let test_functions_program_str = format!(
         r"
 program {test_functions_program_name}.aleo;
@@ -268,6 +279,9 @@ function {six_name}:
     input r0 as dynamic.record;
     call.dynamic {basic_records_ops_program_field} {aleo_field} {four_field} with r0 (as dynamic.record);
     call.dynamic {basic_records_ops_program_field} {aleo_field} {four_field} with r0 (as dynamic.record);
+
+    // Needed to pass the record-existence check (r0 must materialize)
+    call.dynamic {basic_records_ops_program_field} {aleo_field} {consume_data_field} with r0 (as dynamic.record);
 
 function {seven_name}:
     input r0 as dynamic.record;
@@ -310,15 +324,17 @@ constructor:
 
     println!("Deploying program {basic_records_ops_program_name}.aleo...");
     let deployment1 = vm.deploy(&caller_private_key, &basic_records_ops_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deployment1], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deployment1], rng);
 
     println!("Deploying program {test_functions_program_name}.aleo...");
     let deployment2 = vm.deploy(&caller_private_key, &test_functions_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deployment2], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deployment2], rng);
 
     // A helper function to mint a record for the caller.
     let mint_record = |rng: &mut TestRng| {
         println!("Minting record...");
+        let mint_inputs =
+            vec![Value::from_str(&caller_address.to_string()).unwrap(), Value::from_str("100u64").unwrap()];
         let mint_transaction = vm
             .execute(
                 &caller_private_key,
@@ -326,8 +342,7 @@ constructor:
                     format!("{basic_records_ops_program_name}.aleo"),
                     Identifier::<CurrentNetwork>::from_str("mint").unwrap(),
                 ),
-                vec![Value::from_str(&caller_address.to_string()).unwrap(), Value::from_str("100u64").unwrap()]
-                    .into_iter(),
+                mint_inputs.iter(),
                 None,
                 0,
                 None,
@@ -346,7 +361,14 @@ constructor:
                 _ => None,
             })
             .unwrap();
-        add_and_test(&vm, &caller_private_key, &[mint_transaction], rng);
+        add_and_test_with_costs(
+            &vm,
+            &caller_private_key,
+            &caller_address,
+            Some(&[&mint_inputs]),
+            &[mint_transaction],
+            rng,
+        );
 
         minted_record
     };
@@ -365,7 +387,7 @@ constructor:
         let result = vm.execute(
             &caller_private_key,
             (format!("{test_functions_program_name}.aleo"), function_name),
-            inputs.into_iter(),
+            inputs.iter(),
             None,
             0,
             None,
@@ -373,8 +395,8 @@ constructor:
         );
 
         if should_succeed {
-            let transaction = result.unwrap_or_else(|_| panic!("Expected {function_name} to succeed"));
-            add_and_test(&vm, &caller_private_key, &[transaction], rng);
+            let transaction = result.map_err(|e| anyhow!("{function_name} failed with: {e}")).unwrap();
+            add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[transaction], rng);
         } else {
             match result {
                 Ok(transaction) => {
@@ -438,7 +460,7 @@ constructor:
 
     // Test function `seven` at the maximum valid depth which should pass.
     {
-        let test_index = Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 3; // Account for the fee transition and zero indexing.
+        let test_index = Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 4; // Account for the fee transition, record-consumption and zero indexing.
         execute_and_check(
             seven_name,
             vec![
@@ -454,7 +476,7 @@ constructor:
 
     // Test function `seven` at the maximum call depth which should fail.
     {
-        let test_index = Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 2; // Account for the fee transition and zero indexing.
+        let test_index = Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 3; // Account for the fee transition, record-consumption and zero indexing.
         execute_and_check(
             seven_name,
             vec![
@@ -656,21 +678,14 @@ constructor:
     // Deploy the program.
     println!("Deploying record_security.aleo...");
     let deploy_tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_tx], rng);
 
     // Helper: mint a Data record and add it to the ledger.
     let mint_record = |rng: &mut TestRng| {
+        let mint_inputs =
+            vec![Value::from_str(&caller_address.to_string()).unwrap(), Value::from_str("100u64").unwrap()];
         let tx = vm
-            .execute(
-                &caller_private_key,
-                ("record_security.aleo", "mint"),
-                vec![Value::from_str(&caller_address.to_string()).unwrap(), Value::from_str("100u64").unwrap()]
-                    .into_iter(),
-                None,
-                0,
-                None,
-                rng,
-            )
+            .execute(&caller_private_key, ("record_security.aleo", "mint"), mint_inputs.iter(), None, 0, None, rng)
             .unwrap();
         let record = tx
             .transitions()
@@ -683,7 +698,7 @@ constructor:
                 _ => None,
             })
             .unwrap();
-        add_and_test(&vm, &caller_private_key, &[tx], rng);
+        add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&mint_inputs]), &[tx], rng);
         record
     };
 
@@ -699,19 +714,12 @@ constructor:
                              expected_error_substring: Option<&str>,
                              rng: &mut TestRng| {
         println!("{description}");
-        let result = vm.execute(
-            &caller_private_key,
-            ("record_security.aleo", function_name),
-            inputs.into_iter(),
-            None,
-            0,
-            None,
-            rng,
-        );
+        let result =
+            vm.execute(&caller_private_key, ("record_security.aleo", function_name), inputs.iter(), None, 0, None, rng);
 
         if should_succeed {
             let tx = result.unwrap_or_else(|e| panic!("Expected {description} to succeed: {e}"));
-            add_and_test(&vm, &caller_private_key, &[tx], rng);
+            add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
         } else {
             match result {
                 Ok(tx) => {

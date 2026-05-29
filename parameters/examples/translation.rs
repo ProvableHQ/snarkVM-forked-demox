@@ -32,7 +32,7 @@ use snarkvm_synthesizer::{
 };
 
 use anyhow::Result;
-use rand::{CryptoRng, Rng, thread_rng};
+use rand::CryptoRng;
 use serde_json::{Value, json};
 use snarkvm_utilities::Uniform;
 use std::{
@@ -80,7 +80,7 @@ pub fn sample_assignment<N: Network, A: Aleo<Network = N>>(
     credits_program_id: &ProgramID<N>,
     transfer_public_function_name: &Identifier<N>,
     credits_record_name: &Identifier<N>,
-    rng: &mut (impl CryptoRng + Rng),
+    rng: &mut impl CryptoRng,
 ) -> Result<(Assignment<N::Field>, Vec<N::Field>)> {
     // Auxiliary data for the `TranslationAssignment`.
     let private_key = PrivateKey::<N>::new(rng)?;
@@ -143,7 +143,7 @@ pub fn sample_assignment<N: Network, A: Aleo<Network = N>>(
 
 /// Synthesizes the circuit keys for the credits.aleo credits record translation circuit. (cargo run --release --example translation [network])
 pub fn translation<N: Network, A: Aleo<Network = N>>() -> Result<()> {
-    let rng = &mut thread_rng();
+    let rng = &mut rand::rng();
     let process = Process::<N>::setup::<A, _>(rng)?;
     let credits_stack = process.get_stack(ProgramID::<N>::from_str("credits.aleo").unwrap())?;
     let transfer_private_function_name = Identifier::<N>::from_str("transfer_private").unwrap();

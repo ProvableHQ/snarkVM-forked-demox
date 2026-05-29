@@ -70,6 +70,8 @@ macro_rules! impl_store_and_remote_fetch {
 
         #[cfg(all(not(feature = "wasm"), not(target_env = "sgx")))]
         fn remote_fetch(buffer: &mut Vec<u8>, url: &str) -> Result<(), $crate::errors::ParameterError> {
+            use std::io::Read;
+
             #[cfg(not(feature = "no_std_out"))]
             {
                 use colored::*;
@@ -77,14 +79,28 @@ macro_rules! impl_store_and_remote_fetch {
                 println!("{}", output.dimmed());
             }
 
-            let response = reqwest::blocking::get(url)?;
-            let bytes = response.bytes()?;
-            buffer.extend_from_slice(&bytes);
+            // Retry up to 3 times on transient errors (5xx, 429, IO, timeout).
+            let mut attempts = 3u32;
+            loop {
+                match ureq::get(url).config().max_redirects(10).build().call() {
+                    Ok(mut response) => {
+                        response.body_mut().as_reader().read_to_end(buffer)?;
+                        break;
+                    }
+                    Err(ureq::Error::StatusCode(code)) if attempts > 0 && (code >= 500 || code == 429) => {
+                        attempts -= 1;
+                    }
+                    Err(ureq::Error::Io(_) | ureq::Error::Timeout(_)) if attempts > 0 => {
+                        attempts -= 1;
+                    }
+                    Err(err) => return Err(err.into()),
+                }
+            }
 
             #[cfg(not(feature = "no_std_out"))]
             {
                 use colored::*;
-                let size_in_megabytes = bytes.len() as u64 / 1_048_576;
+                let size_in_megabytes = buffer.len() as u64 / 1_048_576;
                 let output = format!("{:>15} - Download complete ({} MB)", "Installation", size_in_megabytes);
                 println!("{}", output.dimmed());
             }

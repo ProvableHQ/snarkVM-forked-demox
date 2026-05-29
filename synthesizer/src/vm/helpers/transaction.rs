@@ -21,7 +21,11 @@ pub(crate) fn is_pre_accepted_testnet_transaction<N: Network>(id: N::Transaction
     if N::ID != TestnetV0::ID {
         return false;
     }
-    const IDS: &[&str] = &["at16r0qm288yvprqyvq22dj0elsx3dsvep43tslwz65r8a7t0z0zvpsqxxpmf"];
+    const IDS: &[&str] = &[
+        "at16r0qm288yvprqyvq22dj0elsx3dsvep43tslwz65r8a7t0z0zvpsqxxpmf",
+        "at14lzzs3fxeuazwfhh5tw66z4pwlleskzcmdsvwtrfsr52xkytmygs0kqfhl",
+        "at1mk6em0zj0s07cs0s4h39xtq9w9rktnxfehmwxqetmv2d96ct059q62tu7t",
+    ];
     let id_str = id.to_string();
     IDS.iter().any(|&s| id_str == s)
 }

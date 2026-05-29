@@ -21,6 +21,7 @@ fn test_await_in_order() {
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Program with two dynamic calls, awaited in creation order
     let counter_program = Program::<CurrentNetwork>::from_str(
@@ -83,17 +84,18 @@ fn test_await_in_order() {
 
     // Deploy programs
     let deploy_counter = vm.deploy(&caller_private_key, &counter_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_counter], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_counter], rng);
 
     let deploy_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_caller], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_caller], rng);
 
     // Execute: increment by 5, then by 3
+    let inputs = vec![Value::from_str("5u64").unwrap(), Value::from_str("3u64").unwrap()];
     let transaction = vm
         .execute(
             &caller_private_key,
             ("await_order_caller.aleo", "call_twice_await_in_order"),
-            vec![Value::from_str("5u64").unwrap(), Value::from_str("3u64").unwrap()].into_iter(),
+            inputs.iter(),
             None,
             0,
             None,
@@ -101,10 +103,9 @@ fn test_await_in_order() {
         )
         .unwrap();
 
-    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[transaction], rng);
 
     // Verify the final count is 8 (5 + 3)
-    let caller_address = Address::try_from(&caller_private_key).unwrap();
     let count = vm
         .finalize_store()
         .get_value_confirmed(
@@ -124,6 +125,7 @@ fn test_await_reverse_order() {
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Program that tracks order of execution via a mapping
     let tracker_program = Program::<CurrentNetwork>::from_str(
@@ -181,10 +183,10 @@ fn test_await_reverse_order() {
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
     let deploy_tracker = vm.deploy(&caller_private_key, &tracker_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_tracker], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_tracker], rng);
 
     let deploy_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_caller], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_caller], rng);
 
     let transaction = vm
         .execute(
@@ -198,7 +200,7 @@ fn test_await_reverse_order() {
         )
         .unwrap();
 
-    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&[]]), &[transaction], rng);
 
     // Verify both values were set correctly
     let value1 = vm
@@ -231,6 +233,7 @@ fn test_nested_dynamic_futures() {
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Leaf program (C) - just sets a value
     let leaf_program = Program::<CurrentNetwork>::from_str(
@@ -325,29 +328,21 @@ fn test_nested_dynamic_futures() {
 
     // Deploy in dependency order
     let deploy_leaf = vm.deploy(&caller_private_key, &leaf_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_leaf], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_leaf], rng);
 
     let deploy_middle = vm.deploy(&caller_private_key, &middle_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_middle], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_middle], rng);
 
     let deploy_root = vm.deploy(&caller_private_key, &root_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_root], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_root], rng);
 
     // Execute with value 5
     // Expected: leaf_data[0] = 5, middle_data[0] = 15, root_data[0] = 105
-    let transaction = vm
-        .execute(
-            &caller_private_key,
-            ("root_a.aleo", "root_op"),
-            vec![Value::from_str("5u64").unwrap()].into_iter(),
-            None,
-            0,
-            None,
-            rng,
-        )
-        .unwrap();
+    let inputs = vec![Value::from_str("5u64").unwrap()];
+    let transaction =
+        vm.execute(&caller_private_key, ("root_a.aleo", "root_op"), inputs.iter(), None, 0, None, rng).unwrap();
 
-    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[transaction], rng);
 
     // Verify all three mappings were updated correctly
     let leaf_value = vm
@@ -391,6 +386,7 @@ fn test_dynamic_future_finalize_failure() {
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Program with a finalize that can fail
     let failing_program = Program::<CurrentNetwork>::from_str(
@@ -445,25 +441,18 @@ fn test_dynamic_future_finalize_failure() {
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
     let deploy_failing = vm.deploy(&caller_private_key, &failing_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_failing], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_failing], rng);
 
     let deploy_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_caller], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_caller], rng);
 
     // First, test with true (should succeed)
+    let inputs = vec![Value::from_str("true").unwrap()];
     let transaction_success = vm
-        .execute(
-            &caller_private_key,
-            ("failure_caller.aleo", "call_failing"),
-            vec![Value::from_str("true").unwrap()].into_iter(),
-            None,
-            0,
-            None,
-            rng,
-        )
+        .execute(&caller_private_key, ("failure_caller.aleo", "call_failing"), inputs.iter(), None, 0, None, rng)
         .unwrap();
 
-    add_and_test(&vm, &caller_private_key, &[transaction_success], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[transaction_success], rng);
 
     // Now test with false (should fail in finalize)
     let transaction_fail = vm
@@ -491,6 +480,7 @@ fn test_multiple_futures_same_function() {
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     let accumulator_program = Program::<CurrentNetwork>::from_str(
         r"
@@ -553,22 +543,19 @@ fn test_multiple_futures_same_function() {
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
     let deploy_acc = vm.deploy(&caller_private_key, &accumulator_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_acc], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_acc], rng);
 
     let deploy_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_caller], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_caller], rng);
 
     // Call with 10, 20, 30 - expect total of 60
+    let inputs =
+        vec![Value::from_str("10u64").unwrap(), Value::from_str("20u64").unwrap(), Value::from_str("30u64").unwrap()];
     let transaction = vm
         .execute(
             &caller_private_key,
             ("multi_future_caller.aleo", "call_three_times"),
-            vec![
-                Value::from_str("10u64").unwrap(),
-                Value::from_str("20u64").unwrap(),
-                Value::from_str("30u64").unwrap(),
-            ]
-            .into_iter(),
+            inputs.iter(),
             None,
             0,
             None,
@@ -576,7 +563,7 @@ fn test_multiple_futures_same_function() {
         )
         .unwrap();
 
-    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[transaction], rng);
 
     let total = vm
         .finalize_store()
@@ -597,6 +584,7 @@ fn test_read_state_after_dynamic_await() {
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     let writer_program = Program::<CurrentNetwork>::from_str(
         r"
@@ -666,24 +654,24 @@ fn test_read_state_after_dynamic_await() {
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
     let deploy_writer = vm.deploy(&caller_private_key, &writer_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_writer], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_writer], rng);
 
     let deploy_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_caller], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_caller], rng);
 
     // Write 42, then read it back
     // Pass the field values for program, network, and mapping names using proper formatting
+    let inputs = vec![
+        Value::from_str("42u64").unwrap(),
+        Value::from_str(&writer_field.to_string()).unwrap(),
+        Value::from_str(&aleo_field.to_string()).unwrap(),
+        Value::from_str(&values_field.to_string()).unwrap(),
+    ];
     let transaction = vm
         .execute(
             &caller_private_key,
             ("state_reader_caller.aleo", "write_then_read"),
-            vec![
-                Value::from_str("42u64").unwrap(),
-                Value::from_str(&writer_field.to_string()).unwrap(),
-                Value::from_str(&aleo_field.to_string()).unwrap(),
-                Value::from_str(&values_field.to_string()).unwrap(),
-            ]
-            .into_iter(),
+            inputs.iter(),
             None,
             0,
             None,
@@ -691,7 +679,7 @@ fn test_read_state_after_dynamic_await() {
         )
         .unwrap();
 
-    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[transaction], rng);
 
     // Verify the read value was stored
     let read_result = vm
@@ -713,6 +701,7 @@ fn test_dynamic_future_with_dynamic_record() {
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     let token_program = Program::<CurrentNetwork>::from_str(
         r"
@@ -775,17 +764,18 @@ fn test_dynamic_future_with_dynamic_record() {
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
     let deploy_token = vm.deploy(&caller_private_key, &token_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_token], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_token], rng);
 
     let deploy_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_caller], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_caller], rng);
 
     // Mint 100 tokens
+    let inputs = vec![Value::from_str("100u64").unwrap()];
     let transaction = vm
         .execute(
             &caller_private_key,
             ("record_future_caller.aleo", "mint_and_track"),
-            vec![Value::from_str("100u64").unwrap()].into_iter(),
+            inputs.iter(),
             None,
             0,
             None,
@@ -798,7 +788,7 @@ fn test_dynamic_future_with_dynamic_record() {
     let has_record = root_transition.outputs().iter().any(|o| matches!(o, Output::Record(..)));
     assert!(has_record || root_transition.outputs().iter().any(|o| matches!(o, Output::DynamicRecord(..))));
 
-    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[transaction], rng);
 
     // Verify supply was updated
     let supply = vm
@@ -820,6 +810,7 @@ fn test_interleaved_awaits_different_programs() {
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // First program
     let program_alpha = Program::<CurrentNetwork>::from_str(
@@ -908,13 +899,13 @@ fn test_interleaved_awaits_different_programs() {
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
     let deploy_alpha = vm.deploy(&caller_private_key, &program_alpha, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_alpha], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_alpha], rng);
 
     let deploy_beta = vm.deploy(&caller_private_key, &program_beta, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_beta], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_beta], rng);
 
     let deploy_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_caller], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_caller], rng);
 
     let transaction = vm
         .execute(
@@ -928,7 +919,7 @@ fn test_interleaved_awaits_different_programs() {
         )
         .unwrap();
 
-    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&[]]), &[transaction], rng);
 
     // Verify both programs received the last value written to them
     // Alpha: 1 then 3, so final value should be 3
@@ -963,6 +954,7 @@ fn test_dynamic_future_complex_finalize() {
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     let complex_program = Program::<CurrentNetwork>::from_str(
         r"
@@ -1033,30 +1025,22 @@ fn test_dynamic_future_complex_finalize() {
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
     let deploy_complex = vm.deploy(&caller_private_key, &complex_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_complex], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_complex], rng);
 
     let deploy_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_caller], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_caller], rng);
 
     let recipient = Address::try_from(&PrivateKey::<CurrentNetwork>::new(rng).unwrap()).unwrap();
 
     // Transfer 100 to recipient
+    let inputs = vec![Value::from_str(&recipient.to_string()).unwrap(), Value::from_str("100u64").unwrap()];
     let transaction = vm
-        .execute(
-            &caller_private_key,
-            ("complex_caller.aleo", "do_transfer"),
-            vec![Value::from_str(&recipient.to_string()).unwrap(), Value::from_str("100u64").unwrap()].into_iter(),
-            None,
-            0,
-            None,
-            rng,
-        )
+        .execute(&caller_private_key, ("complex_caller.aleo", "do_transfer"), inputs.iter(), None, 0, None, rng)
         .unwrap();
 
-    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[transaction], rng);
 
     // Verify balances
-    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     let sender_balance = vm
         .finalize_store()
@@ -1099,6 +1083,7 @@ fn test_conditional_future_via_branch() {
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Program with two different functions that write different values
     let worker_program = Program::<CurrentNetwork>::from_str(
@@ -1154,17 +1139,18 @@ fn test_conditional_future_via_branch() {
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
     let deploy_worker = vm.deploy(&caller_private_key, &worker_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_worker], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_worker], rng);
 
     let deploy_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_caller], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_caller], rng);
 
     // Call with true - should write 100
+    let inputs_true = vec![Value::from_str("true").unwrap()];
     let transaction_true = vm
         .execute(
             &caller_private_key,
             ("conditional_caller.aleo", "conditional_write"),
-            vec![Value::from_str("true").unwrap()].into_iter(),
+            inputs_true.iter(),
             None,
             0,
             None,
@@ -1172,7 +1158,7 @@ fn test_conditional_future_via_branch() {
         )
         .unwrap();
 
-    add_and_test(&vm, &caller_private_key, &[transaction_true], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs_true]), &[transaction_true], rng);
 
     let result_true = vm
         .finalize_store()
@@ -1187,11 +1173,12 @@ fn test_conditional_future_via_branch() {
     assert_eq!(result_true, Value::from_str("100u64").unwrap());
 
     // Call with false - should write 200
+    let inputs_false = vec![Value::from_str("false").unwrap()];
     let transaction_false = vm
         .execute(
             &caller_private_key,
             ("conditional_caller.aleo", "conditional_write"),
-            vec![Value::from_str("false").unwrap()].into_iter(),
+            inputs_false.iter(),
             None,
             0,
             None,
@@ -1199,7 +1186,14 @@ fn test_conditional_future_via_branch() {
         )
         .unwrap();
 
-    add_and_test(&vm, &caller_private_key, &[transaction_false], rng);
+    add_and_test_with_costs(
+        &vm,
+        &caller_private_key,
+        &caller_address,
+        Some(&[&inputs_false]),
+        &[transaction_false],
+        rng,
+    );
 
     let result_false = vm
         .finalize_store()
@@ -1220,6 +1214,7 @@ fn test_interface_mismatch_wrong_input_type() {
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Program expecting u64 input
     let u64_program = Program::<CurrentNetwork>::from_str(
@@ -1272,12 +1267,12 @@ fn test_interface_mismatch_wrong_input_type() {
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
     let deploy_u64 = vm.deploy(&caller_private_key, &u64_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_u64], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_u64], rng);
 
     // The caller program is syntactically valid, so parsing and deployment must succeed.
     let caller_program = Program::<CurrentNetwork>::from_str(&caller_program_str).unwrap();
     let deploy_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_caller], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_caller], rng);
 
     // A type-mismatched dynamic call must be rejected — either at execute time or at
     // check_transaction time.
@@ -1303,6 +1298,7 @@ fn test_double_await_fails() {
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     let simple_program = Program::<CurrentNetwork>::from_str(
         r"
@@ -1356,7 +1352,7 @@ fn test_double_await_fails() {
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
     let deploy_simple = vm.deploy(&caller_private_key, &simple_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_simple], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_simple], rng);
 
     // The caller program is syntactically valid. Rejection may occur at deployment, execution,
     // or check_transaction time — but it must be rejected at some stage.
@@ -1395,6 +1391,7 @@ fn test_deep_nested_futures() {
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Level 4 (deepest) - just sets a value
     let level4_program = Program::<CurrentNetwork>::from_str(
@@ -1521,32 +1518,24 @@ fn test_deep_nested_futures() {
 
     // Deploy in order from deepest to shallowest
     let deploy4 = vm.deploy(&caller_private_key, &level4_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy4], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy4], rng);
 
     let deploy3 = vm.deploy(&caller_private_key, &level3_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy3], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy3], rng);
 
     let deploy2 = vm.deploy(&caller_private_key, &level2_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy2], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy2], rng);
 
     let deploy1 = vm.deploy(&caller_private_key, &level1_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy1], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy1], rng);
 
     // Execute starting from level 1 with value 5
     // Expected: level4 = 5, level3 = 15, level2 = 105, level1 = 1005
-    let transaction = vm
-        .execute(
-            &caller_private_key,
-            ("level1.aleo", "depth1"),
-            vec![Value::from_str("5u64").unwrap()].into_iter(),
-            None,
-            0,
-            None,
-            rng,
-        )
-        .unwrap();
+    let inputs = vec![Value::from_str("5u64").unwrap()];
+    let transaction =
+        vm.execute(&caller_private_key, ("level1.aleo", "depth1"), inputs.iter(), None, 0, None, rng).unwrap();
 
-    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[transaction], rng);
 
     // Verify all depths were set correctly
     let depth4 = vm
@@ -1601,6 +1590,7 @@ fn test_interface_mismatch_public_to_private() {
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Program expecting private input
     let private_program = Program::<CurrentNetwork>::from_str(
@@ -1653,12 +1643,12 @@ fn test_interface_mismatch_public_to_private() {
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
     let deploy_private = vm.deploy(&caller_private_key, &private_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_private], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_private], rng);
 
     // The caller program is syntactically valid, so parsing and deployment must succeed.
     let caller_program = Program::<CurrentNetwork>::from_str(&caller_program_str).unwrap();
     let deploy_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_caller], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_caller], rng);
 
     // A mode-mismatched dynamic call must be rejected — either at execute time or at
     // check_transaction time.
@@ -1684,6 +1674,7 @@ fn test_interface_mismatch_private_to_public() {
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Program expecting public input
     let public_program = Program::<CurrentNetwork>::from_str(
@@ -1736,12 +1727,12 @@ fn test_interface_mismatch_private_to_public() {
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
     let deploy_public = vm.deploy(&caller_private_key, &public_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_public], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_public], rng);
 
     // The caller program is syntactically valid, so parsing and deployment must succeed.
     let caller_program = Program::<CurrentNetwork>::from_str(&caller_program_str).unwrap();
     let deploy_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_caller], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_caller], rng);
 
     // A mode-mismatched dynamic call must be rejected — either at execute time or at
     // check_transaction time.
@@ -1767,6 +1758,7 @@ fn test_conditional_future_execution_with_branches() {
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Two worker programs that write to different mappings
     let worker_a = Program::<CurrentNetwork>::from_str(
@@ -1858,13 +1850,13 @@ fn test_conditional_future_execution_with_branches() {
 
     // Deploy workers
     let deploy_a = vm.deploy(&caller_private_key, &worker_a, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_a], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_a], rng);
 
     let deploy_b = vm.deploy(&caller_private_key, &worker_b, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_b], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_b], rng);
 
     let deploy_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_caller], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_caller], rng);
 
     // Test with condition = true (await A first, then B)
     let tx_true = vm
@@ -1959,6 +1951,7 @@ fn test_skipped_future_await_is_caught() {
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Worker program
     let worker = Program::<CurrentNetwork>::from_str(
@@ -2018,7 +2011,7 @@ fn test_skipped_future_await_is_caught() {
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
     let deploy_worker = vm.deploy(&caller_private_key, &worker, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_worker], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_worker], rng);
 
     // The caller program is syntactically valid. Rejection may occur at deployment, execution,
     // or check_transaction time — but it must be rejected at some stage.
@@ -2066,6 +2059,7 @@ fn test_finalize_partial_failure_rollback() {
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // First program - always succeeds
     let success_program = Program::<CurrentNetwork>::from_str(
@@ -2156,28 +2150,21 @@ fn test_finalize_partial_failure_rollback() {
 
     // Deploy all programs
     let deploy_success = vm.deploy(&caller_private_key, &success_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_success], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_success], rng);
 
     let deploy_conditional = vm.deploy(&caller_private_key, &conditional_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_conditional], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_conditional], rng);
 
     let deploy_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_caller], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_caller], rng);
 
     // First test: both succeed (input = true)
+    let inputs = vec![Value::from_str("true").unwrap()];
     let tx_success = vm
-        .execute(
-            &caller_private_key,
-            ("partial_fail_caller.aleo", "call_both"),
-            vec![Value::from_str("true").unwrap()].into_iter(),
-            None,
-            0,
-            None,
-            rng,
-        )
+        .execute(&caller_private_key, ("partial_fail_caller.aleo", "call_both"), inputs.iter(), None, 0, None, rng)
         .unwrap();
 
-    add_and_test(&vm, &caller_private_key, &[tx_success], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx_success], rng);
 
     // Verify both values were written
     let success_value = vm
@@ -2254,6 +2241,7 @@ fn test_future_isolation_sequential_calls() {
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Worker program that increments a counter
     let worker_program = Program::<CurrentNetwork>::from_str(
@@ -2325,10 +2313,10 @@ fn test_future_isolation_sequential_calls() {
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
     let deploy_worker = vm.deploy(&caller_private_key, &worker_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_worker], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_worker], rng);
 
     let deploy_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_caller], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_caller], rng);
 
     // Execute the function
     let transaction = vm
@@ -2343,7 +2331,7 @@ fn test_future_isolation_sequential_calls() {
         )
         .unwrap();
 
-    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&[]]), &[transaction], rng);
 
     // Verify all 5 counters were incremented correctly (each future wrote to its own key)
     for (key, expected_value) in [(0u8, 10u64), (1u8, 20u64), (2u8, 30u64), (3u8, 40u64), (4u8, 50u64)] {
@@ -2371,6 +2359,7 @@ fn test_many_futures_in_single_transaction() {
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     // Worker program
     let worker_program = Program::<CurrentNetwork>::from_str(
@@ -2453,10 +2442,10 @@ fn test_many_futures_in_single_transaction() {
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
     let deploy_worker = vm.deploy(&caller_private_key, &worker_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_worker], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_worker], rng);
 
     let deploy_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_caller], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_caller], rng);
 
     // Execute
     let transaction = vm
@@ -2471,7 +2460,7 @@ fn test_many_futures_in_single_transaction() {
         )
         .unwrap();
 
-    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&[]]), &[transaction], rng);
 
     // Verify all 10 values were stored
     for i in 0..10u8 {
@@ -2497,6 +2486,7 @@ fn test_dynamic_future_max_arguments() {
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
 
     let program_field = Identifier::<CurrentNetwork>::from_str("max_args").unwrap().to_field().unwrap();
     let aleo_field = Identifier::<CurrentNetwork>::from_str("aleo").unwrap().to_field().unwrap();
@@ -2582,12 +2572,12 @@ fn test_dynamic_future_max_arguments() {
     // Deploy callee first
     println!("Deploying max_args.aleo with 16-argument finalize...");
     let deploy_callee = vm.deploy(&caller_private_key, &callee_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_callee], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_callee], rng);
 
     // Deploy caller
     println!("Deploying max_args_caller.aleo...");
     let deploy_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_caller], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_caller], rng);
 
     // Execute the dynamic call
     println!("Executing call.dynamic with DynamicFuture containing 16 arguments...");
@@ -2603,7 +2593,7 @@ fn test_dynamic_future_max_arguments() {
         )
         .unwrap();
 
-    add_and_test(&vm, &caller_private_key, &[transaction], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&[]]), &[transaction], rng);
 
     // Verify the sum was computed correctly (1+2+3+...+16 = 136)
     let result_value = vm
@@ -2627,6 +2617,7 @@ fn test_multiple_dynamic_transactions_same_mapping_key() {
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
     let counter_field = Identifier::<CurrentNetwork>::from_str("counter").unwrap().to_field().unwrap();
@@ -2688,11 +2679,11 @@ fn test_multiple_dynamic_transactions_same_mapping_key() {
     // Deploy programs
     println!("Deploying counter.aleo...");
     let deploy_counter = vm.deploy(&caller_private_key, &counter_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_counter], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_counter], rng);
 
     println!("Deploying dynamic_counter.aleo...");
     let deploy_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_caller], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_caller], rng);
 
     // Create 3 transactions that all increment the same key (key=0)
     // Each adds a different value: 10, 20, 30
@@ -2764,6 +2755,7 @@ fn test_multiple_dynamic_transactions_one_fails() {
     let rng = &mut TestRng::default();
 
     let caller_private_key = sample_genesis_private_key(rng);
+    let caller_address = Address::try_from(&caller_private_key).unwrap();
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap(), rng);
 
     let conditional_field = Identifier::<CurrentNetwork>::from_str("conditional").unwrap().to_field().unwrap();
@@ -2828,11 +2820,11 @@ fn test_multiple_dynamic_transactions_one_fails() {
     // Deploy programs
     println!("Deploying conditional.aleo...");
     let deploy_conditional = vm.deploy(&caller_private_key, &conditional_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_conditional], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_conditional], rng);
 
     println!("Deploying conditional_caller.aleo...");
     let deploy_caller = vm.deploy(&caller_private_key, &caller_program, None, 0, None, rng).unwrap();
-    add_and_test(&vm, &caller_private_key, &[deploy_caller], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[deploy_caller], rng);
 
     // Create 3 transactions:
     // tx1: succeeds (true), adds 10

@@ -137,8 +137,8 @@ impl<N: Network> Stack<N> {
         let translation_index: u16 = Uniform::rand(rng);
         let tvk = Uniform::rand(rng);
         let record_register_index = Uniform::rand(rng);
-        let record_view_key = Uniform::rand(rng);
-        let gamma = Uniform::rand(rng);
+        let record_view_key = UniformExt::rand_option(rng);
+        let gamma = UniformExt::rand_option(rng);
         // Compute the dynamic ID for external or dynamic record inputs/outputs.
         let id_dynamic = compute_console_dynamic_or_external_record_id(
             function_id,

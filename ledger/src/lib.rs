@@ -83,7 +83,7 @@ use locktick::parking_lot::{Mutex, RwLock};
 use lru::LruCache;
 #[cfg(not(feature = "locktick"))]
 use parking_lot::{Mutex, RwLock};
-use rand::{prelude::IteratorRandom, rngs::OsRng};
+use rand::prelude::IteratorRandom;
 use std::{borrow::Cow, collections::HashSet, sync::Arc};
 use time::OffsetDateTime;
 
@@ -194,7 +194,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         debug_assert_eq!(latest_height, ledger.vm.block_store().max_height().unwrap(), "Mismatch in latest height");
         // Sample random block heights.
         let block_heights: Vec<u32> =
-            (0..=latest_height).choose_multiple(&mut OsRng, (latest_height as usize).min(NUM_BLOCKS));
+            (0..=latest_height).sample(&mut rand::rng(), (latest_height as usize).min(NUM_BLOCKS));
         cfg_into_iter!(block_heights).try_for_each(|height| {
             ledger.get_block(height)?;
             Ok::<_, Error>(())
@@ -251,11 +251,13 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         lap!(timer, "Initialize genesis");
 
         // Ensure that the greatest stored height matches that of the block tree.
+        let tree_derived_block_height = ledger.vm().block_store().current_block_height();
         ensure!(
-            latest_height == ledger.vm().block_store().current_block_height(),
-            "The stored height is different than the one in the block tree; \
-            please ensure that the cached block tree is valid or delete the \
-            'block_tree' file from the ledger folder"
+            latest_height == tree_derived_block_height,
+            "The stored height ({latest_height}) is different than the one in \
+            the block tree ({tree_derived_block_height}); please ensure that \
+            the cached block tree is valid or delete the 'block_tree' file from \
+            the ledger folder"
         );
 
         // Verify that the root of the cached block tree matches the one in the storage.

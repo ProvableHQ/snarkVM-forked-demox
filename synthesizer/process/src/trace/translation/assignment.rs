@@ -76,7 +76,7 @@ pub struct TranslationAssignment<N: Network> {
     /// Irrelevant if `is_to_static` is false or `is_external_record` is true.
     pub(crate) gamma: Option<Group<N>>,
     /// Index of the input operand or output destination that contains the (dynamic and static) record.
-    /// Note: The first three dynamic.call operands are reserved for call-related data,
+    /// Note: The first three call.dynamic operands are reserved for call-related data,
     /// however this operand index still starts at 0 and is the same for caller and callee.
     pub(crate) record_register_index: u16,
     /// The ID of the dynamic record.

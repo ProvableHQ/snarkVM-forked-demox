@@ -43,7 +43,6 @@ use crate::{
     },
     srs::UniversalVerifier,
 };
-use rand::RngCore;
 use snarkvm_curves::PairingEngine;
 use snarkvm_fields::{One, PrimeField, ToConstraintField, Zero};
 use snarkvm_utilities::{ToBytes, dev_eprintln, dev_println, to_bytes_le};
@@ -102,7 +101,7 @@ impl<E: PairingEngine, FS: AlgebraicSponge<E::Fq, 2>, SM: SNARKMode> VarunaSNARK
             let ck = CommitterUnionKey::union(std::iter::once(&committer_key));
 
             let commit_time = start_timer!(|| format!("Commit to index polynomials for {}", indexed_circuit.id));
-            let setup_rng = None::<&mut dyn RngCore>; // We do not randomize the commitments
+            let setup_rng = None::<&mut dyn Rng>; // We do not randomize the commitments
 
             let (mut circuit_commitments, commitment_randomnesses): (_, _) = SonicKZG10::<E, FS>::commit(
                 universal_prover,
