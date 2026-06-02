@@ -335,12 +335,8 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
             let proof = kzg10::KZG10::open(&ck.powers(), &polynomial, query, &rand)?;
             end_timer!(proof_time);
             proofs.push(proof);
-            let mut sponge_copy = fs_rng.clone();
-            for proof in &proofs {
-                proof.absorb_into_sponge(&mut sponge_copy);
-            }
+
             let _ = fs_rng.squeeze_short_nonnative_field_element::<E::Fr>();
-            let _randomizer = sponge_copy.squeeze_short_nonnative_field_element::<E::Fr>();
         }
         let batch_proof = BatchProof(proofs);
         end_timer!(open_time);
@@ -374,6 +370,11 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
 
         assert_eq!(proof.0.len(), query_to_labels_map.len());
 
+        let mut private_sponge = fs_rng.clone();
+        for proof in &proof.0 {
+            proof.absorb_into_sponge(&mut private_sponge);
+        }
+
         let mut randomizer = E::Fr::one();
 
         let mut combined_comms = BTreeMap::new();
@@ -381,7 +382,7 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
         let mut combined_adjusted_witness = E::G1Projective::zero();
 
         ensure!(query_to_labels_map.len() == proof.0.len());
-        for (i, ((_query_name, (query, labels)), p)) in query_to_labels_map.into_iter().zip_eq(&proof.0).enumerate() {
+        for ((_query_name, (query, labels)), p) in query_to_labels_map.into_iter().zip_eq(&proof.0) {
             let mut comms_to_combine: Vec<&'_ LabeledCommitment<_>> = Vec::new();
             let mut values_to_combine = Vec::new();
             for label in labels.into_iter() {
@@ -409,14 +410,9 @@ impl<E: PairingEngine, S: AlgebraicSponge<E::Fq, 2>> SonicKZG10<E, S> {
                 fs_rng,
             )?;
 
-            let mut sponge_copy = fs_rng.clone();
-            for proof in &proof.0[..(i + 1)] {
-                proof.absorb_into_sponge(&mut sponge_copy);
-            }
-
             let _ = fs_rng.squeeze_short_nonnative_field_element::<E::Fr>();
 
-            randomizer = sponge_copy.squeeze_short_nonnative_field_element::<E::Fr>();
+            randomizer = private_sponge.squeeze_short_nonnative_field_element::<E::Fr>();
         }
 
         let result = Self::check_elems(vk, combined_comms, combined_witness, combined_adjusted_witness);
