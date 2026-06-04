@@ -44,7 +44,7 @@ pub fn deployment_cost<N: Network>(
     deployment: &Deployment<N>,
     consensus_version: ConsensusVersion,
 ) -> Result<(MinimumCost, DeployCostDetails)> {
-    if consensus_version >= ConsensusVersion::V15 {
+    if consensus_version >= ConsensusVersion::V16 {
         deployment_cost_v3(process, deployment)
     } else if consensus_version >= ConsensusVersion::V10 {
         deployment_cost_v2(process, deployment)
@@ -221,7 +221,7 @@ pub fn execute_compute_cost_in_microcredits(
 ///
 /// Identical to V2 except that the storage cost scales quadratically for programs larger
 /// than 512 kB (the V14 limit). Programs at or below that threshold are priced identically
-/// to V2, so this function is only routed to at consensus V15+.
+/// to V2, so this function is only routed to at consensus V16+.
 pub fn deployment_cost_v3<N: Network>(
     process: &Process<N>,
     deployment: &Deployment<N>,
@@ -1301,7 +1301,7 @@ function over_five_thousand:
     // Storage cost for an execution transaction at the maximum transaction size.
     const V1_STORAGE_COST_MAX: u64 = 3_276_800;
     const V14_STORAGE_COST_MAX: u64 = 117_964_800;
-    const V15_STORAGE_COST_MAX: u64 = 327_680_000;
+    const V16_STORAGE_COST_MAX: u64 = 327_680_000;
 
     fn test_storage_cost_bounds<N: Network>() {
         // Calculate the bounds directly above and below the size threshold.
@@ -1321,9 +1321,9 @@ function over_five_thousand:
         let v14_max_tx_size =
             consensus_config_value_by_version!(N, MAX_TRANSACTION_SIZE, ConsensusVersion::V14).unwrap();
         assert_eq!(execution_storage_cost::<N>(v14_max_tx_size as u64), V14_STORAGE_COST_MAX);
-        let v15_max_tx_size =
-            consensus_config_value_by_version!(N, MAX_TRANSACTION_SIZE, ConsensusVersion::V15).unwrap();
-        assert_eq!(execution_storage_cost::<N>(v15_max_tx_size as u64), V15_STORAGE_COST_MAX);
+        let v16_max_tx_size =
+            consensus_config_value_by_version!(N, MAX_TRANSACTION_SIZE, ConsensusVersion::V16).unwrap();
+        assert_eq!(execution_storage_cost::<N>(v16_max_tx_size as u64), V16_STORAGE_COST_MAX);
     }
 
     #[test]
@@ -1383,7 +1383,7 @@ function over_five_thousand:
         let expected_above =
             above * above * MainnetV0::DEPLOYMENT_FEE_MULTIPLIER / DEPLOYMENT_STORAGE_PENALTY_THRESHOLD;
         assert_eq!(deployment_storage_cost::<MainnetV0>(above).unwrap(), expected_above);
-        // At the V15 max program size (1024 kB): cost is exactly 2x the linear cost.
+        // At the V16 max program size (1024 kB): cost is exactly 2x the linear cost.
         let max = 1_024_000u64;
         assert_eq!(deployment_storage_cost::<MainnetV0>(max).unwrap(), 2 * max * MainnetV0::DEPLOYMENT_FEE_MULTIPLIER);
     }
@@ -1668,7 +1668,7 @@ function dummy:",
 
     #[test]
     fn test_deployment_cost_v3_dispatch_and_quadratic_storage() {
-        // Verify that `deployment_cost` with ConsensusVersion::V15 dispatches to `deployment_cost_v3`,
+        // Verify that `deployment_cost` with ConsensusVersion::V16 dispatches to `deployment_cost_v3`,
         // and that v3 applies the quadratic storage penalty above DEPLOYMENT_STORAGE_PENALTY_THRESHOLD.
         let process = Process::<MainnetV0>::load().unwrap();
         let rng = &mut TestRng::default();
@@ -1685,9 +1685,9 @@ function noop:",
         deployment.set_program_checksum_raw(Some(deployment.program().to_checksum()));
         deployment.set_program_owner_raw(Some(Address::rand(rng)));
 
-        // `deployment_cost` must dispatch to v3 for ConsensusVersion::V15.
+        // `deployment_cost` must dispatch to v3 for ConsensusVersion::V16.
         assert_eq!(
-            deployment_cost(&process, &deployment, ConsensusVersion::V15).unwrap(),
+            deployment_cost(&process, &deployment, ConsensusVersion::V16).unwrap(),
             deployment_cost_v3(&process, &deployment).unwrap(),
         );
 

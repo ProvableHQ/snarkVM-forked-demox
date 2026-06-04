@@ -15,7 +15,7 @@
 
 use super::*;
 
-/// Generates a large program string that exceeds the V14 size limit (512KB) but fits within V15 (1024KB).
+/// Generates a large program string that exceeds the V14 size limit (512KB) but fits within V16 (1024KB).
 fn generate_large_program() -> String {
     let mut program = String::from(
         "program large_program_generated.aleo;
@@ -48,9 +48,9 @@ constructor:
     program
 }
 
-// This test verifies that a large program that is over the previous size limit can be deployed after V15.
+// This test verifies that a large program that is over the previous size limit can be deployed after V16.
 #[test]
-fn test_deploy_large_program_v15() {
+fn test_deploy_large_program_v16() {
     // Initialize an RNG.
     let rng = &mut TestRng::default();
 
@@ -62,11 +62,11 @@ fn test_deploy_large_program_v15() {
     // Initialize a new caller.
     let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
 
-    // Initialize the VM at the V14 height.
-    let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
-    let vm = crate::vm::test_helpers::sample_vm_at_height(v14_height, rng);
+    // Initialize the VM at the V15 height.
+    let v15_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap();
+    let vm = crate::vm::test_helpers::sample_vm_at_height(v15_height, rng);
 
-    // Ensure that the program is too large to be deployed at V14.
+    // Ensure that the program is too large to be deployed at V15.
     let deployment = vm.deploy(&caller_private_key, &large_program, None, 0, None, rng).unwrap();
     let deployment_id = deployment.id();
     assert!(vm.check_transaction(&deployment, None, rng).is_err());
@@ -76,14 +76,14 @@ fn test_deploy_large_program_v15() {
     assert_eq!(block.aborted_transaction_ids(), &[deployment_id]);
     assert_eq!(block.aborted_transaction_ids().len(), 1);
 
-    // Advance to the V15 height.
-    let v15_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap();
-    while vm.block_store().current_block_height() < v15_height {
+    // Advance to the V16 height.
+    let v16_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V16).unwrap();
+    while vm.block_store().current_block_height() < v16_height {
         let block = sample_next_block(&vm, &caller_private_key, &[], rng).unwrap();
         vm.add_next_block(&block).unwrap();
     }
 
-    // Ensure that the program can be deployed at V15.
+    // Ensure that the program can be deployed at V16.
     let deployment = vm.deploy(&caller_private_key, &large_program, None, 0, None, rng).unwrap();
     assert!(vm.check_transaction(&deployment, None, rng).is_ok());
 
@@ -95,9 +95,9 @@ fn test_deploy_large_program_v15() {
     vm.add_next_block(&block).unwrap();
 }
 
-// This test verifies serialization round-trips for large program deployment transactions at V14 and V15.
+// This test verifies serialization round-trips for large program deployment transactions at V15 and V16.
 #[test]
-fn test_deploy_large_program_v15_serialization() {
+fn test_deploy_large_program_v16_serialization() {
     // Initialize an RNG.
     let rng = &mut TestRng::default();
 
@@ -109,43 +109,13 @@ fn test_deploy_large_program_v15_serialization() {
     // Initialize a new caller.
     let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
 
-    // Initialize the VM at the V14 height.
-    let v14_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V14).unwrap();
-    let vm = crate::vm::test_helpers::sample_vm_at_height(v14_height, rng);
+    // Initialize the VM at the V15 height.
+    let v15_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap();
+    let vm = crate::vm::test_helpers::sample_vm_at_height(v15_height, rng);
 
-    // Create a deployment transaction for the large program at V14.
+    // Create a deployment transaction for the large program at V15.
     let deployment = vm.deploy(&caller_private_key, &large_program, None, 0, None, rng).unwrap();
     let deployment_id = deployment.id();
-
-    // Verify bytes serialization round-trip at V14.
-    let deployment_bytes = deployment.to_bytes_le().unwrap();
-    let recovered_from_bytes = Transaction::<CurrentNetwork>::read_le(&deployment_bytes[..]).unwrap();
-    assert_eq!(deployment, recovered_from_bytes);
-
-    // Verify string (JSON) serialization round-trip at V14.
-    let deployment_string = deployment.to_string();
-    let recovered_from_string = Transaction::<CurrentNetwork>::from_str(&deployment_string).unwrap();
-    assert_eq!(deployment, recovered_from_string);
-
-    // Ensure that the program is too large to pass check_transaction at V14.
-    assert!(vm.check_transaction(&deployment, None, rng).is_err());
-
-    // Create block and verify the transaction is aborted.
-    let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
-    assert_eq!(block.transactions().num_accepted(), 0);
-    assert_eq!(block.transactions().num_rejected(), 0);
-    assert_eq!(block.aborted_transaction_ids(), &[deployment_id]);
-    assert_eq!(block.aborted_transaction_ids().len(), 1);
-
-    // Advance to the V15 height.
-    let v15_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap();
-    while vm.block_store().current_block_height() < v15_height {
-        let block = sample_next_block(&vm, &caller_private_key, &[], rng).unwrap();
-        vm.add_next_block(&block).unwrap();
-    }
-
-    // Create a new deployment transaction for the large program at V15.
-    let deployment = vm.deploy(&caller_private_key, &large_program, None, 0, None, rng).unwrap();
 
     // Verify bytes serialization round-trip at V15.
     let deployment_bytes = deployment.to_bytes_le().unwrap();
@@ -157,7 +127,37 @@ fn test_deploy_large_program_v15_serialization() {
     let recovered_from_string = Transaction::<CurrentNetwork>::from_str(&deployment_string).unwrap();
     assert_eq!(deployment, recovered_from_string);
 
-    // Ensure that the program passes check_transaction at V15.
+    // Ensure that the program is too large to pass check_transaction at V15.
+    assert!(vm.check_transaction(&deployment, None, rng).is_err());
+
+    // Create block and verify the transaction is aborted.
+    let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 0);
+    assert_eq!(block.transactions().num_rejected(), 0);
+    assert_eq!(block.aborted_transaction_ids(), &[deployment_id]);
+    assert_eq!(block.aborted_transaction_ids().len(), 1);
+
+    // Advance to the V16 height.
+    let v16_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V16).unwrap();
+    while vm.block_store().current_block_height() < v16_height {
+        let block = sample_next_block(&vm, &caller_private_key, &[], rng).unwrap();
+        vm.add_next_block(&block).unwrap();
+    }
+
+    // Create a new deployment transaction for the large program at V16.
+    let deployment = vm.deploy(&caller_private_key, &large_program, None, 0, None, rng).unwrap();
+
+    // Verify bytes serialization round-trip at V16.
+    let deployment_bytes = deployment.to_bytes_le().unwrap();
+    let recovered_from_bytes = Transaction::<CurrentNetwork>::read_le(&deployment_bytes[..]).unwrap();
+    assert_eq!(deployment, recovered_from_bytes);
+
+    // Verify string (JSON) serialization round-trip at V16.
+    let deployment_string = deployment.to_string();
+    let recovered_from_string = Transaction::<CurrentNetwork>::from_str(&deployment_string).unwrap();
+    assert_eq!(deployment, recovered_from_string);
+
+    // Ensure that the program passes check_transaction at V16.
     assert!(vm.check_transaction(&deployment, None, rng).is_ok());
 
     // Create block and verify the transaction is accepted.
