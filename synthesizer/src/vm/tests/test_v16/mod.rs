@@ -18,13 +18,9 @@ mod program_size;
 
 use super::*;
 
-use crate::vm::test_helpers::{sample_vm_at_height, *};
+use crate::vm::test_helpers::*;
 
-use console::{
-    account::ViewKey,
-    network::ConsensusVersion,
-    program::{Identifier, Value},
-};
+use console::network::ConsensusVersion;
 
 use snarkvm_synthesizer_program::Program;
 use snarkvm_utilities::TestRng;
