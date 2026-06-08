@@ -620,119 +620,170 @@ impl<N: Network> Process<N> {
         transitions: impl ExactSizeIterator<Item = &'a Transition<N>> + DoubleEndedIterator,
         execution_stacks: &IndexMap<ProgramID<N>, Arc<Stack<N>>>,
     ) -> Result<HashMap<N::TransitionID, Vec<N::TransitionID>>> {
-        // Metadata for each transition the execution.
-        struct TransitionMetadata<N: Network> {
+        Self::construct_object_call_graph(
+            transitions,
+            execution_stacks,
+            |transition| *transition.id(),
+            |transition| transition.program_id(),
+            |transition| transition.function_name(),
+        )
+    }
+
+    /// Constructs a call graph keyed by the transition view key (`tvk`) of each request.
+    ///
+    /// This mirrors [`Self::construct_call_graph`], but operates on `Request`s instead of
+    /// `Transition`s. The requests must be provided in the same DFS reverse-post-order as the
+    /// transitions of the corresponding `Execution`.
+    pub fn construct_request_call_graph<'a>(
+        requests: impl ExactSizeIterator<Item = &'a Request<N>> + DoubleEndedIterator,
+        execution_stacks: &IndexMap<ProgramID<N>, Arc<Stack<N>>>,
+    ) -> Result<HashMap<Field<N>, Vec<Field<N>>>> {
+        Self::construct_object_call_graph(
+            requests,
+            execution_stacks,
+            |request| *request.tvk(),
+            |request| request.program_id(),
+            |request| request.function_name(),
+        )
+    }
+
+    // A helper function to construct a call graph from an ordered sequence of objects.
+    //
+    // This is the generic implementation backing both [`Self::construct_call_graph`] (where the
+    // objects are `Transition`s and the identifiers are transition IDs) and
+    // [`Self::construct_request_call_graph`] (where the objects are `Request`s and the identifiers
+    // are transition view keys). The caller provides functions to obtain, from each object `O`:
+    // - its identifier `OID` (via `object_to_id`),
+    // - its program ID (via `object_to_program_id`),
+    // - its function name (via `object_to_function_name`).
+    //
+    // The identifiers are assumed to be unique across the objects, as they are used as the keys of
+    // the resulting call graph.
+    fn construct_object_call_graph<'a, O, OID>(
+        objects: impl ExactSizeIterator<Item = &'a O> + DoubleEndedIterator,
+        execution_stacks: &IndexMap<ProgramID<N>, Arc<Stack<N>>>,
+        object_to_id: impl Fn(&O) -> OID,
+        object_to_program_id: impl Fn(&O) -> &ProgramID<N>,
+        object_to_function_name: impl Fn(&O) -> &Identifier<N>,
+    ) -> Result<HashMap<OID, Vec<OID>>>
+    where
+        O: 'a,
+        OID: Copy + Eq + core::hash::Hash,
+    {
+        // Metadata for each object in the execution.
+        struct ObjectMetadata<N: Network, OID> {
             uid: usize,
-            // pid and fname of the transition. For static calls, this is set at
+            // pid and fname of the object. For static calls, this is set at
             // metadata-creation time to be later matched against the data from
-            // the actual transition found in the execution (defense in depth).
+            // the actual object found in the execution (defense in depth).
             // For dynamic calls, it is set to None and subsequently taken from
-            // the data in the actual transition (no in-depth defense).
+            // the data in the actual object (no in-depth defense).
             locator: Option<(ProgramID<N>, Identifier<N>)>,
-            tid: Option<N::TransitionID>,
+            id: Option<OID>,
             children: Option<Vec<usize>>,
         }
 
-        impl<N: Network> TransitionMetadata<N> {
+        impl<N: Network, OID> ObjectMetadata<N, OID> {
             fn new(
                 counter: &mut usize,
                 locator: Option<(ProgramID<N>, Identifier<N>)>,
-                tid: Option<N::TransitionID>,
+                id: Option<OID>,
             ) -> Self {
                 let uid = *counter;
                 *counter += 1;
-                Self { uid, locator, tid, children: None }
+                Self { uid, locator, id, children: None }
             }
 
-            /// Returns 'true' if the subgraph starting from this transition has been fully-indexed.
+            /// Returns 'true' if the subgraph starting from this object has been fully-indexed.
             fn is_complete(&self) -> bool {
-                self.tid.is_some() && self.children.is_some()
+                self.id.is_some() && self.children.is_some()
             }
         }
 
-        // A helper function to update the call graph, given transition metadata.
-        let update_call_graph = |metadata: TransitionMetadata<N>,
-                                 call_graph: &mut HashMap<N::TransitionID, Vec<N::TransitionID>>,
-                                 uid_to_tid: &mut HashMap<usize, N::TransitionID>|
+        // A helper function to update the call graph, given object metadata.
+        let update_call_graph = |metadata: ObjectMetadata<N, OID>,
+                                 call_graph: &mut HashMap<OID, Vec<OID>>,
+                                 uid_to_id: &mut HashMap<usize, OID>|
          -> Result<()> {
-            // Check that the transition metadata is complete.
-            ensure!(metadata.is_complete(), "Invalid traversal - transition metadata is incomplete");
+            // Check that the object metadata is complete.
+            ensure!(metadata.is_complete(), "Invalid traversal - object metadata is incomplete");
             // Update the call graph.
             call_graph.insert(
-                metadata.tid.unwrap(),
+                metadata.id.unwrap(),
                 metadata
                     .children // Safe to unwrap, since the metadata is complete.
                     .unwrap()
                     .into_iter()
-                    .map(|uid| match uid_to_tid.get(&uid) {
-                        Some(tid) => Ok(*tid),
-                        None => bail!("Invalid traversal - missing 'tid' for uid '{uid}'"),
+                    .map(|uid| match uid_to_id.get(&uid) {
+                        Some(id) => Ok(*id),
+                        None => bail!("Invalid traversal - missing 'id' for uid '{uid}'"),
                     })
                     .collect::<Result<Vec<_>, _>>()?,
             );
-            // Update the UID to TID mapping.
-            uid_to_tid.insert(metadata.uid, metadata.tid.unwrap());
+            // Update the UID to ID mapping.
+            uid_to_id.insert(metadata.uid, metadata.id.unwrap());
             Ok(())
         };
 
-        // Initialize a call graph, which is a map of transition IDs to the transition IDs it calls.
+        // Initialize a call graph, which is a map of object IDs to the object IDs it calls.
         let mut call_graph = HashMap::new();
-        // Initialize a mapping from UIDs to transition IDs.
-        let mut uid_to_tid = HashMap::new();
+        // Initialize a mapping from UIDs to object IDs.
+        let mut uid_to_id = HashMap::new();
 
-        // Initialize a stack to track transition metadata, while traversing the call graph.
-        let mut traversal_stack: Vec<TransitionMetadata<N>> = Vec::new();
-        // Initialize a counter to provide unique IDs for each transition.
+        // Initialize a stack to track object metadata, while traversing the call graph.
+        let mut traversal_stack: Vec<ObjectMetadata<N, OID>> = Vec::new();
+        // Initialize a counter to provide unique IDs for each object.
         let mut counter = 0;
 
-        let num_transitions = transitions.len();
+        let num_objects = objects.len();
 
-        // Iterate over each transition in reverse post-order, and populate the call graph.
-        for transition in transitions.rev() {
-            // Now process the current `transition`.
+        // Iterate over each object in reverse post-order, and populate the call graph.
+        for object in objects.rev() {
+            // Now process the current `object`.
             // At this point, the algorithm must maintain the following invariant:
             // - The stack is either empty, or the top entry is incomplete.
             match traversal_stack.last_mut() {
-                // If the stack is empty, then push the `transition` to the top of the stack.
+                // If the stack is empty, then push the `object` to the top of the stack.
                 None => {
                     ensure!(
                         counter == 0,
                         "Invalid traversal - execution contains multiple disconnected transition trees"
                     );
-                    traversal_stack.push(TransitionMetadata::new(
+                    traversal_stack.push(ObjectMetadata::new(
                         &mut counter,
-                        Some((*transition.program_id(), *transition.function_name())),
-                        Some(*transition.id()),
+                        Some((*object_to_program_id(object), *object_to_function_name(object))),
+                        Some(object_to_id(object)),
                     ));
                 }
-                // If the stack is not empty, then add the current transition ID to the entry.
+                // If the stack is not empty, then add the current object ID to the entry.
                 Some(head) => {
                     match head.locator {
                         Some((expected_pid, expected_fname)) => {
-                            // Checking the pid and fname expected (from the static call instruction) against the actual transition.
+                            // Checking the pid and fname expected (from the static call instruction) against the actual object.
                             ensure!(
-                                expected_pid == *transition.program_id()
-                                    && expected_fname == *transition.function_name(),
-                                "Invalid traversal - unexpected transition in the execution"
+                                expected_pid == *object_to_program_id(object)
+                                    && expected_fname == *object_to_function_name(object),
+                                "Invalid traversal - unexpected object in the execution"
                             );
                         }
                         None => {
-                            // Setting the pid and fname from the actual transition
-                            head.locator = Some((*transition.program_id(), *transition.function_name()));
+                            // Setting the pid and fname from the actual object
+                            head.locator =
+                                Some((*object_to_program_id(object), *object_to_function_name(object)));
                         }
                     }
 
-                    head.tid = Some(*transition.id());
+                    head.id = Some(object_to_id(object));
                 }
             }
 
-            // Process the entry at the top of the stack. By the previous step, this entry has a transition ID.
+            // Process the entry at the top of the stack. By the previous step, this entry has an object ID.
             // Note this unwrap is safe, since we either pushed an entry to the stack or modified the one at the top of the stack.
             let top = traversal_stack.last().unwrap();
             // If the entry is complete, then add it to the call graph.
             if top.is_complete() {
                 // Note this unwrap is safe, for the same reason as above.
-                update_call_graph(traversal_stack.pop().unwrap(), &mut call_graph, &mut uid_to_tid)?;
+                update_call_graph(traversal_stack.pop().unwrap(), &mut call_graph, &mut uid_to_id)?;
             } else {
                 // This unwrap is safe as the locator field is set after all possible paths of the match
                 let (caller_pid, caller_fname) = top.locator.as_ref().unwrap();
@@ -743,7 +794,7 @@ impl<N: Network> Process<N> {
                     .ok_or_else(|| anyhow!("Missing stack for program '{caller_pid}'"))?;
                 // Retrieve the function from the stack.
                 let caller_fname = stack.get_function(caller_fname)?;
-                // Collect the children of the current transition.
+                // Collect the children of the current object.
                 let mut children = Vec::new();
                 for instruction in caller_fname.instructions() {
                     if let Instruction::Call(call) = instruction {
@@ -755,7 +806,7 @@ impl<N: Network> Process<N> {
                         };
                         // Add the child to the traversal stack, only if it is a call to a transition.
                         if execution_stacks.get(pid).is_some_and(|stack| stack.get_function(fname).is_ok()) {
-                            children.push(TransitionMetadata::new(&mut counter, Some((*pid, *fname)), None));
+                            children.push(ObjectMetadata::new(&mut counter, Some((*pid, *fname)), None));
                         }
                     }
                     if let Instruction::CallDynamic(_) = instruction {
@@ -763,9 +814,9 @@ impl<N: Network> Process<N> {
                         // NOTE: for dynamic calls, the verifier doesn't have
                         // access to a locator or resource. However, the
                         // verifier can determine the program and function name
-                        // directly from the DFS ordering of transitions in the
+                        // directly from the DFS ordering of objects in the
                         // Execution.
-                        children.push(TransitionMetadata::new(&mut counter, None, None));
+                        children.push(ObjectMetadata::new(&mut counter, None, None));
                     }
                 }
 
@@ -783,7 +834,7 @@ impl<N: Network> Process<N> {
             // If the stack has complete metadata entries, then remove and add them to the call graph.
             while let Some(metadata) = traversal_stack.last() {
                 if metadata.is_complete() {
-                    update_call_graph(traversal_stack.pop().unwrap(), &mut call_graph, &mut uid_to_tid)?;
+                    update_call_graph(traversal_stack.pop().unwrap(), &mut call_graph, &mut uid_to_id)?;
                 } else {
                     break;
                 }
@@ -793,8 +844,8 @@ impl<N: Network> Process<N> {
         ensure!(traversal_stack.is_empty(), "Invalid traversal - traversal stack is not empty");
 
         ensure!(
-            counter == num_transitions,
-            "Invalid traversal - counter does not match the number of transitions in the execution"
+            counter == num_objects,
+            "Invalid traversal - counter does not match the number of objects in the execution"
         );
 
         Ok(call_graph)
