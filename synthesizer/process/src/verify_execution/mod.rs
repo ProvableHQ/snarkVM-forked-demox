@@ -684,11 +684,7 @@ impl<N: Network> Process<N> {
         }
 
         impl<N: Network, OID> ObjectMetadata<N, OID> {
-            fn new(
-                counter: &mut usize,
-                locator: Option<(ProgramID<N>, Identifier<N>)>,
-                id: Option<OID>,
-            ) -> Self {
+            fn new(counter: &mut usize, locator: Option<(ProgramID<N>, Identifier<N>)>, id: Option<OID>) -> Self {
                 let uid = *counter;
                 *counter += 1;
                 Self { uid, locator, id, children: None }
@@ -768,8 +764,7 @@ impl<N: Network> Process<N> {
                         }
                         None => {
                             // Setting the pid and fname from the actual object
-                            head.locator =
-                                Some((*object_to_program_id(object), *object_to_function_name(object)));
+                            head.locator = Some((*object_to_program_id(object), *object_to_function_name(object)));
                         }
                     }
 

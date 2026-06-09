@@ -95,7 +95,8 @@ use locktick::parking_lot::RwLock;
 use parking_lot::RwLock;
 use rand::{CryptoRng, RngExt as Rng, SeedableRng, rngs::StdRng};
 use std::{
-    cell::OnceCell, sync::{Arc, Weak}
+    cell::OnceCell,
+    sync::{Arc, Weak},
 };
 
 #[cfg(not(feature = "serial"))]
@@ -116,7 +117,8 @@ pub enum CallStack<N: Network> {
     /// Mock an evaluation for cost estimation.
     AuthorizeMocked(Vec<Request<N>>, Address<N>, Authorization<N>),
     /// Authorize a collection of requests coming from a single root call.
-    AuthorizeRequests(Vec<Request<N>>, usize, Authorization<N>),
+    // (full vector of requests in pre-order, index of the request currently being explored, authorization being constructed)
+    AuthorizeRequests(Vec<Request<N>>, Arc<RwLock<usize>>, Authorization<N>),
     /// Synthesize a function circuit before a `Deploy` transaction.
     Synthesize(Vec<Request<N>>, PrivateKey<N>, Authorization<N>),
     /// Validate a `Deploy` transaction's function circuit.
@@ -171,9 +173,11 @@ impl<N: Network> CallStack<N> {
             CallStack::AuthorizeMocked(requests, address, authorization) => {
                 CallStack::AuthorizeMocked(requests.clone(), *address, authorization.replicate())
             }
-            CallStack::AuthorizeRequests(requests, current_index, authorization) => {
-                CallStack::AuthorizeRequests(requests.clone(), *current_index, authorization.replicate())
-            }
+            CallStack::AuthorizeRequests(requests, current_index, authorization) => CallStack::AuthorizeRequests(
+                requests.clone(),
+                Arc::new(RwLock::new(*current_index.read())),
+                authorization.replicate(),
+            ),
             CallStack::Synthesize(requests, private_key, authorization) => {
                 CallStack::Synthesize(requests.clone(), *private_key, authorization.replicate())
             }
@@ -217,7 +221,7 @@ impl<N: Network> CallStack<N> {
             }
             CallStack::AuthorizeRequests(..) => {
                 bail!("Cannot push a request to the stack in AuthorizeRequests mode");
-            },
+            }
             CallStack::Evaluate(authorization) => authorization.push(request)?,
             CallStack::Execute(authorization, ..) => authorization.push(request)?,
         }
@@ -253,9 +257,11 @@ impl<N: Network> CallStack<N> {
                 requests.last().cloned().ok_or_else(|| anyhow!("No more requests on the stack"))
             }
             CallStack::AuthorizeRequests(requests, current_index, ..) => {
-                requests.get(*current_index).cloned().ok_or_else(|| anyhow!(
-                    "CallStack::peek attempted to retrieve request at index {current_index}, but the AuthorizeRequests call stack only contains {} request(s)", requests.len())
-                )
+                requests.get(*current_index.read()).cloned().ok_or_else(|| anyhow!(
+                    "CallStack::peek attempted to retrieve request at index {}, but the AuthorizeRequests call stack only contains {} request(s)",
+                    *current_index.read(),
+                    requests.len()
+                ))
             }
             CallStack::Evaluate(authorization) => authorization.peek_next(),
             CallStack::Execute(authorization, ..) => authorization.peek_next(),

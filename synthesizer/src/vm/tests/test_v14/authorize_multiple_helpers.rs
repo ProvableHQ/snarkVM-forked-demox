@@ -20,36 +20,38 @@ use crate::vm::{
 use console::{
     account::{Address, ComputeKey, GraphKey, PrivateKey, Signature, ViewKey},
     prelude::*,
-    program::{InputID, Request, Value, ValueType, compute_function_id},
-    types::{Field, U16},
+    program::{DynamicRecord, InputID, Plaintext, ProgramID, Record, Request, Value, ValueType, compute_function_id},
+    types::{Field, Scalar, U16},
 };
-use snarkvm_ledger_block::Execution;
+use snarkvm_ledger_block::{Execution, Output, Transition};
 use snarkvm_synthesizer_process::Authorization;
 use snarkvm_synthesizer_program::StackTrait;
 
 use std::collections::HashMap;
 
 // Populates and signs a mocked request (e.g. one produced by Request::sample), reusing its
-// inputs while recomputing tvk, tcm, scm, the input IDs, and the signature so that the
-// resulting request is well-formed and verifies. Note that the request's program, function name,
-// signer and input values must be correct.
+// identifying data while recomputing tvk, tcm, scm, the input IDs, and the signature so that the
+// resulting request is well-formed and verifies. The corrected input values are supplied
+// explicitly via `inputs`; they must be correct for the resulting request to be valid. Note that
+// the request's program, function name and signer must also be correct.
 //
 // Unlike Request::sign, the transition view key tvk is provided externally rather than being
 // derived from the transition randomness r.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn populate_request_and_sign<N: Network, R: Rng + CryptoRng>(
     request: &Request<N>,
     private_key: &PrivateKey<N>,
     input_types: &[ValueType<N>],
+    inputs: &[Value<N>],
     tvk: Field<N>,
     root_tvk: Option<Field<N>>,
     is_root: bool,
     program_checksum: Option<Field<N>>,
     rng: &mut R,
 ) -> Result<Request<N>> {
-    // Reuse the mocked request's identifying data and inputs.
+    // Reuse the mocked request's identifying data.
     let program_id = *request.program_id();
     let function_name = *request.function_name();
-    let inputs = request.inputs();
     let is_dynamic = request.is_dynamic();
 
     // Ensure the number of inputs matches the number of input types.
@@ -188,12 +190,78 @@ pub(crate) fn populate_request_and_sign<N: Network, R: Rng + CryptoRng>(
     )))
 }
 
+// Resolves the correct value of a record-bearing input slot of a reauthorized request.
+//
+// The mocked authorization derives intermediate records (those produced within the call tree) using
+// mocked transition view keys, so their nonces (and thus commitments, serial numbers, and input
+// IDs) do not match the execution. This function recovers the correct value by selecting, among the
+// candidate records, the one whose recomputed input ID matches the corresponding transition input.
+//
+// The candidates are the mocked value (correct for records derived purely from the root inputs,
+// since translation is tvk-independent) followed by the records decrypted from the execution's
+// outputs (correct for records produced within the call tree, since every such record is emitted as
+// a static record output by its birth transition).
+#[allow(clippy::too_many_arguments)]
+fn resolve_record_input(
+    mock_value: &Value<CurrentNetwork>,
+    value_type: &ValueType<CurrentNetwork>,
+    target_id: &Field<CurrentNetwork>,
+    output_records: &[Record<CurrentNetwork, Plaintext<CurrentNetwork>>],
+    program_id: &ProgramID<CurrentNetwork>,
+    function_id: Field<CurrentNetwork>,
+    signer: &Address<CurrentNetwork>,
+    view_key: &ViewKey<CurrentNetwork>,
+    sk_sig: &Scalar<CurrentNetwork>,
+    sk_tag: Field<CurrentNetwork>,
+    tvk: Field<CurrentNetwork>,
+    index: u16,
+) -> Result<Value<CurrentNetwork>> {
+    // Computes the transition-level input ID that the given candidate value would yield, returning
+    // `None` if the candidate's shape is incompatible with the input type. For a record input, the
+    // transition stores the serial number, so that is extracted; for external and dynamic record
+    // inputs, the transition stores the input ID hash directly.
+    let candidate_id = |value: &Value<CurrentNetwork>| -> Option<Field<CurrentNetwork>> {
+        match value_type {
+            ValueType::Record(record_name) => {
+                match InputID::record(program_id, record_name, value, signer, view_key, sk_sig, sk_tag) {
+                    Ok(InputID::Record(_, _, _, serial_number, _)) => Some(serial_number),
+                    _ => None,
+                }
+            }
+            ValueType::ExternalRecord(..) => {
+                InputID::external_record(function_id, value, tvk, index).ok().map(|id| *id.id())
+            }
+            ValueType::DynamicRecord => InputID::dynamic_record(function_id, value, tvk, index).ok().map(|id| *id.id()),
+            _ => None,
+        }
+    };
+
+    // First, try the mocked value, which is correct for records derived purely from the root inputs.
+    if candidate_id(mock_value) == Some(*target_id) {
+        return Ok(mock_value.clone());
+    }
+    // Otherwise, search the records decrypted from the execution's outputs.
+    for record in output_records {
+        let value = match value_type {
+            ValueType::Record(..) | ValueType::ExternalRecord(..) => Value::Record(record.clone()),
+            ValueType::DynamicRecord => Value::DynamicRecord(DynamicRecord::from_record(record)?),
+            _ => continue,
+        };
+        if candidate_id(&value) == Some(*target_id) {
+            return Ok(value);
+        }
+    }
+    bail!("Could not resolve the value of record input {index} for '{program_id}'")
+}
+
 // Reconstructs an authorization for the given execution, extracting suitable requests and calling
 // authorize_multiple_requests. More specifically, this function:
 // - recovers each transition's actual tvk from its tpk and the signer's view key,
 // - samples a mocked authorization for the same root call via sample_authorization
 //   In particular, the requests in the authoriztion have correct program IDs, function names and
 //   input values (not IDs), but their tvk, tcm and signatures are mocked.
+// - corrects the input values of records produced within the call tree, whose mocked nonces do not
+//   match the execution, by decrypting the corresponding records from the execution's outputs,
 // - populates each mocked request with the correct data derived from its recovered tvk (tcm, input
 //   IDs and signature) via populate_request_and_sign
 // - passes the populated requests to authorize_multiple_requests
@@ -204,9 +272,25 @@ pub(crate) fn reauthorize_from_execution(
     private_key: &PrivateKey<CurrentNetwork>,
     rng: &mut TestRng,
 ) -> Authorization<CurrentNetwork> {
-    // Derive the signer's view key and address.
+    // Derive the signer's view key, address, and signing material.
     let view_key = ViewKey::try_from(private_key).unwrap();
     let signer = view_key.to_address();
+    let sk_sig = private_key.sk_sig();
+    let sk_tag = GraphKey::try_from(view_key).unwrap().sk_tag();
+
+    // Decrypt every record emitted as a (static) record output of the execution. These provide the
+    // correct values for records produced within the call tree, whose nonces depend on the
+    // producing transition's tvk and so do not match the mocked authorization.
+    let output_records: Vec<Record<CurrentNetwork, Plaintext<CurrentNetwork>>> = execution
+        .transitions()
+        .flat_map(|transition| transition.outputs())
+        .filter_map(|output| match output {
+            Output::Record(_, _, Some(record), _) | Output::RecordWithDynamicID(_, _, Some(record), _, _) => {
+                record.decrypt(&view_key).ok()
+            }
+            _ => None,
+        })
+        .collect();
 
     // Recover the transition view keys (tvks) from the transitions' tpks, in post-order (the order
     // in which the transitions appear in the execution).
@@ -229,13 +313,19 @@ pub(crate) fn reauthorize_from_execution(
         .unwrap();
 
     // The mocked transitions are in the same post-order as the execution's transitions, so map each
-    // mocked transition's tcm to the recovered tvk by position. Each mocked request is then matched
-    // to its tvk via its (mocked) tcm.
+    // mocked transition's tcm to the recovered tvk and execution transition by position. Each mocked
+    // request is then matched to its tvk and transition via its (mocked) tcm.
     let tcm_to_tvk: HashMap<Field<CurrentNetwork>, Field<CurrentNetwork>> = sampled
         .transitions()
         .values()
         .zip_eq(recovered_tvks.iter().copied())
         .map(|(transition, tvk)| (*transition.tcm(), tvk))
+        .collect();
+    let tcm_to_transition: HashMap<Field<CurrentNetwork>, &Transition<CurrentNetwork>> = sampled
+        .transitions()
+        .values()
+        .zip_eq(execution.transitions())
+        .map(|(mock, real)| (*mock.tcm(), real))
         .collect();
 
     // Populate each mocked request with the correct data derived from its recovered tvk.
@@ -243,8 +333,9 @@ pub(crate) fn reauthorize_from_execution(
         .to_vec_deque()
         .into_iter()
         .map(|request| {
-            // Recover this request's tvk via its (mocked) tcm.
+            // Recover this request's tvk and execution transition via its (mocked) tcm.
             let tvk = *tcm_to_tvk.get(request.tcm()).expect("every mocked request has a matching transition");
+            let transition = *tcm_to_transition.get(request.tcm()).expect("every mocked request has a transition");
             // Look up the callee program's stack, function input types, and program checksum.
             let stack = vm.process().get_stack(*request.program_id()).unwrap();
             let input_types = stack.get_function(request.function_name()).unwrap().input_types();
@@ -254,9 +345,51 @@ pub(crate) fn reauthorize_from_execution(
             };
             // The root request is the one whose tvk matches the root tvk.
             let is_root = tvk == root_tvk;
+            // Compute the function ID used to recompute external and dynamic record input IDs.
+            let function_id =
+                compute_function_id(&U16::new(CurrentNetwork::ID), request.program_id(), request.function_name())
+                    .unwrap();
+            // Correct the value of each record-bearing input, leaving other inputs untouched.
+            let corrected_inputs: Vec<Value<CurrentNetwork>> = request
+                .inputs()
+                .iter()
+                .zip_eq(input_types.iter())
+                .enumerate()
+                .map(|(index, (mock_value, value_type))| match value_type {
+                    ValueType::Record(..) | ValueType::ExternalRecord(..) | ValueType::DynamicRecord => {
+                        let target_id = transition.inputs()[index].id();
+                        resolve_record_input(
+                            mock_value,
+                            value_type,
+                            target_id,
+                            &output_records,
+                            request.program_id(),
+                            function_id,
+                            &signer,
+                            &view_key,
+                            &sk_sig,
+                            sk_tag,
+                            tvk,
+                            u16::try_from(index).unwrap(),
+                        )
+                        .unwrap()
+                    }
+                    _ => mock_value.clone(),
+                })
+                .collect();
             // Populate and sign the request.
-            populate_request_and_sign(&request, private_key, &input_types, tvk, Some(root_tvk), is_root, program_checksum, rng)
-                .unwrap()
+            populate_request_and_sign(
+                &request,
+                private_key,
+                &input_types,
+                &corrected_inputs,
+                tvk,
+                Some(root_tvk),
+                is_root,
+                program_checksum,
+                rng,
+            )
+            .unwrap()
         })
         .collect();
 

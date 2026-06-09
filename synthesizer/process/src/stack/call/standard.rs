@@ -135,15 +135,21 @@ impl<N: Network> CallTrait<N> for Call<N> {
 
             // In AuthorizeRequests mode, we retrieve the expected request and match it against the call's target and inputs.
             if let CallStack::AuthorizeRequests(requests, current_index, authorization) = &mut call_stack {
+                // Increment the index to advance the pre-order DFS traversal of the request tree.
+                *current_index.write() += 1;
 
-                let request = requests.get(*current_index).ok_or_else(||
-                    anyhow!("Call::evaluate attempted to retrieve request at index {current_index}, but the AuthorizeRequests call stack only contains {} request(s)",
+                let request = requests.get(*current_index.read()).ok_or_else(||
+                    anyhow!("Call::evaluate attempted to retrieve request at index {}, but the AuthorizeRequests call stack only contains {} request(s)",
+                    *current_index.read(),
                     requests.len())
                 )?;
 
                 // Sanity checks
                 if *request.signer() != registers.signer()? {
-                    return Err(anyhow!("Call::evaluate retrieved a request with a different signer than the current signer").into());
+                    return Err(anyhow!(
+                        "Call::evaluate retrieved a request with a different signer than the signer in the registers"
+                    )
+                    .into());
                 }
                 if request.is_dynamic() {
                     return Err(anyhow!("Call::evaluate retrieved a dynamic request").into());
@@ -157,7 +163,7 @@ impl<N: Network> CallTrait<N> for Call<N> {
                     return Err(anyhow!("Call::evaluate retrieved a request with a different function name than the one in the call instruction").into());
                 }
                 if request.inputs() != inputs {
-                    return Err(anyhow!("Call::evaluate retrieved a request with a different inputs than the ones passed to the call instruction").into());
+                    return Err(anyhow!("Call::evaluate retrieved a request with different inputs than the ones passed to the call instruction").into());
                 }
 
                 // Add the request to the authorization.
