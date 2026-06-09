@@ -255,7 +255,7 @@ fn resolve_record_input(
 }
 
 // Reconstructs an authorization for the given execution, extracting suitable requests and calling
-// authorize_multiple_requests. More specifically, this function:
+// authorize_requests. More specifically, this function:
 // - recovers each transition's actual tvk from its tpk and the signer's view key,
 // - samples a mocked authorization for the same root call via sample_authorization
 //   In particular, the requests in the authoriztion have correct program IDs, function names and
@@ -264,7 +264,7 @@ fn resolve_record_input(
 //   match the execution, by decrypting the corresponding records from the execution's outputs,
 // - populates each mocked request with the correct data derived from its recovered tvk (tcm, input
 //   IDs and signature) via populate_request_and_sign
-// - passes the populated requests to authorize_multiple_requests
+// - passes the populated requests to authorize_requests
 pub(crate) fn reauthorize_from_execution(
     vm: &VM<CurrentNetwork, LedgerType>,
     execution: &Execution<CurrentNetwork>,
@@ -394,5 +394,5 @@ pub(crate) fn reauthorize_from_execution(
         .collect();
 
     // Authorize from the populated requests.
-    root_stack.authorize_multiple_requests::<CurrentAleo, _>(populated_requests, rng).unwrap()
+    root_stack.authorize_requests::<CurrentAleo, _>(populated_requests, rng).unwrap()
 }

@@ -154,7 +154,7 @@ use snarkvm_utilities::TestRng;
 // Authorization and the call target an inputs are correct. This is done if
 // and only if the `inputs` parameter is provided, which should not be done
 // for deployments. Furthermore, if that is the case, it is checked that
-// authorize_multiple_requests recovers a consistent authorization when provided
+// authorize_requests recovers a consistent authorization when provided
 // with the same requests.
 pub(crate) fn add_and_test_with_costs(
     vm: &VM<CurrentNetwork, LedgerType>,
@@ -215,7 +215,7 @@ pub(crate) fn add_and_test_with_costs(
                 .unwrap();
                 assert_eq!(actual_cost, estimated_cost_request);
 
-                // Reconstruct an authorization from the execution using authorize_multiple_requests
+                // Reconstruct an authorization from the execution using authorize_requests
                 let reauthorization = reauthorize_from_execution(vm, execution, inputs, caller_private_key, rng);
                 let reauthorized_transitions = reauthorization.transitions();
 

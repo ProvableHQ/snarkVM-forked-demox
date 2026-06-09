@@ -210,19 +210,19 @@ impl<N: Network> Stack<N> {
     /// (`tvk`, input IDs, signature, etc.), checking they are correctly related. The `Request`s
     /// must be in DFS pre-order (as present, for instance, in `Authorization`s).
     #[inline]
-    pub fn authorize_multiple_requests<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
+    pub fn authorize_requests<A: circuit::Aleo<Network = N>, R: Rng + CryptoRng>(
         &self,
         requests: Vec<Request<N>>,
         rng: &mut R,
     ) -> Result<Authorization<N>, StackAuthError> {
-        let timer = timer!("Stack::authorize_multiple_requests");
+        let timer = timer!("Stack::authorize_requests");
 
         if requests.is_empty() {
             return Err(anyhow!("No requests provided").into());
         }
 
         if *requests[0].program_id() != *self.program.id() {
-            return Err(anyhow!("Program ID mismatch in 'authorize_multiple_requests'").into());
+            return Err(anyhow!("Program ID mismatch in 'authorize_requests'").into());
         }
 
         // This index, passed to the call stack, tracks the element in the requests array currently
