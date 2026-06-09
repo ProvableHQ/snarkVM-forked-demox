@@ -61,9 +61,9 @@ mod identifier_literal;
 // Tests for V3 deployments (amendments).
 mod amendments;
 
-// Helpers for authorizing a set of related requests.
-mod authorize_multiple_helpers;
-use authorize_multiple_helpers::reauthorize_from_execution;
+// Helpers for tesing the function which authorizes a set of related requests.
+mod authorize_requests_helpers;
+use authorize_requests_helpers::reauthorize_from_execution;
 
 use super::*;
 
