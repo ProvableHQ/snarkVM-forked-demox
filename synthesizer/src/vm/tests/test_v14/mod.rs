@@ -231,6 +231,52 @@ pub(crate) fn add_and_test_with_costs(
                     assert_eq!(original.inputs(), reauthorized.inputs());
                     assert_eq!(original.outputs(), reauthorized.outputs());
                 }
+                
+                // // TODO (Antonio) remove
+                {
+                    // Check that the reconstructed authorization can be proved and verified.
+                    // Determine the versions to use based on the VM's current block height,
+                    // mirroring the derivation performed during transaction verification.
+                    let block_height = vm.block_store().current_block_height();
+                    let consensus_version = CurrentNetwork::CONSENSUS_VERSION(block_height).unwrap();
+                    let varuna_version = match (ConsensusVersion::V1..=ConsensusVersion::V3).contains(&consensus_version) {
+                        true => VarunaVersion::V1,
+                        false => VarunaVersion::V2,
+                    };
+                    let is_network_behind_upgrade_height =
+                        block_height < CurrentNetwork::INCLUSION_UPGRADE_HEIGHT().unwrap();
+                    let inclusion_version = match (ConsensusVersion::V1..=ConsensusVersion::V7).contains(&consensus_version)
+                        || is_network_behind_upgrade_height
+                    {
+                        true => InclusionVersion::V0,
+                        false => InclusionVersion::V1,
+                    };
+
+                    // Execute (prove) the reconstructed authorization.
+                    let locator =
+                        Locator::new(*root_transition.program_id(), *root_transition.function_name()).to_string();
+                    let (_, mut trace) = vm.process().execute::<CurrentAleo, _>(reauthorization, rng).unwrap();
+                    trace.prepare(&Query::VM(vm.block_store().clone())).unwrap();
+                    let proved_execution =
+                        trace.prove_execution::<CurrentAleo, _>(&locator, varuna_version, rng).unwrap();
+
+                    // Collect the stacks required to verify the proved execution.
+                    let mut execution_stacks = IndexMap::new();
+                    for transition in proved_execution.transitions() {
+                        execution_stacks
+                            .insert(*transition.program_id(), vm.process().get_stack(transition.program_id()).unwrap());
+                    }
+
+                    // Verify the proved execution.
+                    Process::verify_execution(
+                        consensus_version,
+                        varuna_version,
+                        inclusion_version,
+                        &proved_execution,
+                        &execution_stacks,
+                    )
+                    .unwrap();
+                }
             }
         }
     }
