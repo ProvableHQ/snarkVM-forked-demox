@@ -296,21 +296,23 @@ impl<'a, N: Network> ProcessExclusiveGuard<'a, N> {
             let (mut finalize_operations, total_awaits) =
                 finalize_transition(state, store, &stack, transition, call_graph, dynamic_future_to_future)?;
 
-            // Check that the total number of `Await` commands evaluated during
-            // finalization matches the number of `Future`s defined in the
-            // execution's transitions' outputs.
-            let total_futures = execution
-                .transitions()
-                .filter(|t| t.outputs().last().and_then(|output| output.future()).is_some())
-                .count();
-            let expected_total_awaits = total_futures.saturating_sub(1);
-            if total_awaits != expected_total_awaits {
-                indexed_finalize_bail!(
-                    Some((transition_program_id, *stack.program_edition())),
-                    Some(transition_function_name),
-                    "The number of 'await' calls during finalization is incorrect. \
-                    Expected {expected_total_awaits}, but found {total_awaits}"
-                );
+            if consensus_version >= ConsensusVersion::V15 {
+                // Check that the total number of `Await` commands evaluated during
+                // finalization matches the number of `Future`s defined in the
+                // execution's transitions' outputs.
+                let total_futures = execution
+                    .transitions()
+                    .filter(|t| t.outputs().last().and_then(|output| output.future()).is_some())
+                    .count();
+                let expected_total_awaits = total_futures.saturating_sub(1);
+                if total_awaits != expected_total_awaits {
+                    indexed_finalize_bail!(
+                        Some((transition_program_id, *stack.program_edition())),
+                        Some(transition_function_name),
+                        "The number of 'await' calls during finalization is incorrect. \
+                        Expected {expected_total_awaits}, but found {total_awaits}"
+                    );
+                }
             }
 
             /* Finalize the fee. */
@@ -383,7 +385,7 @@ fn finalize_fee_transition<N: Network, P: FinalizeStorage<N>>(
     let (finalize_operations, total_awaits) =
         finalize_transition(state, store, stack, fee, call_graph, Default::default())?;
     // Create IndexedFinalizeError if the fee path has awaits.
-    if total_awaits != 0 {
+    if consensus_version >= ConsensusVersion::V15 && total_awaits != 0 {
         indexed_finalize_bail!(
             Some((*fee.program_id(), *stack.program_edition())),
             Some(*fee.function_name()),
@@ -769,13 +771,15 @@ fn initialize_finalize_state<N: Network>(
 // A helper function to finalize all commands except `await`, updating the finalize operations and the counter.
 //
 // Generic over the store so the view evaluator (which passes either the canonical
-// `FinalizeStore` or a read-only historic adapter) can reuse this dispatch.
+// `FinalizeStore` or a read-only historic adapter) can reuse this dispatch. The stack must be
+// the concrete `Stack<N>` so we can resolve `Call`-to-view targets and read their cached
+// `FinalizeTypes` (the in-block call path needs concrete access).
 #[inline]
 pub(crate) fn finalize_command_except_await<N: Network>(
     program_id: Option<(ProgramID<N>, u16)>,
     resource: Option<Identifier<N>>,
-    store: &impl FinalizeStoreTrait<N>,
-    stack: &impl StackTrait<N>,
+    store: &dyn FinalizeStoreTrait<N>,
+    stack: &Stack<N>,
     registers: &mut FinalizeRegisters<N>,
     positions: &HashMap<Identifier<N>, usize>,
     command: &Command<N>,

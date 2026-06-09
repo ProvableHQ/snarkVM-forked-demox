@@ -131,7 +131,7 @@ commands:
           command: |
             DEBIAN_FRONTEND=noninteractive sudo apt-get update
             DEBIAN_FRONTEND=noninteractive sudo apt-get install -y --no-install-recommends \
-              clang llvm-dev llvm lld pkg-config xz-utils make libssl-dev libssl-dev
+              clang libclang-dev llvm-dev llvm lld pkg-config xz-utils make libssl-dev
       - restore_cache:
           keys:
             - v4.7.1-rust-1.88.0-deps-{{ checksum "Cargo.lock" }}-
@@ -195,7 +195,7 @@ commands:
           command: |
             DEBIAN_FRONTEND=noninteractive sudo apt-get update
             DEBIAN_FRONTEND=noninteractive sudo apt-get install -y --no-install-recommends \
-              clang llvm-dev llvm lld pkg-config xz-utils make libssl-dev
+              clang libclang-dev llvm-dev llvm lld pkg-config xz-utils make libssl-dev
 
       - run:
           name: "No-cache mode: clean + disable sccache"
