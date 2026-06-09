@@ -217,7 +217,13 @@ impl<N: Network> Stack<N> {
     ) -> Result<Authorization<N>, StackAuthError> {
         let timer = timer!("Stack::authorize_multiple_requests");
 
-        assert!(!requests.is_empty(), "No requests provided");
+        if requests.is_empty() {
+            return Err(anyhow!("No requests provided").into());
+        }
+
+        if *requests[0].program_id() != *self.program.id() {
+            return Err(anyhow!("Program ID mismatch in 'authorize_multiple_requests'").into());
+        }
 
         // This index, passed to the call stack, tracks the element in the requests array currently
         // being explored. It is shared throughout the entire evaluation of the call stack, just like
