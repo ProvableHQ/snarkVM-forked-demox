@@ -376,7 +376,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             stack.initialize_and_check(&self.process)?;
             Arc::new(stack)
         };
-        snarkvm_synthesizer_process::evaluate_view_at_height(
+        snarkvm_synthesizer_process::evaluate_view_with_stack_at_height(
             state,
             self.finalize_store(),
             &stack,
