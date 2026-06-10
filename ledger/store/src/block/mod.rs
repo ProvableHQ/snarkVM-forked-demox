@@ -112,7 +112,7 @@ fn to_confirmed_transaction<N: Network>(
     }
 }
 
-fn block_tree_cache_path<N: Network, B: BlockStorage<N>>(storage: &B) -> Option<std::path::PathBuf> {
+pub(crate) fn block_tree_cache_path<N: Network, B: BlockStorage<N>>(storage: &B) -> Option<std::path::PathBuf> {
     #[cfg(feature = "rocks")]
     {
         let mut path = aleo_ledger_dir(N::ID, storage.storage_mode());
@@ -1258,8 +1258,9 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
     #[cfg(feature = "rocks")]
     pub fn cache_block_tree(&self) -> Result<()> {
         // Prepare the path for the target file.
-        let mut path = aleo_ledger_dir(N::ID, self.storage.storage_mode());
-        path.push("block_tree");
+        let Some(path) = block_tree_cache_path::<N, _>(&self.storage) else {
+            bail!("Failed to determine the block tree cache path");
+        };
 
         // Create the target file.
         let file = fs::File::create(&path)?;
