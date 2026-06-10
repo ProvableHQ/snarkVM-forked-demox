@@ -86,7 +86,7 @@ fn test_evaluate_view_reflects_finalize_state() -> Result<()> {
 
     // Read against an untouched mapping should return the default (0).
     let height = vm.block_store().current_block_height();
-    let outputs = vm.evaluate_view_at_height_using_historic_edition(
+    let outputs = vm.evaluate_view_at_height(
         "vw_lifecycle.aleo",
         "total_balance",
         vec![Value::from_str(&caller_address.to_string())?],
@@ -101,7 +101,7 @@ fn test_evaluate_view_reflects_finalize_state() -> Result<()> {
 
     // Read should now reflect the finalize-set value.
     let height = vm.block_store().current_block_height();
-    let outputs = vm.evaluate_view_at_height_using_historic_edition(
+    let outputs = vm.evaluate_view_at_height(
         "vw_lifecycle.aleo",
         "total_balance",
         vec![Value::from_str(&caller_address.to_string())?],
@@ -115,7 +115,7 @@ fn test_evaluate_view_reflects_finalize_state() -> Result<()> {
     add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
 
     let height = vm.block_store().current_block_height();
-    let outputs = vm.evaluate_view_at_height_using_historic_edition(
+    let outputs = vm.evaluate_view_at_height(
         "vw_lifecycle.aleo",
         "total_balance",
         vec![Value::from_str(&caller_address.to_string())?],
@@ -164,7 +164,7 @@ fn test_evaluate_view_multi_output() -> Result<()> {
     let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
 
-    let outputs = vm.evaluate_view_at_height_using_historic_edition(
+    let outputs = vm.evaluate_view_at_height(
         "vw_multi_output.aleo",
         "summary",
         vec![Value::from_str(&caller_address.to_string())?],
@@ -213,7 +213,7 @@ fn test_evaluate_view_multi_input() -> Result<()> {
     let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
 
-    let outputs = vm.evaluate_view_at_height_using_historic_edition(
+    let outputs = vm.evaluate_view_at_height(
         "vw_multi_in.aleo",
         "add3",
         vec![Value::from_str("10u64")?, Value::from_str("20u64")?, Value::from_str("12u64")?],
@@ -262,7 +262,7 @@ fn test_evaluate_view_with_branch() -> Result<()> {
     add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
 
     // r0 = 0: branch is taken, doubling is skipped.
-    let outputs = vm.evaluate_view_at_height_using_historic_edition(
+    let outputs = vm.evaluate_view_at_height(
         "vw_branch.aleo",
         "maybe_extra",
         vec![Value::from_str("0u64")?],
@@ -271,7 +271,7 @@ fn test_evaluate_view_with_branch() -> Result<()> {
     assert_eq!(expect_u64(&outputs), 10);
 
     // r0 = 5: branch is NOT taken, the unused r2 destination is written but we still output r1.
-    let outputs = vm.evaluate_view_at_height_using_historic_edition(
+    let outputs = vm.evaluate_view_at_height(
         "vw_branch.aleo",
         "maybe_extra",
         vec![Value::from_str("5u64")?],
@@ -310,12 +310,8 @@ fn test_evaluate_view_zero_inputs() -> Result<()> {
     let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
 
-    let outputs = vm.evaluate_view_at_height_using_historic_edition(
-        "vw_zeroin.aleo",
-        "fixed_value",
-        vec![],
-        vm.block_store().current_block_height(),
-    )?;
+    let outputs =
+        vm.evaluate_view_at_height("vw_zeroin.aleo", "fixed_value", vec![], vm.block_store().current_block_height())?;
     assert_eq!(expect_u64(&outputs), 1234);
     Ok(())
 }
@@ -352,7 +348,7 @@ fn test_evaluate_view_arity_mismatch() -> Result<()> {
     add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
 
     // Too few inputs.
-    let result = vm.evaluate_view_at_height_using_historic_edition(
+    let result = vm.evaluate_view_at_height(
         "vw_arity.aleo",
         "takes_two",
         vec![Value::from_str("1u64")?],
@@ -363,7 +359,7 @@ fn test_evaluate_view_arity_mismatch() -> Result<()> {
     assert!(err.contains("expects 2"), "error should mention input count: {err}");
 
     // Too many inputs.
-    let result = vm.evaluate_view_at_height_using_historic_edition(
+    let result = vm.evaluate_view_at_height(
         "vw_arity.aleo",
         "takes_two",
         vec![Value::from_str("1u64")?, Value::from_str("2u64")?, Value::from_str("3u64")?],
@@ -403,12 +399,8 @@ fn test_evaluate_view_unknown_view() -> Result<()> {
     let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
 
-    let result = vm.evaluate_view_at_height_using_historic_edition(
-        "vw_unknown.aleo",
-        "missing",
-        vec![],
-        vm.block_store().current_block_height(),
-    );
+    let result =
+        vm.evaluate_view_at_height("vw_unknown.aleo", "missing", vec![], vm.block_store().current_block_height());
     assert!(result.is_err(), "expected error for unknown view");
     Ok(())
 }
@@ -420,12 +412,8 @@ fn test_evaluate_view_unknown_program() {
     let rng = &mut TestRng::default();
     let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V15).unwrap(), rng);
 
-    let result = vm.evaluate_view_at_height_using_historic_edition(
-        "never_deployed.aleo",
-        "anything",
-        vec![],
-        vm.block_store().current_block_height(),
-    );
+    let result =
+        vm.evaluate_view_at_height("never_deployed.aleo", "anything", vec![], vm.block_store().current_block_height());
     assert!(result.is_err(), "expected error for unknown program");
 }
 
@@ -684,7 +672,7 @@ fn test_finalize_calls_same_program_view() -> Result<()> {
     // Confirm the new mapping value via an external read.
     #[cfg(feature = "history")]
     {
-        let outputs = vm.evaluate_view_at_height_using_historic_edition(
+        let outputs = vm.evaluate_view_at_height(
             "vw_call_same.aleo",
             "lookup",
             vec![Value::from_str(&caller_address.to_string())?],
@@ -997,7 +985,7 @@ fn test_finalize_multiple_calls_and_interleaved_writes() -> Result<()> {
     // Also confirm the final committed balance is 55 (the intervening set landed).
     #[cfg(feature = "history")]
     {
-        let outputs = vm.evaluate_view_at_height_using_historic_edition(
+        let outputs = vm.evaluate_view_at_height(
             "vw_call_seq.aleo",
             "lookup",
             vec![Value::from_str(&caller_address.to_string())?],
@@ -2302,7 +2290,7 @@ fn test_evaluate_view_uses_historic_program_edition() -> Result<()> {
     let height_v2 = vm.block_store().current_block_height();
 
     let total = |height: u32| {
-        vm.evaluate_view_at_height_using_historic_edition(
+        vm.evaluate_view_at_height(
             "vw_upgrade.aleo",
             "total_balance",
             vec![Value::from_str(&caller_address.to_string()).unwrap()],
@@ -2312,15 +2300,6 @@ fn test_evaluate_view_uses_historic_program_edition() -> Result<()> {
     assert_eq!(expect_u64(&total(height_v0)?), 5, "edition 0 body at its height");
     assert_eq!(expect_u64(&total(height_v1)?), 105, "edition 1 body at its height (intermediate)");
     assert_eq!(expect_u64(&total(height_v2)?), 1005, "edition 2 body at its height");
-
-    // The latest-edition entry point uses the newest body even at the oldest height.
-    let outputs = vm.evaluate_view_at_height_using_latest_edition(
-        "vw_upgrade.aleo",
-        "total_balance",
-        vec![Value::from_str(&caller_address.to_string())?],
-        height_v0,
-    )?;
-    assert_eq!(expect_u64(&outputs), 1005, "latest-edition view uses the newest body at a historic height");
 
     Ok(())
 }
@@ -2356,10 +2335,7 @@ fn test_evaluate_view_before_deployment_height_errors() -> Result<()> {
     let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
     add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
 
-    let err = vm
-        .evaluate_view_at_height_using_historic_edition("vw_predeploy.aleo", "fixed", vec![], before)
-        .unwrap_err()
-        .to_string();
+    let err = vm.evaluate_view_at_height("vw_predeploy.aleo", "fixed", vec![], before).unwrap_err().to_string();
     assert!(err.contains("was not deployed at or before height"), "unexpected error: {err}");
     Ok(())
 }

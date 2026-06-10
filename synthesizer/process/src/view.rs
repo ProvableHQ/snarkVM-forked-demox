@@ -13,11 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(feature = "history")]
-use crate::Process;
 use crate::{FinalizeRegisters, Stack};
-#[cfg(feature = "history")]
-use console::program::ProgramID;
 use console::{
     network::prelude::*,
     program::{Identifier, Value},
@@ -31,40 +27,6 @@ use snarkvm_synthesizer_program::{
     RegistersTrait,
     StackTrait,
 };
-
-#[cfg(feature = "history")]
-impl<N: Network> Process<N> {
-    /// Evaluates a view function against historic finalize-store state at the given block
-    /// height. Routes mapping reads through the finalize store's historical update map (per-key
-    /// values keyed by `(program, mapping, key, height)`), so all reads in the view body are
-    /// pinned to `height` — block production advancing past `height` during evaluation cannot
-    /// disturb the result. The caller (typically `VM::evaluate_view_at_height`) constructs
-    /// `state` from the historic block at `height` so view operands reading block metadata
-    /// see the historic block's values.
-    ///
-    /// **No transitions are produced and no finalize-store writes occur** — views are
-    /// read-only by construction (`add_command` rejects `set` / `remove` / `async` / `await` /
-    /// `call` / `rand.chacha` / record-touching ops), and the adapter additionally bails on
-    /// every write entry point.
-    ///
-    /// Available only when snarkVM is built with `--features history`. snarkOS calls this with
-    /// `current_block_height()` for "latest", or any earlier height for historic views.
-    #[inline]
-    pub fn evaluate_view_at_height<P: FinalizeStorage<N>>(
-        &self,
-        state: FinalizeGlobalState,
-        store: &FinalizeStore<N, P>,
-        program_id: impl TryInto<ProgramID<N>>,
-        view_name: impl TryInto<Identifier<N>>,
-        inputs: Vec<Value<N>>,
-        height: u32,
-    ) -> Result<Vec<Value<N>>> {
-        let program_id = program_id.try_into().map_err(|_| anyhow!("Invalid program ID"))?;
-        let view_name = view_name.try_into().map_err(|_| anyhow!("Invalid view function name"))?;
-        let stack = self.get_stack(program_id)?;
-        evaluate_view_at_height(state, store, &stack, &view_name, inputs, height)
-    }
-}
 
 /// Evaluates a view function against historic finalize-store state at the given block
 /// `height`. Mapping reads route through `FinalizeStore::get_historical_mapping_value` and

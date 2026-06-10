@@ -345,11 +345,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// snarkOS calls this with `current_block_height()` for "latest", or any earlier height
     /// for historic views. `height` must satisfy `height <= current_block_height()`.
     ///
-    /// The view body is taken from the program edition live at `height`. For the latest edition regardless of
-    /// `height`, use [`VM::evaluate_view_at_height_using_latest_edition`].
+    /// The view body is taken from the program edition live at `height`.
     #[cfg(feature = "history")]
     #[inline]
-    pub fn evaluate_view_at_height_using_historic_edition(
+    pub fn evaluate_view_at_height(
         &self,
         program_id: impl TryInto<ProgramID<N>>,
         view_name: impl TryInto<Identifier<N>>,
@@ -385,23 +384,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             inputs,
             height,
         )
-    }
-
-    /// As [`VM::evaluate_view_at_height_using_historic_edition`], but takes the view body from the latest
-    /// loaded program edition instead of resolving the edition live at `height`. Mapping reads are still
-    /// pinned to `height`. Cheaper (no edition resolution or stack rebuild); after an upgrade the two entry
-    /// points can differ for the same `height`. Available only with `--features history`.
-    #[cfg(feature = "history")]
-    #[inline]
-    pub fn evaluate_view_at_height_using_latest_edition(
-        &self,
-        program_id: impl TryInto<ProgramID<N>>,
-        view_name: impl TryInto<Identifier<N>>,
-        inputs: Vec<Value<N>>,
-        height: u32,
-    ) -> Result<Vec<Value<N>>> {
-        let state = self.finalize_state_for_block(height)?;
-        self.process.evaluate_view_at_height(state, self.finalize_store(), program_id, view_name, inputs, height)
     }
 
     /// Returns the program edition live at block `height`: the newest edition whose original
