@@ -1375,9 +1375,13 @@ function over_five_thousand:
         // One byte below threshold: still linear.
         let below = DEPLOYMENT_STORAGE_PENALTY_THRESHOLD - 1;
         assert_eq!(deployment_storage_cost::<MainnetV0>(below).unwrap(), below * MainnetV0::DEPLOYMENT_FEE_MULTIPLIER);
-        // At threshold: linear and quadratic formulas agree (continuity check).
+        // At threshold: the linear and quadratic formulas agree (continuity check).
+        // `deployment_storage_cost` uses the linear arm at the threshold (size <= threshold), so
+        // compute the quadratic-arm value independently and confirm they match at the boundary.
         let t = DEPLOYMENT_STORAGE_PENALTY_THRESHOLD;
-        assert_eq!(deployment_storage_cost::<MainnetV0>(t).unwrap(), t * MainnetV0::DEPLOYMENT_FEE_MULTIPLIER);
+        let quadratic_at_threshold =
+            t * t * MainnetV0::DEPLOYMENT_FEE_MULTIPLIER / DEPLOYMENT_STORAGE_PENALTY_THRESHOLD;
+        assert_eq!(deployment_storage_cost::<MainnetV0>(t).unwrap(), quadratic_at_threshold);
         // One byte above threshold: quadratic formula kicks in.
         let above = DEPLOYMENT_STORAGE_PENALTY_THRESHOLD + 1;
         let expected_above =
