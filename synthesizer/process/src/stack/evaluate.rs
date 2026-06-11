@@ -112,6 +112,10 @@ impl<N: Network> Stack<N> {
                     Operand::Edition(_) => bail!("Cannot retrieve the edition from a closure scope."),
                     // If the operand is the program owner, throw an error.
                     Operand::ProgramOwner(_) => bail!("Cannot retrieve the program owner from a closure scope."),
+                    // If the operand is the component checksum, throw an error.
+                    Operand::ComponentChecksum(..) => {
+                        bail!("Cannot retrieve the component checksum from a closure scope.")
+                    }
                 }
             })
             .map(|res| res.map_err(StackEvalError::from))
@@ -294,6 +298,10 @@ impl<N: Network> Stack<N> {
                     Operand::Edition(_) => bail!("Cannot retrieve the edition from a function scope."),
                     // If the operand is the program owner, throw an error.
                     Operand::ProgramOwner(_) => bail!("Cannot retrieve the program owner from a function scope."),
+                    // If the operand is the component checksum, throw an error.
+                    Operand::ComponentChecksum(..) => {
+                        bail!("Cannot retrieve the component checksum from a function scope.")
+                    }
                 }
             })
             .collect::<Result<Vec<_>>>()?;

@@ -16,6 +16,9 @@
 // Tests for increased program size limits.
 mod program_size;
 
+// Tests for the `<name>/checksum` component checksum operand.
+mod component_checksum;
+
 use super::*;
 
 use crate::vm::test_helpers::*;

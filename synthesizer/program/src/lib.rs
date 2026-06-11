@@ -1437,6 +1437,32 @@ impl<N: Network> ProgramCore<N> {
         function_contains || closure_contains || command_contains || finalize_has_call || !self.views.is_empty()
     }
 
+    /// Returns `true` if a program contains any V16 syntax.
+    /// This includes the `Operand::ComponentChecksum` operand.
+    /// This is enforced to be `false` for programs before `ConsensusVersion::V16`.
+    #[inline]
+    pub fn contains_v16_syntax(&self) -> bool {
+        // Check each command operand in every finalize and constructor scope for `Operand::ComponentChecksum`.
+        let command_contains = cfg_iter!(self.functions())
+            .flat_map(|(_, function)| function.finalize_logic().map(|finalize| finalize.commands()))
+            .flatten()
+            .chain(cfg_iter!(self.constructor).flat_map(|constructor| constructor.commands()))
+            .flat_map(|command| command.operands())
+            .any(|operand| matches!(operand, Operand::ComponentChecksum(..)));
+
+        // Check each view command operand and view output operand, since views (allowed since V15) also
+        // accept finalize-context operands.
+        let view_contains = self.views.values().any(|view| {
+            view.commands()
+                .iter()
+                .flat_map(|command| command.operands())
+                .any(|operand| matches!(operand, Operand::ComponentChecksum(..)))
+                || view.outputs().iter().any(|output| matches!(output.operand(), Operand::ComponentChecksum(..)))
+        });
+
+        command_contains || view_contains
+    }
+
     /// Returns `true` if a program contains any string type.
     /// Before ConsensusVersion::V12, variable-length string sampling when using them as inputs caused deployment synthesis to be inconsistent and abort with probability 63/64.
     /// After ConsensusVersion::V12, string types are disallowed.

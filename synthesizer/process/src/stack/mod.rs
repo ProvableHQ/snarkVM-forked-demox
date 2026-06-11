@@ -273,6 +273,8 @@ pub struct Stack<N: Network> {
     program_address: Address<N>,
     /// The program checksum.
     program_checksum: [U8<N>; 32],
+    /// The checksum of each component (function, closure, or view) in the program.
+    component_checksums: IndexMap<Identifier<N>, [U8<N>; 32]>,
     /// The program edition.
     program_edition: U16<N>,
     /// The number of amendments applied to the current program edition.
