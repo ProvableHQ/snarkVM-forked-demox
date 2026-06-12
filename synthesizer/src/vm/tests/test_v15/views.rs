@@ -2268,18 +2268,18 @@ fn test_evaluate_view_uses_historic_program_edition() -> Result<()> {
 
     // Deploy edition 0, then set `balances[addr] = 5`.
     let tx = vm.deploy(&caller_private_key, &program(0)?, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
     let inputs = [Value::from_str(&caller_address.to_string())?, Value::from_str("5u64")?];
     let tx = vm.execute(&caller_private_key, ("vw_upgrade.aleo", "increment"), inputs.iter(), None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, Some(&[&inputs]), &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, Some(&[&inputs]), &[tx], rng);
     let height_v0 = vm.block_store().current_block_height();
 
     // Upgrade to edition 1 (+100), then edition 2 (+1000).
     let tx = vm.deploy(&caller_private_key, &program(100)?, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
     let height_v1 = vm.block_store().current_block_height();
     let tx = vm.deploy(&caller_private_key, &program(1000)?, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
     let height_v2 = vm.block_store().current_block_height();
 
     let total = |height: u32| {
@@ -2303,7 +2303,6 @@ fn test_evaluate_view_uses_historic_program_edition() -> Result<()> {
 fn test_evaluate_view_before_deployment_height_errors() -> Result<()> {
     let rng = &mut TestRng::default();
     let caller_private_key = sample_genesis_private_key(rng);
-    let caller_address = Address::try_from(&caller_private_key)?;
 
     let program = Program::from_str(
         r"
@@ -2326,7 +2325,7 @@ fn test_evaluate_view_before_deployment_height_errors() -> Result<()> {
     // A valid block height that predates the program's deployment.
     let before = vm.block_store().current_block_height();
     let tx = vm.deploy(&caller_private_key, &program, None, 0, None, rng)?;
-    add_and_test_with_costs(&vm, &caller_private_key, &caller_address, None, &[tx], rng);
+    add_and_test_with_costs(&vm, &caller_private_key, None, &[tx], rng);
 
     let err = vm.evaluate_view_at_height("vw_predeploy.aleo", "fixed", vec![], before).unwrap_err().to_string();
     assert!(err.contains("was not deployed at or before height"), "unexpected error: {err}");
