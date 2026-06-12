@@ -212,9 +212,10 @@ pub trait Network:
     const MAX_RECORD_ENTRIES: usize = Self::MIN_RECORD_ENTRIES.saturating_add(Self::MAX_DATA_ENTRIES);
 
     /// The maximum program size by number of characters.
-    const MAX_PROGRAM_SIZE: [(ConsensusVersion, usize); 2] = [
-        (ConsensusVersion::V1, 100_000),  // 100 kB
-        (ConsensusVersion::V14, 512_000), // 512 kB
+    const MAX_PROGRAM_SIZE: [(ConsensusVersion, usize); 3] = [
+        (ConsensusVersion::V1, 100_000),    // 100 kB
+        (ConsensusVersion::V14, 512_000),   // 512 kB
+        (ConsensusVersion::V16, 1_024_000), // 1024 kB
     ];
     /// The maximum number of mappings in a program.
     const MAX_MAPPINGS: usize = 31;
@@ -261,9 +262,10 @@ pub trait Network:
     /// MAX_TRANSACTION_SIZE = C + MAX_PROGRAM_SIZE + (673 + 58) * (MAX_FUNCTIONS + MAX_RECORDS)
     /// C = fixed size components (Up to 2367 bytes)
     // Note: This value must **not** decrease without considering the impact on transaction validity.
-    const MAX_TRANSACTION_SIZE: [(ConsensusVersion, usize); 2] = [
-        (ConsensusVersion::V1, 128_000),  // 128 kB
-        (ConsensusVersion::V14, 768_000), // 768 kB
+    const MAX_TRANSACTION_SIZE: [(ConsensusVersion, usize); 3] = [
+        (ConsensusVersion::V1, 128_000),    // 128 kB
+        (ConsensusVersion::V14, 768_000),   // 768 kB
+        (ConsensusVersion::V16, 1_280_000), // 1280 kB
     ];
 
     /// The state root type.

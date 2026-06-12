@@ -13,29 +13,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(feature = "test")]
-mod test_v8;
+// Tests for increased program size limits.
+mod program_size;
 
-#[cfg(feature = "test")]
-mod test_v9;
-
-#[cfg(feature = "test")]
-mod test_v10;
-
-#[cfg(feature = "test")]
-mod test_v11;
-
-#[cfg(feature = "test")]
-mod test_v13;
-
-#[cfg(feature = "test")]
-mod test_v14;
-
-#[cfg(feature = "test")]
-mod test_v15;
-
-#[cfg(feature = "test")]
-mod test_v16;
-
-#[cfg(feature = "test")]
 use super::*;
+
+use crate::vm::test_helpers::*;
+
+use console::network::ConsensusVersion;
+
+use snarkvm_synthesizer_program::Program;
+use snarkvm_utilities::TestRng;
