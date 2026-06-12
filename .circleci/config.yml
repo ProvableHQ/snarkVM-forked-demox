@@ -927,6 +927,7 @@ jobs:
           cache_key_suffix: -test2
           timeout: 25m
 
+  # Regenerate expectations using: cd synthesizer && REWRITE_EXPECTATIONS=1 cargo test --test '*' --features test,dev-print,history
   synthesizer-integration:
     executor: rust-docker
     resource_class: << pipeline.parameters.twoxlarge >>
