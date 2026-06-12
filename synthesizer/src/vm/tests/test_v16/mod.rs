@@ -16,13 +16,19 @@
 // Tests for quorum block compute spend limits.
 mod block_spend_limit;
 
+// Tests for increased program size limits.
+mod program_size;
+
+// Tests for the `<name>/checksum` component checksum operand.
+mod component_checksum;
+
 use super::*;
 
-use crate::vm::test_helpers::{CurrentNetwork, sample_genesis_private_key, sample_vm_at_height};
+use crate::vm::test_helpers::*;
 
 use console::{account::Address, network::ConsensusVersion, prelude::FromStr, program::Value};
 
 use snarkvm_ledger_block::Solutions;
 use snarkvm_synthesizer_process::{execute_compute_cost_in_microcredits, execution_cost};
-use snarkvm_synthesizer_program::FinalizeGlobalState;
+use snarkvm_synthesizer_program::{FinalizeGlobalState, Program};
 use snarkvm_utilities::TestRng;
