@@ -67,6 +67,8 @@ impl<N: Network> FinalizeTypes<N> {
         }
 
         // Type-check the outputs: each output operand must resolve and match the declared type.
+        // Output operands do not flow through `check_command`, so the component checksum check is repeated here.
+        // Only views have outputs; finalize and constructor scopes have none.
         for output in view.outputs() {
             // If the operand is `Operand::ComponentChecksum`, ensure the referenced component exists.
             if let Operand::ComponentChecksum(program_id, name) = output.operand() {

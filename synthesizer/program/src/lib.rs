@@ -1442,25 +1442,22 @@ impl<N: Network> ProgramCore<N> {
     /// This is enforced to be `false` for programs before `ConsensusVersion::V16`.
     #[inline]
     pub fn contains_v16_syntax(&self) -> bool {
-        // Check each command operand in every finalize and constructor scope for `Operand::ComponentChecksum`.
+        // Check each command operand in every finalize, constructor, and view scope for `Operand::ComponentChecksum`.
         let command_contains = cfg_iter!(self.functions())
             .flat_map(|(_, function)| function.finalize_logic().map(|finalize| finalize.commands()))
             .flatten()
             .chain(cfg_iter!(self.constructor).flat_map(|constructor| constructor.commands()))
+            .chain(cfg_iter!(self.views).flat_map(|(_, view)| view.commands()))
             .flat_map(|command| command.operands())
             .any(|operand| matches!(operand, Operand::ComponentChecksum(..)));
 
-        // Check each view command operand and view output operand, since views (allowed since V15) also
-        // accept finalize-context operands.
-        let view_contains = self.views.values().any(|view| {
-            view.commands()
-                .iter()
-                .flat_map(|command| command.operands())
-                .any(|operand| matches!(operand, Operand::ComponentChecksum(..)))
-                || view.outputs().iter().any(|output| matches!(output.operand(), Operand::ComponentChecksum(..)))
-        });
+        // Views additionally have output operands, which are not commands and so are checked separately.
+        let view_output_contains = self
+            .views
+            .values()
+            .any(|view| view.outputs().iter().any(|output| matches!(output.operand(), Operand::ComponentChecksum(..))));
 
-        command_contains || view_contains
+        command_contains || view_output_contains
     }
 
     /// Returns `true` if a program contains any string type.

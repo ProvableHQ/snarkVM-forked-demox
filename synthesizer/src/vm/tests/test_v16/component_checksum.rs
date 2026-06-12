@@ -41,16 +41,21 @@ const FOO_CHANGED: &str = r"    input r0 as u64.public;
     add r0 r0 into r1;
     output r1 as u64.public;";
 
-// Builds `test_checksum.aleo` with the given `foo` body, optionally adding a second function `bar`.
-fn program(foo: &str, include_bar: bool) -> Program<CurrentNetwork> {
-    let bar = if include_bar {
-        r"
-function bar:
-    input r0 as u64.public;
-    output r0 as u64.public;
-"
-    } else {
-        ""
+// The body of `bar`: a simple passthrough.
+const BAR_UNCHANGED: &str = r"    input r0 as u64.public;
+    output r0 as u64.public;";
+
+// A different body for `bar` (its input and output types are preserved), so its checksum changes.
+const BAR_CHANGED: &str = r"    input r0 as u64.public;
+    add r0 r0 into r1;
+    output r1 as u64.public;";
+
+// Builds `test_checksum.aleo` with the given `foo` body, optionally adding a second function `bar` with
+// the given body.
+fn program(foo: &str, bar: Option<&str>) -> Program<CurrentNetwork> {
+    let bar = match bar {
+        Some(bar) => format!("\nfunction bar:\n{bar}\n"),
+        None => String::new(),
     };
     Program::from_str(&format!(
         r"
@@ -72,13 +77,18 @@ fn foo_checksum(program: &Program<CurrentNetwork>) -> [console::types::U8<Curren
     program.get_function(&Identifier::from_str("foo").unwrap()).unwrap().to_checksum()
 }
 
+// Returns the checksum of `bar` within the given program.
+fn bar_checksum(program: &Program<CurrentNetwork>) -> [console::types::U8<CurrentNetwork>; 32] {
+    program.get_function(&Identifier::from_str("bar").unwrap()).unwrap().to_checksum()
+}
+
 // A simple positive check of the checksum's semantics, without a VM: it is deterministic, ignores
 // other functions in the program, and changes when the function's body changes.
 #[test]
 fn test_checksum_is_deterministic_and_body_sensitive() {
-    let v0 = program(FOO_UNCHANGED, false);
-    let v1 = program(FOO_UNCHANGED, true);
-    let v2 = program(FOO_CHANGED, true);
+    let v0 = program(FOO_UNCHANGED, None);
+    let v1 = program(FOO_UNCHANGED, Some(BAR_UNCHANGED));
+    let v2 = program(FOO_CHANGED, Some(BAR_UNCHANGED));
 
     // The checksum is deterministic.
     assert_eq!(foo_checksum(&v0), foo_checksum(&v0));
@@ -179,7 +189,7 @@ fn test_checksum_pin_across_upgrade() {
     let vm = crate::vm::test_helpers::sample_vm_at_height(v16_height, rng);
 
     // Deploy v0, which records `foo`'s checksum on first deploy.
-    let v0 = program(FOO_UNCHANGED, false);
+    let v0 = program(FOO_UNCHANGED, None);
     let deployment = vm.deploy(&caller_private_key, &v0, None, 0, None, rng).unwrap();
     let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
@@ -201,22 +211,71 @@ fn test_checksum_pin_across_upgrade() {
     };
     assert_eq!(expected, stored);
 
+    // `bar` does not exist in v0, so its checksum is absent from the program's Stack.
+    let bar = Identifier::from_str("bar").unwrap();
+    assert!(vm.process().get_stack("test_checksum.aleo").unwrap().component_checksum(&bar).is_err());
+
     // Upgrade with `foo` unchanged (adding `bar`). The pinned checksum still matches, so it is accepted.
-    let v1 = program(FOO_UNCHANGED, true);
+    let v1 = program(FOO_UNCHANGED, Some(BAR_UNCHANGED));
     let deployment = vm.deploy(&caller_private_key, &v1, None, 0, None, rng).unwrap();
     let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 1);
     assert_eq!(block.transactions().num_rejected(), 0);
     vm.add_next_block(&block).unwrap();
 
+    // After the upgrade, `bar`'s checksum is present in the program's Stack and matches `bar`'s checksum.
+    let stack = vm.process().get_stack("test_checksum.aleo").unwrap();
+    assert_eq!(stack.component_checksum(&bar).unwrap(), &bar_checksum(&v1));
+
     // Upgrade with `foo` changed. The pinned checksum no longer matches, so the constructor's
     // assertion fails and the upgrade is rejected.
-    let v2 = program(FOO_CHANGED, true);
+    let v2 = program(FOO_CHANGED, Some(BAR_UNCHANGED));
     let deployment = vm.deploy(&caller_private_key, &v2, None, 0, None, rng).unwrap();
     let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
     assert_eq!(block.transactions().num_accepted(), 0);
     assert_eq!(block.transactions().num_rejected(), 1);
     vm.add_next_block(&block).unwrap();
+}
+
+// This test verifies that when `bar` is changed across an upgrade, its checksum is updated in the
+// program's Stack. `foo` is left unchanged so the constructor's pin still holds and the upgrade is accepted.
+#[test]
+fn test_checksum_bar_updated_in_stack_on_upgrade() {
+    // Initialize an RNG.
+    let rng = &mut TestRng::default();
+
+    // Initialize a new caller.
+    let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+
+    // Initialize the VM at the V16 height.
+    let v16_height = CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V16).unwrap();
+    let vm = crate::vm::test_helpers::sample_vm_at_height(v16_height, rng);
+
+    // Deploy v0 with `bar`.
+    let v0 = program(FOO_UNCHANGED, Some(BAR_UNCHANGED));
+    let deployment = vm.deploy(&caller_private_key, &v0, None, 0, None, rng).unwrap();
+    let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    assert_eq!(block.transactions().num_rejected(), 0);
+    vm.add_next_block(&block).unwrap();
+
+    // The Stack records `bar`'s original checksum.
+    let bar = Identifier::from_str("bar").unwrap();
+    let stack = vm.process().get_stack("test_checksum.aleo").unwrap();
+    assert_eq!(stack.component_checksum(&bar).unwrap(), &bar_checksum(&v0));
+
+    // Upgrade with `bar` changed (and `foo` unchanged, so the pin still holds).
+    let v1 = program(FOO_UNCHANGED, Some(BAR_CHANGED));
+    let deployment = vm.deploy(&caller_private_key, &v1, None, 0, None, rng).unwrap();
+    let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
+    assert_eq!(block.transactions().num_accepted(), 1);
+    assert_eq!(block.transactions().num_rejected(), 0);
+    vm.add_next_block(&block).unwrap();
+
+    // The Stack now records `bar`'s new checksum, which differs from the original.
+    let stack = vm.process().get_stack("test_checksum.aleo").unwrap();
+    assert_eq!(stack.component_checksum(&bar).unwrap(), &bar_checksum(&v1));
+    assert_ne!(bar_checksum(&v0), bar_checksum(&v1));
 }
 
 // A minimal program that uses `<name>/checksum` in its constructor.

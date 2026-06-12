@@ -34,10 +34,10 @@ impl<N: Network> Parser for Operand<N> {
                 |(_, index)| Self::AleoGeneratorPowers(index),
             ),
             map(tag("aleo::GENERATOR"), |_| Self::AleoGenerator),
-            // Note that `Operand::ComponentChecksum` (`<name>/checksum`) must be parsed before `Operand::Checksum`,
-            // `Operand::Edition`, `Operand::ProgramOwner`, and `Operand::ProgramID`s, since a component name may
-            // collide with those keywords and may be prefixed with a program ID. This is unambiguous since a program
-            // ID always carries a network suffix (e.g. `.aleo`) while an identifier never does.
+            // Parse `Operand::ComponentChecksum` (`<name>/checksum`) before `Operand::Checksum`, since a component
+            // may be named after a keyword. For example, a function named `checksum` is referenced as
+            // `checksum/checksum`: if `Operand::Checksum` were tried first, it would match the leading `checksum`
+            // and misparse it as the program checksum, leaving `/checksum` unconsumed.
             map(
                 pair(
                     pair(opt(terminated(ProgramID::parse, tag("/"))), terminated(Identifier::parse, tag("/"))),
