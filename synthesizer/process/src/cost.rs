@@ -178,9 +178,9 @@ pub fn execution_cost_for_call<A: Aleo, R: Rng + CryptoRng>(
 pub fn deploy_compute_cost_in_microcredits(
     cost_details: DeployCostDetails,
     consensus_version: ConsensusVersion,
-) -> Result<u64> {
+) -> u64 {
     let (storage_cost, synthesis_cost, constructor_cost, _) = cost_details;
-    let cost_to_check = if consensus_version >= ConsensusVersion::V10 {
+    if consensus_version >= ConsensusVersion::V10 {
         // From V10, only include the constructor compute cost for
         // deployments.
         //
@@ -189,12 +189,8 @@ pub fn deploy_compute_cost_in_microcredits(
         constructor_cost
     } else {
         // Include the storage, synthesis, and constructor cost for deployments.
-        storage_cost
-            .checked_add(synthesis_cost)
-            .and_then(|synthesis_cost| synthesis_cost.checked_add(constructor_cost))
-            .ok_or(anyhow!("The storage, synthesis, and constructor cost computation overflowed for a deployment"))?
-    };
-    Ok(cost_to_check)
+        storage_cost.saturating_add(synthesis_cost).saturating_add(constructor_cost)
+    }
 }
 
 /// Returns the compute cost for an execution in microcredits.
@@ -203,18 +199,15 @@ pub fn deploy_compute_cost_in_microcredits(
 pub fn execute_compute_cost_in_microcredits(
     cost_details: ExecuteCostDetails,
     consensus_version: ConsensusVersion,
-) -> Result<u64> {
+) -> u64 {
     let (storage_cost, finalize_cost) = cost_details;
-    let cost_to_check = if consensus_version >= ConsensusVersion::V10 {
+    if consensus_version >= ConsensusVersion::V10 {
         // From V10, only include the finalize compute cost for executions.
         finalize_cost
     } else {
         // Include the finalize cost and storage cost for executions.
-        storage_cost
-            .checked_add(finalize_cost)
-            .ok_or(anyhow!("The storage and finalize cost computation overflowed for an execution"))?
-    };
-    Ok(cost_to_check)
+        storage_cost.saturating_add(finalize_cost)
+    }
 }
 
 /// Returns the minimum cost in microcredits to publish the given deployment (V3).
