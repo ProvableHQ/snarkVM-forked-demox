@@ -1294,7 +1294,7 @@ function over_five_thousand:
     // Storage cost for an execution transaction at the maximum transaction size.
     const V1_STORAGE_COST_MAX: u64 = 3_276_800;
     const V14_STORAGE_COST_MAX: u64 = 117_964_800;
-    const V16_STORAGE_COST_MAX: u64 = 327_680_000;
+    const V16_STORAGE_COST_MAX: u64 = 1_061_683_200;
 
     fn test_storage_cost_bounds<N: Network>() {
         // Calculate the bounds directly above and below the size threshold.
@@ -1380,9 +1380,9 @@ function over_five_thousand:
         let expected_above =
             above * above * MainnetV0::DEPLOYMENT_FEE_MULTIPLIER / DEPLOYMENT_STORAGE_PENALTY_THRESHOLD;
         assert_eq!(deployment_storage_cost::<MainnetV0>(above).unwrap(), expected_above);
-        // At the V16 max program size (1024 kB): cost is exactly 2x the linear cost.
-        let max = 1_024_000u64;
-        assert_eq!(deployment_storage_cost::<MainnetV0>(max).unwrap(), 2 * max * MainnetV0::DEPLOYMENT_FEE_MULTIPLIER);
+        // At the V16 max program size (2048 kB = 4x the threshold): cost is exactly 4x the linear cost.
+        let max = 2_048_000u64;
+        assert_eq!(deployment_storage_cost::<MainnetV0>(max).unwrap(), 4 * max * MainnetV0::DEPLOYMENT_FEE_MULTIPLIER);
     }
 
     #[test]

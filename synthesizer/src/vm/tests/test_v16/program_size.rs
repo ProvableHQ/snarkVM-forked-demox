@@ -15,7 +15,7 @@
 
 use super::*;
 
-/// Generates a large program string that exceeds the V14 size limit (512KB) but fits within V16 (1024KB).
+/// Generates a large program string that exceeds the V14 size limit (512KB) but fits within V16 (2048KB).
 fn generate_large_program() -> String {
     let mut program = String::from(
         "program large_program_generated.aleo;
@@ -27,7 +27,7 @@ constructor:
     );
 
     // Add each individual function
-    for i in 0..5 {
+    for i in 0..11 {
         program.push_str(&format!("function compute_{i}:\n"));
         program.push_str("    input r0 as u64.public;\n");
 

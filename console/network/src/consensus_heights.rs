@@ -59,7 +59,7 @@ pub enum ConsensusVersion {
     V15 = 15,
     /// V16: Moves the block's spend limit check to the finalize phase.
     ///      Supports storing of transaction rejection reasons.
-    ///      Increase the program size limit to 1024 kB and the transaction size limit to 1280 kB.
+    ///      Increase the program size limit to 2048 kB and the transaction size limit to 2304 kB.
     ///      Update the deployment storage cost for programs exceeding 512 kB.
     V16 = 16,
 }
