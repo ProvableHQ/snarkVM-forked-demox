@@ -56,9 +56,10 @@ pub enum ConsensusVersion {
     V14 = 14,
     /// V15: Introduces the record-existence check and `commit.*.raw` instruction variants.
     ///      Increase the anchor time to 35.
-    ///      Unconditionally stores transaction rejection reasons.
     V15 = 15,
-    /// V16: Increase the program size limit to 2048 kB and the transaction size limit to 2304 kB.
+    /// V16: Moves the block's spend limit check to the finalize phase.
+    ///      Supports storing of transaction rejection reasons.
+    ///      Increase the program size limit to 2048 kB and the transaction size limit to 2304 kB.
     ///      Update the deployment storage cost for programs exceeding 512 kB.
     V16 = 16,
 }
@@ -337,6 +338,11 @@ mod tests {
             assert!(*version > previous_version);
             previous_version = *version;
         }
+        let mut previous_version = N::CREDITS_PER_SECOND_OF_RUNTIME.first().unwrap().0;
+        for (version, _) in N::CREDITS_PER_SECOND_OF_RUNTIME.iter().skip(1) {
+            assert!(*version > previous_version);
+            previous_version = *version;
+        }
         let mut previous_version = N::MAX_ARRAY_ELEMENTS.first().unwrap().0;
         for (version, _) in N::MAX_ARRAY_ELEMENTS.iter().skip(1) {
             assert!(*version > previous_version);
@@ -391,6 +397,12 @@ mod tests {
             // Double-check that consensus_config_value returns the correct value.
             assert_eq!(consensus_config_value!(N, TRANSACTION_SPEND_LIMIT, height).unwrap(), *value);
         }
+        for (version, value) in N::CREDITS_PER_SECOND_OF_RUNTIME.iter() {
+            // Ensure that the height at which an update occurs are present in CONSENSUS_VERSION_HEIGHTS.
+            let height = N::CONSENSUS_VERSION_HEIGHTS().iter().find(|(c_version, _)| *c_version == *version).unwrap().1;
+            // Double-check that consensus_config_value returns the correct value.
+            assert_eq!(consensus_config_value!(N, CREDITS_PER_SECOND_OF_RUNTIME, height).unwrap(), *value);
+        }
         for (version, value) in N::MAX_ARRAY_ELEMENTS.iter() {
             // Ensure that the height at which an update occurs are present in CONSENSUS_VERSION_HEIGHTS.
             let height = N::CONSENSUS_VERSION_HEIGHTS().iter().find(|(c_version, _)| *c_version == *version).unwrap().1;
@@ -426,6 +438,7 @@ mod tests {
         for (_, height) in N::CONSENSUS_VERSION_HEIGHTS().iter() {
             assert!(consensus_config_value!(N, MAX_CERTIFICATES, *height).is_some());
             assert!(consensus_config_value!(N, TRANSACTION_SPEND_LIMIT, *height).is_some());
+            assert!(consensus_config_value!(N, CREDITS_PER_SECOND_OF_RUNTIME, *height).is_some());
             assert!(consensus_config_value!(N, MAX_ARRAY_ELEMENTS, *height).is_some());
             assert!(consensus_config_value!(N, MAX_PROGRAM_SIZE, *height).is_some());
             assert!(consensus_config_value!(N, MAX_TRANSACTION_SIZE, *height).is_some());
@@ -510,6 +523,8 @@ mod tests {
         let _ = [N1::CONSENSUS_VERSION_HEIGHTS, N2::CONSENSUS_VERSION_HEIGHTS, N3::CONSENSUS_VERSION_HEIGHTS];
         let _ = [N1::MAX_CERTIFICATES, N2::MAX_CERTIFICATES, N3::MAX_CERTIFICATES];
         let _ = [N1::TRANSACTION_SPEND_LIMIT, N2::TRANSACTION_SPEND_LIMIT, N3::TRANSACTION_SPEND_LIMIT];
+        let _ =
+            [N1::CREDITS_PER_SECOND_OF_RUNTIME, N2::CREDITS_PER_SECOND_OF_RUNTIME, N3::CREDITS_PER_SECOND_OF_RUNTIME];
         let _ = [N1::MAX_ARRAY_ELEMENTS, N2::MAX_ARRAY_ELEMENTS, N3::MAX_ARRAY_ELEMENTS];
         let _ = [N1::MAX_PROGRAM_SIZE, N2::MAX_PROGRAM_SIZE, N3::MAX_PROGRAM_SIZE];
         let _ = [N1::MAX_TRANSACTION_SIZE, N2::MAX_TRANSACTION_SIZE, N3::MAX_TRANSACTION_SIZE];

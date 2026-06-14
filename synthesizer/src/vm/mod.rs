@@ -45,6 +45,7 @@ use console::{
     types::{Field, Group, U8, U64},
 };
 use snarkvm_algorithms::snark::varuna::VarunaVersion;
+use snarkvm_ledger_authority::Authority;
 use snarkvm_ledger_block::{
     Block,
     ConfirmedTransaction,
@@ -325,6 +326,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Match the consensus path's gating: the timestamp is only included from V12 onward.
         let block_timestamp = (block.height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
             .then_some(block.timestamp());
+        let block_spend_limit =
+            if let Authority::Quorum(subdag) = block.authority() { subdag.spend_limit(block.height()) } else { None };
         FinalizeGlobalState::new::<N>(
             block.round(),
             block.height(),
@@ -332,6 +335,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             block.cumulative_weight(),
             block.cumulative_proof_target(),
             block.previous_hash(),
+            block_spend_limit,
         )
     }
 
@@ -605,6 +609,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         // Determine if the block timestamp should be included.
         let block_timestamp = (block.height() >= N::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
             .then_some(block.timestamp());
+        // Determine the block spend limit.
+        let block_spend_limit =
+            if let Authority::Quorum(subdag) = block.authority() { subdag.spend_limit(block.height()) } else { None };
         // Construct the finalize state.
         let state = FinalizeGlobalState::new::<N>(
             block.round(),
@@ -613,6 +620,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             block.cumulative_weight(),
             block.cumulative_proof_target(),
             block.previous_hash(),
+            block_spend_limit,
         )?;
 
         // Pause the atomic writes, so that both the insertion and finalization belong to a single batch.
@@ -731,7 +739,7 @@ pub(crate) mod test_helpers {
 
     /// Samples a new finalize state.
     pub(crate) fn sample_finalize_state(block_height: u32) -> FinalizeGlobalState {
-        FinalizeGlobalState::from(block_height as u64, block_height, None, [0u8; 32])
+        FinalizeGlobalState::from(block_height as u64, block_height, None, [0u8; 32], None)
     }
 
     pub(crate) fn sample_vm() -> VM<CurrentNetwork, LedgerType> {
@@ -1033,7 +1041,7 @@ function compute:
             >= MainnetV0::CONSENSUS_HEIGHT(ConsensusVersion::V12).unwrap_or_default())
         .then_some(next_block_timestamp);
         let finalize_state =
-            FinalizeGlobalState::from(next_block_height as u64, next_block_height, next_timestamp, [0u8; 32]);
+            FinalizeGlobalState::from(next_block_height as u64, next_block_height, next_timestamp, [0u8; 32], None);
 
         // Speculate on the ratifications, solutions, and transactions.
         let (ratifications, transactions, aborted_transaction_ids, ratified_finalize_operations) = vm.speculate(
