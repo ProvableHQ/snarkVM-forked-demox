@@ -58,7 +58,7 @@ pub enum ConsensusVersion {
     ///      Increase the anchor time to 35.
     ///      Unconditionally stores transaction rejection reasons.
     V15 = 15,
-    /// V16: Increase the program size limit to 1024 kB and the transaction size limit to 1280 kB.
+    /// V16: Increase the program size limit to 2048 kB and the transaction size limit to 2304 kB.
     ///      Update the deployment storage cost for programs exceeding 512 kB.
     V16 = 16,
 }

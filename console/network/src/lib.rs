@@ -215,7 +215,7 @@ pub trait Network:
     const MAX_PROGRAM_SIZE: [(ConsensusVersion, usize); 3] = [
         (ConsensusVersion::V1, 100_000),    // 100 kB
         (ConsensusVersion::V14, 512_000),   // 512 kB
-        (ConsensusVersion::V16, 1_024_000), // 1024 kB
+        (ConsensusVersion::V16, 2_048_000), // 2048 kB
     ];
     /// The maximum number of mappings in a program.
     const MAX_MAPPINGS: usize = 31;
@@ -265,7 +265,7 @@ pub trait Network:
     const MAX_TRANSACTION_SIZE: [(ConsensusVersion, usize); 3] = [
         (ConsensusVersion::V1, 128_000),    // 128 kB
         (ConsensusVersion::V14, 768_000),   // 768 kB
-        (ConsensusVersion::V16, 1_280_000), // 1280 kB
+        (ConsensusVersion::V16, 2_304_000), // 2304 kB
     ];
 
     /// The state root type.
