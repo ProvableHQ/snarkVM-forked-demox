@@ -162,7 +162,11 @@ pub trait Network:
     const TRANSACTION_SPEND_LIMIT: [(ConsensusVersion, u64); 2] =
         [(ConsensusVersion::V1, 100_000_000), (ConsensusVersion::V10, 4_000_000)];
     /// The compute discount approved by ARC 0005.
-    const ARC_0005_COMPUTE_DISCOUNT: u64 = 25;
+    const ARC_0005_COMPUTE_DISCOUNT: u64 =
+        Self::CREDITS_PER_SECOND_OF_RUNTIME[0].1 / Self::CREDITS_PER_SECOND_OF_RUNTIME[1].1;
+    /// The number of microcredits representing a second of runtime.
+    const CREDITS_PER_SECOND_OF_RUNTIME: [(ConsensusVersion, u64); 2] =
+        [(ConsensusVersion::V1, 100_000_000), (ConsensusVersion::V10, 4_000_000)];
 
     /// The anchor height, defined as the expected number of blocks to reach the coinbase target.
     /// Note: The anchor height used exclusively by `coinbase_reward_v1`.
@@ -215,7 +219,7 @@ pub trait Network:
     const MAX_PROGRAM_SIZE: [(ConsensusVersion, usize); 3] = [
         (ConsensusVersion::V1, 100_000),    // 100 kB
         (ConsensusVersion::V14, 512_000),   // 512 kB
-        (ConsensusVersion::V16, 1_024_000), // 1024 kB
+        (ConsensusVersion::V16, 2_048_000), // 2048 kB
     ];
     /// The maximum number of mappings in a program.
     const MAX_MAPPINGS: usize = 31;
@@ -265,7 +269,7 @@ pub trait Network:
     const MAX_TRANSACTION_SIZE: [(ConsensusVersion, usize); 3] = [
         (ConsensusVersion::V1, 128_000),    // 128 kB
         (ConsensusVersion::V14, 768_000),   // 768 kB
-        (ConsensusVersion::V16, 1_280_000), // 1280 kB
+        (ConsensusVersion::V16, 2_304_000), // 2304 kB
     ];
 
     /// The state root type.

@@ -13,6 +13,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Tests for quorum block compute spend limits.
+mod block_spend_limit;
+
 // Tests for increased program size limits.
 mod program_size;
 
@@ -23,7 +26,9 @@ use super::*;
 
 use crate::vm::test_helpers::*;
 
-use console::network::ConsensusVersion;
+use console::{account::Address, network::ConsensusVersion, prelude::FromStr, program::Value};
 
-use snarkvm_synthesizer_program::Program;
+use snarkvm_ledger_block::Solutions;
+use snarkvm_synthesizer_process::{execute_compute_cost_in_microcredits, execution_cost};
+use snarkvm_synthesizer_program::{FinalizeGlobalState, Program};
 use snarkvm_utilities::TestRng;

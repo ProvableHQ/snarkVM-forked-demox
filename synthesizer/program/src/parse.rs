@@ -483,8 +483,8 @@ function compute:
             let mut s = String::with_capacity(max_program_size);
             for i in 0..n {
                 s.push_str(&format!("closure c{i}:\n    input r0 as u128;\n"));
-                for j in 0..10 {
-                    s.push_str(&format!("    cast r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 into r{j} as [u128; 32u32];\n"));
+                for j in 0..30 {
+                    s.push_str(&format!("    cast r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 into r{j} as [u128; 64u32];\n"));
                 }
                 s.push_str(&format!("    output r{} as [u128; 32u32];\n", 4000));
             }
@@ -496,8 +496,8 @@ function compute:
             let mut s = String::with_capacity(max_program_size);
             for i in 0..n {
                 s.push_str(&format!("function f{i}:\n    add 1u128 1u128 into r0;\n"));
-                for j in 0..200 {
-                    s.push_str(&format!("    cast r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 into r{j} as [u128; 32u32];\n"));
+                for j in 0..250 {
+                    s.push_str(&format!("    cast r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 r0 into r{j} as [u128; 64u32];\n"));
                 }
             }
             s

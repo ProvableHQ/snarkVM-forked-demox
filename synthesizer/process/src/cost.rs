@@ -178,9 +178,9 @@ pub fn execution_cost_for_call<A: Aleo, R: Rng + CryptoRng>(
 pub fn deploy_compute_cost_in_microcredits(
     cost_details: DeployCostDetails,
     consensus_version: ConsensusVersion,
-) -> Result<u64> {
+) -> u64 {
     let (storage_cost, synthesis_cost, constructor_cost, _) = cost_details;
-    let cost_to_check = if consensus_version >= ConsensusVersion::V10 {
+    if consensus_version >= ConsensusVersion::V10 {
         // From V10, only include the constructor compute cost for
         // deployments.
         //
@@ -189,12 +189,8 @@ pub fn deploy_compute_cost_in_microcredits(
         constructor_cost
     } else {
         // Include the storage, synthesis, and constructor cost for deployments.
-        storage_cost
-            .checked_add(synthesis_cost)
-            .and_then(|synthesis_cost| synthesis_cost.checked_add(constructor_cost))
-            .ok_or(anyhow!("The storage, synthesis, and constructor cost computation overflowed for a deployment"))?
-    };
-    Ok(cost_to_check)
+        storage_cost.saturating_add(synthesis_cost).saturating_add(constructor_cost)
+    }
 }
 
 /// Returns the compute cost for an execution in microcredits.
@@ -203,18 +199,15 @@ pub fn deploy_compute_cost_in_microcredits(
 pub fn execute_compute_cost_in_microcredits(
     cost_details: ExecuteCostDetails,
     consensus_version: ConsensusVersion,
-) -> Result<u64> {
+) -> u64 {
     let (storage_cost, finalize_cost) = cost_details;
-    let cost_to_check = if consensus_version >= ConsensusVersion::V10 {
+    if consensus_version >= ConsensusVersion::V10 {
         // From V10, only include the finalize compute cost for executions.
         finalize_cost
     } else {
         // Include the finalize cost and storage cost for executions.
-        storage_cost
-            .checked_add(finalize_cost)
-            .ok_or(anyhow!("The storage and finalize cost computation overflowed for an execution"))?
-    };
-    Ok(cost_to_check)
+        storage_cost.saturating_add(finalize_cost)
+    }
 }
 
 /// Returns the minimum cost in microcredits to publish the given deployment (V3).
@@ -1301,7 +1294,7 @@ function over_five_thousand:
     // Storage cost for an execution transaction at the maximum transaction size.
     const V1_STORAGE_COST_MAX: u64 = 3_276_800;
     const V14_STORAGE_COST_MAX: u64 = 117_964_800;
-    const V16_STORAGE_COST_MAX: u64 = 327_680_000;
+    const V16_STORAGE_COST_MAX: u64 = 1_061_683_200;
 
     fn test_storage_cost_bounds<N: Network>() {
         // Calculate the bounds directly above and below the size threshold.
@@ -1387,9 +1380,9 @@ function over_five_thousand:
         let expected_above =
             above * above * MainnetV0::DEPLOYMENT_FEE_MULTIPLIER / DEPLOYMENT_STORAGE_PENALTY_THRESHOLD;
         assert_eq!(deployment_storage_cost::<MainnetV0>(above).unwrap(), expected_above);
-        // At the V16 max program size (1024 kB): cost is exactly 2x the linear cost.
-        let max = 1_024_000u64;
-        assert_eq!(deployment_storage_cost::<MainnetV0>(max).unwrap(), 2 * max * MainnetV0::DEPLOYMENT_FEE_MULTIPLIER);
+        // At the V16 max program size (2048 kB = 4x the threshold): cost is exactly 4x the linear cost.
+        let max = 2_048_000u64;
+        assert_eq!(deployment_storage_cost::<MainnetV0>(max).unwrap(), 4 * max * MainnetV0::DEPLOYMENT_FEE_MULTIPLIER);
     }
 
     #[test]
